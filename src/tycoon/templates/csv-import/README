@@ -1,0 +1,46 @@
+csv-import template
+===================
+
+Load CSV or Parquet files from a local directory into DuckDB.
+
+Quick start
+-----------
+
+1. Copy your CSV files into the data/input/ directory inside your project:
+
+       data/input/sales.csv
+       data/input/customers.csv
+
+2. Run the ingestion pipeline:
+
+       tycoon data sources run files
+
+3. The parsed rows are written to data/files_raw.duckdb under the
+   raw_files schema.  Each file becomes its own table named after the
+   file (without extension).
+
+Loading Parquet files instead
+------------------------------
+
+Change the file_glob value in tycoon.yml from "*.csv" to "*.parquet":
+
+    sources:
+      files:
+        type: filesystem
+        schema: raw_files
+        config:
+          path: data/input
+          file_glob: "*.parquet"
+
+Then re-run:
+
+    tycoon data sources run files
+
+Notes
+-----
+
+- Subdirectory globs (e.g. "**/*.csv") are also supported but will load
+  raw file metadata rather than parsed rows.  Use a flat glob ("*.csv"
+  or "*.parquet") to get row-level data.
+- The path value can be an S3 or GCS URL (e.g. s3://my-bucket/prefix)
+  if the appropriate credentials are configured in your environment.

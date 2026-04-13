@@ -1,0 +1,41 @@
+name: nyc-transit-demo
+version: 0.1.0
+
+database:
+  raw: data/nyc_open_data_raw.duckdb
+  warehouse: data/nyc_open_data_local.duckdb
+
+dbt_project_dir: dbt_project
+rill_dir: rill
+
+sources:
+  nyc-dot:
+    type: rest_api
+    schema: raw_nyc_dot
+    config:
+      base_url: https://data.cityofnewyork.us/resource/
+      datasets:
+        - i4gi-tjb9
+        - ycrg-ses3
+        - 7ym2-wayt
+
+  mta-gtfs:
+    type: filesystem
+    schema: raw_mta
+    config:
+      feed_urls:
+        bronx: https://rrgtfsfeeds.s3.amazonaws.com/gtfs_bx.zip
+        brooklyn: https://rrgtfsfeeds.s3.amazonaws.com/gtfs_b.zip
+        manhattan: https://rrgtfsfeeds.s3.amazonaws.com/gtfs_m.zip
+        queens: https://rrgtfsfeeds.s3.amazonaws.com/gtfs_q.zip
+        staten_island: https://rrgtfsfeeds.s3.amazonaws.com/gtfs_si.zip
+        mta_bus: https://rrgtfsfeeds.s3.amazonaws.com/gtfs_busco.zip
+
+  mta-bus-speeds:
+    type: rest_api
+    schema: raw_mta_bus_speeds
+    config:
+      base_url: https://data.ny.gov/resource/
+      datasets:
+        - 58t6-89vi
+        - kufs-yh3x

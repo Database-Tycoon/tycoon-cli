@@ -1,0 +1,24 @@
+name: github-analytics
+version: 0.1.0
+description: GitHub repository analytics — stars, issues, PRs, and contributor activity
+
+database:
+  raw: data/github_raw.duckdb
+  warehouse: data/github_warehouse.duckdb
+
+dbt_project_dir: dbt_project
+rill_dir: rill
+
+sources:
+  github:
+    type: rest_api
+    schema: raw_github
+    config:
+      base_url: https://api.github.com/
+      auth:
+        token: ${GITHUB_TOKEN}
+      resources:
+        - repos/{owner}/{repo}/issues
+        - repos/{owner}/{repo}/pulls
+        - repos/{owner}/{repo}/stargazers
+        - repos/{owner}/{repo}/contributors

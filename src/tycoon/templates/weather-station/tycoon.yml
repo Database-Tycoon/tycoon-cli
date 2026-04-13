@@ -1,0 +1,20 @@
+name: weather-station
+version: 0.1.0
+description: NOAA weather station observations and forecasts (no API key required)
+
+database:
+  raw: data/weather_raw.duckdb
+  warehouse: data/weather_warehouse.duckdb
+
+dbt_project_dir: dbt_project
+rill_dir: rill
+
+sources:
+  noaa:
+    type: rest_api
+    schema: raw_weather
+    config:
+      base_url: https://api.weather.gov/
+      resources:
+        - stations/{station_id}/observations
+        - gridpoints/{office}/{gridX},{gridY}/forecast

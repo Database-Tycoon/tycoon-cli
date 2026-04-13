@@ -1,0 +1,77 @@
+name: nyc_open_data
+version: '1.0.0'
+profile: nyc_open_data
+
+config-version: 2
+
+model-paths: ["models"]
+test-paths: ["tests"]
+analysis-paths: ["analyses"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+seed-paths: ["seeds"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  # ── dlt-dbt-stripe ────────────────────────────────────────────────────────────
+  # The package resolves source('raw_data', ...) using schema: '{{ var("source_dataset_name") }}'.
+  # Our dlt Stripe pipeline writes to raw.raw_stripe with PLURAL table names (customers,
+  # subscriptions, invoices, products). The package expects SINGULAR names (customer,
+  # subscription, invoice, product).
+  #
+  # To bridge the naming gap we create thin alias views in models/staging/stripe/ that
+  # land in the `stripe_staging` schema of the writable duckdb. These views simply
+  # select * from {{ source('stripe', ...) }} with the correct singular model name.
+  # We then point source_dataset_name at that writable schema.
+  #
+  # ── dlt-dbt-hubspot ───────────────────────────────────────────────────────────
+  # The package uses the same var names. HubSpot table names (contacts, companies,
+  # deals, tickets) already match what the package expects — no renaming needed.
+  # However, passthrough views are still required in models/staging/hubspot/ because:
+  #   - The `raw` DuckDB database is attached read-only; dbt cannot write there.
+  #   - source_dataset_name must resolve to a writable schema in the main database.
+  # The passthrough views land in `hubspot_staging` and bridge the gap.
+  #
+  # SHARED VAR CONSTRAINT: both packages use source_dataset_name / destination_dataset_name.
+  # The default below is wired for Stripe. Override at the CLI for HubSpot builds.
+  #
+  # Build Stripe package models:
+  #   dbt build --select stripe_analytics+
+  #
+  # Build HubSpot package models:
+  #   dbt build --select hubspot+ \
+  #     --vars '{"source_dataset_name": "hubspot_staging", "destination_dataset_name": "hubspot_staging"}'
+  #
+  # destination_dataset_name is the schema where dbt writes dlt_processed_load_ids
+  # (the transformed_data source). Using the same schema as source avoids a second
+  # schema for each package.
+  source_dataset_name: "stripe_staging"
+  destination_dataset_name: "stripe_staging"
+
+models:
+  nyc_open_data:
+    staging:
+      +materialized: view
+      +schema: staging
+      stripe:
+        # Alias views that rename dlt plural table names to the singular names
+        # expected by the dlt-dbt-stripe package. They land in `stripe_staging`
+        # so source_dataset_name: "stripe_staging" resolves correctly.
+        +schema: stripe_staging
+      hubspot:
+        # Passthrough views that expose raw.raw_hubspot.* in the writable hubspot_staging
+        # schema. Required because `raw` is read-only and source_dataset_name must point
+        # to a writable dbt schema. Table names already match the package; no renaming needed.
+        +schema: hubspot_staging
+    intermediate:
+      +materialized: view
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: marts
+    semantic:
+      +materialized: table
+      +schema: semantic

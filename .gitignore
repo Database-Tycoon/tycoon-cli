@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# DuckDB
+*.duckdb
+*.duckdb.wal
+data/
+!data/README.md
+
+# dbt
+transformation/target/
+transformation/dbt_packages/
+transformation/logs/
+dbt_project/target/
+dbt_project/dbt_packages/
+dbt_project/logs/
+
+# Rill
+rill/tmp/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Demo
+.demo_pids
+
+# DuckLake
+ducklake_data/
+
+# Dagster runtime state
+dagster_home/
+.tmp_dagster_home_*/
+.tycoon/dagster/
+
+# AI tool configs (machine-specific)
+.aider*
+.claude/
+.config/
+.gemini/
+ai-workbench/
+
+# Nao analytics agent (auto-generated context, not source code)
+.tycoon/nao/databases/
+.tycoon/nao/repos/
+.tycoon/nao/agent/
+
+# tycoon runtime state (PIDs, locks, local nao/dagster config)
+.tycoon/
+logs/
+.claude/worktrees/
+
+gha-creds-*.json

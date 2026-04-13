@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "database-tycoon"
+version = "0.1.0"
+description = "Database Tycoon — local-first analytics CLI that adapts to your existing data stack"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Database Tycoon Team"}]
+requires-python = ">=3.12"
+keywords = ["data", "analytics", "duckdb", "dbt", "dlt", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+]
+dependencies = [
+    "typer==0.24.1",
+    "rich==14.3.3",
+    "dbt-core==1.11.8",
+    "dbt-duckdb==1.10.1",
+    "dlt[duckdb]==1.24.0",
+    "duckdb==1.5.1",
+    "httpx==0.28.1",
+    "pyyaml==6.0.3",
+    "pydantic==2.12.5",
+]
+
+[project.optional-dependencies]
+server = [
+    "fastapi==0.135.3",
+    "uvicorn[standard]==0.44.0",
+    "websockets==16.0",
+]
+dagster = [
+    "dagster==1.12.20",
+    "dagster-webserver==1.12.20",
+    "dagster-dbt==0.28.20",
+    "dagster-dlt==0.28.20",
+]
+ask = [
+    "nao-core==0.0.59",
+    "ibis-framework[duckdb]==12.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Database-Tycoon/tycoon-cli"
+Repository = "https://github.com/Database-Tycoon/tycoon-cli"
+Issues = "https://github.com/Database-Tycoon/tycoon-cli/issues"
+
+[dependency-groups]
+dev = ["pytest==9.0.2"]
+
+[project.scripts]
+tycoon = "tycoon.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tycoon"]
+
+[tool.uv]
+prerelease = "if-necessary-or-explicit"

@@ -1,0 +1,3 @@
+title: "Database Tycoon — NYC Transit Analytics"
+description: "Local-first analytics dashboard for NYC public transit data"
+olap_connector: duckdb

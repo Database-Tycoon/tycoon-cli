@@ -1,0 +1,8 @@
+packages: []
+# dlt-hub packages for Stripe and HubSpot are commented out until those sources
+# are ingested. Uncomment and run `dbt deps` when ready:
+#
+#  - git: "https://github.com/dlt-hub/dlt-dbt-stripe.git"
+#    revision: main
+#  - git: "https://github.com/dlt-hub/dlt-dbt-hubspot.git"
+#    revision: main

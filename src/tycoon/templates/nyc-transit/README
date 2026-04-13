@@ -1,0 +1,9 @@
+NYC Transit Demo Template
+========================
+
+This template scaffolds a tycoon project pre-configured with NYC Open Data
+sources (NYC DOT, MTA GTFS feeds, MTA Bus Speeds).
+
+When used inside the localhost-stack repository, the existing dbt_project/
+and rill/ directories are reused. For standalone installations, the template
+provides the tycoon.yml and expects you to add the dbt models separately.

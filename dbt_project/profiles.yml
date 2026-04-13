@@ -1,0 +1,12 @@
+nyc_open_data:
+  target: local
+  outputs:
+    local:
+      type: duckdb
+      path: "../data/nyc_open_data_local.duckdb"
+      extensions:
+        - parquet
+      attach:
+        - path: "../data/nyc_open_data_raw.duckdb"
+          alias: raw
+          read_only: true
