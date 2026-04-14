@@ -32,7 +32,7 @@ class TestCLIHelp:
         result = cli_runner.invoke(app, ["data", "--help"])
         assert result.exit_code == 0
         output = result.stdout
-        for sub in ("sources", "transform", "db", "analyze"):
+        for sub in ("sources", "transform", "query", "schema", "analyze"):
             assert sub in output, f"Expected data subcommand '{sub}' in help output"
 
     def test_data_sources_help(self, cli_runner):

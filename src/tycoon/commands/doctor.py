@@ -39,7 +39,7 @@ def _check_dbt_project():
     if config.dbt_project_dir.exists() and (config.dbt_project_dir / "dbt_project.yml").exists():
         success("dbt project found.")
     else:
-        error("dbt project not found or is missing `dbt_project.yml`.")
+        warn("dbt project not found. It will be created when you run `tycoon data analyze`.")
 
 
 def _check_rill_project():
