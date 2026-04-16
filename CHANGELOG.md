@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file. The format 
 - `tycoon doctor` no longer falsely claims that `tycoon data analyze` creates a missing dbt project; now directs users to `tycoon init` (or to point `dbt_project_dir` at an existing project).
 - `server/check-updates` now queries the correct PyPI package (`database-tycoon`) and uses `httpx` instead of `requests`.
 - `tycoon data transform` now falls back to `~/.dbt/profiles.yml` when a registered external dbt project has no co-located `profiles.yml`, instead of forcing `--profiles-dir` to the project root.
+- Fixed a crash in `tycoon data analyze` and `tycoon data sources run` when invoked without a source argument: the interactive "pick a source" prompt referenced `typer.Choice`, which doesn't exist at runtime. Now uses `click.Choice`. Regression test added.
 
 [0.1.1]: https://github.com/Database-Tycoon/tycoon-cli/releases/tag/v0.1.1
 [#1]: https://github.com/Database-Tycoon/tycoon-cli/issues/1

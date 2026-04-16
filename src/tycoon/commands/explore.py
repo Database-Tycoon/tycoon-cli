@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Annotated, Optional
 
+import click
 import typer
 
 from tycoon.config import config
@@ -63,7 +64,7 @@ def analyze_cmd(
             raise typer.Exit(1)
         source_name = typer.prompt(
             "Choose a source to analyze",
-            type=typer.Choice(list(sources.keys())),
+            type=click.Choice(list(sources.keys())),
             show_choices=True,
         )
 
