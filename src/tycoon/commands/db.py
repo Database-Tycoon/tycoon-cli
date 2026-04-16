@@ -14,50 +14,53 @@ from tycoon.utils.console import console, header, info, success, error, warn, st
 from tycoon.utils.duckdb_utils import db_file_size_mb, get_tables, get_row_count
 
 
-def _resolve_source_db(source_name: str) -> Path:
-    """Find the raw DuckDB file for a named source.
+def _resolve_source_db(source_name: str) -> Path | None:
+    """Find the raw DuckDB file for a named source, or None if not found.
 
-    Checks for the file at config.raw_db first (single-DB mode), then
-    looks for data/raw_{source_name}.duckdb and data/{prefix}_raw.duckdb
-    patterns in the data directory.
+    Priority:
+      1. ``config.raw_db``, if it contains the ``raw_<name>`` schema
+         (single-DB mode — current default for ``tycoon data sources run``).
+      2. ``data/raw_<name>.duckdb`` (canonical per-source filename).
+      3. Any other ``data/*.duckdb`` that contains the ``raw_<name>`` schema
+         (covers externally-loaded or alternatively-named files).
     """
-    # If config.raw_db exists and has a schema matching this source, use it
-    if config.raw_db.exists():
+    normalized = source_name.replace("-", "_")
+    source_schema = f"raw_{normalized}"
+
+    if config.raw_db.exists() and _has_schema(config.raw_db, source_schema):
+        return config.raw_db
+
+    per_source = config.data_dir / f"raw_{normalized}.duckdb"
+    if per_source.exists():
+        return per_source
+
+    if config.data_dir.exists():
+        skip = {config.raw_db.resolve(), per_source.resolve()}
+        for candidate in sorted(config.data_dir.glob("*.duckdb")):
+            if candidate.resolve() in skip:
+                continue
+            if _has_schema(candidate, source_schema):
+                return candidate
+
+    return None
+
+
+def _has_schema(db_path: Path, schema_name: str) -> bool:
+    """Return True if the DuckDB file contains the given schema."""
+    try:
+        con = duckdb.connect(str(db_path), read_only=True)
         try:
-            con = duckdb.connect(str(config.raw_db), read_only=True)
-            schemas = [r[0] for r in con.execute(
-                "SELECT DISTINCT schema_name FROM information_schema.schemata"
-            ).fetchall()]
+            schemas = [
+                r[0]
+                for r in con.execute(
+                    "SELECT DISTINCT schema_name FROM information_schema.schemata"
+                ).fetchall()
+            ]
+        finally:
             con.close()
-            source_schema = f"raw_{source_name.replace('-', '_')}"
-            if source_schema in schemas:
-                return config.raw_db
-        except duckdb.Error:
-            pass
-
-    # Look for per-source files in the data directory
-    data_dir = config.data_dir
-    if data_dir.exists():
-        for pattern in [
-            f"raw_{source_name.replace('-', '_')}.duckdb",
-            f"*_raw.duckdb",
-        ]:
-            matches = sorted(data_dir.glob(pattern))
-            for match in matches:
-                try:
-                    con = duckdb.connect(str(match), read_only=True)
-                    schemas = [r[0] for r in con.execute(
-                        "SELECT DISTINCT schema_name FROM information_schema.schemata"
-                    ).fetchall()]
-                    con.close()
-                    source_schema = f"raw_{source_name.replace('-', '_')}"
-                    if source_schema in schemas:
-                        return match
-                except duckdb.Error:
-                    continue
-
-    # Fallback: return the expected per-source path (caller will show error)
-    return data_dir / f"raw_{source_name.replace('-', '_')}.duckdb"
+    except duckdb.Error:
+        return False
+    return schema_name in schemas
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +139,12 @@ def query(
         db_path = db
         label = db_path.name
     elif source:
-        db_path = _resolve_source_db(source)
+        resolved = _resolve_source_db(source)
+        if resolved is None:
+            error(f"No raw database found for source '{source}'.")
+            info(f"Run 'tycoon data sources run {source}' to ingest data first.")
+            raise typer.Exit(1)
+        db_path = resolved
         label = f"raw ({source})"
     elif raw:
         db_path = config.raw_db
@@ -147,8 +155,6 @@ def query(
 
     if not db_path.exists():
         error(f"Database not found at {db_path}")
-        if source:
-            info(f"Run 'tycoon data sources run {source}' to ingest data first.")
         raise typer.Exit(1)
 
     try:

@@ -129,33 +129,32 @@ def analyze_cmd(
     # 5. Generate Rill dashboards (opt-in via --rill)
     if rill:
         from tycoon.scaffolding.rill_generator import generate_rill_config
+        from tycoon.scaffolding.templates import scaffold_rill_dir
 
         rill_dir = config.rill_dir
         if not rill_dir.exists():
-            warn(
-                f"Rill project directory not found at {rill_dir}. "
-                "Skipping Rill generation."
+            info(f"Rill project not found; scaffolding at {rill_dir}")
+            scaffold_rill_dir(rill_dir)
+
+        info("Generating Rill sources, metrics views, and dashboards...")
+        try:
+            rill_files = generate_rill_config(
+                raw_db_path=raw_db,
+                warehouse_db_path=config.local_db,
+                schema_name=schema_name,
+                source_name=source_name,
+                output_dir=rill_dir,
             )
-        else:
-            info("Generating Rill sources, metrics views, and dashboards...")
-            try:
-                rill_files = generate_rill_config(
-                    raw_db_path=raw_db,
-                    warehouse_db_path=config.local_db,
-                    schema_name=schema_name,
-                    source_name=source_name,
-                    output_dir=rill_dir,
-                )
-                all_generated.extend(rill_files)
-                if rill_files:
-                    success(f"Generated {len(rill_files)} Rill file(s) in {rill_dir}")
-                    for f in rill_files:
-                        info(f"  {f}")
-                else:
-                    warn("No Rill files generated (no eligible tables found).")
-            except Exception as exc:
-                error(f"Rill generation failed: {exc}")
-                raise typer.Exit(1) from exc
+            all_generated.extend(rill_files)
+            if rill_files:
+                success(f"Generated {len(rill_files)} Rill file(s) in {rill_dir}")
+                for f in rill_files:
+                    info(f"  {f}")
+            else:
+                warn("No Rill files generated (no eligible tables found).")
+        except Exception as exc:
+            error(f"Rill generation failed: {exc}")
+            raise typer.Exit(1) from exc
     else:
         info("Skipping Rill dashboard generation (pass --rill to enable)")
 

@@ -65,3 +65,8 @@ logs/
 .claude/worktrees/
 
 gha-creds-*.json
+
+# Per-project configs scaffolded by `tycoon init` / Recce
+# (this is the CLI source repo, not a tycoon project — keep these out)
+/tycoon.yml
+/recce.yml

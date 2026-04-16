@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from tycoon.config import config
-from tycoon.project import BITool, IngestionTool, OrchestratorTool, WarehouseType
+from tycoon.project import BITool, IngestionTool, OrchestratorTool, TransformationTool, WarehouseType
 from tycoon.utils.console import error, header, info, success, warn
 
 console = Console()
@@ -35,19 +35,35 @@ def _check_tycoon_yml():
 
 
 def _check_dbt_project():
-    """Check if the dbt project exists and is configured correctly."""
+    """Check if the dbt project exists, or report intentional skip."""
+    project = config.project
+    if project and project.stack.transformation == TransformationTool.none:
+        info("dbt: skipped by choice (stack.transformation = none).")
+        return
+
     if config.dbt_project_dir.exists() and (config.dbt_project_dir / "dbt_project.yml").exists():
         success("dbt project found.")
     else:
-        warn("dbt project not found. It will be created when you run `tycoon data analyze`.")
+        warn(
+            "dbt project not found. Run `tycoon init` to scaffold one, "
+            "or point `dbt_project_dir` in tycoon.yml at an existing project."
+        )
 
 
 def _check_rill_project():
-    """Check if the rill project exists."""
+    """Check if the rill project exists, or report intentional skip."""
+    project = config.project
+    if project and project.stack.bi != BITool.rill:
+        if project.stack.bi == BITool.none:
+            info("Rill/BI: skipped by choice (stack.bi = none).")
+        else:
+            info(f"BI is {project.stack.bi.value} (not Rill); skipping Rill checks.")
+        return
+
     if config.rill_dir.exists():
         success("Rill project found.")
     else:
-        warn("Rill project not found. `tycoon data analyze` will create it.")
+        warn("Rill project not found. `tycoon data analyze --rill` will create it.")
 
 
 def _check_stack_config() -> None:
@@ -77,7 +93,9 @@ def _check_stack_config() -> None:
         else:
             success("BigQuery credentials found.")
 
-    if not stack.ingestion_managed:
+    if stack.ingestion == IngestionTool.none:
+        info("Ingestion: skipped by choice (stack.ingestion = none).")
+    elif not stack.ingestion_managed:
         info(f"Ingestion is managed externally by {stack.ingestion.value}. Skipping ingestion checks.")
     elif stack.ingestion == IngestionTool.dlt:
         try:
@@ -94,15 +112,17 @@ def _check_stack_config() -> None:
     elif not stack.bi_managed and stack.bi != BITool.none:
         info(f"BI is managed externally by {stack.bi.value}. Skipping Rill checks.")
 
-    if stack.orchestrator == OrchestratorTool.dagster and stack.orchestrator_managed:
+    if stack.orchestrator == OrchestratorTool.none:
+        info("Orchestrator: skipped by choice (stack.orchestrator = none).")
+    elif stack.orchestrator == OrchestratorTool.dagster and stack.orchestrator_managed:
         if shutil.which("dagster"):
             success("Dagster is installed.")
         else:
             warn("Dagster not found. Run: pip install dagster dagster-webserver")
-    elif not stack.orchestrator_managed and stack.orchestrator != OrchestratorTool.none:
+    elif not stack.orchestrator_managed:
         info(f"Orchestration is managed externally by {stack.orchestrator.value}.")
 
-    if not stack.transformation_managed:
+    if stack.transformation == TransformationTool.dbt and not stack.transformation_managed:
         from pathlib import Path
         dbt_dir = Path(project.dbt_project_dir)
         if not dbt_dir.is_absolute():

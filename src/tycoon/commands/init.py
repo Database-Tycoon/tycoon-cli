@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
 
-from tycoon.project import BITool, IngestionTool, OrchestratorTool, StackConfig, WarehouseType
+from tycoon.project import (
+    BITool,
+    IngestionTool,
+    OrchestratorTool,
+    StackConfig,
+    TransformationTool,
+    WarehouseType,
+)
 from tycoon.scaffolding.templates import (
     list_templates,
     scaffold_blank_project,
@@ -32,206 +40,316 @@ def _prompt_choice(prompt: str, options: list[str]) -> int:
         warn(f"Please enter a number between 1 and {len(options)}.")
 
 
-def _detect_existing(target: Path) -> dict:
-    """Scan the working directory for signs of an existing pipeline."""
-    found = {}
+@dataclass
+class DetectedItem:
+    """An auto-detected stack component on disk."""
+
+    path: Path
+    kind: str  # "inline" (inside target) | "sibling" (sibling of target)
+
+
+@dataclass
+class DetectionResults:
+    """Structured output of `_detect_existing`."""
+
+    dbt: list[DetectedItem] = field(default_factory=list)
+    rill: list[DetectedItem] = field(default_factory=list)
+    warehouse: list[DetectedItem] = field(default_factory=list)
+
+    def has_any(self) -> bool:
+        return bool(self.dbt or self.rill or self.warehouse)
+
+
+# Canonical inline subdirs to probe
+_DBT_INLINE_DIRS = ("dbt_project", "dbt", "transformation")
+_RILL_INLINE_DIRS = ("rill", "dashboards")
+
+
+def _detect_existing(target: Path) -> DetectionResults:
+    """Scan the target directory (and its siblings) for existing stack components.
+
+    Looks for:
+      - dbt: ``<target>/<subdir>/dbt_project.yml`` for canonical subdirs, plus
+        ``dbt_project.yml`` in the target root, and any sibling directory of
+        ``target`` that contains a ``dbt_project.yml``.
+      - rill: ``<target>/<subdir>/rill.yaml`` and sibling dirs.
+      - warehouse: any ``<target>/data/*.duckdb`` that doesn't look like a raw
+        ingestion DB (names starting with ``raw_`` or ending in ``_raw``).
+    """
+    results = DetectionResults()
+
+    # dbt — target root (rare but possible)
     if (target / "dbt_project.yml").exists():
-        found["dbt_project"] = str(target / "dbt_project.yml")
-    if (target / "profiles.yml").exists():
-        found["profiles"] = str(target / "profiles.yml")
-    duckdb_files = list(target.glob("**/*.duckdb")) + list((target / "data").glob("*.duckdb") if (target / "data").exists() else [])
-    if duckdb_files:
-        found["duckdb"] = str(duckdb_files[0])
-    return found
+        results.dbt.append(DetectedItem(path=target, kind="inline"))
+
+    # dbt — canonical inline subdirs
+    for sub in _DBT_INLINE_DIRS:
+        candidate = target / sub
+        if (candidate / "dbt_project.yml").exists():
+            results.dbt.append(DetectedItem(path=candidate, kind="inline"))
+
+    # rill — canonical inline subdirs
+    for sub in _RILL_INLINE_DIRS:
+        candidate = target / sub
+        if (candidate / "rill.yaml").exists():
+            results.rill.append(DetectedItem(path=candidate, kind="inline"))
+
+    # warehouse — data/*.duckdb (excluding files that look like raw ingestion DBs)
+    data_dir = target / "data"
+    if data_dir.exists():
+        for db_file in sorted(data_dir.glob("*.duckdb")):
+            name = db_file.stem
+            if name.startswith("raw_") or name.endswith("_raw") or name == "raw":
+                continue
+            results.warehouse.append(DetectedItem(path=db_file, kind="inline"))
+
+    # Siblings — walk one level up, check dirs that look relevant
+    parent = target.parent
+    if parent.exists() and parent != target:
+        for sibling in sorted(parent.iterdir()):
+            if not sibling.is_dir() or sibling == target or sibling.name.startswith("."):
+                continue
+            if (sibling / "dbt_project.yml").exists():
+                results.dbt.append(DetectedItem(path=sibling, kind="sibling"))
+            if (sibling / "rill.yaml").exists():
+                results.rill.append(DetectedItem(path=sibling, kind="sibling"))
+
+    return results
 
 
-def _run_wizard(target: Path, project_name: str) -> tuple[StackConfig, str | None, str | None]:
-    """Run the interactive setup questionnaire.
+@dataclass
+class WizardResult:
+    """Output of the init wizard."""
 
-    Returns (stack, existing_dbt_path, existing_warehouse_path).
+    stack: StackConfig
+    dbt_path: str | None = None  # where dbt project lives (None => skipped)
+    rill_path: str | None = None  # where Rill project lives (None => skipped)
+    warehouse_path: str | None = None  # DuckDB path or cloud conn string
+
+
+def _print_section(title: str) -> None:
+    console.print()
+    console.print(f"[bold cyan]── {title} ──────────────────[/bold cyan]")
+
+
+def _clone_repo(url: str, dest: Path) -> bool:
+    """git clone <url> into <dest>. Returns True on success."""
+    import subprocess
+
+    if dest.exists():
+        warn(f"{dest} already exists; leaving it alone.")
+        return True
+    try:
+        subprocess.run(["git", "clone", url, str(dest)], check=True)
+        success(f"Cloned into {dest}")
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        error(f"git clone failed: {exc}")
+        return False
+
+
+def _prompt_register_project(component: str, default_sibling: Path) -> str | None:
+    """Shared sub-flow for "register existing" — returns absolute path string or None on failure."""
+    raw = typer.prompt(
+        f"Local path or GitHub URL for your {component} project",
+        default="",
+    ).strip()
+    if not raw:
+        warn("No path provided; treating this component as skipped.")
+        return None
+
+    if raw.startswith(("http://", "https://", "git@")):
+        clone_here = typer.confirm(
+            f"Clone into {default_sibling}?",
+            default=True,
+        )
+        dest = default_sibling if clone_here else Path(
+            typer.prompt(f"Where should the {component} project be cloned?", default=str(default_sibling))
+        ).expanduser().resolve()
+        if not _clone_repo(raw, dest):
+            return None
+        return str(dest)
+
+    path = Path(raw).expanduser().resolve()
+    if not path.exists():
+        warn(f"Path {path} does not exist; treating this component as skipped.")
+        return None
+    return str(path)
+
+
+def _prompt_ingestion() -> tuple[IngestionTool, bool]:
+    _print_section("Ingestion")
+    console.print("How do you load data into your warehouse?")
+    choice = _prompt_choice("Choice", [
+        "dlt — tycoon manages it (scaffolds and runs dlt pipelines)",
+        "External (Airbyte / Fivetran / Meltano / custom) — tycoon records only",
+        "Skip — no ingestion configured",
+    ])
+    if choice == 1:
+        return IngestionTool.dlt, True
+    if choice == 2:
+        sub = _prompt_choice("Which external tool?", ["Airbyte", "Fivetran", "Meltano", "Custom"])
+        tool = [IngestionTool.airbyte, IngestionTool.fivetran, IngestionTool.meltano, IngestionTool.none][sub - 1]
+        # "Custom" falls through to IngestionTool.none since we don't have a generic 'external' enum value,
+        # but managed=False still signals tycoon won't run it.
+        return tool, False
+    return IngestionTool.none, False
+
+
+def _prompt_warehouse(project_name: str) -> tuple[WarehouseType, str]:
+    _print_section("Warehouse")
+    console.print("Where should your data live?")
+    choice = _prompt_choice("Choice", [
+        "Local DuckDB at ./data/warehouse.duckdb  [recommended]",
+        "Use an existing DuckDB file (provide path)",
+        "Cloud — MotherDuck / Snowflake / BigQuery",
+    ])
+    if choice == 1:
+        return WarehouseType.duckdb, "data/warehouse.duckdb"
+    if choice == 2:
+        raw = typer.prompt("Path to your DuckDB file", default="data/warehouse.duckdb")
+        return WarehouseType.duckdb, raw
+    # Cloud
+    cloud_sub = _prompt_choice("Cloud warehouse", ["MotherDuck", "Snowflake", "BigQuery"])
+    if cloud_sub == 1:
+        md_name = typer.prompt("MotherDuck database name", default=project_name.replace("-", "_"))
+        return WarehouseType.motherduck, f"md:{md_name}"
+    if cloud_sub == 2:
+        info("Snowflake: tycoon will write your dbt profile; query/schema commands are DuckDB-only for now.")
+        return WarehouseType.snowflake, ""
+    info("BigQuery: tycoon will write your dbt profile; query/schema commands are DuckDB-only for now.")
+    return WarehouseType.bigquery, ""
+
+
+def _prompt_dbt(
+    target: Path,
+    project_name: str,
+    detected: DetectionResults,
+) -> tuple[TransformationTool, bool, str | None]:
+    """Returns (tool, managed, path)."""
+    _print_section("dbt (transformation)")
+    console.print("How should tycoon handle dbt?")
+
+    options: list[str] = []
+    detected_paths: list[Path] = [d.path for d in detected.dbt]
+    for item in detected.dbt:
+        options.append(f"Use detected project at {item.path} ({item.kind})")
+
+    default_new = target.parent / f"{project_name}-dbt"
+    options.append(f"Create new dbt project at {default_new} (sibling repo)")
+    options.append("Register existing project (local path or GitHub URL)")
+    options.append("Skip — `tycoon data transform` becomes a no-op")
+
+    choice = _prompt_choice("Choice", options)
+
+    # Detected
+    if choice <= len(detected_paths):
+        return TransformationTool.dbt, False, str(detected_paths[choice - 1])
+    # Create new (sibling)
+    if choice == len(detected_paths) + 1:
+        return TransformationTool.dbt, True, str(default_new)
+    # Register existing
+    if choice == len(detected_paths) + 2:
+        registered = _prompt_register_project("dbt", default_new)
+        if registered:
+            return TransformationTool.dbt, False, registered
+        return TransformationTool.none, False, None
+    # Skip
+    return TransformationTool.none, False, None
+
+
+def _prompt_rill(
+    target: Path,
+    detected: DetectionResults,
+) -> tuple[BITool, bool, str | None]:
+    """Returns (tool, managed, path)."""
+    _print_section("Rill (BI)")
+    console.print("How should tycoon handle Rill?")
+
+    options: list[str] = []
+    detected_paths: list[Path] = [d.path for d in detected.rill]
+    for item in detected.rill:
+        options.append(f"Use detected project at {item.path} ({item.kind})")
+
+    default_new = target / "rill"
+    options.append(f"Create new inline at {default_new}")
+    options.append("Register existing project (local path)")
+    options.append("Skip — `tycoon data analyze --rill` becomes a no-op")
+
+    choice = _prompt_choice("Choice", options)
+
+    # Detected
+    if choice <= len(detected_paths):
+        return BITool.rill, False, str(detected_paths[choice - 1])
+    # Create new (inline)
+    if choice == len(detected_paths) + 1:
+        return BITool.rill, True, str(default_new)
+    # Register
+    if choice == len(detected_paths) + 2:
+        registered = _prompt_register_project("Rill", default_new)
+        if registered:
+            return BITool.rill, False, registered
+        return BITool.none, False, None
+    # Skip
+    return BITool.none, False, None
+
+
+def _prompt_orchestrator() -> tuple[OrchestratorTool, bool]:
+    _print_section("Orchestrator")
+    console.print("How should tycoon handle scheduling?")
+    choice = _prompt_choice("Choice", [
+        "Dagster — tycoon manages it (runs `dagster dev`, auto-generates assets)",
+        "External (Airflow / Prefect / Dagster Cloud / other) — tycoon records only",
+        "Skip — I'll run pipelines manually via tycoon CLI",
+    ])
+    if choice == 1:
+        return OrchestratorTool.dagster, True
+    if choice == 2:
+        sub = _prompt_choice("Which external orchestrator?", ["Airflow", "Prefect", "Other"])
+        tool = [OrchestratorTool.airflow, OrchestratorTool.prefect, OrchestratorTool.other][sub - 1]
+        return tool, False
+    return OrchestratorTool.none, False
+
+
+def _run_wizard(target: Path, project_name: str) -> WizardResult:
+    """Run the interactive setup questionnaire, per-component.
+
+    Order follows the data flow: ingestion → warehouse → dbt → rill → orchestrator.
     """
     detected = _detect_existing(target)
-    if detected:
-        info("Detected existing files:")
-        for key, path in detected.items():
-            console.print(f"  [dim]{key}:[/dim] {path}")
+    if detected.has_any():
+        info("Detected existing components:")
+        for item in detected.dbt:
+            console.print(f"  [dim]dbt   [{item.kind}]:[/dim] {item.path}")
+        for item in detected.rill:
+            console.print(f"  [dim]rill  [{item.kind}]:[/dim] {item.path}")
+        for item in detected.warehouse:
+            console.print(f"  [dim]warehouse [{item.kind}]:[/dim] {item.path}")
         console.print()
 
-    has_pipeline = typer.confirm("Do you already have a data pipeline?", default=False)
+    ingestion, ingestion_managed = _prompt_ingestion()
+    warehouse, warehouse_path = _prompt_warehouse(project_name)
+    transformation, transformation_managed, dbt_path = _prompt_dbt(target, project_name, detected)
+    bi, bi_managed, rill_path = _prompt_rill(target, detected)
+    orchestrator, orchestrator_managed = _prompt_orchestrator()
 
-    existing_dbt_path: str | None = None
-    existing_warehouse_path: str | None = None
-
-    if has_pipeline:
-        # --- Ingestion ---
-        console.print("\nWhat do you use for ingestion?")
-        ingestion_choice = _prompt_choice("Choice", [
-            "dlt (tycoon will manage it)",
-            "Airbyte / Fivetran / Meltano (external — tycoon won't run it)",
-            "None / I just have data I want to query",
-        ])
-        if ingestion_choice == 1:
-            ingestion = IngestionTool.dlt
-            ingestion_managed = True
-        elif ingestion_choice == 2:
-            console.print("\nWhich external tool?")
-            ext_choice = _prompt_choice("Choice", ["Airbyte", "Fivetran", "Meltano"])
-            ingestion = [IngestionTool.airbyte, IngestionTool.fivetran, IngestionTool.meltano][ext_choice - 1]
-            ingestion_managed = False
-        else:
-            ingestion = IngestionTool.none
-            ingestion_managed = False
-
-        # --- Warehouse ---
-        console.print("\nWhere is your data?")
-        wh_choice = _prompt_choice("Choice", [
-            "Local DuckDB file",
-            "MotherDuck (cloud DuckDB)",
-            "Snowflake",
-            "BigQuery",
-            "Other",
-        ])
-        wh_map = [
-            WarehouseType.duckdb,
-            WarehouseType.motherduck,
-            WarehouseType.snowflake,
-            WarehouseType.bigquery,
-            WarehouseType.other,
-        ]
-        warehouse = wh_map[wh_choice - 1]
-
-        if warehouse == WarehouseType.duckdb:
-            default_path = detected.get("duckdb", "data/warehouse.duckdb")
-            existing_warehouse_path = typer.prompt("Path to your DuckDB file", default=default_path)
-        elif warehouse == WarehouseType.motherduck:
-            md_name = typer.prompt("MotherDuck database name", default=project_name.replace("-", "_"))
-            existing_warehouse_path = f"md:{md_name}"
-        elif warehouse in (WarehouseType.snowflake, WarehouseType.bigquery, WarehouseType.redshift):
-            info(f"Native {warehouse.value.title()} querying via `tycoon data db` is coming in 0.8.")
-            info("tycoon will record your warehouse type and manage dbt against it using your profiles.yml.")
-
-        # --- dbt ---
-        console.print()
-        has_dbt = typer.confirm("Do you have an existing dbt project?", default=bool(detected.get("dbt_project")))
-        if has_dbt:
-            default_dbt = detected.get("dbt_project", "")
-            if default_dbt.endswith("dbt_project.yml"):
-                default_dbt = str(Path(default_dbt).parent)
-            existing_dbt_path = typer.prompt("Path to your dbt project directory", default=default_dbt or str(target.parent / f"{project_name}-dbt"))
-            transformation_managed = False
-        else:
-            create_dbt = typer.confirm("Would you like tycoon to scaffold a dbt project?", default=True)
-            if create_dbt:
-                default_new_dbt = str(target.parent / f"{project_name}-dbt")
-                existing_dbt_path = typer.prompt("Where should the dbt project live?", default=default_new_dbt)
-                transformation_managed = True
-            else:
-                existing_dbt_path = None
-                transformation_managed = False
-
-        # --- BI Tool ---
-        console.print()
-        console.print("Do you have a BI / dashboard tool?")
-        bi_choice = _prompt_choice("Choice", [
-            "Rill (tycoon will manage it)",
-            "Metabase / Looker / Tableau / other (external)",
-            "None yet",
-        ])
-        if bi_choice == 1:
-            bi = BITool.rill
-            bi_managed = True
-        elif bi_choice == 2:
-            console.print()
-            console.print("Which BI tool?")
-            bi_ext_choice = _prompt_choice("Choice", ["Metabase", "Looker", "Tableau", "Other"])
-            bi = [BITool.metabase, BITool.looker, BITool.tableau, BITool.other][bi_ext_choice - 1]
-            bi_managed = False
-        else:
-            bi = BITool.none
-            bi_managed = False
-
-        # --- Orchestrator ---
-        console.print()
-        console.print("Do you have an orchestrator?")
-        orch_choice = _prompt_choice("Choice", [
-            "Dagster (tycoon will manage it)",
-            "Airflow / Prefect / other (external)",
-            "None / I'll run pipelines manually",
-        ])
-        if orch_choice == 1:
-            orchestrator = OrchestratorTool.dagster
-            orchestrator_managed = True
-        elif orch_choice == 2:
-            console.print()
-            console.print("Which orchestrator?")
-            orch_ext_choice = _prompt_choice("Choice", ["Airflow", "Prefect", "Other"])
-            orchestrator = [OrchestratorTool.airflow, OrchestratorTool.prefect, OrchestratorTool.other][orch_ext_choice - 1]
-            orchestrator_managed = False
-        else:
-            orchestrator = OrchestratorTool.none
-            orchestrator_managed = False
-
-        stack = StackConfig(
-            ingestion=ingestion,
-            ingestion_managed=ingestion_managed,
-            warehouse=warehouse,
-            transformation_managed=transformation_managed,
-            bi=bi,
-            bi_managed=bi_managed,
-            orchestrator=orchestrator,
-            orchestrator_managed=orchestrator_managed,
-        )
-
-    else:
-        # Greenfield — pick warehouse
-        console.print("\nWhere would you like to store your data?")
-        wh_choice = _prompt_choice("Choice", [
-            "Local DuckDB (zero-config)",
-            "MotherDuck (cloud DuckDB — requires MOTHERDUCK_TOKEN)",
-        ])
-        if wh_choice == 2:
-            md_name = typer.prompt("MotherDuck database name", default=project_name.replace("-", "_"))
-            existing_warehouse_path = f"md:{md_name}"
-            warehouse = WarehouseType.motherduck
-        else:
-            warehouse = WarehouseType.duckdb
-
-        # dbt location
-        console.print()
-        default_new_dbt = str(target.parent / f"{project_name}-dbt")
-        existing_dbt_path = typer.prompt("Where should the dbt project live?", default=default_new_dbt)
-
-        # BI tool
-        console.print("\nWhich BI / dashboard tool would you like to use?")
-        bi_choice = _prompt_choice("Choice", [
-            "Rill (tycoon will manage it — recommended)",
-            "I'll connect my own BI tool",
-            "None / skip",
-        ])
-        bi = BITool.rill if bi_choice == 1 else BITool.none
-        bi_managed = bi_choice == 1
-
-        # Orchestrator
-        console.print("\nHow would you like to run your pipelines?")
-        orch_choice = _prompt_choice("Choice", [
-            "Dagster (tycoon will manage it — recommended)",
-            "Manually via tycoon CLI commands",
-        ])
-        orchestrator = OrchestratorTool.dagster if orch_choice == 1 else OrchestratorTool.none
-        orchestrator_managed = orch_choice == 1
-
-        stack = StackConfig(
-            ingestion=IngestionTool.dlt,
-            ingestion_managed=True,
-            warehouse=warehouse,
-            transformation_managed=True,
-            bi=bi,
-            bi_managed=bi_managed,
-            orchestrator=orchestrator,
-            orchestrator_managed=orchestrator_managed,
-        )
-
-    return stack, existing_dbt_path, existing_warehouse_path
+    stack = StackConfig(
+        ingestion=ingestion,
+        ingestion_managed=ingestion_managed,
+        warehouse=warehouse,
+        transformation=transformation,
+        transformation_managed=transformation_managed,
+        bi=bi,
+        bi_managed=bi_managed,
+        orchestrator=orchestrator,
+        orchestrator_managed=orchestrator_managed,
+    )
+    return WizardResult(
+        stack=stack,
+        dbt_path=dbt_path,
+        rill_path=rill_path,
+        warehouse_path=warehouse_path,
+    )
 
 
 def _mode_next_steps(stack: StackConfig, existing_dbt_path: str | None) -> None:
@@ -319,15 +437,16 @@ def init_cmd(
             ("tycoon ask init", "set up the AI analytics agent"),
         )
     else:
-        stack, existing_dbt_path, existing_warehouse_path = _run_wizard(target, project_name)
+        result = _run_wizard(target, project_name)
         console.print()
         scaffold_blank_project(
             target,
             project_name,
-            stack=stack,
-            existing_dbt_path=existing_dbt_path,
-            existing_warehouse_path=existing_warehouse_path,
+            stack=result.stack,
+            existing_dbt_path=result.dbt_path,
+            existing_warehouse_path=result.warehouse_path,
+            existing_rill_path=result.rill_path,
         )
         console.print()
         success(f"Project '{project_name}' initialized successfully!")
-        _mode_next_steps(stack, existing_dbt_path)
+        _mode_next_steps(result.stack, result.dbt_path)
