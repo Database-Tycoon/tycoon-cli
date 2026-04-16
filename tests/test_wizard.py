@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from tycoon.cli import app
-from tycoon.commands.init import DetectionResults, _detect_existing
+from tycoon.commands.init import (
+    DetectionResults,
+    _detect_existing,
+    _extract_dbt_duckdb_path,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +187,80 @@ class TestWizardDetection:
         # Detected path should be recorded; transformation_managed should be False
         # because we're using an existing project rather than scaffolding.
         assert data["stack"]["transformation_managed"] is False
+
+
+class TestExtractDbtDuckdbPath:
+    """_extract_dbt_duckdb_path reads a dbt project's active profile and
+    returns the DuckDB path (or None for non-DuckDB / missing configs)."""
+
+    def _make_dbt_project(self, dbt_dir: Path, profile: str, duckdb_path: str) -> None:
+        dbt_dir.mkdir(parents=True, exist_ok=True)
+        (dbt_dir / "dbt_project.yml").write_text(
+            yaml.dump({"name": profile, "profile": profile, "config-version": 2})
+        )
+        (dbt_dir / "profiles.yml").write_text(
+            yaml.dump(
+                {
+                    profile: {
+                        "target": "dev",
+                        "outputs": {"dev": {"type": "duckdb", "path": duckdb_path}},
+                    }
+                }
+            )
+        )
+
+    def test_returns_absolute_duckdb_path(self, tmp_path: Path) -> None:
+        dbt_dir = tmp_path / "mydbt"
+        wh = tmp_path / "warehouse.duckdb"
+        self._make_dbt_project(dbt_dir, "mine", str(wh))
+        result = _extract_dbt_duckdb_path(dbt_dir)
+        assert result == str(wh)
+
+    def test_resolves_relative_path_against_dbt_dir(self, tmp_path: Path) -> None:
+        dbt_dir = tmp_path / "mydbt"
+        self._make_dbt_project(dbt_dir, "mine", "../warehouse.duckdb")
+        result = _extract_dbt_duckdb_path(dbt_dir)
+        # dbt_dir/../warehouse.duckdb resolves to tmp_path/warehouse.duckdb
+        assert result == str((tmp_path / "warehouse.duckdb").resolve())
+
+    def test_returns_none_for_non_duckdb_target(self, tmp_path: Path) -> None:
+        dbt_dir = tmp_path / "mydbt"
+        dbt_dir.mkdir()
+        (dbt_dir / "dbt_project.yml").write_text(
+            yaml.dump({"name": "mine", "profile": "mine", "config-version": 2})
+        )
+        (dbt_dir / "profiles.yml").write_text(
+            yaml.dump(
+                {
+                    "mine": {
+                        "target": "prod",
+                        "outputs": {"prod": {"type": "snowflake", "account": "x"}},
+                    }
+                }
+            )
+        )
+        assert _extract_dbt_duckdb_path(dbt_dir) is None
+
+    def test_returns_none_when_profiles_missing(self, tmp_path: Path) -> None:
+        dbt_dir = tmp_path / "mydbt"
+        dbt_dir.mkdir()
+        (dbt_dir / "dbt_project.yml").write_text(
+            yaml.dump({"name": "mine", "profile": "mine"})
+        )
+        # Don't write profiles.yml; and ensure ~/.dbt/profiles.yml doesn't exist here
+        # (test may spuriously pass if user has one — but that's orthogonal)
+        # We just assert *this* dir's check returns None given no local profiles.yml.
+        # If the user has a matching ~/.dbt profile, the helper may still return
+        # a value — that's by design.
+        home_profile = Path.home() / ".dbt" / "profiles.yml"
+        if home_profile.exists():
+            pytest.skip("User has ~/.dbt/profiles.yml; can't assert None here")
+        assert _extract_dbt_duckdb_path(dbt_dir) is None
+
+    def test_returns_none_when_dbt_project_yml_missing(self, tmp_path: Path) -> None:
+        dbt_dir = tmp_path / "empty"
+        dbt_dir.mkdir()
+        assert _extract_dbt_duckdb_path(dbt_dir) is None
 
 
 class TestWizardSkipSemantics:

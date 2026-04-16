@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
+import yaml
 
 from tycoon.project import (
     BITool,
@@ -294,6 +295,85 @@ def _prompt_rill(
     return BITool.none, False, None
 
 
+def _extract_dbt_duckdb_path(dbt_project_dir: Path) -> str | None:
+    """Extract the DuckDB path from a dbt project's active profile.
+
+    Returns an absolute path string, or None if:
+    - ``dbt_project.yml`` missing or unreadable
+    - no ``profiles.yml`` in the project dir or ``~/.dbt/``
+    - the target's ``type`` is not ``duckdb``
+    """
+    try:
+        project_yml = yaml.safe_load((dbt_project_dir / "dbt_project.yml").read_text())
+    except (OSError, yaml.YAMLError):
+        return None
+    if not isinstance(project_yml, dict):
+        return None
+    profile_name = project_yml.get("profile")
+    if not profile_name:
+        return None
+
+    for candidate in (
+        dbt_project_dir / "profiles.yml",
+        Path.home() / ".dbt" / "profiles.yml",
+    ):
+        if not candidate.exists():
+            continue
+        try:
+            profiles = yaml.safe_load(candidate.read_text())
+        except (OSError, yaml.YAMLError):
+            continue
+        if not isinstance(profiles, dict):
+            continue
+        profile = profiles.get(profile_name)
+        if not isinstance(profile, dict):
+            continue
+        target_name = profile.get("target", "dev")
+        target = profile.get("outputs", {}).get(target_name, {})
+        if not isinstance(target, dict) or target.get("type") != "duckdb":
+            return None
+        path = target.get("path")
+        if not path:
+            return None
+        abs_path = Path(path)
+        if not abs_path.is_absolute():
+            abs_path = (dbt_project_dir / abs_path).resolve()
+        return str(abs_path)
+    return None
+
+
+def _maybe_align_warehouse(wizard_warehouse_path: str, dbt_project_dir: Path) -> str:
+    """Warn if the dbt project targets a different DuckDB than the wizard's
+    warehouse choice. Prompt to adopt the dbt path."""
+    dbt_path = _extract_dbt_duckdb_path(dbt_project_dir)
+    if not dbt_path:
+        return wizard_warehouse_path
+
+    user_abs = Path(wizard_warehouse_path).expanduser()
+    if not user_abs.is_absolute():
+        user_abs = (Path.cwd() / user_abs).resolve()
+    else:
+        user_abs = user_abs.resolve()
+
+    if str(user_abs) == dbt_path:
+        return wizard_warehouse_path
+
+    console.print()
+    warn(
+        f"Your dbt project targets [bold]{dbt_path}[/bold], "
+        f"but you chose [bold]{wizard_warehouse_path}[/bold] for the warehouse."
+    )
+    info("If these diverge, dbt writes to one file and `tycoon data query` reads from another.")
+    adopt = typer.confirm(
+        f"Use the dbt project's path ({dbt_path}) as tycoon's warehouse?",
+        default=True,
+    )
+    if adopt:
+        success(f"Adopted {dbt_path} as the warehouse.")
+        return dbt_path
+    return wizard_warehouse_path
+
+
 def _prompt_orchestrator() -> tuple[OrchestratorTool, bool]:
     _print_section("Orchestrator")
     console.print("How should tycoon handle scheduling?")
@@ -330,6 +410,17 @@ def _run_wizard(target: Path, project_name: str) -> WizardResult:
     ingestion, ingestion_managed = _prompt_ingestion()
     warehouse, warehouse_path = _prompt_warehouse(project_name)
     transformation, transformation_managed, dbt_path = _prompt_dbt(target, project_name, detected)
+
+    # Alignment check: if dbt project wasn't just scaffolded by us, see if it
+    # targets a different DuckDB than the user chose for the warehouse.
+    if (
+        transformation == TransformationTool.dbt
+        and not transformation_managed
+        and dbt_path
+        and warehouse == WarehouseType.duckdb
+    ):
+        warehouse_path = _maybe_align_warehouse(warehouse_path, Path(dbt_path))
+
     bi, bi_managed, rill_path = _prompt_rill(target, detected)
     orchestrator, orchestrator_managed = _prompt_orchestrator()
 

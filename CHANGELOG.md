@@ -20,6 +20,9 @@ All notable changes to this project will be documented in this file. The format 
 - Option to register an existing dbt project by local path or GitHub URL during `tycoon init`; remote URLs are cloned into a sibling directory.
 - `TransformationTool` enum and `stack.transformation` field in `tycoon.yml` so "skip dbt" is a first-class, recorded choice (not an inferred state).
 - `tycoon doctor` now reports "skipped by choice" for components the user intentionally turned off during init, instead of warning about them.
+- **`tycoon register dbt <path-or-url>`** and **`tycoon register rill <path-or-url>`** — attach an existing dbt or Rill project to a tycoon.yml without re-running `tycoon init`. Supports local paths and GitHub URLs (with clone-on-register). Prompts before overwriting an already-registered component.
+- **Warehouse-alignment check**: when a registered dbt project targets a different DuckDB than tycoon's warehouse (via its `profiles.yml`), the wizard / `tycoon register dbt` warns and offers to adopt the dbt path — preventing the "dbt writes here, `tycoon data query` reads there" silent-divergence footgun.
+- Template smoke tests in the pytest suite: init + doctor validate cleanly for all four built-in templates (`csv-import`, `github-analytics`, `nyc-transit`, `weather-station`).
 
 ### Fixed
 
