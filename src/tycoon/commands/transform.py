@@ -44,11 +44,18 @@ def _run_dbt(
     full_refresh: bool,
     extra: list[str] | None = None,
 ) -> int:
-    """Invoke dbt as a subprocess from the configured dbt project directory."""
+    """Invoke dbt as a subprocess from the configured dbt project directory.
+
+    Only passes ``--profiles-dir`` when the project has a co-located
+    ``profiles.yml``; otherwise dbt falls back to ``~/.dbt/profiles.yml``,
+    which is typical for externally-registered projects.
+    """
     dbt = _dbt_executable()
     project_dir = config.dbt_project_dir
 
-    cmd = [dbt, dbt_cmd, "--target", target, "--profiles-dir", str(project_dir)]
+    cmd = [dbt, dbt_cmd, "--target", target]
+    if (project_dir / "profiles.yml").exists():
+        cmd += ["--profiles-dir", str(project_dir)]
     if select:
         cmd += ["--select", select]
     if full_refresh:
@@ -158,7 +165,9 @@ def docs(
 
     dbt = _dbt_executable()
     project_dir = config.dbt_project_dir
-    cmd = [dbt, "docs", "serve", "--port", str(port), "--profiles-dir", str(project_dir)]
+    cmd = [dbt, "docs", "serve", "--port", str(port)]
+    if (project_dir / "profiles.yml").exists():
+        cmd += ["--profiles-dir", str(project_dir)]
 
     console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")
     console.print(f"[bold green]dbt docs available at http://localhost:{port}[/bold green]")

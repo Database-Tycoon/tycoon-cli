@@ -88,14 +88,14 @@ class TestBlankScaffold:
 
     def test_blank_scaffold_via_cli(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        # init --name without --template runs the interactive wizard;
-        # supply input to answer the prompts (greenfield path)
+        # Per-component wizard: ingestion=dlt, warehouse=local, dbt=create,
+        # rill=create, orchestrator=dagster
         result = cli_runner.invoke(
             app,
             ["init", "--name", "my-project"],
-            input="n\n1\n\n1\n1\n",  # no pipeline, duckdb, default dbt path, Rill, Dagster
+            input="1\n1\n1\n1\n1\n",
         )
-        assert result.exit_code == 0
+        assert result.exit_code == 0, f"init failed: {result.stdout}"
         assert (tmp_path / "tycoon.yml").exists()
 
 

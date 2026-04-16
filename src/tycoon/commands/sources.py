@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
+import click
 import typer
 from rich.table import Table
 
@@ -424,7 +425,7 @@ def run_source(
             raise typer.Exit(1)
         source_name = typer.prompt(
             "Choose a source to ingest",
-            type=typer.Choice(list(sources.keys())),
+            type=click.Choice(list(sources.keys())),
             show_choices=True,
         )
 

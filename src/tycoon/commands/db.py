@@ -1,4 +1,4 @@
-"""tycoon db — database inspection, querying, and cleanup."""
+"""tycoon data query / schema / clean — database inspection and querying."""
 
 from __future__ import annotations
 
@@ -13,41 +13,105 @@ from tycoon.config import config
 from tycoon.utils.console import console, header, info, success, error, warn, status_table
 from tycoon.utils.duckdb_utils import db_file_size_mb, get_tables, get_row_count
 
-app = typer.Typer(
-    help="Database inspection, querying, and cleanup.",
-    no_args_is_help=True,
-)
+
+def _resolve_source_db(source_name: str) -> Path | None:
+    """Find the raw DuckDB file for a named source, or None if not found.
+
+    Priority:
+      1. ``config.raw_db``, if it contains the ``raw_<name>`` schema
+         (single-DB mode — current default for ``tycoon data sources run``).
+      2. ``data/raw_<name>.duckdb`` (canonical per-source filename).
+      3. Any other ``data/*.duckdb`` that contains the ``raw_<name>`` schema
+         (covers externally-loaded or alternatively-named files).
+    """
+    normalized = source_name.replace("-", "_")
+    source_schema = f"raw_{normalized}"
+
+    if config.raw_db.exists() and _has_schema(config.raw_db, source_schema):
+        return config.raw_db
+
+    per_source = config.data_dir / f"raw_{normalized}.duckdb"
+    if per_source.exists():
+        return per_source
+
+    if config.data_dir.exists():
+        skip = {config.raw_db.resolve(), per_source.resolve()}
+        for candidate in sorted(config.data_dir.glob("*.duckdb")):
+            if candidate.resolve() in skip:
+                continue
+            if _has_schema(candidate, source_schema):
+                return candidate
+
+    return None
+
+
+def _has_schema(db_path: Path, schema_name: str) -> bool:
+    """Return True if the DuckDB file contains the given schema."""
+    try:
+        con = duckdb.connect(str(db_path), read_only=True)
+        try:
+            schemas = [
+                r[0]
+                for r in con.execute(
+                    "SELECT DISTINCT schema_name FROM information_schema.schemata"
+                ).fetchall()
+            ]
+        finally:
+            con.close()
+    except duckdb.Error:
+        return False
+    return schema_name in schemas
 
 
 # ---------------------------------------------------------------------------
-# stats
+# schema (was: stats)
 # ---------------------------------------------------------------------------
 
 
-@app.command()
-def stats() -> None:
-    """Show database file sizes, table counts, and row counts."""
-    header("Database Statistics")
+def schema() -> None:
+    """Show database tables, row counts, and file sizes."""
+    header("Database Schema")
 
     rows: list[tuple[str, str, str]] = []
 
-    for db_path, label in [(config.raw_db, "Raw"), (config.local_db, "Local")]:
+    for db_path, label in [(config.raw_db, "Raw"), (config.local_db, "Warehouse")]:
         size = db_file_size_mb(db_path)
         if size is not None:
             rows.append((f"{label} database", "OK", f"{size:.1f} MB"))
             tables = get_tables(db_path)
-            rows.append((f"  Tables", "", f"{len(tables)}"))
-            for schema, table in tables:
-                count = get_row_count(db_path, schema, table)
+            rows.append(("  Tables", "", f"{len(tables)}"))
+            for s, table in tables:
+                count = get_row_count(db_path, s, table)
                 rows.append((
-                    f"  {schema}.{table}",
+                    f"  {s}.{table}",
                     "",
                     f"{count:,} rows" if count is not None else "empty",
                 ))
         else:
             rows.append((f"{label} database", "WARN", "not found"))
 
-    console.print(status_table(rows, title="Database Statistics"))
+    # Also scan for any other .duckdb files in the data directory
+    data_dir = config.data_dir
+    seen = {config.raw_db.resolve(), config.local_db.resolve()}
+    if data_dir.exists():
+        for db_file in sorted(data_dir.glob("*.duckdb")):
+            if db_file.resolve() in seen:
+                continue
+            seen.add(db_file.resolve())
+            size = db_file_size_mb(db_file)
+            if size is not None:
+                rows.append((db_file.name, "OK", f"{size:.1f} MB"))
+                tables = get_tables(db_file)
+                rows.append(("  Tables", "", f"{len(tables)}"))
+                for s, table in tables:
+                    count = get_row_count(db_file, s, table)
+                    rows.append((
+                        f"  {s}.{table}",
+                        "",
+                        f"{count:,} rows" if count is not None else "empty",
+                    ))
+
+    console.print(status_table(rows, title="Database Schema"))
 
 
 # ---------------------------------------------------------------------------
@@ -55,20 +119,42 @@ def stats() -> None:
 # ---------------------------------------------------------------------------
 
 
-@app.command()
 def query(
     sql: Annotated[str, typer.Argument(help="SQL query to execute.")],
     raw: Annotated[
         bool,
-        typer.Option("--raw", help="Query the raw database instead of local."),
+        typer.Option("--raw", help="Query the raw database instead of the warehouse."),
     ] = False,
+    source: Annotated[
+        str | None,
+        typer.Option("--source", "-s", help="Query a specific source's raw database (e.g. pokeapi)."),
+    ] = None,
+    db: Annotated[
+        Path | None,
+        typer.Option("--db", help="Path to a DuckDB file to query directly."),
+    ] = None,
 ) -> None:
-    """Run a read-only SQL query against the local (or raw) database."""
-    db_path = config.raw_db if raw else config.local_db
-    label = "raw" if raw else "local"
+    """Run a read-only SQL query against the warehouse, raw, or a source database."""
+    if db:
+        db_path = db
+        label = db_path.name
+    elif source:
+        resolved = _resolve_source_db(source)
+        if resolved is None:
+            error(f"No raw database found for source '{source}'.")
+            info(f"Run 'tycoon data sources run {source}' to ingest data first.")
+            raise typer.Exit(1)
+        db_path = resolved
+        label = f"raw ({source})"
+    elif raw:
+        db_path = config.raw_db
+        label = "raw"
+    else:
+        db_path = config.local_db
+        label = "warehouse"
 
     if not db_path.exists():
-        error(f"The {label} database does not exist at {db_path}")
+        error(f"Database not found at {db_path}")
         raise typer.Exit(1)
 
     try:
@@ -97,7 +183,6 @@ def query(
 # ---------------------------------------------------------------------------
 
 
-@app.command()
 def clean(
     raw: Annotated[
         bool,
@@ -152,8 +237,6 @@ def clean(
             wal_path.unlink()
 
     if all_:
-        # Clean up any other stale files in the data directory
-        # (only remove files, not subdirectories, to be safe)
         if config.data_dir.exists():
             for item in config.data_dir.iterdir():
                 if item.is_file() and item.suffix in {".duckdb", ".wal"}:

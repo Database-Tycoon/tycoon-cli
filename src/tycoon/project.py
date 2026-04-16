@@ -46,10 +46,16 @@ class OrchestratorTool(str, Enum):
     none = "none"
 
 
+class TransformationTool(str, Enum):
+    dbt = "dbt"
+    none = "none"
+
+
 class StackConfig(BaseModel):
     ingestion: IngestionTool = IngestionTool.dlt
     ingestion_managed: bool = True
     warehouse: WarehouseType = WarehouseType.duckdb
+    transformation: TransformationTool = TransformationTool.dbt
     transformation_managed: bool = True
     bi: BITool = BITool.rill
     bi_managed: bool = True

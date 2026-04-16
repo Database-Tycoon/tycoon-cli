@@ -16,7 +16,9 @@ def _register() -> None:
 
     app.add_typer(sources.app, name="sources")
     app.add_typer(transform.app, name="transform")
-    app.add_typer(db.app, name="db")
+    app.command(name="query")(db.query)
+    app.command(name="schema")(db.schema)
+    app.command(name="clean")(db.clean)
     app.command(name="analyze")(analyze_cmd)
     app.command(name="run-all")(run_all_cmd)
     app.command(name="status")(status_cmd)

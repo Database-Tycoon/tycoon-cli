@@ -103,19 +103,25 @@ def scaffold_blank_project(
     stack: StackConfig | None = None,
     existing_dbt_path: str | None = None,
     existing_warehouse_path: str | None = None,
+    existing_rill_path: str | None = None,
 ) -> None:
-    """Create a minimal tycoon project with an empty ``tycoon.yml``.
+    """Create a minimal tycoon project with a ``tycoon.yml`` and supporting dirs.
 
-    Creates:
-    - ``tycoon.yml`` with the given project name and database paths
-    - ``data/`` directory
-    - ``dbt_project/`` with minimal ``dbt_project.yml`` and ``profiles.yml``
-      (skipped when ``existing_dbt_path`` is provided)
-    - ``.gitignore``
+    Behavior flexes by ``stack`` settings:
+    - ``stack.transformation == none`` → don't scaffold or record dbt at all.
+    - ``stack.transformation == dbt`` + ``transformation_managed`` → scaffold
+      dbt project at ``existing_dbt_path`` (or target/dbt_project).
+    - ``stack.transformation == dbt`` + not managed → just record the path.
+    - ``stack.bi == rill`` + ``bi_managed`` → scaffold Rill dir.
+    - ``stack.bi == rill`` + not managed → record the path only.
+    - ``stack.bi == none`` → don't scaffold or record Rill.
     """
-    from tycoon.project import WarehouseType
+    from tycoon.project import BITool, TransformationTool, WarehouseType
 
-    # Resolve database paths based on warehouse type
+    transformation = stack.transformation if stack else TransformationTool.dbt
+    bi = stack.bi if stack else BITool.rill
+
+    # ---- Warehouse resolution ----
     if stack and stack.warehouse == WarehouseType.motherduck:
         safe_name = name.replace("-", "_")
         raw_db_path = f"md:{safe_name}_raw"
@@ -127,14 +133,7 @@ def scaffold_blank_project(
         raw_db_path = "data/raw.duckdb"
         warehouse_db_path = "data/warehouse.duckdb"
 
-    # Resolve dbt path — may be external, store relative to tycoon.yml
-    if existing_dbt_path:
-        dbt_abs = Path(existing_dbt_path).resolve()
-        dbt_project_dir = _project_relative(target, dbt_abs)
-    else:
-        dbt_project_dir = "dbt_project"
-
-    # tycoon.yml
+    # ---- tycoon.yml data ----
     project_data: dict = {
         "name": name,
         "version": "0.1.0",
@@ -142,92 +141,136 @@ def scaffold_blank_project(
             "raw": raw_db_path,
             "warehouse": warehouse_db_path,
         },
-        "dbt_project_dir": dbt_project_dir,
-        "rill_dir": "rill",
         "sources": {},
     }
+
+    # dbt path — only record if dbt is active
+    if transformation == TransformationTool.dbt and existing_dbt_path:
+        dbt_abs = Path(existing_dbt_path).resolve()
+        project_data["dbt_project_dir"] = _project_relative(target, dbt_abs)
+    elif transformation == TransformationTool.dbt:
+        project_data["dbt_project_dir"] = "dbt_project"
+
+    # rill path — only record if Rill is active
+    if bi == BITool.rill and existing_rill_path:
+        rill_abs = Path(existing_rill_path).resolve()
+        project_data["rill_dir"] = _project_relative(target, rill_abs)
+    elif bi == BITool.rill:
+        project_data["rill_dir"] = "rill"
+
     if stack:
         project_data["stack"] = {
             "ingestion": stack.ingestion.value,
             "ingestion_managed": stack.ingestion_managed,
             "warehouse": stack.warehouse.value,
+            "transformation": stack.transformation.value,
             "transformation_managed": stack.transformation_managed,
+            "bi": stack.bi.value,
+            "bi_managed": stack.bi_managed,
+            "orchestrator": stack.orchestrator.value,
+            "orchestrator_managed": stack.orchestrator_managed,
         }
 
     yml_path = target / "tycoon.yml"
     yml_path.write_text(yaml.dump(project_data, default_flow_style=False, sort_keys=False))
     success(f"Created {yml_path.relative_to(target)}")
 
-    # data/
+    # ---- data/ ----
     (target / "data").mkdir(parents=True, exist_ok=True)
     info("Created data/")
 
-    # dbt_project/ — scaffold at resolved external path, or skip if existing
-    dbt_abs = Path(existing_dbt_path).resolve() if existing_dbt_path else None
-    dbt_already_exists = dbt_abs and dbt_abs.exists() and (dbt_abs / "dbt_project.yml").exists()
+    # ---- dbt scaffold (if active, managed, and project doesn't already exist) ----
+    if transformation == TransformationTool.dbt:
+        dbt_abs = Path(existing_dbt_path).resolve() if existing_dbt_path else (target / "dbt_project")
+        dbt_already_exists = dbt_abs.exists() and (dbt_abs / "dbt_project.yml").exists()
 
-    if dbt_already_exists:
-        info(f"Using existing dbt project at {existing_dbt_path}")
-    elif not stack or stack.transformation_managed:
-        dbt_dir = dbt_abs if dbt_abs else (target / "dbt_project")
-        dbt_dir.mkdir(parents=True, exist_ok=True)
+        if dbt_already_exists:
+            info(f"Using existing dbt project at {dbt_abs}")
+        elif stack is None or stack.transformation_managed:
+            _scaffold_dbt_project(
+                dbt_dir=dbt_abs,
+                name=name,
+                warehouse=stack.warehouse if stack else WarehouseType.duckdb,
+                warehouse_db_path=warehouse_db_path,
+                raw_db_path=raw_db_path,
+                target=target,
+            )
 
-        profile_name = name.replace("-", "_")
+    # ---- Rill scaffold (if active and managed) ----
+    if bi == BITool.rill:
+        rill_abs = Path(existing_rill_path).resolve() if existing_rill_path else (target / "rill")
+        rill_already_exists = rill_abs.exists() and (rill_abs / "rill.yaml").exists()
+        if rill_already_exists:
+            info(f"Using existing Rill project at {rill_abs}")
+        elif stack is None or stack.bi_managed:
+            scaffold_rill_dir(rill_abs)
 
-        dbt_project_yml = {
-            "name": profile_name,
-            "version": "1.0.0",
-            "config-version": 2,
-            "profile": profile_name,
-        }
-        (dbt_dir / "dbt_project.yml").write_text(
-            yaml.dump(dbt_project_yml, default_flow_style=False, sort_keys=False)
-        )
-
-        # profiles.yml: warehouse DB is the dbt target; raw DB is attached read-only.
-        # Paths are relative from dbt_dir, which may be a sibling of the tycoon root.
-        if stack and stack.warehouse == WarehouseType.motherduck:
-            profiles_data = {
-                profile_name: {
-                    "target": "dev",
-                    "outputs": {
-                        "dev": {
-                            "type": "duckdb",
-                            "path": warehouse_db_path,
-                            "attach": [{"path": raw_db_path, "alias": "raw", "read_only": True}],
-                        }
-                    },
-                }
-            }
-        else:
-            warehouse_abs = (target / warehouse_db_path).resolve()
-            raw_abs = (target / raw_db_path).resolve()
-            warehouse_rel = os.path.relpath(warehouse_abs, start=dbt_dir)
-            raw_rel = os.path.relpath(raw_abs, start=dbt_dir)
-            profiles_data = {
-                profile_name: {
-                    "target": "dev",
-                    "outputs": {
-                        "dev": {
-                            "type": "duckdb",
-                            "path": warehouse_rel,
-                            "attach": [{"path": raw_rel, "alias": "raw", "read_only": True}],
-                        }
-                    },
-                }
-            }
-
-        (dbt_dir / "profiles.yml").write_text(
-            yaml.dump(profiles_data, default_flow_style=False, sort_keys=False)
-        )
-        info(f"Created dbt project at {dbt_dir} with dbt_project.yml and profiles.yml")
-
-    # rill/
-    if not stack or stack.bi_managed:
-        _scaffold_rill_dir(target)
-
-    # .gitignore
+    # ---- .gitignore ----
     _write_gitignore(target)
+
+
+def _scaffold_dbt_project(
+    dbt_dir: Path,
+    name: str,
+    warehouse,
+    warehouse_db_path: str,
+    raw_db_path: str,
+    target: Path,
+) -> None:
+    """Write dbt_project.yml + profiles.yml into ``dbt_dir``."""
+    from tycoon.project import WarehouseType
+
+    dbt_dir.mkdir(parents=True, exist_ok=True)
+    profile_name = name.replace("-", "_")
+
+    (dbt_dir / "dbt_project.yml").write_text(
+        yaml.dump(
+            {
+                "name": profile_name,
+                "version": "1.0.0",
+                "config-version": 2,
+                "profile": profile_name,
+            },
+            default_flow_style=False,
+            sort_keys=False,
+        )
+    )
+
+    if warehouse == WarehouseType.motherduck:
+        profiles_data = {
+            profile_name: {
+                "target": "dev",
+                "outputs": {
+                    "dev": {
+                        "type": "duckdb",
+                        "path": warehouse_db_path,
+                        "attach": [{"path": raw_db_path, "alias": "raw", "read_only": True}],
+                    }
+                },
+            }
+        }
+    else:
+        warehouse_abs = (target / warehouse_db_path).resolve()
+        raw_abs = (target / raw_db_path).resolve()
+        warehouse_rel = os.path.relpath(warehouse_abs, start=dbt_dir)
+        raw_rel = os.path.relpath(raw_abs, start=dbt_dir)
+        profiles_data = {
+            profile_name: {
+                "target": "dev",
+                "outputs": {
+                    "dev": {
+                        "type": "duckdb",
+                        "path": warehouse_rel,
+                        "attach": [{"path": raw_rel, "alias": "raw", "read_only": True}],
+                    }
+                },
+            }
+        }
+
+    (dbt_dir / "profiles.yml").write_text(
+        yaml.dump(profiles_data, default_flow_style=False, sort_keys=False)
+    )
+    info(f"Created dbt project at {dbt_dir} with dbt_project.yml and profiles.yml")
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +322,7 @@ def scaffold_from_template(target: Path, template_name: str) -> None:
 
     # rill/ — scaffold if the template didn't include one
     if not (target / "rill").exists():
-        _scaffold_rill_dir(target)
+        scaffold_rill_dir(target / "rill")
 
     # .gitignore
     _write_gitignore(target)
@@ -300,11 +343,10 @@ def _write_gitignore(target: Path) -> None:
         info("Created .gitignore")
 
 
-def _scaffold_rill_dir(target: Path) -> None:
-    """Create a minimal rill/ project directory with rill.yaml."""
-    rill_dir = target / "rill"
-    rill_dir.mkdir(exist_ok=True)
+def scaffold_rill_dir(rill_dir: Path) -> None:
+    """Create a minimal Rill project directory with rill.yaml."""
+    rill_dir.mkdir(parents=True, exist_ok=True)
     rill_yaml = rill_dir / "rill.yaml"
     if not rill_yaml.exists():
         rill_yaml.write_text(_RILL_YAML_CONTENT)
-        info("Created rill/ with rill.yaml")
+        info(f"Created {rill_dir}/ with rill.yaml")

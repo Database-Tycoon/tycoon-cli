@@ -1,5 +1,39 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-04-16
+
+### Changed
+
+- Flattened `tycoon data db <sub>` into top-level `tycoon data <sub>`:
+  - `tycoon data db stats` → `tycoon data schema` (also reports any extra `.duckdb` files found in `data/`)
+  - `tycoon data db query` → `tycoon data query`
+  - `tycoon data db clean` → `tycoon data clean`
+- `tycoon init` (without `--template`) now runs a per-component wizard that walks through ingestion, warehouse, dbt, Rill, and orchestrator individually. Each prompt describes what tycoon will do for each option and explicitly includes "skip" where it makes sense.
+
+### Added
+
+- `tycoon data query --source <name>` — query a specific source's raw database, with auto-resolution between the shared `raw.duckdb` (single-DB mode) and per-source `data/raw_<name>.duckdb` files. Closes [#1].
+- `tycoon data query --db <path>` — query any DuckDB file directly.
+- `tycoon data analyze --rill` now scaffolds the Rill project directory on demand if it doesn't exist, instead of silently skipping.
+- `GET /health` endpoint on the internal server.
+- `tycoon init` auto-detects existing dbt and Rill projects in common inline locations (`./dbt_project/`, `./dbt/`, `./transformation/`, `./rill/`, `./dashboards/`) and in sibling directories (e.g. `../<name>-dbt/`), and offers them as an explicit "use this" option in the wizard.
+- Option to register an existing dbt project by local path or GitHub URL during `tycoon init`; remote URLs are cloned into a sibling directory.
+- `TransformationTool` enum and `stack.transformation` field in `tycoon.yml` so "skip dbt" is a first-class, recorded choice (not an inferred state).
+- `tycoon doctor` now reports "skipped by choice" for components the user intentionally turned off during init, instead of warning about them.
+- **`tycoon register dbt <path-or-url>`** and **`tycoon register rill <path-or-url>`** — attach an existing dbt or Rill project to a tycoon.yml without re-running `tycoon init`. Supports local paths and GitHub URLs (with clone-on-register). Prompts before overwriting an already-registered component.
+- **Warehouse-alignment check**: when a registered dbt project targets a different DuckDB than tycoon's warehouse (via its `profiles.yml`), the wizard / `tycoon register dbt` warns and offers to adopt the dbt path — preventing the "dbt writes here, `tycoon data query` reads there" silent-divergence footgun.
+- Template smoke tests in the pytest suite: init + doctor validate cleanly for all four built-in templates (`csv-import`, `github-analytics`, `nyc-transit`, `weather-station`).
+
+### Fixed
+
+- `tycoon doctor` no longer falsely claims that `tycoon data analyze` creates a missing dbt project; now directs users to `tycoon init` (or to point `dbt_project_dir` at an existing project).
+- `server/check-updates` now queries the correct PyPI package (`database-tycoon`) and uses `httpx` instead of `requests`.
+- `tycoon data transform` now falls back to `~/.dbt/profiles.yml` when a registered external dbt project has no co-located `profiles.yml`, instead of forcing `--profiles-dir` to the project root.
+- Fixed a crash in `tycoon data analyze` and `tycoon data sources run` when invoked without a source argument: the interactive "pick a source" prompt referenced `typer.Choice`, which doesn't exist at runtime. Now uses `click.Choice`. Regression test added.
+
+[0.1.1]: https://github.com/Database-Tycoon/tycoon-cli/releases/tag/v0.1.1
+[#1]: https://github.com/Database-Tycoon/tycoon-cli/issues/1
+
 ## [0.1.0] - 2026-04-09
 
 ### Added

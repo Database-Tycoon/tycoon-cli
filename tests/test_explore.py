@@ -652,3 +652,39 @@ class TestAnalyzeCLIErrors:
         # Do NOT create the raw db
         result = cli_runner.invoke(app, ["data", "analyze", "my-src"])
         assert result.exit_code != 0
+
+    def test_analyze_interactive_prompt_does_not_crash(self, cli_runner, tmp_path, monkeypatch):
+        """Regression: `tycoon data analyze` without a source argument must
+        present an interactive prompt, not crash with AttributeError from a
+        bad typer.Choice reference. See typer.Choice → click.Choice fix."""
+        monkeypatch.chdir(tmp_path)
+        tycoon_yml = (
+            "name: test\n"
+            "version: 0.1.0\n"
+            "database:\n"
+            "  raw: data/raw.duckdb\n"
+            "  warehouse: data/warehouse.duckdb\n"
+            "sources:\n"
+            "  src_a:\n"
+            "    type: rest_api\n"
+            "    schema: raw_src_a\n"
+        )
+        (tmp_path / "tycoon.yml").write_text(tycoon_yml)
+        (tmp_path / "data").mkdir()
+        con = duckdb.connect(str(tmp_path / "data" / "raw.duckdb"))
+        con.execute("CREATE SCHEMA raw_src_a")
+        con.execute("CREATE TABLE raw_src_a.items (id INTEGER)")
+        con.close()
+
+        # Reload config for the analyze command
+        from tycoon.commands import explore as explore_mod
+        from tycoon.config import TycoonConfig
+        monkeypatch.setattr(explore_mod, "config", TycoonConfig(project_root=tmp_path))
+
+        # Supply "src_a" as the interactive choice
+        result = cli_runner.invoke(app, ["data", "analyze", "--no-dbt"], input="src_a\n")
+        # The key assertion: no AttributeError. Exit may be 0 or non-zero depending
+        # on downstream behavior; we just need the prompt to not crash.
+        assert not isinstance(result.exception, AttributeError), (
+            f"typer.Choice regression: {result.exception!r}\n{result.stdout}"
+        )
