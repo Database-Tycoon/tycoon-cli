@@ -35,11 +35,22 @@ def build_nao_config(cfg: TycoonConfig) -> dict:
     nao_dir = cfg.nao_dir
     ask = project.ask if project else None
 
-    # Database entry pointing at the warehouse DuckDB
+    # Database entry pointing at the warehouse DuckDB.
+    # For MotherDuck (`md:<catalog>`), pass the URL through verbatim — it's a
+    # valid argument to `duckdb.connect()` and Nao's DuckDBConfig wraps it in
+    # `ibis.duckdb.connect(database=..., read_only=True)` which handles it
+    # natively. A filesystem-relative path would produce a broken
+    # `../../md:<catalog>` string.
+    warehouse_spec = project.database.warehouse if project else None
+    if warehouse_spec and warehouse_spec.startswith("md:"):
+        db_path = warehouse_spec
+    else:
+        db_path = _rel(nao_dir, cfg.local_db)
+
     db_entry: dict = {
         "name": project.name if project else "tycoon-warehouse",
         "type": "duckdb",
-        "path": _rel(nao_dir, cfg.local_db),
+        "path": db_path,
         "accessors": ["columns", "preview"],
         "profiling": {
             "refresh_policy": "interval",
