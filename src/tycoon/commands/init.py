@@ -296,12 +296,16 @@ def _prompt_rill(
 
 
 def _extract_dbt_duckdb_path(dbt_project_dir: Path) -> str | None:
-    """Extract the DuckDB path from a dbt project's active profile.
+    """Extract the DuckDB (or MotherDuck) path from a dbt project's active profile.
 
-    Returns an absolute path string, or None if:
-    - ``dbt_project.yml`` missing or unreadable
-    - no ``profiles.yml`` in the project dir or ``~/.dbt/``
-    - the target's ``type`` is not ``duckdb``
+    The dbt-duckdb adapter stores MotherDuck targets in the same ``type: duckdb``
+    profile, using ``path: md:<dbname>``. We return those as-is (prefix intact)
+    so callers can compare them to tycoon's ``md:*`` warehouse strings directly.
+
+    Returns:
+      - A ``md:<name>`` string for MotherDuck targets.
+      - An absolute filesystem path string for local DuckDB targets.
+      - ``None`` if the profile can't be read or isn't a DuckDB target.
     """
     try:
         project_yml = yaml.safe_load((dbt_project_dir / "dbt_project.yml").read_text())
@@ -335,6 +339,8 @@ def _extract_dbt_duckdb_path(dbt_project_dir: Path) -> str | None:
         path = target.get("path")
         if not path:
             return None
+        if str(path).startswith("md:"):
+            return str(path)
         abs_path = Path(path)
         if not abs_path.is_absolute():
             abs_path = (dbt_project_dir / abs_path).resolve()
@@ -342,20 +348,30 @@ def _extract_dbt_duckdb_path(dbt_project_dir: Path) -> str | None:
     return None
 
 
+def _normalize_warehouse_for_compare(value: str) -> str:
+    """Canonicalize a warehouse value for equality check.
+
+    ``md:*`` strings are returned verbatim; filesystem paths are resolved
+    against CWD if relative and returned as absolute.
+    """
+    if value.startswith("md:"):
+        return value
+    abs_path = Path(value).expanduser()
+    if not abs_path.is_absolute():
+        abs_path = (Path.cwd() / abs_path).resolve()
+    else:
+        abs_path = abs_path.resolve()
+    return str(abs_path)
+
+
 def _maybe_align_warehouse(wizard_warehouse_path: str, dbt_project_dir: Path) -> str:
-    """Warn if the dbt project targets a different DuckDB than the wizard's
-    warehouse choice. Prompt to adopt the dbt path."""
+    """Warn if the dbt project targets a different DuckDB/MotherDuck than the
+    wizard's warehouse choice. Prompt to adopt the dbt target."""
     dbt_path = _extract_dbt_duckdb_path(dbt_project_dir)
     if not dbt_path:
         return wizard_warehouse_path
 
-    user_abs = Path(wizard_warehouse_path).expanduser()
-    if not user_abs.is_absolute():
-        user_abs = (Path.cwd() / user_abs).resolve()
-    else:
-        user_abs = user_abs.resolve()
-
-    if str(user_abs) == dbt_path:
+    if _normalize_warehouse_for_compare(wizard_warehouse_path) == _normalize_warehouse_for_compare(dbt_path):
         return wizard_warehouse_path
 
     console.print()
@@ -363,9 +379,9 @@ def _maybe_align_warehouse(wizard_warehouse_path: str, dbt_project_dir: Path) ->
         f"Your dbt project targets [bold]{dbt_path}[/bold], "
         f"but you chose [bold]{wizard_warehouse_path}[/bold] for the warehouse."
     )
-    info("If these diverge, dbt writes to one file and `tycoon data query` reads from another.")
+    info("If these diverge, dbt writes to one place and `tycoon data query` reads from another.")
     adopt = typer.confirm(
-        f"Use the dbt project's path ({dbt_path}) as tycoon's warehouse?",
+        f"Use the dbt project's target ({dbt_path}) as tycoon's warehouse?",
         default=True,
     )
     if adopt:
@@ -412,14 +428,20 @@ def _run_wizard(target: Path, project_name: str) -> WizardResult:
     transformation, transformation_managed, dbt_path = _prompt_dbt(target, project_name, detected)
 
     # Alignment check: if dbt project wasn't just scaffolded by us, see if it
-    # targets a different DuckDB than the user chose for the warehouse.
+    # targets a different warehouse than the user chose.
     if (
         transformation == TransformationTool.dbt
         and not transformation_managed
         and dbt_path
-        and warehouse == WarehouseType.duckdb
+        and warehouse in (WarehouseType.duckdb, WarehouseType.motherduck)
     ):
-        warehouse_path = _maybe_align_warehouse(warehouse_path, Path(dbt_path))
+        aligned = _maybe_align_warehouse(warehouse_path, Path(dbt_path))
+        if aligned != warehouse_path:
+            warehouse_path = aligned
+            if aligned.startswith("md:"):
+                warehouse = WarehouseType.motherduck
+            else:
+                warehouse = WarehouseType.duckdb
 
     bi, bi_managed, rill_path = _prompt_rill(target, detected)
     orchestrator, orchestrator_managed = _prompt_orchestrator()

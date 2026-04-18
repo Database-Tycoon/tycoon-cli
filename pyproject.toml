@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "database-tycoon"
-version = "0.1.1"
+version = "0.1.2"
 description = "Database Tycoon — local-first analytics CLI that adapts to your existing data stack"
 readme = "README.md"
 license = {text = "MIT"}
@@ -21,30 +21,30 @@ classifiers = [
 ]
 dependencies = [
     "typer==0.24.1",
-    "rich==14.3.3",
+    "rich==15.0.0",
     "dbt-core==1.11.8",
     "dbt-duckdb==1.10.1",
-    "dlt[duckdb]==1.24.0",
-    "duckdb==1.5.1",
+    "dlt[duckdb]==1.25.0",
+    "duckdb==1.5.2",
     "httpx==0.28.1",
     "pyyaml==6.0.3",
-    "pydantic==2.12.5",
+    "pydantic==2.13.2",
 ]
 
 [project.optional-dependencies]
 server = [
-    "fastapi==0.135.3",
+    "fastapi==0.136.0",
     "uvicorn[standard]==0.44.0",
     "websockets==16.0",
 ]
 dagster = [
-    "dagster==1.12.20",
-    "dagster-webserver==1.12.20",
-    "dagster-dbt==0.28.20",
-    "dagster-dlt==0.28.20",
+    "dagster==1.13.0",
+    "dagster-webserver==1.13.0",
+    "dagster-dbt==0.29.0",
+    "dagster-dlt==0.29.0",
 ]
 ask = [
-    "nao-core==0.0.59",
+    "nao-core==0.1.7",
     "ibis-framework[duckdb]==12.0.0",
 ]
 
@@ -54,7 +54,7 @@ Repository = "https://github.com/Database-Tycoon/tycoon-cli"
 Issues = "https://github.com/Database-Tycoon/tycoon-cli/issues"
 
 [dependency-groups]
-dev = ["pytest==9.0.2"]
+dev = ["pytest==9.0.3"]
 
 [project.scripts]
 tycoon = "tycoon.cli:app"
@@ -64,3 +64,9 @@ packages = ["src/tycoon"]
 
 [tool.uv]
 prerelease = "if-necessary-or-explicit"
+
+[tool.pytest.ini_options]
+markers = [
+    "e2e: network-gated end-to-end tests (opt-in: `pytest -m e2e`). Skipped by default.",
+]
+addopts = "-m 'not e2e'"

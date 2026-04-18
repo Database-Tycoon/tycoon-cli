@@ -1,5 +1,21 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - UNRELEASED
+
+### Added
+
+- **MotherDuck warehouse alignment**: `tycoon init` (wizard) and `tycoon register dbt` now detect when a registered dbt project targets `md:<name>` via its dbt-duckdb profile and offer to adopt that target as tycoon's warehouse — extending the DuckDB-only alignment check shipped in v0.1.1.
+- **`tycoon register warehouse`**: new subcommand that prompts for cloud (MotherDuck) or local (DuckDB) and updates `database.warehouse` + `stack.warehouse` in `tycoon.yml`. For cloud, surfaces `MOTHERDUCK_TOKEN` setup guidance when the env var isn't set. Prompts before overwriting an existing warehouse.
+- **`@pytest.mark.e2e` marker** registered in `pyproject.toml`, deselected from the default `pytest` run, plus `tests/test_templates_e2e.py` covering all four built-in templates (csv-import runs a full offline ingest with row-count assertion; nyc-transit hits live public APIs with record caps and an `xfail` on upstream flakes; github-analytics and weather-station are init-only pending template-side parameterization).
+- **`.github/workflows/e2e.yml`**: manual-trigger-only CI workflow that runs `pytest -m e2e` with a `GITHUB_TOKEN` secret slot. No cron — runs only when someone clicks "Run workflow".
+
+### Changed
+
+- Init wizard's warehouse-alignment branch now fires when the chosen warehouse is either DuckDB or MotherDuck. If the adopted dbt-side target changes warehouse type (local ↔ `md:*`), `stack.warehouse` is updated to match.
+- Dependency bumps: `rich` 14.3.3 → 15.0.0, `dlt[duckdb]` 1.24.0 → 1.25.0, `duckdb` 1.5.1 → 1.5.2, `pydantic` 2.12.5 → 2.13.2, `fastapi` 0.135.3 → 0.136.0, `dagster` 1.12.20 → 1.13.0, `dagster-webserver` 1.12.20 → 1.13.0, `dagster-dbt` 0.28.20 → 0.29.0, `dagster-dlt` 0.28.20 → 0.29.0, `nao-core` 0.0.59 → 0.1.7, `pytest` (dev) 9.0.2 → 9.0.3.
+
+[0.1.2]: https://github.com/Database-Tycoon/tycoon-cli/releases/tag/v0.1.2
+
 ## [0.1.1] - 2026-04-16
 
 ### Changed

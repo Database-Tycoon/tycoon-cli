@@ -11,6 +11,7 @@ import yaml
 from tycoon.commands.init import (
     _clone_repo,
     _extract_dbt_duckdb_path,
+    _normalize_warehouse_for_compare,
 )
 from tycoon.config import config
 from tycoon.project import (
@@ -23,7 +24,7 @@ from tycoon.utils.console import console, error, header, info, success, warn
 
 
 app = typer.Typer(
-    help="Attach an existing dbt or Rill project to the current tycoon.yml.",
+    help="Attach existing dbt, Rill, or warehouse components to the current tycoon.yml.",
     no_args_is_help=True,
 )
 
@@ -116,17 +117,21 @@ def register_dbt(
     stack["transformation"] = TransformationTool.dbt.value
     stack["transformation_managed"] = False
 
-    # Warehouse alignment offer
+    # Warehouse alignment offer (covers local DuckDB and MotherDuck)
     dbt_warehouse = _extract_dbt_duckdb_path(resolved)
     if dbt_warehouse:
         current_warehouse = raw.get("database", {}).get("warehouse", "")
-        current_abs = (
-            Path(current_warehouse).expanduser()
-            if current_warehouse.startswith(("/", "~"))
-            else config.root / current_warehouse
-        )
-        current_abs = current_abs.resolve() if current_abs.exists() or current_abs.is_absolute() else (config.root / current_warehouse).resolve()
-        if str(current_abs) != dbt_warehouse:
+        if current_warehouse.startswith("md:"):
+            current_norm = current_warehouse
+        else:
+            abs_path = Path(current_warehouse).expanduser() if current_warehouse else Path()
+            if not abs_path.is_absolute():
+                abs_path = (config.root / current_warehouse).resolve() if current_warehouse else Path()
+            else:
+                abs_path = abs_path.resolve()
+            current_norm = str(abs_path) if current_warehouse else ""
+
+        if current_norm != _normalize_warehouse_for_compare(dbt_warehouse):
             console.print()
             warn(
                 f"Your dbt project targets {dbt_warehouse}, "
@@ -136,10 +141,81 @@ def register_dbt(
                 raw.setdefault("database", {})["warehouse"] = dbt_warehouse
                 if raw["database"].get("raw", "") == current_warehouse:
                     raw["database"]["raw"] = dbt_warehouse
-                stack["warehouse"] = WarehouseType.duckdb.value
+                stack["warehouse"] = (
+                    WarehouseType.motherduck.value
+                    if dbt_warehouse.startswith("md:")
+                    else WarehouseType.duckdb.value
+                )
 
     _write_raw_tycoon_yml(yml_path, raw)
     success(f"Registered dbt project at {resolved}")
+    info(f"Updated {yml_path.name}.")
+
+
+@app.command(name="warehouse")
+def register_warehouse() -> None:
+    """Attach or switch the warehouse (local DuckDB or MotherDuck) in tycoon.yml."""
+    import os
+
+    header("Register warehouse")
+
+    yml_path = _require_tycoon_yml()
+    raw = _load_raw_tycoon_yml(yml_path)
+
+    existing = raw.get("database", {}).get("warehouse", "")
+    if existing:
+        warn(f"tycoon.yml already has warehouse = {existing!r}.")
+        if not typer.confirm("Overwrite it?", default=False):
+            info("Aborted; no changes made.")
+            raise typer.Exit(0)
+
+    choice = typer.prompt(
+        "Cloud (MotherDuck) or local DuckDB? [cloud/local]",
+        default="local",
+    ).strip().lower()
+
+    if choice in ("cloud", "c", "motherduck", "md"):
+        default_name = str(raw.get("name", config.root.name)).replace("-", "_")
+        md_name = typer.prompt("MotherDuck database name", default=default_name).strip()
+        if not md_name:
+            error("MotherDuck database name is required.")
+            raise typer.Exit(1)
+        warehouse_value = f"md:{md_name}"
+
+        if not os.environ.get("MOTHERDUCK_TOKEN"):
+            console.print()
+            warn("MOTHERDUCK_TOKEN is not set in your environment.")
+            info("Get a token at https://app.motherduck.com/token")
+            info("Then add to your shell profile: export MOTHERDUCK_TOKEN=<your_token>")
+            info("`tycoon doctor` will flag this until you set it.")
+
+        stack_warehouse_type = WarehouseType.motherduck.value
+    elif choice in ("local", "l", "duckdb"):
+        path_input = typer.prompt(
+            "Path to your DuckDB file (will be created on first write if missing)",
+            default="data/warehouse.duckdb",
+        ).strip()
+        if not path_input:
+            error("Warehouse path is required.")
+            raise typer.Exit(1)
+        warehouse_value = path_input
+        stack_warehouse_type = WarehouseType.duckdb.value
+    else:
+        error(f"Unknown choice: {choice!r}. Expected 'cloud' or 'local'.")
+        raise typer.Exit(1)
+
+    db = raw.setdefault("database", {})
+    old_warehouse = db.get("warehouse", "")
+    db["warehouse"] = warehouse_value
+    # If raw was pinned to the same old warehouse value, migrate it too.
+    if db.get("raw", "") == old_warehouse and old_warehouse:
+        db["raw"] = warehouse_value
+
+    stack = raw.setdefault("stack", {})
+    stack["warehouse"] = stack_warehouse_type
+
+    _write_raw_tycoon_yml(yml_path, raw)
+    success(f"Registered warehouse: {warehouse_value}")
     info(f"Updated {yml_path.name}.")
 
 
