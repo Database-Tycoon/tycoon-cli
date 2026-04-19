@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-import pytest
-import yaml
 
 from tycoon.cli import app
 from tycoon.project import SourceConfig, TycoonProject, load_project, save_project

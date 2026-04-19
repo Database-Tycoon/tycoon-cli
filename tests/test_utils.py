@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import duckdb
-import pytest
 from rich.table import Table
 
 from tycoon.utils.process import is_port_in_use, command_exists

@@ -308,7 +308,7 @@ def scaffold_from_template(target: Path, template_name: str) -> None:
     src_yml = template_path / "tycoon.yml"
     dst_yml = target / "tycoon.yml"
     if dst_yml.exists():
-        warn(f"tycoon.yml already exists, skipping")
+        warn("tycoon.yml already exists, skipping")
     else:
         shutil.copy2(src_yml, dst_yml)
         success(f"Created tycoon.yml from template '{template_name}'")

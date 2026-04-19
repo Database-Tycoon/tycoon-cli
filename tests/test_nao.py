@@ -4,14 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from tycoon.config import TycoonConfig
 from tycoon.nao import _expand_schema_globs, build_nao_config
 from tycoon.project import (
     AskConfig,
     DatabaseConfig,
-    LLMConfig,
     StackConfig,
     TycoonProject,
     WarehouseType,

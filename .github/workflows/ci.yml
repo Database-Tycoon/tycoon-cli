@@ -1,0 +1,57 @@
+name: CI
+
+# Runs on every pull request and every push to main.
+# Gates: the full unit + offline-e2e pytest suite, plus ruff lint.
+#
+# Network-gated e2e tests (live APIs, credentials) live in e2e.yml on a
+# manual trigger. Tagged releases are handled by publish.yml.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync project (including dagster + ask extras)
+        run: uv sync --all-extras
+
+      - name: Run pytest
+        # Default addopts already excludes the `e2e` marker. The
+        # `offline_e2e` marker (csv-import template full-pipeline test)
+        # is included so CI gates on real integration.
+        run: uv run pytest -q
+
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Ruff lint
+        # Use uvx so we don't need to add ruff to project deps.
+        run: uvx ruff check src tests

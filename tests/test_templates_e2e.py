@@ -1,15 +1,15 @@
-"""Network-gated end-to-end tests for built-in templates.
+"""End-to-end tests for built-in templates.
 
 Unlike ``test_templates_smoke.py`` (which only validates init + doctor), these
-tests execute actual ingestion against live endpoints (or local filesystem for
-csv-import). They are gated behind ``@pytest.mark.e2e`` and excluded from the
-default test run (see ``pyproject.toml``'s ``[tool.pytest.ini_options]``).
+tests execute actual ingestion pipelines. Two classes of tests live here,
+distinguished by pytest markers:
 
-Run explicitly with::
-
-    uv run pytest -m e2e
-
-CI runs these via the ``e2e.yml`` workflow (manual trigger only).
+* ``@pytest.mark.offline_e2e`` — fully local (no network, no credentials).
+  Included in the default ``pytest`` run so CI gates on real integration,
+  not just unit-level mocks.
+* ``@pytest.mark.e2e`` — requires network or external services (live public
+  APIs, API tokens). Excluded from the default run; runs only via the
+  manual ``e2e.yml`` workflow or explicit ``pytest -m e2e``.
 
 Tests that require credentials (GitHub token, etc.) ``pytest.skip`` when the
 required env var is absent, so a partial run on a dev machine is still useful.
@@ -28,9 +28,6 @@ import yaml
 from tycoon.cli import app
 
 
-pytestmark = pytest.mark.e2e
-
-
 def _init_template(cli_runner, template: str) -> None:
     result = cli_runner.invoke(app, ["init", "--template", template])
     assert result.exit_code == 0, (
@@ -47,8 +44,12 @@ def _rebind_config(monkeypatch, project: Path) -> None:
     monkeypatch.setattr(sources_mod, "config", cfg)
 
 
+@pytest.mark.offline_e2e
 def test_csv_import_e2e(cli_runner, tmp_path, monkeypatch):
-    """csv-import is the only fully-offline template: seed a CSV, run, assert."""
+    """csv-import is the only fully-offline template: seed a CSV, run, assert.
+
+    Runs in the default ``pytest`` suite — no network, no credentials.
+    """
     project = tmp_path / "csv-import"
     project.mkdir()
     monkeypatch.chdir(project)
@@ -89,6 +90,7 @@ def test_csv_import_e2e(cli_runner, tmp_path, monkeypatch):
         con.close()
 
 
+@pytest.mark.e2e
 def test_github_analytics_e2e(cli_runner, tmp_path, monkeypatch):
     """Needs a GITHUB_TOKEN. Skip when absent."""
     if not os.environ.get("GITHUB_TOKEN"):
@@ -108,6 +110,7 @@ def test_github_analytics_e2e(cli_runner, tmp_path, monkeypatch):
     assert "github" in tycoon_yml["sources"], "github source missing from template"
 
 
+@pytest.mark.e2e
 def test_nyc_transit_e2e(cli_runner, tmp_path, monkeypatch):
     """Public NYC Open Data / MTA feeds — no auth needed, but slow."""
     project = tmp_path / "nyc-transit"
@@ -131,6 +134,7 @@ def test_nyc_transit_e2e(cli_runner, tmp_path, monkeypatch):
     assert raw_db.exists(), "raw db was not created"
 
 
+@pytest.mark.e2e
 def test_weather_station_e2e(cli_runner, tmp_path, monkeypatch):
     """NOAA public API (no key), but the template uses URL templates
     (``{station_id}``/``{office}``) that require user-side fill-in. For v0.1.2
