@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "database-tycoon"
-version = "0.1.1"
+version = "0.1.2"
 description = "Database Tycoon — local-first analytics CLI that adapts to your existing data stack"
 readme = "README.md"
 license = {text = "MIT"}
@@ -21,30 +21,30 @@ classifiers = [
 ]
 dependencies = [
     "typer==0.24.1",
-    "rich==14.3.3",
+    "rich==15.0.0",
     "dbt-core==1.11.8",
     "dbt-duckdb==1.10.1",
-    "dlt[duckdb]==1.24.0",
-    "duckdb==1.5.1",
+    "dlt[duckdb]==1.25.0",
+    "duckdb==1.5.2",
     "httpx==0.28.1",
     "pyyaml==6.0.3",
-    "pydantic==2.12.5",
+    "pydantic==2.13.2",
 ]
 
 [project.optional-dependencies]
 server = [
-    "fastapi==0.135.3",
+    "fastapi==0.136.0",
     "uvicorn[standard]==0.44.0",
     "websockets==16.0",
 ]
 dagster = [
-    "dagster==1.12.20",
-    "dagster-webserver==1.12.20",
-    "dagster-dbt==0.28.20",
-    "dagster-dlt==0.28.20",
+    "dagster==1.13.0",
+    "dagster-webserver==1.13.0",
+    "dagster-dbt==0.29.0",
+    "dagster-dlt==0.29.0",
 ]
 ask = [
-    "nao-core==0.0.59",
+    "nao-core==0.1.7",
     "ibis-framework[duckdb]==12.0.0",
 ]
 
@@ -54,7 +54,10 @@ Repository = "https://github.com/Database-Tycoon/tycoon-cli"
 Issues = "https://github.com/Database-Tycoon/tycoon-cli/issues"
 
 [dependency-groups]
-dev = ["pytest==9.0.2"]
+dev = [
+    "pytest==9.0.3",
+    "pytest-cov>=7.1.0",
+]
 
 [project.scripts]
 tycoon = "tycoon.cli:app"
@@ -64,3 +67,43 @@ packages = ["src/tycoon"]
 
 [tool.uv]
 prerelease = "if-necessary-or-explicit"
+
+[tool.pytest.ini_options]
+markers = [
+    "e2e: end-to-end tests that require network or external services (opt-in: `pytest -m e2e`). Skipped by default.",
+    "offline_e2e: full-pipeline tests that run entirely offline (init + ingest + transform). Included in the default run so CI gates on real integration, not just unit tests.",
+]
+addopts = "-m 'not e2e'"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint.per-file-ignores]
+# cli.py intentionally registers subcommands after the Typer app is
+# constructed, which ruff flags as E402. The alternative is circular imports.
+"src/tycoon/cli.py" = ["E402"]
+# Forward-reference string literals in type annotations trip F821 when the
+# referenced name is imported inside the method body to avoid circular imports.
+"tests/test_ingestion.py" = ["F821"]
+
+[tool.coverage.run]
+source = ["src/tycoon"]
+branch = false
+
+[tool.coverage.report]
+# Baseline at v0.1.2 is ~65% (after server route tests and Dagster
+# asset-definition smoke tests landed). The remaining untested code is
+# concentrated in the websocket streaming path, the services.manager
+# subprocess orchestrator, and a handful of dead/untested orchestration
+# assets that require a full Dagster + dbt stack to exercise. Floor is
+# set at 60 to give routine drift meaningful headroom over the baseline;
+# raise it 1-2 points per release alongside real test additions.
+fail_under = 60
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]

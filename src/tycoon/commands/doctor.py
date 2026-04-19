@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
@@ -66,6 +67,51 @@ def _check_rill_project():
         warn("Rill project not found. `tycoon data analyze --rill` will create it.")
 
 
+_MOTHERDUCK_CACHE_CANDIDATES = (
+    # Standard DuckDB token cache (~/.duckdb/stored_tokens)
+    Path.home() / ".duckdb" / "stored_tokens",
+    # MotherDuck-specific cache locations seen in the wild
+    Path.home() / ".duckdb" / "motherduck_token",
+    Path.home() / ".config" / "motherduck" / "token",
+    Path.home() / "Library" / "Application Support" / "motherduck" / "token",
+)
+
+
+def _has_motherduck_oauth_cache() -> bool:
+    """Heuristic: does a non-empty MotherDuck/DuckDB token cache exist on disk?
+
+    We don't call ``duckdb.connect('md:')`` here because a miss would open a
+    browser OAuth flow — way too aggressive for a diagnostic command. A
+    cache-file probe is good enough to distinguish "user is logged in via
+    OAuth" from "user has nothing configured". False negatives (cache in a
+    non-standard location) still fall through to the existing error; users
+    can export ``MOTHERDUCK_TOKEN`` to force-succeed.
+    """
+    for candidate in _MOTHERDUCK_CACHE_CANDIDATES:
+        try:
+            if candidate.exists() and candidate.stat().st_size > 0:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _check_motherduck_auth() -> None:
+    """Report MotherDuck auth status. Recognizes both env-token and cached OAuth."""
+    if os.environ.get("MOTHERDUCK_TOKEN"):
+        success("MotherDuck auth: token (env MOTHERDUCK_TOKEN).")
+        return
+    if _has_motherduck_oauth_cache():
+        success("MotherDuck auth: OAuth (cached session).")
+        info("For CI / non-interactive use, export MOTHERDUCK_TOKEN.")
+        return
+    error(
+        "MotherDuck auth: not configured. "
+        "Export MOTHERDUCK_TOKEN, or run `duckdb -c \"ATTACH 'md:'\"` once "
+        "to authenticate via browser OAuth."
+    )
+
+
 def _check_stack_config() -> None:
     """Stack-aware checks based on tycoon.yml stack configuration."""
     project = config.project
@@ -75,10 +121,7 @@ def _check_stack_config() -> None:
     stack = project.stack
 
     if stack.warehouse == WarehouseType.motherduck:
-        if os.environ.get("MOTHERDUCK_TOKEN"):
-            success("MOTHERDUCK_TOKEN is set.")
-        else:
-            error("MOTHERDUCK_TOKEN is not set. MotherDuck connections will fail.")
+        _check_motherduck_auth()
 
     if stack.warehouse == WarehouseType.snowflake:
         missing = [v for v in ["SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"] if not os.environ.get(v)]
@@ -133,6 +176,58 @@ def _check_stack_config() -> None:
             error(f"External dbt project not found at {project.dbt_project_dir}.")
 
 
+def _check_observability() -> None:
+    """Report whether run-history capture has fired at least once.
+
+    Useful first-time diagnosis of "why are my dashboards empty?" — if
+    the metadata DB doesn't exist or is empty, dlt/dbt have not yet
+    triggered the capture hooks.
+    """
+    from tycoon.observability import has_any_observability_data, metadata_db_path
+
+    meta = metadata_db_path(config.root)
+    if not meta.exists():
+        info(
+            "Observability: metadata DB not yet created — "
+            "run `tycoon data sources run` or `tycoon data transform run` to "
+            "start capturing history."
+        )
+        return
+
+    try:
+        has_dlt, has_dbt = has_any_observability_data(meta)
+    except Exception as exc:
+        warn(f"Observability: metadata DB present but unreadable ({exc}).")
+        return
+
+    if not (has_dlt or has_dbt):
+        info(
+            "Observability: metadata DB exists but no runs captured yet — "
+            "run `tycoon data sources run` or `tycoon data transform run`."
+        )
+        return
+
+    import duckdb
+
+    con = duckdb.connect(str(meta), read_only=True)
+    try:
+        dlt_count = 0
+        dbt_count = 0
+        if has_dlt:
+            row = con.execute("SELECT count(*) FROM dlt_runs").fetchone()
+            dlt_count = row[0] if row else 0
+        if has_dbt:
+            row = con.execute("SELECT count(*) FROM dbt_runs").fetchone()
+            dbt_count = row[0] if row else 0
+    finally:
+        con.close()
+
+    success(
+        f"Observability: {dlt_count} dlt load(s), {dbt_count} dbt run(s) captured. "
+        f"View with `tycoon data history`."
+    )
+
+
 def doctor_cmd() -> None:
     """Check the environment for potential issues."""
     header("Tycoon Doctor")
@@ -153,5 +248,8 @@ def doctor_cmd() -> None:
         if config.has_project_file:
             console.print(Panel("Checking stack configuration...", expand=False))
             _check_stack_config()
+
+            console.print(Panel("Checking observability...", expand=False))
+            _check_observability()
 
     info("All checks complete.")

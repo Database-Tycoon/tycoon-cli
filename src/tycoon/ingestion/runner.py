@@ -121,6 +121,32 @@ def _build_filesystem_source(source_config: SourceConfig) -> Any:
     return files
 
 
+def _capture_and_refresh_safe(raw_db_path: Path) -> None:
+    """Best-effort dlt observability capture + Rill dashboard refresh.
+
+    Mirrors new dlt loads into ``.tycoon/metadata.duckdb`` and (if the
+    project has a Rill directory) re-exports the usage Parquets + YAMLs.
+    Silently no-ops on any failure — ingestion must never break because
+    of observability bookkeeping.
+    """
+    try:
+        from tycoon.config import config
+        from tycoon.observability import capture_dlt_safe, metadata_db_path
+        from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
+
+        capture_dlt_safe(metadata_db_path(config.root), raw_db_path)
+        refresh_usage_dashboards(project_root=config.root, rill_dir=config.rill_dir)
+    except Exception:
+        pass
+
+
+_NATIVE_BUILDERS = {
+    "rest_api": _build_rest_api_source,
+    "sql_database": _build_sql_database_source,
+    "filesystem": _build_filesystem_source,
+}
+
+
 def run_source(
     name: str,
     source_config: SourceConfig,
@@ -130,18 +156,38 @@ def run_source(
 ) -> tuple[dlt.Pipeline, Any]:
     """Run a dlt pipeline for a registered source.
 
-    For legacy NYC pipelines, delegates to the existing pipeline modules.
-    For generic sources, dynamically constructs the dlt source.
+    Dispatch order:
+
+    1. **Legacy pipelines** (keyed by source *name*, e.g. ``nyc-dot``)
+       delegate to their bespoke module.
+    2. **Native builders** (``rest_api`` / ``sql_database`` /
+       ``filesystem``) are part of dlt core — they don't need a
+       ``dlt init`` step, so they take precedence over the catalog
+       check. These types *also* appear in the catalog for browsing
+       purposes, but on a fresh machine
+       ``~/.tycoon/sources/<type>/`` doesn't exist and the catalog
+       path would wrongly error with "not installed".
+    3. **Catalog sources** (``github`` / ``stripe`` / ``slack`` etc.)
+       require ``dlt init`` to have populated
+       ``~/.tycoon/sources/<type>/``; we run them from there.
+    4. **Dynamic fallback**: try ``dlt.sources.<type>`` directly.
 
     Returns (pipeline, load_info).
     """
-    # Legacy pipeline delegation (keyed by source name)
+    # 1. Legacy pipeline delegation (keyed by source name)
     if name in _LEGACY_PIPELINES:
-        return _run_legacy(name, max_records=max_records, **kwargs)
+        result = _run_legacy(name, max_records=max_records, **kwargs)
+        _capture_and_refresh_safe(raw_db_path)
+        return result
 
-    # Catalog source dispatch — load from ~/.tycoon/sources/
-    if source_config.type in CATALOG:
-        return _run_catalog(source_config.type, name, source_config, raw_db_path, max_records)
+    # 2. Native builders win over the catalog path. These types ship with
+    #    dlt core and don't need an `~/.tycoon/sources/<type>/` install.
+    source_type = source_config.type
+    if source_type not in _NATIVE_BUILDERS and source_type in CATALOG:
+        # 3. Catalog source dispatch — load from ~/.tycoon/sources/
+        result = _run_catalog(source_type, name, source_config, raw_db_path, max_records)
+        _capture_and_refresh_safe(raw_db_path)
+        return result
 
     # Generic pipeline
     pipeline = dlt.pipeline(
@@ -150,12 +196,7 @@ def run_source(
         dataset_name=source_config.schema_name,
     )
 
-    source_type = source_config.type
-    builders = {
-        "rest_api": _build_rest_api_source,
-        "sql_database": _build_sql_database_source,
-        "filesystem": _build_filesystem_source,
-    }
+    builders = _NATIVE_BUILDERS
 
     builder = builders.get(source_type)
     if builder is None:
@@ -177,6 +218,7 @@ def run_source(
         dlt_source = builder(source_config)
 
     load_info = pipeline.run(dlt_source)
+    _capture_and_refresh_safe(raw_db_path)
     return pipeline, load_info
 
 

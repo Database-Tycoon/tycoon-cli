@@ -192,14 +192,36 @@ def clean(
         bool,
         typer.Option("--local", help="Remove the local database and its WAL file."),
     ] = False,
+    metadata: Annotated[
+        bool,
+        typer.Option(
+            "--metadata",
+            help="Also remove .tycoon/metadata.duckdb (observability history).",
+        ),
+    ] = False,
     all_: Annotated[
         bool,
-        typer.Option("--all", help="Remove both databases and clean up data directory."),
+        typer.Option(
+            "--all",
+            help=(
+                "Remove raw + local databases and clean up the data directory. "
+                "By default preserves .tycoon/metadata.duckdb; pass --metadata "
+                "together with --all to wipe run history too."
+            ),
+        ),
     ] = False,
 ) -> None:
-    """Remove database files (with confirmation)."""
-    if not (raw or local or all_):
-        error("Specify at least one of --raw, --local, or --all.")
+    """Remove database files (with confirmation).
+
+    Run history in ``.tycoon/metadata.duckdb`` is preserved by default (even
+    with ``--all``) so `tycoon data history` and the Rill observability
+    dashboards survive routine data resets. Use ``--metadata`` to explicitly
+    wipe it.
+    """
+    from tycoon.observability import metadata_db_path
+
+    if not (raw or local or all_ or metadata):
+        error("Specify at least one of --raw, --local, --metadata, or --all.")
         raise typer.Exit(1)
 
     targets: list[tuple[Path, str]] = []
@@ -208,6 +230,8 @@ def clean(
         targets.append((config.raw_db, "raw database"))
     if local or all_:
         targets.append((config.local_db, "local database"))
+    if metadata:
+        targets.append((metadata_db_path(config.root), "observability metadata DB"))
 
     # Show what will be deleted
     header("Database Cleanup")
@@ -221,6 +245,11 @@ def clean(
         else:
             warn(f"{label}: not found (nothing to remove)")
 
+    if all_ and not metadata:
+        meta = metadata_db_path(config.root)
+        if meta.exists():
+            info("[dim]Preserving observability metadata DB — pass --metadata to remove.[/dim]")
+
     # Confirm
     if not typer.confirm("Are you sure you want to delete these files?"):
         warn("Aborted.")
@@ -228,19 +257,24 @@ def clean(
 
     # Delete
     removed = 0
-    for path, label in targets:
+    deleted_paths: set[Path] = set()
+    for path, _label in targets:
         wal_path = path.with_suffix(".duckdb.wal")
         if path.exists():
             path.unlink()
             removed += 1
         if wal_path.exists():
             wal_path.unlink()
+        deleted_paths.add(path.resolve())
 
-    if all_:
-        if config.data_dir.exists():
-            for item in config.data_dir.iterdir():
-                if item.is_file() and item.suffix in {".duckdb", ".wal"}:
-                    item.unlink()
-                    removed += 1
+    if all_ and config.data_dir.exists():
+        preserved = {metadata_db_path(config.root).resolve()} if not metadata else set()
+        for item in config.data_dir.iterdir():
+            resolved = item.resolve()
+            if resolved in preserved:
+                continue
+            if item.is_file() and item.suffix in {".duckdb", ".wal"}:
+                item.unlink()
+                removed += 1
 
     success(f"Removed {removed} file(s)")

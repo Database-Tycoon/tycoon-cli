@@ -29,6 +29,34 @@ def _rel(from_dir: Path, to_path: Path) -> str:
     return str(os.path.relpath(to_path, from_dir))
 
 
+def _warehouse_path_for_nao(cfg: TycoonConfig) -> str:
+    """Return the database connection string for Nao's ``path`` field.
+
+    MotherDuck URLs (``md:<catalog>``) are passed through verbatim — DuckDB
+    and Ibis both accept them as connection arguments. Local DuckDB paths
+    are turned into a path relative to ``.tycoon/nao/`` so nao can resolve
+    them from its own working directory.
+    """
+    project = cfg.project
+    raw = project.database.warehouse if project else ""
+    if raw.startswith("md:"):
+        return raw
+    return _rel(cfg.nao_dir, cfg.local_db)
+
+
+def _expand_schema_globs(names: list[str]) -> list[str]:
+    """Turn bare schema names into ``<schema>.*`` globs for Nao's
+    ``fnmatch``-on-``schema.table`` filter. Leaves already-qualified
+    patterns (anything containing ``.``, ``*``, or ``?``) untouched."""
+    out: list[str] = []
+    for n in names:
+        if any(c in n for c in ".*?"):
+            out.append(n)
+        else:
+            out.append(f"{n}.*")
+    return out
+
+
 def build_nao_config(cfg: TycoonConfig) -> dict:
     """Build the nao_config.yaml dict from tycoon config."""
     project = cfg.project
@@ -39,17 +67,19 @@ def build_nao_config(cfg: TycoonConfig) -> dict:
     db_entry: dict = {
         "name": project.name if project else "tycoon-warehouse",
         "type": "duckdb",
-        "path": _rel(nao_dir, cfg.local_db),
-        "accessors": ["columns", "preview"],
+        "path": _warehouse_path_for_nao(cfg),
+        # Nao 0.1.x renamed `accessors` → `templates`. Older versions (< 0.1.0)
+        # won't see this key; that's fine — our [ask] extra pins >= 0.1.7.
+        "templates": ["columns", "preview"],
         "profiling": {
             "refresh_policy": "interval",
             "interval_days": 1,
         },
     }
     if ask and ask.include_schemas:
-        db_entry["include"] = ask.include_schemas
+        db_entry["include"] = _expand_schema_globs(ask.include_schemas)
     if ask and ask.exclude_schemas:
-        db_entry["exclude"] = ask.exclude_schemas
+        db_entry["exclude"] = _expand_schema_globs(ask.exclude_schemas)
 
     # Repo entry pointing at the dbt project
     repo_entry = {

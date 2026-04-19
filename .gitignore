@@ -70,3 +70,9 @@ gha-creds-*.json
 # (this is the CLI source repo, not a tycoon project — keep these out)
 /tycoon.yml
 /recce.yml
+
+# Test coverage artifacts (pytest-cov)
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/

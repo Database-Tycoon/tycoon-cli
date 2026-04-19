@@ -8,7 +8,6 @@ marker (not present yet; will be added when we add network e2e infra).
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 import yaml

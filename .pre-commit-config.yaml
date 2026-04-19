@@ -1,0 +1,28 @@
+# Optional pre-commit hooks for tycoon contributors.
+#
+# Opt in with: `uvx pre-commit install`
+#
+# Mirrors what CI gates on (.github/workflows/ci.yml) so lint failures are
+# caught before the commit lands instead of after the PR opens. CI remains
+# the source of truth; these hooks are a convenience.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Pin to the same ruff major the repo linted clean against at v0.1.2.
+    # Bump as the CI-side ruff version moves.
+    rev: v0.14.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+        # Match CI: lint src + tests only.
+        files: ^(src|tests)/
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=500']

@@ -37,6 +37,27 @@ def _dbt_executable() -> str:
     return dbt
 
 
+def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
+    """Best-effort dbt observability capture + Rill dashboard refresh.
+
+    Parses target/run_results.json, inserts into ``.tycoon/metadata.duckdb``,
+    and (if Rill is present) re-exports the usage dashboard Parquets + YAMLs.
+    Silently no-ops on any failure — the dbt invocation result is authoritative.
+    """
+    try:
+        from tycoon.observability import capture_dbt_safe, metadata_db_path
+        from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
+
+        capture_dbt_safe(
+            metadata_db_path(config.root),
+            config.dbt_project_dir,
+            command=dbt_cmd,
+        )
+        refresh_usage_dashboards(project_root=config.root, rill_dir=config.rill_dir)
+    except Exception:
+        pass
+
+
 def _run_dbt(
     dbt_cmd: str,
     target: str,
@@ -66,6 +87,7 @@ def _run_dbt(
     console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")
 
     result = subprocess.run(cmd, cwd=project_dir)
+    _capture_dbt_and_refresh_safe(dbt_cmd)
     return result.returncode
 
 

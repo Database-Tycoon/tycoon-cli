@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -60,9 +61,37 @@ def _require_project() -> None:
         raise typer.Exit(1)
 
 
+def _nao_executable() -> str:
+    """Find the `nao` binary, preferring the one co-located with this Python.
+
+    ``nao-core`` ships a ``nao`` console script but no ``__main__.py``, so
+    ``python -m nao_core`` fails with ``No module named nao_core.__main__``.
+    Mirror the dbt helper: resolve the venv bin first, then ``$PATH``.
+    """
+    venv_nao = Path(sys.executable).parent / "nao"
+    if venv_nao.exists():
+        return str(venv_nao)
+    nao = shutil.which("nao")
+    if not nao:
+        error("`nao` not found. Reinstall: [bold]pip install 'database-tycoon[ask]'[/bold]")
+        raise typer.Exit(1)
+    return nao
+
+
 def _nao_env() -> dict[str, str]:
-    """Environment for nao subprocess — sets NAO_DEFAULT_PROJECT_PATH."""
-    return {**os.environ, "NAO_DEFAULT_PROJECT_PATH": str(config.nao_dir)}
+    """Environment for nao subprocess.
+
+    - ``NAO_DEFAULT_PROJECT_PATH`` — tells nao where its project root is.
+    - ``DB_URI`` — keeps Nao's SQLite chat DB in ``.tycoon/nao/db.sqlite``
+      instead of inside the venv (``nao_core/bin/db.sqlite``), so chat
+      history survives ``uv sync``, venv rebuilds, and tycoon upgrades.
+    """
+    db_path = config.nao_dir / "db.sqlite"
+    return {
+        **os.environ,
+        "NAO_DEFAULT_PROJECT_PATH": str(config.nao_dir),
+        "DB_URI": f"sqlite:{db_path}",
+    }
 
 
 def _skills_dir() -> Path:
@@ -132,7 +161,7 @@ def ask_sync(
 
     info("Syncing Nao context...")
     result = subprocess.run(
-        [sys.executable, "-m", "nao_core", "sync"],
+        [_nao_executable(), "sync"],
         cwd=str(config.nao_dir),
         env=_nao_env(),
     )
@@ -170,7 +199,7 @@ def ask_chat(
     if not context_ready:
         info("Context not yet synced — running [bold]tycoon ask sync[/bold] automatically...")
         result = subprocess.run(
-            [sys.executable, "-m", "nao_core", "sync"],
+            [_nao_executable(), "sync"],
             cwd=str(config.nao_dir),
             env=_nao_env(),
         )
@@ -187,7 +216,7 @@ def ask_chat(
 
     info(f"Starting Nao chat at [bold]http://localhost:{resolved_port}[/bold]")
     subprocess.run(
-        [sys.executable, "-m", "nao_core", "chat", "--port", str(resolved_port)],
+        [_nao_executable(), "chat", "--port", str(resolved_port)],
         cwd=str(config.nao_dir),
         env=_nao_env(),
     )

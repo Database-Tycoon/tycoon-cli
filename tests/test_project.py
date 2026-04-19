@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 
 from tycoon.project import TycoonProject, SourceConfig, DatabaseConfig, load_project, save_project
 

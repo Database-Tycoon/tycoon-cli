@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
 
-import pytest
 import yaml
 
 from tycoon.cli import app
@@ -77,6 +74,13 @@ class TestBlankScaffold:
         scaffold_blank_project(tmp_path, "test-project")
         assert (tmp_path / ".gitignore").exists()
 
+    def test_gitignore_excludes_metadata_duckdb(self, tmp_path, monkeypatch):
+        """Regression: observability metadata DB must not get committed."""
+        monkeypatch.chdir(tmp_path)
+        scaffold_blank_project(tmp_path, "test-project")
+        content = (tmp_path / ".gitignore").read_text()
+        assert ".tycoon/metadata.duckdb" in content
+
     def test_scaffolded_yml_loads_with_load_project(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         scaffold_blank_project(tmp_path, "test-project")
@@ -85,6 +89,24 @@ class TestBlankScaffold:
         assert project is not None
         assert project.name == "test-project"
         assert project.database.raw == "data/raw.duckdb"
+
+    def test_scaffold_with_explicit_warehouse_path_keeps_raw_distinct(self, tmp_path, monkeypatch):
+        """Regression for #11: when the wizard returns a local DuckDB path,
+        raw must NOT equal warehouse — dbt-duckdb would reject the double-attach."""
+        from tycoon.project import StackConfig
+
+        monkeypatch.chdir(tmp_path)
+        scaffold_blank_project(
+            tmp_path,
+            "test-project",
+            stack=StackConfig(),
+            existing_warehouse_path="data/warehouse.duckdb",
+        )
+
+        data = yaml.safe_load((tmp_path / "tycoon.yml").read_text())
+        assert data["database"]["warehouse"] == "data/warehouse.duckdb"
+        assert data["database"]["raw"] == "data/raw.duckdb"
+        assert data["database"]["raw"] != data["database"]["warehouse"]
 
     def test_blank_scaffold_via_cli(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

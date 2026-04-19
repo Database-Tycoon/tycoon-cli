@@ -131,6 +131,80 @@ class TestRegisterDbt:
         data = yaml.safe_load((project / "tycoon.yml").read_text())
         assert data["database"]["warehouse"] == str(divergent)
 
+    def test_register_dbt_offers_motherduck_alignment(self, cli_runner, tmp_path, monkeypatch):
+        """If dbt project targets md:foo and tycoon warehouse is a local DuckDB, offer to adopt."""
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+
+        dbt_dir = tmp_path / "proj-dbt"
+        _make_dbt_project(dbt_dir, "proj", "md:theirs")
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+
+        result = cli_runner.invoke(app, ["register", "dbt", str(dbt_dir)], input="y\n")
+        assert result.exit_code == 0, result.stdout
+
+        data = yaml.safe_load((project / "tycoon.yml").read_text())
+        assert data["database"]["warehouse"] == "md:theirs"
+        assert data["stack"]["warehouse"] == "motherduck"
+
+
+class TestRegisterWarehouse:
+
+    def test_register_warehouse_local(self, cli_runner, tmp_path, monkeypatch):
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+
+        # Inputs: overwrite=y, choice=local, path=data/elsewhere.duckdb
+        result = cli_runner.invoke(
+            app,
+            ["register", "warehouse"],
+            input="y\nlocal\ndata/elsewhere.duckdb\n",
+        )
+        assert result.exit_code == 0, result.stdout
+
+        data = yaml.safe_load(yml.read_text())
+        assert data["database"]["warehouse"] == "data/elsewhere.duckdb"
+        assert data["stack"]["warehouse"] == "duckdb"
+
+    def test_register_warehouse_motherduck(self, cli_runner, tmp_path, monkeypatch):
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
+
+        # Inputs: overwrite=y, choice=cloud, md name=myproj
+        result = cli_runner.invoke(
+            app,
+            ["register", "warehouse"],
+            input="y\ncloud\nmyproj\n",
+        )
+        assert result.exit_code == 0, result.stdout
+        assert "MOTHERDUCK_TOKEN" in result.stdout  # warning surfaced
+
+        data = yaml.safe_load(yml.read_text())
+        assert data["database"]["warehouse"] == "md:myproj"
+        assert data["stack"]["warehouse"] == "motherduck"
+
+    def test_register_warehouse_prompts_on_overwrite(self, cli_runner, tmp_path, monkeypatch):
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        data = yaml.safe_load(yml.read_text())
+        data["database"]["warehouse"] = "data/old.duckdb"
+        yml.write_text(yaml.dump(data))
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+
+        # Answer 'n' to overwrite — no change.
+        result = cli_runner.invoke(app, ["register", "warehouse"], input="n\n")
+        assert result.exit_code == 0
+        final = yaml.safe_load(yml.read_text())
+        assert final["database"]["warehouse"] == "data/old.duckdb"
+
 
 class TestRegisterRill:
 
