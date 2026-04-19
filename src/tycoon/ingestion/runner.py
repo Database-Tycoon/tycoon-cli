@@ -121,6 +121,25 @@ def _build_filesystem_source(source_config: SourceConfig) -> Any:
     return files
 
 
+def _capture_and_refresh_safe(raw_db_path: Path) -> None:
+    """Best-effort dlt observability capture + Rill dashboard refresh.
+
+    Mirrors new dlt loads into ``.tycoon/metadata.duckdb`` and (if the
+    project has a Rill directory) re-exports the usage Parquets + YAMLs.
+    Silently no-ops on any failure — ingestion must never break because
+    of observability bookkeeping.
+    """
+    try:
+        from tycoon.config import config
+        from tycoon.observability import capture_dlt_safe, metadata_db_path
+        from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
+
+        capture_dlt_safe(metadata_db_path(config.root), raw_db_path)
+        refresh_usage_dashboards(project_root=config.root, rill_dir=config.rill_dir)
+    except Exception:
+        pass
+
+
 def run_source(
     name: str,
     source_config: SourceConfig,
@@ -137,11 +156,15 @@ def run_source(
     """
     # Legacy pipeline delegation (keyed by source name)
     if name in _LEGACY_PIPELINES:
-        return _run_legacy(name, max_records=max_records, **kwargs)
+        result = _run_legacy(name, max_records=max_records, **kwargs)
+        _capture_and_refresh_safe(raw_db_path)
+        return result
 
     # Catalog source dispatch — load from ~/.tycoon/sources/
     if source_config.type in CATALOG:
-        return _run_catalog(source_config.type, name, source_config, raw_db_path, max_records)
+        result = _run_catalog(source_config.type, name, source_config, raw_db_path, max_records)
+        _capture_and_refresh_safe(raw_db_path)
+        return result
 
     # Generic pipeline
     pipeline = dlt.pipeline(
@@ -177,6 +200,7 @@ def run_source(
         dlt_source = builder(source_config)
 
     load_info = pipeline.run(dlt_source)
+    _capture_and_refresh_safe(raw_db_path)
     return pipeline, load_info
 
 

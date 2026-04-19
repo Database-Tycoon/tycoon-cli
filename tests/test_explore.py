@@ -688,3 +688,402 @@ class TestAnalyzeCLIErrors:
         assert not isinstance(result.exception, AttributeError), (
             f"typer.Choice regression: {result.exception!r}\n{result.stdout}"
         )
+
+
+# ---------------------------------------------------------------------------
+# observability: capture_dlt + capture_dbt + refresh_usage_dashboards
+# ---------------------------------------------------------------------------
+
+
+def _make_dlt_db(
+    tmp_path: Path,
+    *,
+    schemas: dict[str, list[tuple[str, int]]],
+    include_schema_version_hash: bool = True,
+) -> Path:
+    """Build a DuckDB that looks like dlt writes to it.
+
+    schemas maps schema_name -> list of (table_name, rows_per_current_load).
+    Each schema gets a _dlt_loads row and the listed tables get that many
+    rows tagged with the load_id.
+    """
+    db_path = tmp_path / "raw.duckdb"
+    con = duckdb.connect(str(db_path))
+    try:
+        for i, (schema, tables) in enumerate(schemas.items()):
+            con.execute(f'CREATE SCHEMA "{schema}"')
+            svh_col = ", schema_version_hash VARCHAR" if include_schema_version_hash else ""
+            con.execute(
+                f'CREATE TABLE "{schema}"."_dlt_loads" ('
+                f"load_id VARCHAR, status INTEGER, "
+                f"inserted_at TIMESTAMP{svh_col}"
+                f")"
+            )
+            load_id = f"load-{i + 1}"
+            svh_val = ", 'hash-v1'" if include_schema_version_hash else ""
+            con.execute(
+                f'INSERT INTO "{schema}"."_dlt_loads" VALUES '
+                f"('{load_id}', 0, '2026-04-01 10:00:00'{svh_val})"
+            )
+            for table, rows in tables:
+                con.execute(
+                    f'CREATE TABLE "{schema}"."{table}" '
+                    f"(id INTEGER, _dlt_load_id VARCHAR)"
+                )
+                for r in range(rows):
+                    con.execute(
+                        f'INSERT INTO "{schema}"."{table}" VALUES ({r}, \'{load_id}\')'
+                    )
+    finally:
+        con.close()
+    return db_path
+
+
+def _write_run_results(
+    dbt_project_dir: Path,
+    *,
+    invocation_id: str = "inv-1",
+    command: str = "build",
+    dbt_version: str = "1.9.0",
+    target: str = "dev",
+    success: bool = True,
+    elapsed: float = 12.5,
+    results: list[dict] | None = None,
+) -> None:
+    """Write a plausible target/run_results.json into a fake dbt project."""
+    import json as _json
+
+    default_results = [
+        {
+            "unique_id": "model.demo.stg_orders",
+            "status": "success",
+            "execution_time": 0.8,
+            "timing": [
+                {
+                    "name": "compile",
+                    "started_at": "2026-04-01T10:00:00.000Z",
+                    "completed_at": "2026-04-01T10:00:00.100Z",
+                },
+                {
+                    "name": "execute",
+                    "started_at": "2026-04-01T10:00:00.100Z",
+                    "completed_at": "2026-04-01T10:00:00.900Z",
+                },
+            ],
+            "adapter_response": {"rows_affected": 1000},
+            "message": None,
+        },
+        {
+            "unique_id": "test.demo.not_null_stg_orders_id",
+            "status": "pass",
+            "execution_time": 0.1,
+            "timing": [],
+            "adapter_response": {},
+            "message": None,
+        },
+    ]
+    doc = {
+        "metadata": {
+            "dbt_version": dbt_version,
+            "generated_at": "2026-04-01T10:00:01.000Z",
+            "invocation_id": invocation_id,
+        },
+        "args": {"which": command, "target": target},
+        "results": results if results is not None else default_results,
+        "elapsed_time": elapsed,
+        "success": success,
+    }
+    target_dir = dbt_project_dir / "target"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "run_results.json").write_text(_json.dumps(doc))
+
+
+class TestCaptureDlt:
+    """Unit tests for observability.capture_dlt."""
+
+    def test_no_op_when_raw_db_missing(self, tmp_path: Path):
+        from tycoon.observability import capture_dlt
+
+        assert capture_dlt(tmp_path / "meta.duckdb", tmp_path / "missing.duckdb") == 0
+
+    def test_no_op_when_no_dlt_loads(self, tmp_path: Path):
+        from tycoon.observability import capture_dlt
+
+        raw = tmp_path / "raw.duckdb"
+        con = duckdb.connect(str(raw))
+        con.execute("CREATE SCHEMA plain")
+        con.execute("CREATE TABLE plain.thing (id INTEGER)")
+        con.close()
+
+        meta = tmp_path / "meta.duckdb"
+        capture_dlt(meta, raw)
+
+        probe = duckdb.connect(str(meta), read_only=True)
+        try:
+            row = probe.execute("SELECT count(*) FROM dlt_runs").fetchone()
+            assert row is not None and row[0] == 0
+        finally:
+            probe.close()
+
+    def test_mirrors_loads_and_row_counts(self, tmp_path: Path):
+        from tycoon.observability import capture_dlt
+
+        raw = _make_dlt_db(
+            tmp_path,
+            schemas={
+                "raw_src_a": [("items", 3), ("orders", 5)],
+                "raw_src_b": [("events", 7)],
+            },
+        )
+        meta = tmp_path / "meta.duckdb"
+        capture_dlt(meta, raw)
+
+        con = duckdb.connect(str(meta), read_only=True)
+        try:
+            runs = con.execute(
+                "SELECT source_schema, load_id, status FROM dlt_runs ORDER BY source_schema"
+            ).fetchall()
+            assert runs == [
+                ("raw_src_a", "load-1", 0),
+                ("raw_src_b", "load-2", 0),
+            ]
+
+            rows = con.execute(
+                "SELECT source_schema, table_name, rows_loaded "
+                "FROM dlt_rows_by_table ORDER BY source_schema, table_name"
+            ).fetchall()
+            assert rows == [
+                ("raw_src_a", "items", 3),
+                ("raw_src_a", "orders", 5),
+                ("raw_src_b", "events", 7),
+            ]
+        finally:
+            con.close()
+
+    def test_idempotent_repeated_captures(self, tmp_path: Path):
+        from tycoon.observability import capture_dlt
+
+        raw = _make_dlt_db(tmp_path, schemas={"s": [("t", 2)]})
+        meta = tmp_path / "meta.duckdb"
+
+        capture_dlt(meta, raw)
+        capture_dlt(meta, raw)  # re-capture same loads → no duplicates
+
+        con = duckdb.connect(str(meta), read_only=True)
+        try:
+            runs = con.execute("SELECT count(*) FROM dlt_runs").fetchone()
+            assert runs is not None and runs[0] == 1
+            rows = con.execute("SELECT count(*) FROM dlt_rows_by_table").fetchone()
+            assert rows is not None and rows[0] == 1
+        finally:
+            con.close()
+
+    def test_tolerates_missing_schema_version_hash(self, tmp_path: Path):
+        from tycoon.observability import capture_dlt
+
+        raw = _make_dlt_db(
+            tmp_path,
+            schemas={"raw_old": [("items", 1)]},
+            include_schema_version_hash=False,
+        )
+        meta = tmp_path / "meta.duckdb"
+        capture_dlt(meta, raw)
+
+        con = duckdb.connect(str(meta), read_only=True)
+        try:
+            row = con.execute(
+                "SELECT schema_version_hash FROM dlt_runs"
+            ).fetchone()
+            assert row is not None and row[0] is None
+        finally:
+            con.close()
+
+
+class TestCaptureDbt:
+    """Unit tests for observability.capture_dbt."""
+
+    def test_no_op_when_run_results_missing(self, tmp_path: Path):
+        from tycoon.observability import capture_dbt
+
+        dbt_dir = tmp_path / "dbt"
+        dbt_dir.mkdir()
+        meta = tmp_path / "meta.duckdb"
+        assert capture_dbt(meta, dbt_dir) is None
+
+    def test_captures_invocation_and_nodes(self, tmp_path: Path):
+        from tycoon.observability import capture_dbt
+
+        dbt_dir = tmp_path / "dbt"
+        dbt_dir.mkdir()
+        _write_run_results(dbt_dir, invocation_id="abc-123", command="build")
+
+        meta = tmp_path / "meta.duckdb"
+        result = capture_dbt(meta, dbt_dir, command="build")
+        assert result == "abc-123"
+
+        con = duckdb.connect(str(meta), read_only=True)
+        try:
+            run = con.execute(
+                "SELECT invocation_id, command, success, models_ok, tests_passed "
+                "FROM dbt_runs"
+            ).fetchone()
+            assert run == ("abc-123", "build", True, 1, 1)
+
+            nodes = con.execute(
+                "SELECT node_name, resource_type, status, rows_affected "
+                "FROM dbt_nodes ORDER BY node_name"
+            ).fetchall()
+            assert nodes == [
+                ("model.demo.stg_orders", "model", "success", 1000),
+                ("test.demo.not_null_stg_orders_id", "test", "pass", None),
+            ]
+        finally:
+            con.close()
+
+    def test_skips_duplicate_invocation(self, tmp_path: Path):
+        from tycoon.observability import capture_dbt
+
+        dbt_dir = tmp_path / "dbt"
+        dbt_dir.mkdir()
+        _write_run_results(dbt_dir, invocation_id="dup-1")
+
+        meta = tmp_path / "meta.duckdb"
+        assert capture_dbt(meta, dbt_dir) == "dup-1"
+        assert capture_dbt(meta, dbt_dir) is None  # already captured
+
+        con = duckdb.connect(str(meta), read_only=True)
+        try:
+            row = con.execute("SELECT count(*) FROM dbt_runs").fetchone()
+            assert row is not None and row[0] == 1
+        finally:
+            con.close()
+
+    def test_counts_failed_tests_and_model_errors(self, tmp_path: Path):
+        from tycoon.observability import capture_dbt
+
+        dbt_dir = tmp_path / "dbt"
+        dbt_dir.mkdir()
+        _write_run_results(
+            dbt_dir,
+            invocation_id="mixed-1",
+            success=False,
+            results=[
+                {
+                    "unique_id": "model.demo.ok_model",
+                    "status": "success",
+                    "execution_time": 0.5,
+                    "timing": [],
+                    "adapter_response": {"rows_affected": 10},
+                },
+                {
+                    "unique_id": "model.demo.bad_model",
+                    "status": "error",
+                    "execution_time": 0.1,
+                    "timing": [],
+                    "adapter_response": {},
+                    "message": "boom",
+                },
+                {
+                    "unique_id": "test.demo.t1",
+                    "status": "fail",
+                    "execution_time": 0.1,
+                    "timing": [],
+                    "adapter_response": {},
+                },
+            ],
+        )
+
+        meta = tmp_path / "meta.duckdb"
+        capture_dbt(meta, dbt_dir)
+
+        con = duckdb.connect(str(meta), read_only=True)
+        try:
+            row = con.execute(
+                "SELECT success, models_ok, models_error, tests_passed, tests_failed FROM dbt_runs"
+            ).fetchone()
+            assert row == (False, 1, 1, 0, 1)
+        finally:
+            con.close()
+
+
+class TestRefreshUsageDashboards:
+    """Integration tests for rill_generator.refresh_usage_dashboards."""
+
+    def test_no_op_when_rill_dir_missing(self, tmp_path: Path):
+        from tycoon.observability import capture_dlt
+        from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
+
+        raw = _make_dlt_db(tmp_path, schemas={"s": [("t", 1)]})
+        # seed metadata
+        capture_dlt(tmp_path / ".tycoon" / "metadata.duckdb", raw)
+
+        result = refresh_usage_dashboards(
+            project_root=tmp_path, rill_dir=tmp_path / "does_not_exist"
+        )
+        assert result == []
+
+    def test_no_op_when_metadata_db_missing(self, tmp_path: Path):
+        from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
+
+        rill_dir = tmp_path / "rill"
+        rill_dir.mkdir()
+        assert refresh_usage_dashboards(project_root=tmp_path, rill_dir=rill_dir) == []
+
+    def test_emits_only_dlt_dashboard_when_only_dlt_data(self, tmp_path: Path):
+        from tycoon.observability import capture_dlt
+        from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
+
+        raw = _make_dlt_db(tmp_path, schemas={"s": [("t", 2)]})
+        capture_dlt(tmp_path / ".tycoon" / "metadata.duckdb", raw)
+
+        rill_dir = tmp_path / "rill"
+        rill_dir.mkdir()
+        refresh_usage_dashboards(project_root=tmp_path, rill_dir=rill_dir)
+
+        assert (rill_dir / "dashboards" / "_tycoon_dlt_usage.yaml").exists()
+        assert not (rill_dir / "dashboards" / "_tycoon_dbt_usage.yaml").exists()
+
+        parquet_dir = tmp_path / "data" / "parquet" / "_tycoon"
+        assert (parquet_dir / "dlt_runs.parquet").exists()
+        assert (parquet_dir / "dlt_rows_by_table.parquet").exists()
+
+    def test_emits_both_dashboards_when_both_data_present(self, tmp_path: Path):
+        from tycoon.observability import capture_dbt, capture_dlt
+        from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
+
+        meta = tmp_path / ".tycoon" / "metadata.duckdb"
+
+        raw = _make_dlt_db(tmp_path, schemas={"s": [("t", 1)]})
+        capture_dlt(meta, raw)
+
+        dbt_dir = tmp_path / "dbt"
+        dbt_dir.mkdir()
+        _write_run_results(dbt_dir, invocation_id="both-1")
+        capture_dbt(meta, dbt_dir)
+
+        rill_dir = tmp_path / "rill"
+        rill_dir.mkdir()
+        refresh_usage_dashboards(project_root=tmp_path, rill_dir=rill_dir)
+
+        assert (rill_dir / "dashboards" / "_tycoon_dlt_usage.yaml").exists()
+        assert (rill_dir / "dashboards" / "_tycoon_dbt_usage.yaml").exists()
+
+        assert (rill_dir / "sources" / "_tycoon_dlt_runs.yaml").exists()
+        assert (rill_dir / "sources" / "_tycoon_dbt_runs.yaml").exists()
+        assert (rill_dir / "metrics" / "_tycoon_dbt_runs_mv.yaml").exists()
+        assert (rill_dir / "metrics" / "_tycoon_dbt_nodes_mv.yaml").exists()
+
+    def test_dashboard_yamls_reference_parquet_paths(self, tmp_path: Path):
+        from tycoon.observability import capture_dlt
+        from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
+
+        raw = _make_dlt_db(tmp_path, schemas={"s": [("t", 1)]})
+        capture_dlt(tmp_path / ".tycoon" / "metadata.duckdb", raw)
+
+        rill_dir = tmp_path / "rill"
+        rill_dir.mkdir()
+        refresh_usage_dashboards(project_root=tmp_path, rill_dir=rill_dir)
+
+        src_yaml = (rill_dir / "sources" / "_tycoon_dlt_runs.yaml").read_text()
+        assert "local_file" in src_yaml
+        assert "dlt_runs.parquet" in src_yaml
