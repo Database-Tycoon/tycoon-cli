@@ -54,7 +54,10 @@ Repository = "https://github.com/Database-Tycoon/tycoon-cli"
 Issues = "https://github.com/Database-Tycoon/tycoon-cli/issues"
 
 [dependency-groups]
-dev = ["pytest==9.0.3"]
+dev = [
+    "pytest==9.0.3",
+    "pytest-cov>=7.1.0",
+]
 
 [project.scripts]
 tycoon = "tycoon.cli:app"
@@ -83,3 +86,24 @@ target-version = "py312"
 # Forward-reference string literals in type annotations trip F821 when the
 # referenced name is imported inside the method body to avoid circular imports.
 "tests/test_ingestion.py" = ["F821"]
+
+[tool.coverage.run]
+source = ["src/tycoon"]
+branch = false
+
+[tool.coverage.report]
+# Baseline at v0.1.2 is ~61%. Untested modules are predominantly the
+# orchestration (Dagster) and server (FastAPI) runtime layers, which
+# require external services to exercise. Floor is set at 55 to give
+# routine drift meaningful headroom over the baseline; raise it as
+# coverage improves. The goal is a regression gate, not aspirational
+# tracking — raising it 1-2 points per release alongside real test
+# additions is the pattern.
+fail_under = 55
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
