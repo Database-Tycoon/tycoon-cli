@@ -176,6 +176,58 @@ def _check_stack_config() -> None:
             error(f"External dbt project not found at {project.dbt_project_dir}.")
 
 
+def _check_observability() -> None:
+    """Report whether run-history capture has fired at least once.
+
+    Useful first-time diagnosis of "why are my dashboards empty?" — if
+    the metadata DB doesn't exist or is empty, dlt/dbt have not yet
+    triggered the capture hooks.
+    """
+    from tycoon.observability import has_any_observability_data, metadata_db_path
+
+    meta = metadata_db_path(config.root)
+    if not meta.exists():
+        info(
+            "Observability: metadata DB not yet created — "
+            "run `tycoon data sources run` or `tycoon data transform run` to "
+            "start capturing history."
+        )
+        return
+
+    try:
+        has_dlt, has_dbt = has_any_observability_data(meta)
+    except Exception as exc:
+        warn(f"Observability: metadata DB present but unreadable ({exc}).")
+        return
+
+    if not (has_dlt or has_dbt):
+        info(
+            "Observability: metadata DB exists but no runs captured yet — "
+            "run `tycoon data sources run` or `tycoon data transform run`."
+        )
+        return
+
+    import duckdb
+
+    con = duckdb.connect(str(meta), read_only=True)
+    try:
+        dlt_count = 0
+        dbt_count = 0
+        if has_dlt:
+            row = con.execute("SELECT count(*) FROM dlt_runs").fetchone()
+            dlt_count = row[0] if row else 0
+        if has_dbt:
+            row = con.execute("SELECT count(*) FROM dbt_runs").fetchone()
+            dbt_count = row[0] if row else 0
+    finally:
+        con.close()
+
+    success(
+        f"Observability: {dlt_count} dlt load(s), {dbt_count} dbt run(s) captured. "
+        f"View with `tycoon data history`."
+    )
+
+
 def doctor_cmd() -> None:
     """Check the environment for potential issues."""
     header("Tycoon Doctor")
@@ -196,5 +248,8 @@ def doctor_cmd() -> None:
         if config.has_project_file:
             console.print(Panel("Checking stack configuration...", expand=False))
             _check_stack_config()
+
+            console.print(Panel("Checking observability...", expand=False))
+            _check_observability()
 
     info("All checks complete.")

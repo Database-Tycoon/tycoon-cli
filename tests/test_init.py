@@ -77,6 +77,13 @@ class TestBlankScaffold:
         scaffold_blank_project(tmp_path, "test-project")
         assert (tmp_path / ".gitignore").exists()
 
+    def test_gitignore_excludes_metadata_duckdb(self, tmp_path, monkeypatch):
+        """Regression: observability metadata DB must not get committed."""
+        monkeypatch.chdir(tmp_path)
+        scaffold_blank_project(tmp_path, "test-project")
+        content = (tmp_path / ".gitignore").read_text()
+        assert ".tycoon/metadata.duckdb" in content
+
     def test_scaffolded_yml_loads_with_load_project(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         scaffold_blank_project(tmp_path, "test-project")

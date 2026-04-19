@@ -85,3 +85,64 @@ class TestDataHelp:
         assert result.exit_code == 0
         assert "--source" in result.stdout
         assert "--db" in result.stdout
+
+
+class TestCleanMetadataPreservation:
+    """tycoon data clean must preserve .tycoon/metadata.duckdb unless --metadata."""
+
+    def _setup(self, tmp_path: Path, monkeypatch):
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        (tmp_path / "tycoon.yml").write_text("name: test\nsources: {}\n")
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        meta_dir = tmp_path / ".tycoon"
+        meta_dir.mkdir()
+
+        # Seed raw + warehouse + metadata DBs
+        raw = data_dir / "raw.duckdb"
+        local = data_dir / "warehouse.duckdb"
+        meta = meta_dir / "metadata.duckdb"
+        for p in (raw, local, meta):
+            duckdb.connect(str(p)).close()
+
+        cfg = TycoonConfig(project_root=tmp_path)
+        monkeypatch.setattr("tycoon.commands.db.config", cfg)
+        return raw, local, meta
+
+    def test_clean_all_preserves_metadata_by_default(self, tmp_path, monkeypatch, cli_runner):
+        raw, local, meta = self._setup(tmp_path, monkeypatch)
+        # Answer "y" to the confirm prompt
+        result = cli_runner.invoke(app, ["data", "clean", "--all"], input="y\n")
+        assert result.exit_code == 0
+        assert not raw.exists()
+        assert not local.exists()
+        assert meta.exists(), "metadata.duckdb must survive --all by default"
+
+    def test_clean_all_with_metadata_flag_wipes_metadata(
+        self, tmp_path, monkeypatch, cli_runner
+    ):
+        raw, local, meta = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(
+            app, ["data", "clean", "--all", "--metadata"], input="y\n"
+        )
+        assert result.exit_code == 0
+        assert not raw.exists()
+        assert not local.exists()
+        assert not meta.exists()
+
+    def test_clean_metadata_alone_removes_only_metadata(
+        self, tmp_path, monkeypatch, cli_runner
+    ):
+        raw, local, meta = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "clean", "--metadata"], input="y\n")
+        assert result.exit_code == 0
+        assert raw.exists()
+        assert local.exists()
+        assert not meta.exists()
+
+    def test_clean_help_mentions_metadata(self, cli_runner):
+        result = cli_runner.invoke(app, ["data", "clean", "--help"])
+        assert result.exit_code == 0
+        assert "--metadata" in result.stdout
