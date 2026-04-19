@@ -66,7 +66,16 @@ def test_csv_import_e2e(cli_runner, tmp_path, monkeypatch):
 
     _rebind_config(monkeypatch, project)
     result = cli_runner.invoke(app, ["data", "sources", "run", "files"])
-    assert result.exit_code == 0, f"sources run failed:\n{result.stdout}"
+    # error() in tycoon.utils.console writes to a stderr-only Console, so we
+    # must include result.stderr in the assertion message to see what broke.
+    stderr = result.stderr if result.stderr_bytes else ""
+    traceback = repr(result.exception) if result.exception else ""
+    assert result.exit_code == 0, (
+        f"sources run failed (exit {result.exit_code}):\n"
+        f"--- stdout ---\n{result.stdout}\n"
+        f"--- stderr ---\n{stderr}\n"
+        f"--- exception ---\n{traceback}"
+    )
 
     raw_db = project / "data" / "files_raw.duckdb"
     assert raw_db.exists(), "raw db was not created"
