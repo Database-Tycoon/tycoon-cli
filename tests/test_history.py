@@ -208,6 +208,97 @@ class TestHistoryList:
         assert "aardvark" not in result.stdout
 
 
+class TestHistorySourceFilter:
+    """`--source` filters dlt runs by schema; hides dbt runs entirely."""
+
+    def test_source_filters_dlt_by_schema_literal(self, history_project, cli_runner):
+        _seed_metadata(
+            history_project,
+            dlt_runs=[
+                ("raw_apples", "apple-load-1", 0, datetime(2026, 4, 19, 10, 0), "h"),
+                ("raw_bananas", "banana-load-1", 0, datetime(2026, 4, 19, 11, 0), "h"),
+            ],
+        )
+        result = cli_runner.invoke(
+            app, ["data", "history", "--source", "raw_apples"]
+        )
+        assert result.exit_code == 0
+        # _short() truncates load_id to 8 chars → "apple-lo"
+        assert "apple-lo" in result.stdout
+        assert "banana-l" not in result.stdout
+
+    def test_source_resolves_config_name_to_schema(self, history_project, cli_runner, monkeypatch):
+        # Set up tycoon.yml with a named source whose schema differs from its name
+        yml = (
+            "name: test\n"
+            "version: 0.1.0\n"
+            "database:\n"
+            "  raw: data/raw.duckdb\n"
+            "  warehouse: data/warehouse.duckdb\n"
+            "sources:\n"
+            "  pokeapi:\n"
+            "    type: rest_api\n"
+            "    schema: raw_pokeapi\n"
+        )
+        (history_project / "tycoon.yml").write_text(yml)
+
+        # Rebind the history command's config to pick up the updated yml
+        from tycoon.commands import history as history_mod
+        from tycoon.config import TycoonConfig
+
+        monkeypatch.setattr(history_mod, "config", TycoonConfig(project_root=history_project))
+
+        _seed_metadata(
+            history_project,
+            dlt_runs=[
+                ("raw_pokeapi", "poke-load-1", 0, datetime(2026, 4, 19, 10, 0), "h"),
+                ("raw_other", "other-load-1", 0, datetime(2026, 4, 19, 11, 0), "h"),
+            ],
+        )
+        # Pass the config name 'pokeapi' — should be resolved to schema 'raw_pokeapi'
+        result = cli_runner.invoke(app, ["data", "history", "--source", "pokeapi"])
+        assert result.exit_code == 0
+        # The resolved schema should appear in the title; the other schema should not
+        assert "raw_pokeapi" in result.stdout
+        assert "raw_other" not in result.stdout
+
+    def test_source_hides_dbt_runs(self, history_project, cli_runner):
+        _seed_metadata(
+            history_project,
+            dlt_runs=[
+                ("raw_apples", "apple-load-1", 0, datetime(2026, 4, 19, 10, 0), "h"),
+            ],
+            dbt_runs=[
+                (
+                    "inv-xyz",
+                    "build",
+                    datetime(2026, 4, 19, 11, 0),
+                    1.0,
+                    True,
+                    1, 0, 0, 0, "1.9.0", "dev",
+                ),
+            ],
+        )
+        result = cli_runner.invoke(
+            app, ["data", "history", "--source", "raw_apples"]
+        )
+        assert result.exit_code == 0
+        assert "apple-lo" in result.stdout
+        # The dbt invocation id should NOT appear when --source is active
+        assert "inv-xyz" not in result.stdout
+
+    def test_source_with_no_matches_informs(self, history_project, cli_runner):
+        _seed_metadata(
+            history_project,
+            dlt_runs=[("raw_apples", "apple-load-1", 0, datetime(2026, 4, 19, 10, 0), "h")],
+        )
+        result = cli_runner.invoke(
+            app, ["data", "history", "--source", "raw_nonexistent"]
+        )
+        assert result.exit_code == 0
+        assert "No dlt runs captured" in result.stdout
+
+
 # ---------------------------------------------------------------------------
 # history show (drilldown)
 # ---------------------------------------------------------------------------

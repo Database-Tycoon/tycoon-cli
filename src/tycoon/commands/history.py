@@ -77,33 +77,64 @@ def _short(id_value: str, n: int = 8) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _load_dlt_rows(con: duckdb.DuckDBPyConnection, limit: int) -> list[tuple]:
+def _load_dlt_rows(
+    con: duckdb.DuckDBPyConnection,
+    limit: int,
+    source_schema: str | None = None,
+) -> list[tuple]:
     """Return the most recent dlt runs with total rows loaded per load.
+
+    If ``source_schema`` is given, only loads for that schema are returned.
 
     Tuple shape: (when_ts, tool, ref, full_id, ok, detail_str)
     """
-    rows = con.execute(
-        """
-        SELECT
-            r.inserted_at,
-            r.source_schema,
-            r.load_id,
-            r.status,
-            COALESCE(t.rows_total, 0) AS rows_total,
-            COALESCE(t.table_count, 0) AS table_count
-        FROM dlt_runs r
-        LEFT JOIN (
-            SELECT source_schema, load_id,
-                   SUM(rows_loaded) AS rows_total,
-                   COUNT(DISTINCT table_name) AS table_count
-            FROM dlt_rows_by_table
-            GROUP BY source_schema, load_id
-        ) t USING (source_schema, load_id)
-        ORDER BY r.inserted_at DESC NULLS LAST
-        LIMIT ?
-        """,
-        [limit],
-    ).fetchall()
+    if source_schema:
+        rows = con.execute(
+            """
+            SELECT
+                r.inserted_at,
+                r.source_schema,
+                r.load_id,
+                r.status,
+                COALESCE(t.rows_total, 0) AS rows_total,
+                COALESCE(t.table_count, 0) AS table_count
+            FROM dlt_runs r
+            LEFT JOIN (
+                SELECT source_schema, load_id,
+                       SUM(rows_loaded) AS rows_total,
+                       COUNT(DISTINCT table_name) AS table_count
+                FROM dlt_rows_by_table
+                GROUP BY source_schema, load_id
+            ) t USING (source_schema, load_id)
+            WHERE r.source_schema = ?
+            ORDER BY r.inserted_at DESC NULLS LAST
+            LIMIT ?
+            """,
+            [source_schema, limit],
+        ).fetchall()
+    else:
+        rows = con.execute(
+            """
+            SELECT
+                r.inserted_at,
+                r.source_schema,
+                r.load_id,
+                r.status,
+                COALESCE(t.rows_total, 0) AS rows_total,
+                COALESCE(t.table_count, 0) AS table_count
+            FROM dlt_runs r
+            LEFT JOIN (
+                SELECT source_schema, load_id,
+                       SUM(rows_loaded) AS rows_total,
+                       COUNT(DISTINCT table_name) AS table_count
+                FROM dlt_rows_by_table
+                GROUP BY source_schema, load_id
+            ) t USING (source_schema, load_id)
+            ORDER BY r.inserted_at DESC NULLS LAST
+            LIMIT ?
+            """,
+            [limit],
+        ).fetchall()
 
     out: list[tuple] = []
     for inserted_at, schema, load_id, status, rows_total, table_count in rows:
@@ -172,20 +203,48 @@ def _render_history_table(combined: list[tuple]) -> Table:
     return table
 
 
-def _list_history(tool: str, limit: int) -> None:
+def _resolve_source_schema(source: str) -> str:
+    """Translate a source name into its schema.
+
+    If ``source`` matches a name in ``tycoon.yml``'s sources map, return its
+    ``schema_name``. Otherwise treat it as a literal schema name. This lets
+    users say ``--source pokeapi`` (config name) or ``--source raw_pokeapi``
+    (schema literal) interchangeably.
+    """
+    try:
+        src = config.sources.get(source)
+        if src is not None:
+            return src.schema_name
+    except Exception:
+        pass
+    return source
+
+
+def _list_history(tool: str, limit: int, source: str | None = None) -> None:
     meta = _metadata_or_exit()
+
+    source_schema = _resolve_source_schema(source) if source else None
+
     con = duckdb.connect(str(meta), read_only=True)
     try:
         combined: list[tuple] = []
         if tool in ("all", "dlt"):
-            combined.extend(_load_dlt_rows(con, limit))
-        if tool in ("all", "dbt"):
+            combined.extend(_load_dlt_rows(con, limit, source_schema=source_schema))
+        # dbt runs aren't source-scoped (a build touches all models), so when
+        # the user asks for a specific source we hide dbt entirely rather
+        # than polluting the view with unfiltered invocations.
+        if tool in ("all", "dbt") and source_schema is None:
             combined.extend(_load_dbt_rows(con, limit))
     finally:
         con.close()
 
     if not combined:
-        info("No runs captured yet for the selected tool(s).")
+        if source_schema:
+            info(
+                f"No dlt runs captured for source schema [bold]{source_schema}[/bold]."
+            )
+        else:
+            info("No runs captured yet for the selected tool(s).")
         return
 
     combined.sort(
@@ -194,7 +253,10 @@ def _list_history(tool: str, limit: int) -> None:
     )
     combined = combined[:limit]
 
-    header("Run History")
+    title = "Run History"
+    if source_schema:
+        title += f" — {source_schema}"
+    header(title)
     console.print(_render_history_table(combined))
     console.print()
     info("Drill in with [bold]tycoon data history show <id>[/bold] (short prefix OK).")
@@ -379,6 +441,17 @@ def history_default(
     limit: int = typer.Option(
         20, "--limit", "-n", help="Max rows to display (default 20)."
     ),
+    source: str = typer.Option(
+        None,
+        "--source",
+        "-s",
+        help=(
+            "Filter dlt runs to a specific source. Accepts either the "
+            "config name from tycoon.yml (e.g. 'pokeapi') or the raw "
+            "schema literal (e.g. 'raw_pokeapi'). dbt runs are hidden "
+            "when this flag is set since they aren't source-scoped."
+        ),
+    ),
 ) -> None:
     """List the most recent dlt + dbt runs captured in the metadata DB."""
     if ctx.invoked_subcommand is not None:
@@ -386,7 +459,7 @@ def history_default(
     if tool not in ("all", "dlt", "dbt"):
         error(f"Invalid --tool '{tool}'. Use: all, dlt, dbt.")
         raise typer.Exit(1)
-    _list_history(tool, limit)
+    _list_history(tool, limit, source=source)
 
 
 @app.command("show")

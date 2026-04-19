@@ -17,9 +17,14 @@ concurrency:
 
 jobs:
   test:
-    name: pytest
+    name: pytest (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      # Keep one failure from hiding the other version's result.
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
@@ -28,11 +33,11 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Set up Python
-        run: uv python install 3.12
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
 
       - name: Sync project (including dagster + ask extras)
-        run: uv sync --all-extras
+        run: uv sync --all-extras --python ${{ matrix.python-version }}
 
       - name: Run pytest
         # Default addopts already excludes the `e2e` marker. The
