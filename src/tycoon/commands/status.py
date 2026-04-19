@@ -11,6 +11,7 @@ import typer
 from rich.table import Table
 
 from tycoon.config import config
+from tycoon.observability import metadata_db_path
 from tycoon.utils.console import console, error, header, info
 
 
@@ -51,6 +52,24 @@ def _query_row_counts(raw_db: Path, schema: str) -> dict[str, int]:
     return counts
 
 
+def _query_run_counts(metadata_db: Path) -> dict[str, int]:
+    """Return {source_schema: run_count} from the observability metadata DB.
+
+    Returns an empty dict if the metadata DB doesn't exist yet.
+    """
+    if not metadata_db.exists():
+        return {}
+    try:
+        con = duckdb.connect(str(metadata_db), read_only=True)
+        rows = con.execute(
+            "SELECT source_schema, COUNT(*) FROM dlt_runs GROUP BY source_schema"
+        ).fetchall()
+        con.close()
+        return {schema: count for schema, count in rows}
+    except Exception:
+        return {}
+
+
 def _freshness_label(last_sync: Optional[datetime.datetime]) -> tuple[str, str]:
     """Return (label, style) describing how fresh a sync is."""
     if last_sync is None:
@@ -89,12 +108,14 @@ def status_cmd() -> None:
 
     raw_db = config.raw_db
     db_exists = raw_db.exists()
+    run_counts = _query_run_counts(metadata_db_path(config.root))
 
     table = Table(show_lines=True)
     table.add_column("Source", style="bold cyan")
     table.add_column("Type", style="dim")
     table.add_column("Last Sync")
     table.add_column("Freshness")
+    table.add_column("Runs", justify="right")
     table.add_column("Tables")
     table.add_column("Rows", justify="right")
 
@@ -102,14 +123,16 @@ def status_cmd() -> None:
         schema = src.schema_name
 
         if not db_exists:
-            table.add_row(name, src.type, "—", "[red]never[/red]", "—", "—")
+            table.add_row(name, src.type, "—", "[red]never[/red]", "—", "—", "—")
             continue
 
         last_sync = _query_last_sync(raw_db, schema)
         row_counts = _query_row_counts(raw_db, schema)
+        runs = run_counts.get(schema, 0)
 
         sync_str = last_sync.strftime("%Y-%m-%d %H:%M") if last_sync else "—"
         fresh_label, fresh_style = _freshness_label(last_sync)
+        runs_str = f"{runs:,}" if runs else "—"
         tables_str = str(len(row_counts)) if row_counts else "—"
         total_rows = f"{sum(row_counts.values()):,}" if row_counts else "—"
 
@@ -118,8 +141,12 @@ def status_cmd() -> None:
             src.type,
             sync_str,
             f"[{fresh_style}]{fresh_label}[/{fresh_style}]",
+            runs_str,
             tables_str,
             total_rows,
         )
 
     console.print(table)
+    if run_counts:
+        console.print()
+        info("Drill in with [bold]tycoon data history[/bold] for per-run detail.")

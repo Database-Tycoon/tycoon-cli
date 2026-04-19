@@ -68,7 +68,9 @@ Already have a pipeline? `tycoon init` will ask about your ingestion tool, wareh
 | `tycoon data analyze <source>` | Scaffold dbt staging models; add `--rill` to also generate dashboards |
 | `tycoon data db query <sql>` | Run a SQL query against the warehouse |
 | `tycoon data run-all` | Ingest all sources then run dbt build |
-| `tycoon data status` | Show freshness and row counts for each source |
+| `tycoon data status` | Show freshness, row counts, and capture counts for each source |
+| `tycoon data history` | List recent dlt + dbt runs from the observability metadata DB |
+| `tycoon data history show <id>` | Per-run detail (per-table rows for dlt, per-node status for dbt) |
 | `tycoon start` | Start Rill, Dagster, Nao, and the web UI |
 | `tycoon stop` | Stop all services |
 | `tycoon ask chat` | Query your data in natural language (Nao) |
@@ -162,6 +164,38 @@ by default since it requires a Rill project directory (`rill/`) to already exist
 
 **Architecture**: sources read from Parquet via Rill's `local_file` connector into its
 built-in in-memory OLAP. Dashboards are immediately usable without a dbt run.
+
+---
+
+## Observability (dlt + dbt run history)
+
+Every `tycoon data sources run` mirrors dlt's load history into `.tycoon/metadata.duckdb`.
+Every `tycoon data transform run/test/build` parses `target/run_results.json` and records
+one row per invocation plus one per model/test. Both captures are best-effort — they never
+break the underlying command.
+
+Peek at history from the terminal:
+
+```bash
+tycoon data history                  # last 20 runs across dlt + dbt
+tycoon data history --tool dbt -n 50 # dbt-only, last 50
+tycoon data history show deadbeef    # drill into a specific run (short prefix OK)
+```
+
+Or open the two Rill dashboards (`_tycoon_dlt_usage`, `_tycoon_dbt_usage`) that
+auto-appear alongside your per-source explores — success rate, duration, rows
+loaded, models built, tests passed/failed, all filterable by schema, table,
+command, and dbt version.
+
+Query the metadata DB directly for anything the dashboards don't cover:
+
+```bash
+tycoon data query --db .tycoon/metadata.duckdb \
+  "SELECT invocation_id, command, elapsed_s, success
+   FROM dbt_runs ORDER BY started_at DESC LIMIT 10"
+```
+
+The metadata DB is disposable — delete `.tycoon/metadata.duckdb` to reset history.
 
 ---
 
