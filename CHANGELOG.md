@@ -1,5 +1,24 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - UNRELEASED
+
+_Scope tracked in [`docs/releases/v0.1.3.md`](docs/releases/v0.1.3.md). Seven themes planned: template parameterization, Snowflake/BigQuery warehouse alignment, dbt build in e2e, dlt trace.json enrichment, dbt manifest.json schema diff, one-command MotherDuck/Nao/LM Studio setup ([#7][]), and `tycoon data sync` ([#12][]). Items land here as features ship._
+
+### Added
+
+_(Pending.)_
+
+### Changed
+
+_(Pending.)_
+
+### Fixed
+
+_(Pending.)_
+
+[#7]: https://github.com/Database-Tycoon/tycoon-cli/issues/7
+[#12]: https://github.com/Database-Tycoon/tycoon-cli/issues/12
+
 ## [0.1.2] - 2026-04-19
 
 ### Added
