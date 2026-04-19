@@ -45,8 +45,8 @@ jobs:
         # is included so CI gates on real integration.
         #
         # --cov gates on the coverage floor in pyproject.toml
-        # ([tool.coverage.report].fail_under). Pinned at 55% for v0.1.2
-        # (baseline ~61%, ~6% drift headroom); raise over time as
+        # ([tool.coverage.report].fail_under). Pinned at 60% for v0.1.2
+        # (baseline ~65%, ~5% drift headroom); raise over time as
         # coverage improves. CI fails if coverage drops below the floor.
         run: uv run pytest -q --cov=src/tycoon --cov-report=term --cov-report=xml
 

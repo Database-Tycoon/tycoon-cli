@@ -92,14 +92,14 @@ source = ["src/tycoon"]
 branch = false
 
 [tool.coverage.report]
-# Baseline at v0.1.2 is ~61%. Untested modules are predominantly the
-# orchestration (Dagster) and server (FastAPI) runtime layers, which
-# require external services to exercise. Floor is set at 55 to give
-# routine drift meaningful headroom over the baseline; raise it as
-# coverage improves. The goal is a regression gate, not aspirational
-# tracking — raising it 1-2 points per release alongside real test
-# additions is the pattern.
-fail_under = 55
+# Baseline at v0.1.2 is ~65% (after server route tests and Dagster
+# asset-definition smoke tests landed). The remaining untested code is
+# concentrated in the websocket streaming path, the services.manager
+# subprocess orchestrator, and a handful of dead/untested orchestration
+# assets that require a full Dagster + dbt stack to exercise. Floor is
+# set at 60 to give routine drift meaningful headroom over the baseline;
+# raise it 1-2 points per release alongside real test additions.
+fail_under = 60
 show_missing = true
 skip_covered = false
 exclude_lines = [
