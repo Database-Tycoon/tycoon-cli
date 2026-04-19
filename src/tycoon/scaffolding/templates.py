@@ -92,6 +92,11 @@ dbt_project/logs/
 # Tycoon AI memory logs
 .tycoon/*.log
 
+# Nao (AI agent) — chat SQLite and per-project sync artifacts
+.tycoon/nao/db.sqlite*
+.tycoon/nao/databases/
+.tycoon/nao/repos/
+
 # OS
 .DS_Store
 """
@@ -127,8 +132,15 @@ def scaffold_blank_project(
         raw_db_path = f"md:{safe_name}_raw"
         warehouse_db_path = f"md:{safe_name}"
     elif existing_warehouse_path:
-        raw_db_path = existing_warehouse_path
         warehouse_db_path = existing_warehouse_path
+        # Keep raw distinct from warehouse: dbt-duckdb's profile attaches the
+        # raw DB read-only alongside the warehouse, and duckdb rejects a
+        # same-file double-attach with a "Unique file handle conflict" error.
+        warehouse_path_obj = Path(warehouse_db_path)
+        if warehouse_path_obj.name == "raw.duckdb":
+            raw_db_path = str(warehouse_path_obj.with_name("raw_source.duckdb"))
+        else:
+            raw_db_path = str(warehouse_path_obj.with_name("raw.duckdb"))
     else:
         raw_db_path = "data/raw.duckdb"
         warehouse_db_path = "data/warehouse.duckdb"

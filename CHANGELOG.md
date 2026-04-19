@@ -11,10 +11,28 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Changed
 
+- **`tycoon doctor` now recognizes MotherDuck OAuth** ([#3]). Previously it only checked `MOTHERDUCK_TOKEN`, producing a false-negative `ERROR` for users authenticated via browser OAuth. `doctor` now reports one of: `token (env)`, `OAuth (cached session)`, or `not configured` — and only errors in the last case. README gained a short "MotherDuck authentication" section documenting both paths.
 - Init wizard's warehouse-alignment branch now fires when the chosen warehouse is either DuckDB or MotherDuck. If the adopted dbt-side target changes warehouse type (local ↔ `md:*`), `stack.warehouse` is updated to match.
+- **`build_nao_config` renames `accessors` → `templates`** ([#9]) to match nao-core 0.1.7's config schema. The old key emitted a `FutureWarning` on every `nao sync` / `nao chat` invocation.
+- Default scaffolded `.gitignore` now covers `.tycoon/nao/db.sqlite*`, `.tycoon/nao/databases/`, `.tycoon/nao/repos/` to keep Nao's sync artifacts (which contain row-preview samples) out of version control.
 - Dependency bumps: `rich` 14.3.3 → 15.0.0, `dlt[duckdb]` 1.24.0 → 1.25.0, `duckdb` 1.5.1 → 1.5.2, `pydantic` 2.12.5 → 2.13.2, `fastapi` 0.135.3 → 0.136.0, `dagster` 1.12.20 → 1.13.0, `dagster-webserver` 1.12.20 → 1.13.0, `dagster-dbt` 0.28.20 → 0.29.0, `dagster-dlt` 0.28.20 → 0.29.0, `nao-core` 0.0.59 → 0.1.7, `pytest` (dev) 9.0.2 → 9.0.3.
 
+### Fixed
+
+- **`tycoon init` no longer emits `raw == warehouse`** ([#11]). The wizard's "Local DuckDB at `./data/warehouse.duckdb`" branch previously pointed both `database.raw` and `database.warehouse` at the same file; `tycoon data transform run` then failed with `Unique file handle conflict: Cannot attach "raw"` because dbt-duckdb can't attach a single file twice. Scaffolding now keeps `raw` sibling-distinct (defaults to `data/raw.duckdb`).
+- **`tycoon ask sync` / `ask chat` no longer fail with `No module named nao_core.__main__`** ([#6]). `nao-core` ships a `nao` console script but no `__main__.py`; tycoon now resolves the venv-colocated `nao` binary (mirroring the `dbt` executable helper) instead of invoking `python -m nao_core`.
+- **`build_nao_config` passes `md:<catalog>` URLs through verbatim** ([#5]). Previously the warehouse path was unconditionally run through `os.path.relpath`, producing garbage like `../../md:my_catalog` that breaks the Nao DuckDB connector. Local file paths still relative-ized.
+- **`ask.include_schemas` is now glob-expanded to `<name>.*`** ([#10]). Nao's filter runs `fnmatch` against `schema.table` strings, so bare schema names like `mart` silently matched nothing and every table was filtered out. Already-qualified patterns (anything containing `.`, `*`, or `?`) are left alone.
+- **Nao's chat SQLite database now lives at `.tycoon/nao/db.sqlite`** ([#8]) instead of inside the venv (`nao_core/bin/db.sqlite`). Chat history and local user accounts now survive `uv sync`, venv rebuilds, and tycoon upgrades. Wired via the `DB_URI` env var set in `_nao_env`.
+
 [0.1.2]: https://github.com/Database-Tycoon/tycoon-cli/releases/tag/v0.1.2
+[#3]: https://github.com/Database-Tycoon/tycoon-cli/issues/3
+[#5]: https://github.com/Database-Tycoon/tycoon-cli/issues/5
+[#6]: https://github.com/Database-Tycoon/tycoon-cli/issues/6
+[#8]: https://github.com/Database-Tycoon/tycoon-cli/issues/8
+[#9]: https://github.com/Database-Tycoon/tycoon-cli/issues/9
+[#10]: https://github.com/Database-Tycoon/tycoon-cli/issues/10
+[#11]: https://github.com/Database-Tycoon/tycoon-cli/issues/11
 
 ## [0.1.1] - 2026-04-16
 

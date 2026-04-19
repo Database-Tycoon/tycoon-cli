@@ -116,6 +116,13 @@ ask:                           # optional — requires tycoon[ask]
 
 Each source produces its own raw DuckDB file: `data/raw_<source>.duckdb`. All sources write into `data/warehouse.duckdb` after transformation.
 
+### MotherDuck authentication
+
+`tycoon doctor` recognizes two MotherDuck auth modes for a `stack.warehouse: motherduck` project:
+
+- **`MOTHERDUCK_TOKEN` env var** — use this for CI, Tower, Dagster, or any non-interactive path. Get one at [app.motherduck.com/token](https://app.motherduck.com/token).
+- **Cached OAuth session** — run `duckdb -c "ATTACH 'md:'"` once locally to authenticate via browser; DuckDB caches the token under `~/.duckdb/` and tycoon picks it up from there.
+
 ---
 
 ## Catalog Sources
