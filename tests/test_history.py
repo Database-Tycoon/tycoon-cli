@@ -357,6 +357,63 @@ class TestHistoryShow:
         assert "stg_orders" in result.stdout
         assert "build" in result.stdout
 
+    def test_show_dlt_surfaces_trace_details_when_present(
+        self, history_project, cli_runner
+    ):
+        """v0.1.3: trace-enriched show view should display duration + bytes."""
+        _seed_metadata(
+            history_project,
+            dlt_runs=[
+                ("raw_src", "load-traceable-001", 0, datetime(2026, 4, 19, 12, 0), "h"),
+            ],
+            dlt_rows=[
+                ("raw_src", "widgets", "load-traceable-001", 42),
+            ],
+        )
+
+        from tycoon.observability import capture_dlt_trace_from_dict, metadata_db_path
+
+        trace = {
+            "transaction_id": "txn-history-001",
+            "pipeline_name": "demo",
+            "started_at": datetime(2026, 4, 19, 12, 0, 0),
+            "finished_at": datetime(2026, 4, 19, 12, 0, 3),
+            "engine_version": 1,
+            "steps": [
+                {
+                    "step": "load",
+                    "started_at": datetime(2026, 4, 19, 12, 0, 0),
+                    "finished_at": datetime(2026, 4, 19, 12, 0, 3),
+                    "step_exception": None,
+                    "step_info": {
+                        "load_packages": [
+                            {
+                                "load_id": "load-traceable-001",
+                                "jobs": [
+                                    {
+                                        "job_id": "widgets.aaa.insert_values",
+                                        "table_name": "widgets",
+                                        "file_format": "insert_values",
+                                        "file_size": 8192,
+                                        "elapsed": 0.5,
+                                        "state": "completed_jobs",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                }
+            ],
+        }
+        capture_dlt_trace_from_dict(metadata_db_path(history_project), trace)
+
+        result = cli_runner.invoke(app, ["data", "history", "show", "load-traceable"])
+        assert result.exit_code == 0
+        assert "Duration" in result.stdout
+        assert "Bytes written" in result.stdout
+        # 8192 bytes = 8.0 KB
+        assert "KB" in result.stdout
+
     def test_show_unknown_id_errors(self, history_project, cli_runner):
         _seed_metadata(
             history_project,

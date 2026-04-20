@@ -121,20 +121,31 @@ def _build_filesystem_source(source_config: SourceConfig) -> Any:
     return files
 
 
-def _capture_and_refresh_safe(raw_db_path: Path) -> None:
+def _capture_and_refresh_safe(
+    raw_db_path: Path,
+    pipeline: dlt.Pipeline | None = None,
+) -> None:
     """Best-effort dlt observability capture + Rill dashboard refresh.
 
-    Mirrors new dlt loads into ``.tycoon/metadata.duckdb`` and (if the
-    project has a Rill directory) re-exports the usage Parquets + YAMLs.
-    Silently no-ops on any failure — ingestion must never break because
-    of observability bookkeeping.
+    Mirrors new dlt loads into ``.tycoon/metadata.duckdb``, enriches with
+    trace.pickle details when ``pipeline`` is known, and (if the project has
+    a Rill directory) re-exports the usage Parquets + YAMLs. Silently
+    no-ops on any failure — ingestion must never break because of
+    observability bookkeeping.
     """
     try:
         from tycoon.config import config
-        from tycoon.observability import capture_dlt_safe, metadata_db_path
+        from tycoon.observability import (
+            capture_dlt_safe,
+            capture_dlt_trace_safe,
+            metadata_db_path,
+        )
         from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
 
-        capture_dlt_safe(metadata_db_path(config.root), raw_db_path)
+        meta = metadata_db_path(config.root)
+        capture_dlt_safe(meta, raw_db_path)
+        pipeline_name = getattr(pipeline, "pipeline_name", None) if pipeline else None
+        capture_dlt_trace_safe(meta, pipeline_name)
         refresh_usage_dashboards(project_root=config.root, rill_dir=config.rill_dir)
     except Exception:
         pass
@@ -176,18 +187,20 @@ def run_source(
     """
     # 1. Legacy pipeline delegation (keyed by source name)
     if name in _LEGACY_PIPELINES:
-        result = _run_legacy(name, max_records=max_records, **kwargs)
-        _capture_and_refresh_safe(raw_db_path)
-        return result
+        pipeline, load_info = _run_legacy(name, max_records=max_records, **kwargs)
+        _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
+        return pipeline, load_info
 
     # 2. Native builders win over the catalog path. These types ship with
     #    dlt core and don't need an `~/.tycoon/sources/<type>/` install.
     source_type = source_config.type
     if source_type not in _NATIVE_BUILDERS and source_type in CATALOG:
         # 3. Catalog source dispatch — load from ~/.tycoon/sources/
-        result = _run_catalog(source_type, name, source_config, raw_db_path, max_records)
-        _capture_and_refresh_safe(raw_db_path)
-        return result
+        pipeline, load_info = _run_catalog(
+            source_type, name, source_config, raw_db_path, max_records
+        )
+        _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
+        return pipeline, load_info
 
     # Generic pipeline
     pipeline = dlt.pipeline(
@@ -218,7 +231,7 @@ def run_source(
         dlt_source = builder(source_config)
 
     load_info = pipeline.run(dlt_source)
-    _capture_and_refresh_safe(raw_db_path)
+    _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
     return pipeline, load_info
 
 

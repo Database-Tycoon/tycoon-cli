@@ -108,6 +108,42 @@ CREATE TABLE IF NOT EXISTS dbt_nodes (
     message           VARCHAR,
     PRIMARY KEY (invocation_id, node_name)
 );
+
+CREATE TABLE IF NOT EXISTS dlt_trace_runs (
+    transaction_id    VARCHAR PRIMARY KEY,
+    pipeline_name     VARCHAR,
+    started_at        TIMESTAMP,
+    finished_at       TIMESTAMP,
+    duration_s        DOUBLE,
+    engine_version    INTEGER,
+    success           BOOLEAN,
+    exception         VARCHAR,
+    captured_at       TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS dlt_trace_steps (
+    transaction_id  VARCHAR NOT NULL,
+    step            VARCHAR NOT NULL,
+    started_at      TIMESTAMP,
+    finished_at     TIMESTAMP,
+    duration_s      DOUBLE,
+    step_exception  VARCHAR,
+    PRIMARY KEY (transaction_id, step)
+);
+
+CREATE TABLE IF NOT EXISTS dlt_trace_jobs (
+    transaction_id   VARCHAR NOT NULL,
+    load_id          VARCHAR NOT NULL,
+    job_id           VARCHAR NOT NULL,
+    table_name       VARCHAR,
+    file_format      VARCHAR,
+    state            VARCHAR,
+    file_size_bytes  BIGINT,
+    elapsed_s        DOUBLE,
+    failed_message   VARCHAR,
+    created_at       TIMESTAMP,
+    PRIMARY KEY (transaction_id, job_id)
+);
 """
 
 
@@ -422,10 +458,214 @@ def capture_dbt(
 
 
 # ---------------------------------------------------------------------------
+# dlt trace capture (trace.pickle → dlt_trace_runs / _steps / _jobs)
+# ---------------------------------------------------------------------------
+
+
+def _trace_pickle_path(pipeline_name: str, pipelines_dir: Path | None = None) -> Path:
+    """Return the canonical trace.pickle path for a dlt pipeline."""
+    base = pipelines_dir if pipelines_dir is not None else Path.home() / ".dlt" / "pipelines"
+    return base / pipeline_name / "trace.pickle"
+
+
+def _load_trace_dict(pipeline_name: str, pipelines_dir: Path | None = None) -> dict | None:
+    """Unpickle trace.pickle and normalize to the asdict() form.
+
+    dlt serializes ``PipelineTrace`` objects to ``trace.pickle`` — we convert
+    to a plain dict so the rest of the pipeline operates on simple types and
+    tests can construct synthetic inputs without importing dlt internals.
+    """
+    import pickle
+
+    path = _trace_pickle_path(pipeline_name, pipelines_dir)
+    if not path.exists():
+        return None
+    try:
+        with path.open("rb") as f:
+            obj = pickle.load(f)
+    except (OSError, pickle.UnpicklingError, EOFError, AttributeError):
+        return None
+
+    to_dict = getattr(obj, "asdict", None)
+    if callable(to_dict):
+        try:
+            return to_dict()
+        except Exception:
+            return None
+    return obj if isinstance(obj, dict) else None
+
+
+def _coerce_ts(value) -> datetime | None:
+    """Trace timestamps arrive as either datetime objects or ISO strings."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
+def _duration_s(start, finish) -> float | None:
+    s = _coerce_ts(start)
+    f = _coerce_ts(finish)
+    if s is None or f is None:
+        return None
+    return (f - s).total_seconds()
+
+
+def _derive_success_and_exception(steps: list[dict]) -> tuple[bool, str | None]:
+    """A trace is successful when no step raised. First exception wins."""
+    first_exc: str | None = None
+    for step in steps:
+        exc = step.get("step_exception")
+        if exc:
+            # dlt stores exceptions as strings already; truncate defensively
+            first_exc = str(exc)[:2000]
+            break
+    return (first_exc is None), first_exc
+
+
+def capture_dlt_trace_from_dict(metadata_db: Path, trace: dict) -> str | None:
+    """Insert one dlt trace (as returned by ``PipelineTrace.asdict()``).
+
+    Idempotent: re-calling with the same ``transaction_id`` is a no-op.
+    Returns the transaction_id on capture, None on skip.
+    """
+    transaction_id = trace.get("transaction_id")
+    if not transaction_id:
+        return None
+
+    ensure_schema(metadata_db)
+    con = duckdb.connect(str(metadata_db))
+    try:
+        pre = con.execute(
+            "SELECT 1 FROM dlt_trace_runs WHERE transaction_id = ?",
+            [transaction_id],
+        ).fetchone()
+        if pre is not None:
+            return None
+
+        steps = trace.get("steps") or []
+        started = _coerce_ts(trace.get("started_at"))
+        finished = _coerce_ts(trace.get("finished_at"))
+        duration = _duration_s(trace.get("started_at"), trace.get("finished_at"))
+        success, exception = _derive_success_and_exception(steps)
+        captured_at = datetime.now(tz=timezone.utc)
+
+        con.execute(
+            """
+            INSERT INTO dlt_trace_runs
+              (transaction_id, pipeline_name, started_at, finished_at,
+               duration_s, engine_version, success, exception, captured_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                transaction_id,
+                trace.get("pipeline_name"),
+                started,
+                finished,
+                duration,
+                trace.get("engine_version"),
+                success,
+                exception,
+                captured_at,
+            ],
+        )
+
+        for step in steps:
+            step_name = step.get("step") or "unknown"
+            con.execute(
+                """
+                INSERT INTO dlt_trace_steps
+                  (transaction_id, step, started_at, finished_at,
+                   duration_s, step_exception)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT DO NOTHING
+                """,
+                [
+                    transaction_id,
+                    step_name,
+                    _coerce_ts(step.get("started_at")),
+                    _coerce_ts(step.get("finished_at")),
+                    _duration_s(step.get("started_at"), step.get("finished_at")),
+                    (str(step.get("step_exception"))[:2000]
+                     if step.get("step_exception") else None),
+                ],
+            )
+
+            if step_name not in ("load", "run"):
+                continue
+            step_info = step.get("step_info") or {}
+            packages = step_info.get("load_packages") or []
+            for pkg in packages:
+                load_id = pkg.get("load_id")
+                if not load_id:
+                    continue
+                for job in pkg.get("jobs") or []:
+                    job_id = job.get("job_id") or job.get("file_id")
+                    if not job_id:
+                        continue
+                    con.execute(
+                        """
+                        INSERT INTO dlt_trace_jobs
+                          (transaction_id, load_id, job_id, table_name,
+                           file_format, state, file_size_bytes, elapsed_s,
+                           failed_message, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        [
+                            transaction_id,
+                            load_id,
+                            job_id,
+                            job.get("table_name"),
+                            job.get("file_format"),
+                            job.get("state"),
+                            job.get("file_size"),
+                            job.get("elapsed"),
+                            job.get("failed_message"),
+                            _coerce_ts(job.get("created_at")),
+                        ],
+                    )
+
+        return transaction_id
+    finally:
+        con.close()
+
+
+def capture_dlt_trace(
+    metadata_db: Path,
+    pipeline_name: str,
+    pipelines_dir: Path | None = None,
+) -> str | None:
+    """Load ``~/.dlt/pipelines/<name>/trace.pickle`` and capture it.
+
+    Returns the transaction_id on capture, None if the trace is missing or
+    already present in the metadata DB.
+    """
+    trace = _load_trace_dict(pipeline_name, pipelines_dir)
+    if trace is None:
+        return None
+    return capture_dlt_trace_from_dict(metadata_db, trace)
+
+
+# ---------------------------------------------------------------------------
 # Parquet export
 # ---------------------------------------------------------------------------
 
-_EXPORT_TABLES = ("dlt_runs", "dlt_rows_by_table", "dbt_runs", "dbt_nodes")
+_EXPORT_TABLES = (
+    "dlt_runs",
+    "dlt_rows_by_table",
+    "dbt_runs",
+    "dbt_nodes",
+    "dlt_trace_runs",
+    "dlt_trace_steps",
+    "dlt_trace_jobs",
+)
 
 
 def export_to_parquet(metadata_db: Path, parquet_dir: Path) -> dict[str, Path]:
@@ -477,6 +717,25 @@ def capture_dbt_safe(
     """Best-effort wrapper around capture_dbt; swallows all exceptions."""
     try:
         capture_dbt(metadata_db, dbt_project_dir, command)
+    except Exception:
+        pass
+
+
+def capture_dlt_trace_safe(
+    metadata_db: Path,
+    pipeline_name: str | None,
+    pipelines_dir: Path | None = None,
+) -> None:
+    """Best-effort wrapper around capture_dlt_trace; swallows all exceptions.
+
+    A ``None`` pipeline_name is a no-op — the runner may not always know the
+    pipeline name (legacy paths) and we'd rather skip the enrichment than
+    crash the ingest.
+    """
+    if not pipeline_name:
+        return
+    try:
+        capture_dlt_trace(metadata_db, pipeline_name, pipelines_dir)
     except Exception:
         pass
 
