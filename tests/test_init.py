@@ -180,3 +180,129 @@ class TestInvalidTemplate:
         result = cli_runner.invoke(app, ["init", "--template", "nonexistent"])
         assert result.exit_code == 1
         assert "not found" in result.stdout.lower() or "not found" in (result.stderr or "").lower()
+
+
+class TestTemplateParameterization:
+    """v0.1.3: templates declare parameters in template.yml and init
+    substitutes them into tycoon.yml + other text files."""
+
+    def test_load_parameters_returns_empty_for_template_without_metadata(self):
+        """nyc-transit has no template.yml → loader returns []."""
+        from tycoon.scaffolding.templates import load_template_parameters
+
+        assert load_template_parameters("nyc-transit") == []
+
+    def test_load_parameters_normalizes_github_analytics_entries(self):
+        from tycoon.scaffolding.templates import load_template_parameters
+
+        params = load_template_parameters("github-analytics")
+        names = [p["name"] for p in params]
+        assert names == ["owner", "repo"]
+        for p in params:
+            assert p["required"] is True
+            assert p["description"]
+            assert p["example"]
+
+    def test_load_parameters_weather_station_has_four_params(self):
+        from tycoon.scaffolding.templates import load_template_parameters
+
+        names = [p["name"] for p in load_template_parameters("weather-station")]
+        assert names == ["station_id", "office", "gridX", "gridY"]
+
+    def test_substitute_params_replaces_braces(self):
+        from tycoon.scaffolding.templates import _substitute_params
+
+        out = _substitute_params(
+            "hello {{ name }} and {{name}} plus {{  name  }}",
+            {"name": "world"},
+        )
+        assert out == "hello world and world plus world"
+
+    def test_substitute_params_leaves_unknown_placeholders_alone(self):
+        from tycoon.scaffolding.templates import _substitute_params
+
+        out = _substitute_params(
+            "{{ known }} vs {{ unknown }}", {"known": "yes"}
+        )
+        assert out == "yes vs {{ unknown }}"
+
+    def test_scaffold_with_params_substitutes_in_tycoon_yml(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        result = cli_runner.invoke(
+            app,
+            [
+                "init",
+                "--template",
+                "github-analytics",
+                "--param",
+                "owner=acme",
+                "--param",
+                "repo=widgets",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+
+        content = (tmp_path / "tycoon.yml").read_text()
+        assert "acme" in content
+        assert "widgets" in content
+        assert "{{" not in content and "}}" not in content
+
+    def test_template_yml_not_copied_to_target(self, cli_runner, tmp_path, monkeypatch):
+        """template.yml is build metadata — must not land in the user's project."""
+        monkeypatch.chdir(tmp_path)
+        cli_runner.invoke(
+            app,
+            [
+                "init",
+                "--template",
+                "github-analytics",
+                "--param",
+                "owner=a",
+                "--param",
+                "repo=b",
+            ],
+        )
+        assert not (tmp_path / "template.yml").exists()
+
+    def test_missing_required_param_errors_out_in_noninteractive(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """When no --param is supplied and stdin is empty (CliRunner default),
+        typer.prompt fails. We just need it to not silently succeed."""
+        monkeypatch.chdir(tmp_path)
+        result = cli_runner.invoke(
+            app, ["init", "--template", "github-analytics"]
+        )
+        assert result.exit_code != 0
+
+    def test_param_malformed_is_rejected(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = cli_runner.invoke(
+            app,
+            ["init", "--template", "github-analytics", "--param", "malformed"],
+        )
+        assert result.exit_code != 0
+
+    def test_unknown_param_is_warned_but_not_fatal(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        result = cli_runner.invoke(
+            app,
+            [
+                "init",
+                "--template",
+                "github-analytics",
+                "--param",
+                "owner=a",
+                "--param",
+                "repo=b",
+                "--param",
+                "bogus=xyz",
+            ],
+        )
+        assert result.exit_code == 0
+        # The unknown-param warning goes to stdout via the console helper
+        assert "bogus" in result.stdout.lower() or "unknown parameter" in result.stdout.lower()

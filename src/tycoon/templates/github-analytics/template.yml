@@ -1,0 +1,16 @@
+# Template metadata for github-analytics.
+#
+# These parameters are prompted at `tycoon init --template github-analytics`
+# (or supplied via `--param name=value`) and substituted into `tycoon.yml`.
+# Once init finishes, the declarations below are gone and the scaffolded
+# project holds the concrete values.
+
+parameters:
+  - name: owner
+    description: GitHub username or organization
+    example: octocat
+    required: true
+  - name: repo
+    description: Repository name (without owner prefix)
+    example: hello-world
+    required: true

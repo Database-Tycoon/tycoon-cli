@@ -16,5 +16,5 @@ sources:
     config:
       base_url: https://api.weather.gov/
       resources:
-        - stations/{station_id}/observations
-        - gridpoints/{office}/{gridX},{gridY}/forecast
+        - stations/{{ station_id }}/observations
+        - gridpoints/{{ office }}/{{ gridX }},{{ gridY }}/forecast

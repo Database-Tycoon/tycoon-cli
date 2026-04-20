@@ -1,0 +1,25 @@
+# Template metadata for weather-station.
+#
+# The NOAA API paths embed a station ID, forecast office, and grid
+# coordinates. Fetch yours from `https://api.weather.gov/points/{lat},{lon}`
+# — the `properties.gridId`, `properties.gridX`, `properties.gridY` fields
+# there map to `office`, `gridX`, `gridY` below. Station IDs are visible
+# under `properties.observationStations`.
+
+parameters:
+  - name: station_id
+    description: NOAA observation station identifier
+    example: KJFK
+    required: true
+  - name: office
+    description: NOAA forecast office code
+    example: OKX
+    required: true
+  - name: gridX
+    description: NOAA grid X coordinate
+    example: "32"
+    required: true
+  - name: gridY
+    description: NOAA grid Y coordinate
+    example: "34"
+    required: true

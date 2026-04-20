@@ -489,6 +489,27 @@ def _mode_next_steps(stack: StackConfig, existing_dbt_path: str | None) -> None:
         )
 
 
+def _parse_param_pairs(raw: list[str]) -> dict[str, str]:
+    """Parse repeated --param name=value options into a dict.
+
+    Rejects entries without '=' or with empty names. Later occurrences of
+    the same name silently overwrite earlier ones, matching how repeated
+    CLI flags conventionally behave.
+    """
+    out: dict[str, str] = {}
+    for entry in raw:
+        if "=" not in entry:
+            raise typer.BadParameter(
+                f"--param must be in 'name=value' form; got '{entry}'"
+            )
+        name, _, value = entry.partition("=")
+        name = name.strip()
+        if not name:
+            raise typer.BadParameter(f"--param name must be non-empty; got '{entry}'")
+        out[name] = value
+    return out
+
+
 def init_cmd(
     template: Annotated[
         Optional[str],
@@ -513,6 +534,18 @@ def init_cmd(
             help="List available templates and exit.",
         ),
     ] = False,
+    param: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--param",
+            "-p",
+            help=(
+                "Template parameter in 'name=value' form. Repeat for multiple. "
+                "Parameters declared by the template but not supplied here "
+                "will be prompted for interactively."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Initialize a new tycoon project in the current directory."""
     if list_templates_flag:
@@ -536,9 +569,14 @@ def init_cmd(
     header(f"Initializing tycoon project: {project_name}")
 
     if template:
+        parameters = _parse_param_pairs(param or [])
         try:
-            scaffold_from_template(target, template)
+            scaffold_from_template(target, template, parameters=parameters)
         except FileNotFoundError as exc:
+            error(str(exc))
+            raise typer.Exit(1)
+        except ValueError as exc:
+            # Bad template.yml or missing required parameter
             error(str(exc))
             raise typer.Exit(1)
         console.print()
