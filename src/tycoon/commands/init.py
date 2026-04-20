@@ -294,17 +294,51 @@ def _prompt_rill(
     return BITool.none, False, None
 
 
-def _extract_dbt_duckdb_path(dbt_project_dir: Path) -> str | None:
-    """Extract the DuckDB (or MotherDuck) path from a dbt project's active profile.
+@dataclass(frozen=True)
+class DbtWarehouseTarget:
+    """Structured view of a dbt profile's active output target.
 
-    The dbt-duckdb adapter stores MotherDuck targets in the same ``type: duckdb``
-    profile, using ``path: md:<dbname>``. We return those as-is (prefix intact)
-    so callers can compare them to tycoon's ``md:*`` warehouse strings directly.
+    ``adapter_type`` is the raw dbt adapter type (``duckdb``, ``snowflake``,
+    ``bigquery``, ``redshift``, ``postgres``, ...). ``identifier`` is the
+    best single-field locator for the warehouse:
 
-    Returns:
-      - A ``md:<name>`` string for MotherDuck targets.
-      - An absolute filesystem path string for local DuckDB targets.
-      - ``None`` if the profile can't be read or isn't a DuckDB target.
+    * duckdb (local)  → absolute filesystem path
+    * duckdb (md:*)   → the full ``md:<name>`` string
+    * snowflake       → ``<account>`` (dbt's ``account`` field)
+    * bigquery        → ``<project>``
+    * redshift        → ``<host>``
+    * anything else   → whatever looks distinctive (may be empty)
+
+    ``display`` is a human-friendly string for prompts / warnings. For
+    DuckDB and MotherDuck this equals ``identifier``; for Snowflake it's
+    ``snowflake://<account>[/<database>]`` so users can see *which*
+    Snowflake they're pointed at.
+    """
+
+    adapter_type: str
+    identifier: str
+    display: str
+    details: dict[str, str]
+
+    @property
+    def tycoon_warehouse_type(self) -> str | None:
+        """Map adapter_type → tycoon's WarehouseType string, or None if unknown.
+
+        MotherDuck is a DuckDB adapter with an ``md:*`` path — the caller
+        should pass ``identifier`` in when resolving ambiguity.
+        """
+        if self.adapter_type == "duckdb":
+            return "motherduck" if self.identifier.startswith("md:") else "duckdb"
+        if self.adapter_type in {"snowflake", "bigquery", "redshift"}:
+            return self.adapter_type
+        return None
+
+
+def _read_dbt_target(dbt_project_dir: Path) -> dict | None:
+    """Return the active dbt target dict, or None if it can't be resolved.
+
+    Walks dbt's profile lookup order: the co-located ``profiles.yml`` if
+    present, otherwise ``~/.dbt/profiles.yml``.
     """
     try:
         project_yml = yaml.safe_load((dbt_project_dir / "dbt_project.yml").read_text())
@@ -333,18 +367,108 @@ def _extract_dbt_duckdb_path(dbt_project_dir: Path) -> str | None:
             continue
         target_name = profile.get("target", "dev")
         target = profile.get("outputs", {}).get(target_name, {})
-        if not isinstance(target, dict) or target.get("type") != "duckdb":
-            return None
+        if isinstance(target, dict):
+            return target
+    return None
+
+
+def _extract_dbt_warehouse_target(dbt_project_dir: Path) -> DbtWarehouseTarget | None:
+    """Extract a structured warehouse target from a dbt project's active profile.
+
+    Returns ``None`` if the profile can't be read. For DuckDB / MotherDuck
+    targets ``identifier`` is the filesystem path (or ``md:<name>``); for
+    Snowflake it's the ``account``; for BigQuery it's the ``project``. The
+    ``details`` map keeps per-adapter extras (database / dataset / host)
+    so callers can render richer warnings without re-parsing profiles.
+    """
+    target = _read_dbt_target(dbt_project_dir)
+    if target is None:
+        return None
+    adapter_type = target.get("type") or ""
+
+    if adapter_type == "duckdb":
         path = target.get("path")
         if not path:
             return None
         if str(path).startswith("md:"):
-            return str(path)
+            return DbtWarehouseTarget(
+                adapter_type="duckdb",
+                identifier=str(path),
+                display=str(path),
+                details={},
+            )
         abs_path = Path(path)
         if not abs_path.is_absolute():
             abs_path = (dbt_project_dir / abs_path).resolve()
-        return str(abs_path)
-    return None
+        return DbtWarehouseTarget(
+            adapter_type="duckdb",
+            identifier=str(abs_path),
+            display=str(abs_path),
+            details={},
+        )
+
+    if adapter_type == "snowflake":
+        account = str(target.get("account") or "")
+        database = str(target.get("database") or "")
+        display = f"snowflake://{account}" + (f"/{database}" if database else "")
+        return DbtWarehouseTarget(
+            adapter_type="snowflake",
+            identifier=account,
+            display=display,
+            details={
+                "database": database,
+                "schema": str(target.get("schema") or ""),
+                "warehouse": str(target.get("warehouse") or ""),
+                "role": str(target.get("role") or ""),
+            },
+        )
+
+    if adapter_type == "bigquery":
+        project = str(target.get("project") or "")
+        dataset = str(target.get("dataset") or target.get("schema") or "")
+        display = f"bigquery://{project}" + (f"/{dataset}" if dataset else "")
+        return DbtWarehouseTarget(
+            adapter_type="bigquery",
+            identifier=project,
+            display=display,
+            details={
+                "dataset": dataset,
+                "method": str(target.get("method") or ""),
+                "location": str(target.get("location") or ""),
+            },
+        )
+
+    if adapter_type == "redshift":
+        host = str(target.get("host") or "")
+        database = str(target.get("dbname") or target.get("database") or "")
+        display = f"redshift://{host}" + (f"/{database}" if database else "")
+        return DbtWarehouseTarget(
+            adapter_type="redshift",
+            identifier=host,
+            display=display,
+            details={"database": database, "schema": str(target.get("schema") or "")},
+        )
+
+    # Unknown / unmapped adapter — surface the raw type so callers can
+    # still warn about a mismatch against tycoon's configured warehouse.
+    return DbtWarehouseTarget(
+        adapter_type=adapter_type,
+        identifier="",
+        display=adapter_type,
+        details={},
+    )
+
+
+def _extract_dbt_duckdb_path(dbt_project_dir: Path) -> str | None:
+    """Backwards-compat shim: DuckDB path string (incl. ``md:*``) or None.
+
+    Existing callers that only care about the DuckDB/MotherDuck alignment
+    use this; cross-adapter callers should use ``_extract_dbt_warehouse_target``.
+    """
+    target = _extract_dbt_warehouse_target(dbt_project_dir)
+    if target is None or target.adapter_type != "duckdb":
+        return None
+    return target.identifier
 
 
 def _normalize_warehouse_for_compare(value: str) -> str:
