@@ -2,7 +2,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [0.1.3] - UNRELEASED
 
-_Scope tracked in [`docs/releases/v0.1.3.md`](docs/releases/v0.1.3.md). Seven themes planned: template parameterization, Snowflake/BigQuery warehouse alignment, dbt build in e2e, dlt trace.json enrichment, dbt manifest.json schema diff, one-command MotherDuck/Nao/LM Studio setup ([#7][]), and `tycoon data sync` ([#12][]). Items land here as features ship._
+_Scope tracked in [`docs/releases/v0.1.3.md`](docs/releases/v0.1.3.md). Five of seven planned themes landed: template parameterization, csv-import buildable dbt + offline e2e, dlt trace enrichment (observability v2a), dbt manifest schema-diff (observability v2b), and Snowflake/BigQuery warehouse alignment. The two XL items — one-command MotherDuck/Nao/LM Studio setup ([#7][]) and `tycoon data sync` ([#12][]) — are deferred to v0.1.4._
 
 ### Added
 
@@ -16,11 +16,13 @@ _Scope tracked in [`docs/releases/v0.1.3.md`](docs/releases/v0.1.3.md). Seven th
 
 ### Changed
 
-_(Pending.)_
+- `tycoon data history show <load_id>` (dlt drilldown) now renders pipeline duration, total bytes written, and a Steps table (extract/normalize/load durations) when a dlt trace is captured. The per-table row-count view gains a Bytes column.
+- `tycoon data history show <invocation_id>` (dbt drilldown) now appends a "Schema changes vs. previous run" table below the Nodes table when a manifest-diff recorded changes for that invocation.
+- `_extract_dbt_duckdb_path` is retained as a thin backwards-compatible shim over the new structured `_extract_dbt_warehouse_target`. Existing callers unchanged.
 
 ### Fixed
 
-_(Pending.)_
+- No user-facing bug fixes this cycle — v0.1.2's fix-sweep covered the pending bugs; v0.1.3 is a feature release.
 
 [#7]: https://github.com/Database-Tycoon/tycoon-cli/issues/7
 [#12]: https://github.com/Database-Tycoon/tycoon-cli/issues/12
