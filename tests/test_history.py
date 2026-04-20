@@ -414,6 +414,54 @@ class TestHistoryShow:
         # 8192 bytes = 8.0 KB
         assert "KB" in result.stdout
 
+    def test_show_dbt_surfaces_schema_changes_when_present(
+        self, history_project, cli_runner
+    ):
+        """v0.1.3: schema-diff drilldown should render below the Nodes table."""
+        _seed_metadata(
+            history_project,
+            dbt_runs=[
+                (
+                    "inv-schema-change",
+                    "build",
+                    datetime(2026, 4, 19, 12, 0),
+                    3.0,
+                    True,
+                    2, 0, 0, 0, "1.9.0", "dev",
+                ),
+            ],
+        )
+
+        from tycoon.observability import ensure_schema, metadata_db_path
+
+        meta = metadata_db_path(history_project)
+        ensure_schema(meta)
+        con = duckdb.connect(str(meta))
+        try:
+            con.execute(
+                """
+                INSERT INTO dbt_schema_changes
+                  (invocation_id, prev_invocation_id, change_type, unique_id,
+                   column_name, old_value, new_value, captured_at)
+                VALUES
+                  ('inv-schema-change', 'inv-prev', 'column_added',
+                   'model.demo.stg_widgets', 'name', NULL, 'VARCHAR', now()),
+                  ('inv-schema-change', 'inv-prev', 'sql_changed',
+                   'model.demo.stg_widgets', '', 'aaaa', 'bbbb', now())
+                """
+            )
+        finally:
+            con.close()
+
+        result = cli_runner.invoke(
+            app, ["data", "history", "show", "inv-schema-change"]
+        )
+        assert result.exit_code == 0
+        assert "Schema changes" in result.stdout
+        assert "column_added" in result.stdout
+        assert "sql_changed" in result.stdout
+        assert "stg_widgets" in result.stdout
+
     def test_show_unknown_id_errors(self, history_project, cli_runner):
         _seed_metadata(
             history_project,

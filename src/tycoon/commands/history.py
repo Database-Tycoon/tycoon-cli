@@ -475,22 +475,49 @@ def _show_dbt_run(con: duckdb.DuckDBPyConnection, invocation_id: str) -> None:
         [invocation_id],
     ).fetchall()
 
-    if not nodes:
+    if nodes:
+        table = Table(title="Nodes", show_lines=False)
+        table.add_column("Node", style="cyan", overflow="fold")
+        table.add_column("Type", style="dim")
+        table.add_column("Status")
+        table.add_column("Duration", justify="right")
+        table.add_column("Rows", justify="right")
+        for name, rtype, status, exec_s, rows, _msg in nodes:
+            ok = status in ("success", "pass")
+            status_str = f"[green]{status}[/green]" if ok else f"[red]{status}[/red]"
+            rows_str = f"{rows:,}" if rows is not None else "—"
+            table.add_row(name, rtype or "—", status_str, _fmt_duration(exec_s), rows_str)
+        console.print(table)
+    else:
         console.print("\n[dim]No node-level detail captured.[/dim]")
-        return
 
-    table = Table(title="Nodes", show_lines=False)
-    table.add_column("Node", style="cyan", overflow="fold")
-    table.add_column("Type", style="dim")
-    table.add_column("Status")
-    table.add_column("Duration", justify="right")
-    table.add_column("Rows", justify="right")
-    for name, rtype, status, exec_s, rows, _msg in nodes:
-        ok = status in ("success", "pass")
-        status_str = f"[green]{status}[/green]" if ok else f"[red]{status}[/red]"
-        rows_str = f"{rows:,}" if rows is not None else "—"
-        table.add_row(name, rtype or "—", status_str, _fmt_duration(exec_s), rows_str)
-    console.print(table)
+    # Schema-diff enrichment (v0.1.3): when a manifest snapshot recorded
+    # changes vs. the previous run, surface them below the nodes table.
+    changes = con.execute(
+        """
+        SELECT change_type, unique_id, column_name, old_value, new_value
+        FROM dbt_schema_changes
+        WHERE invocation_id = ?
+        ORDER BY change_type, unique_id, column_name
+        """,
+        [invocation_id],
+    ).fetchall()
+    if changes:
+        diff_table = Table(title="Schema changes vs. previous run", show_lines=False)
+        diff_table.add_column("Change", style="yellow")
+        diff_table.add_column("Node", style="cyan", overflow="fold")
+        diff_table.add_column("Column", style="dim")
+        diff_table.add_column("Old → New")
+        for change_type, unique_id, column_name, old_value, new_value in changes:
+            old_disp = old_value if old_value is not None else "—"
+            new_disp = new_value if new_value is not None else "—"
+            diff_table.add_row(
+                change_type,
+                unique_id,
+                column_name or "—",
+                f"{old_disp} → {new_disp}",
+            )
+        console.print(diff_table)
 
 
 def _show_run(id_prefix: str) -> None:
