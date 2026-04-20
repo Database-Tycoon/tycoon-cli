@@ -16,6 +16,10 @@ venv/
 *.duckdb.wal
 data/
 !data/README.md
+# Template-bundled sample data is shipped with the package — exempt
+# from the repo-level data/ ignore rule.
+!src/tycoon/templates/**/data/
+!src/tycoon/templates/**/data/**
 
 # dbt
 transformation/target/

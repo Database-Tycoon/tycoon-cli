@@ -1,0 +1,17 @@
+# dbt-duckdb profile for the csv-import template.
+#
+# Both paths are relative to this profiles.yml (the dbt_project/ directory),
+# matching how tycoon's tycoon.yml resolves data/*.duckdb relative to the
+# project root. If you move either the dbt_project/ or data/ directory,
+# update both paths below — or re-run `tycoon register dbt` to regenerate.
+
+csv_import:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ../data/files_warehouse.duckdb
+      attach:
+        - path: ../data/files_raw.duckdb
+          alias: raw
+          read_only: true
