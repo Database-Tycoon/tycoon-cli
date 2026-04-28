@@ -48,6 +48,70 @@ def _make_dbt_project(dbt_dir: Path, profile: str, duckdb_path: str) -> None:
     )
 
 
+def _make_snowflake_dbt_project(
+    dbt_dir: Path,
+    profile: str,
+    account: str,
+    database: str = "ANALYTICS",
+    schema: str = "public",
+) -> None:
+    dbt_dir.mkdir(parents=True, exist_ok=True)
+    (dbt_dir / "dbt_project.yml").write_text(
+        yaml.dump({"name": profile, "profile": profile, "config-version": 2})
+    )
+    (dbt_dir / "profiles.yml").write_text(
+        yaml.dump(
+            {
+                profile: {
+                    "target": "dev",
+                    "outputs": {
+                        "dev": {
+                            "type": "snowflake",
+                            "account": account,
+                            "user": "me",
+                            "password": "***",
+                            "database": database,
+                            "schema": schema,
+                            "warehouse": "COMPUTE_WH",
+                            "role": "ANALYST",
+                        }
+                    },
+                }
+            }
+        )
+    )
+
+
+def _make_bigquery_dbt_project(
+    dbt_dir: Path,
+    profile: str,
+    gcp_project: str,
+    dataset: str = "analytics",
+) -> None:
+    dbt_dir.mkdir(parents=True, exist_ok=True)
+    (dbt_dir / "dbt_project.yml").write_text(
+        yaml.dump({"name": profile, "profile": profile, "config-version": 2})
+    )
+    (dbt_dir / "profiles.yml").write_text(
+        yaml.dump(
+            {
+                profile: {
+                    "target": "dev",
+                    "outputs": {
+                        "dev": {
+                            "type": "bigquery",
+                            "method": "service-account",
+                            "project": gcp_project,
+                            "dataset": dataset,
+                            "keyfile": "/tmp/keyfile.json",
+                        }
+                    },
+                }
+            }
+        )
+    )
+
+
 def _reload_config(monkeypatch, project_root: Path) -> None:
     """Rebind the module-level `config` singletons so commands see the new project."""
     from tycoon.commands import register as register_mod
@@ -148,6 +212,185 @@ class TestRegisterDbt:
         data = yaml.safe_load((project / "tycoon.yml").read_text())
         assert data["database"]["warehouse"] == "md:theirs"
         assert data["stack"]["warehouse"] == "motherduck"
+
+
+class TestExtractDbtWarehouseTarget:
+    """v0.1.3 theme #2: structured target extraction across adapters."""
+
+    def test_duckdb_local_path_is_resolved_absolute(self, tmp_path):
+        from tycoon.commands.init import _extract_dbt_warehouse_target
+
+        dbt_dir = tmp_path / "dbt"
+        _make_dbt_project(dbt_dir, "p", "data/warehouse.duckdb")
+        target = _extract_dbt_warehouse_target(dbt_dir)
+
+        assert target is not None
+        assert target.adapter_type == "duckdb"
+        assert target.identifier.endswith("data/warehouse.duckdb")
+        assert Path(target.identifier).is_absolute()
+        assert target.tycoon_warehouse_type == "duckdb"
+
+    def test_motherduck_path_is_preserved(self, tmp_path):
+        from tycoon.commands.init import _extract_dbt_warehouse_target
+
+        dbt_dir = tmp_path / "dbt"
+        _make_dbt_project(dbt_dir, "p", "md:mine")
+        target = _extract_dbt_warehouse_target(dbt_dir)
+
+        assert target is not None
+        assert target.adapter_type == "duckdb"
+        assert target.identifier == "md:mine"
+        assert target.tycoon_warehouse_type == "motherduck"
+
+    def test_snowflake_exposes_account_and_details(self, tmp_path):
+        from tycoon.commands.init import _extract_dbt_warehouse_target
+
+        dbt_dir = tmp_path / "dbt"
+        _make_snowflake_dbt_project(dbt_dir, "p", account="acme-us-east-1")
+        target = _extract_dbt_warehouse_target(dbt_dir)
+
+        assert target is not None
+        assert target.adapter_type == "snowflake"
+        assert target.identifier == "acme-us-east-1"
+        assert target.display.startswith("snowflake://acme-us-east-1")
+        assert target.details["database"] == "ANALYTICS"
+        assert target.details["warehouse"] == "COMPUTE_WH"
+        assert target.tycoon_warehouse_type == "snowflake"
+
+    def test_bigquery_exposes_project_and_dataset(self, tmp_path):
+        from tycoon.commands.init import _extract_dbt_warehouse_target
+
+        dbt_dir = tmp_path / "dbt"
+        _make_bigquery_dbt_project(dbt_dir, "p", gcp_project="my-gcp-proj")
+        target = _extract_dbt_warehouse_target(dbt_dir)
+
+        assert target is not None
+        assert target.adapter_type == "bigquery"
+        assert target.identifier == "my-gcp-proj"
+        assert target.details["dataset"] == "analytics"
+        assert target.tycoon_warehouse_type == "bigquery"
+
+    def test_unknown_adapter_surfaces_raw_type(self, tmp_path):
+        from tycoon.commands.init import _extract_dbt_warehouse_target
+
+        dbt_dir = tmp_path / "dbt"
+        dbt_dir.mkdir()
+        (dbt_dir / "dbt_project.yml").write_text(
+            yaml.dump({"name": "p", "profile": "p", "config-version": 2})
+        )
+        (dbt_dir / "profiles.yml").write_text(
+            yaml.dump(
+                {
+                    "p": {
+                        "target": "dev",
+                        "outputs": {
+                            "dev": {"type": "databricks", "host": "x.databricks.com"}
+                        },
+                    }
+                }
+            )
+        )
+        target = _extract_dbt_warehouse_target(dbt_dir)
+        assert target is not None
+        assert target.adapter_type == "databricks"
+        assert target.tycoon_warehouse_type is None  # unknown to tycoon
+
+    def test_missing_profile_returns_none(self, tmp_path):
+        from tycoon.commands.init import _extract_dbt_warehouse_target
+
+        dbt_dir = tmp_path / "dbt"
+        dbt_dir.mkdir()
+        # No dbt_project.yml at all
+        assert _extract_dbt_warehouse_target(dbt_dir) is None
+
+
+class TestRegisterDbtCloudAlignment:
+    """v0.1.3 theme #2: Snowflake / BigQuery alignment offers to update
+    ``stack.warehouse`` but leaves ``database.warehouse`` alone."""
+
+    def test_snowflake_alignment_updates_stack_warehouse(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+
+        dbt_dir = tmp_path / "proj-dbt"
+        _make_snowflake_dbt_project(dbt_dir, "proj", account="acme-us-east-1")
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+
+        result = cli_runner.invoke(app, ["register", "dbt", str(dbt_dir)], input="y\n")
+        assert result.exit_code == 0, result.stdout
+
+        data = yaml.safe_load((project / "tycoon.yml").read_text())
+        assert data["stack"]["warehouse"] == "snowflake"
+        # database.warehouse untouched — still the local DuckDB default
+        assert data["database"]["warehouse"] == "data/warehouse.duckdb"
+
+    def test_bigquery_alignment_updates_stack_warehouse(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+
+        dbt_dir = tmp_path / "proj-dbt"
+        _make_bigquery_dbt_project(dbt_dir, "proj", gcp_project="my-gcp-proj")
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+
+        result = cli_runner.invoke(app, ["register", "dbt", str(dbt_dir)], input="y\n")
+        assert result.exit_code == 0, result.stdout
+
+        data = yaml.safe_load((project / "tycoon.yml").read_text())
+        assert data["stack"]["warehouse"] == "bigquery"
+        assert data["database"]["warehouse"] == "data/warehouse.duckdb"
+
+    def test_snowflake_no_change_if_types_already_aligned(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """When stack.warehouse is already snowflake, no prompt — the value stays."""
+        project = tmp_path / "proj"
+        yml_path = _scaffold_tycoon_project(project, "proj")
+        # Pre-set the stack to snowflake so alignment is already true.
+        data = yaml.safe_load(yml_path.read_text())
+        data.setdefault("stack", {})["warehouse"] = "snowflake"
+        yml_path.write_text(yaml.dump(data))
+
+        dbt_dir = tmp_path / "proj-dbt"
+        _make_snowflake_dbt_project(dbt_dir, "proj", account="acme-us-east-1")
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+
+        result = cli_runner.invoke(app, ["register", "dbt", str(dbt_dir)])
+        assert result.exit_code == 0, result.stdout
+
+        data = yaml.safe_load((project / "tycoon.yml").read_text())
+        assert data["stack"]["warehouse"] == "snowflake"
+
+    def test_snowflake_account_mismatch_warns(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """When tycoon.yml records a warehouse_connection.account that
+        differs from the dbt profile's account, we warn (non-fatal)."""
+        project = tmp_path / "proj"
+        yml_path = _scaffold_tycoon_project(project, "proj")
+        data = yaml.safe_load(yml_path.read_text())
+        data["warehouse_connection"] = {"account": "other-account"}
+        yml_path.write_text(yaml.dump(data))
+
+        dbt_dir = tmp_path / "proj-dbt"
+        _make_snowflake_dbt_project(dbt_dir, "proj", account="acme-us-east-1")
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+
+        result = cli_runner.invoke(app, ["register", "dbt", str(dbt_dir)], input="y\n")
+        assert result.exit_code == 0, result.stdout
+        assert "other-account" in result.stdout
+        assert "acme-us-east-1" in result.stdout
 
 
 class TestRegisterWarehouse:

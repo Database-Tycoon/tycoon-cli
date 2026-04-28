@@ -10,7 +10,7 @@ import yaml
 
 from tycoon.commands.init import (
     _clone_repo,
-    _extract_dbt_duckdb_path,
+    _extract_dbt_warehouse_target,
     _normalize_warehouse_for_compare,
 )
 from tycoon.config import config
@@ -117,39 +117,104 @@ def register_dbt(
     stack["transformation"] = TransformationTool.dbt.value
     stack["transformation_managed"] = False
 
-    # Warehouse alignment offer (covers local DuckDB and MotherDuck)
-    dbt_warehouse = _extract_dbt_duckdb_path(resolved)
-    if dbt_warehouse:
-        current_warehouse = raw.get("database", {}).get("warehouse", "")
-        if current_warehouse.startswith("md:"):
-            current_norm = current_warehouse
+    # Warehouse alignment offer
+    dbt_target = _extract_dbt_warehouse_target(resolved)
+    if dbt_target is not None:
+        if dbt_target.adapter_type == "duckdb":
+            _align_duckdb_warehouse(raw, stack, dbt_target.identifier)
         else:
-            abs_path = Path(current_warehouse).expanduser() if current_warehouse else Path()
-            if not abs_path.is_absolute():
-                abs_path = (config.root / current_warehouse).resolve() if current_warehouse else Path()
-            else:
-                abs_path = abs_path.resolve()
-            current_norm = str(abs_path) if current_warehouse else ""
-
-        if current_norm != _normalize_warehouse_for_compare(dbt_warehouse):
-            console.print()
-            warn(
-                f"Your dbt project targets {dbt_warehouse}, "
-                f"but tycoon.yml has warehouse = {current_warehouse!r}."
-            )
-            if typer.confirm(f"Update warehouse to {dbt_warehouse}?", default=True):
-                raw.setdefault("database", {})["warehouse"] = dbt_warehouse
-                if raw["database"].get("raw", "") == current_warehouse:
-                    raw["database"]["raw"] = dbt_warehouse
-                stack["warehouse"] = (
-                    WarehouseType.motherduck.value
-                    if dbt_warehouse.startswith("md:")
-                    else WarehouseType.duckdb.value
-                )
+            _align_cloud_warehouse(raw, stack, dbt_target)
 
     _write_raw_tycoon_yml(yml_path, raw)
     success(f"Registered dbt project at {resolved}")
     info(f"Updated {yml_path.name}.")
+
+
+def _align_duckdb_warehouse(raw: dict, stack: dict, dbt_warehouse: str) -> None:
+    """DuckDB / MotherDuck alignment (v0.1.1 + v0.1.2 behavior, unchanged)."""
+    current_warehouse = raw.get("database", {}).get("warehouse", "")
+    if current_warehouse.startswith("md:"):
+        current_norm = current_warehouse
+    else:
+        abs_path = Path(current_warehouse).expanduser() if current_warehouse else Path()
+        if not abs_path.is_absolute():
+            abs_path = (config.root / current_warehouse).resolve() if current_warehouse else Path()
+        else:
+            abs_path = abs_path.resolve()
+        current_norm = str(abs_path) if current_warehouse else ""
+
+    if current_norm == _normalize_warehouse_for_compare(dbt_warehouse):
+        return
+
+    console.print()
+    warn(
+        f"Your dbt project targets {dbt_warehouse}, "
+        f"but tycoon.yml has warehouse = {current_warehouse!r}."
+    )
+    if typer.confirm(f"Update warehouse to {dbt_warehouse}?", default=True):
+        raw.setdefault("database", {})["warehouse"] = dbt_warehouse
+        if raw["database"].get("raw", "") == current_warehouse:
+            raw["database"]["raw"] = dbt_warehouse
+        stack["warehouse"] = (
+            WarehouseType.motherduck.value
+            if dbt_warehouse.startswith("md:")
+            else WarehouseType.duckdb.value
+        )
+
+
+def _align_cloud_warehouse(raw: dict, stack: dict, dbt_target) -> None:
+    """Alignment for Snowflake / BigQuery / Redshift / other cloud adapters.
+
+    These adapters don't map to a single ``path`` field, so we do **not**
+    touch ``database.warehouse`` (it's meaningless for them). What we *do*
+    check is whether ``stack.warehouse`` agrees with the dbt adapter type
+    — and, for Snowflake, whether the account matches any previously-
+    registered account in the raw yaml under ``warehouse_connection``.
+    """
+    current_stack_type = stack.get("warehouse", WarehouseType.duckdb.value)
+    desired_type = dbt_target.tycoon_warehouse_type
+    if not desired_type:
+        # Unknown adapter — warn but don't force a change.
+        console.print()
+        warn(
+            f"Your dbt project uses adapter type {dbt_target.adapter_type!r} "
+            f"which tycoon doesn't model yet. Leaving stack.warehouse as "
+            f"{current_stack_type!r}; make sure that matches your expectations."
+        )
+        return
+
+    if current_stack_type != desired_type:
+        console.print()
+        warn(
+            f"Your dbt project targets {dbt_target.display} "
+            f"(adapter {dbt_target.adapter_type!r}), "
+            f"but tycoon.yml has stack.warehouse = {current_stack_type!r}."
+        )
+        info(
+            "tycoon.yml's database.warehouse path only applies to DuckDB / "
+            "MotherDuck, so it won't be touched. Only stack.warehouse is "
+            "adjusted for cloud adapters."
+        )
+        if typer.confirm(
+            f"Update stack.warehouse to {desired_type!r}?", default=True
+        ):
+            stack["warehouse"] = desired_type
+
+    # Snowflake: surface an account-mismatch hint when the user previously
+    # recorded one in `warehouse_connection.account` (free-form yaml key).
+    if dbt_target.adapter_type == "snowflake" and dbt_target.identifier:
+        prior_account = (
+            raw.get("warehouse_connection", {}).get("account")
+            if isinstance(raw.get("warehouse_connection"), dict)
+            else None
+        )
+        if prior_account and prior_account != dbt_target.identifier:
+            warn(
+                f"tycoon.yml's warehouse_connection.account = "
+                f"{prior_account!r} differs from the dbt profile's "
+                f"account = {dbt_target.identifier!r}. Double-check that "
+                "ingestion and dbt are both pointing at the right account."
+            )
 
 
 @app.command(name="warehouse")

@@ -18,7 +18,7 @@ sources:
       auth:
         token: ${GITHUB_TOKEN}
       resources:
-        - repos/{owner}/{repo}/issues
-        - repos/{owner}/{repo}/pulls
-        - repos/{owner}/{repo}/stargazers
-        - repos/{owner}/{repo}/contributors
+        - repos/{{ owner }}/{{ repo }}/issues
+        - repos/{{ owner }}/{{ repo }}/pulls
+        - repos/{{ owner }}/{{ repo }}/stargazers
+        - repos/{{ owner }}/{{ repo }}/contributors

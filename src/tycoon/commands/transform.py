@@ -45,14 +45,20 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
     Silently no-ops on any failure — the dbt invocation result is authoritative.
     """
     try:
-        from tycoon.observability import capture_dbt_safe, metadata_db_path
+        from tycoon.observability import (
+            capture_dbt_manifest_safe,
+            capture_dbt_safe,
+            metadata_db_path,
+        )
         from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
 
+        meta = metadata_db_path(config.root)
         capture_dbt_safe(
-            metadata_db_path(config.root),
+            meta,
             config.dbt_project_dir,
             command=dbt_cmd,
         )
+        capture_dbt_manifest_safe(meta, config.dbt_project_dir)
         refresh_usage_dashboards(project_root=config.root, rill_dir=config.rill_dir)
     except Exception:
         pass

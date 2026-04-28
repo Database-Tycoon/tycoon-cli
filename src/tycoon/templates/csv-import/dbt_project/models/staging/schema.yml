@@ -1,0 +1,30 @@
+version: 2
+
+sources:
+  - name: files
+    description: >
+      Raw CSV rows ingested by dlt from data/input/ via the filesystem source.
+      dlt's `read_csv()` transformer produces a single unified table named
+      `_read_csv` that holds rows from every matched file.
+    database: raw
+    schema: raw_files
+    tables:
+      - name: _read_csv
+        description: Unioned rows from every CSV under data/input/.
+        identifier: _read_csv
+        quoting:
+          identifier: true
+
+models:
+  - name: stg_widgets
+    description: Staging model for widget data — typed and whitespace-trimmed.
+    columns:
+      - name: widget_id
+        description: Primary key from the source CSV's `id` column.
+        tests:
+          - unique
+          - not_null
+      - name: widget_name
+        description: Human-readable name, trimmed.
+      - name: quantity
+        description: Stock-on-hand count as an integer.

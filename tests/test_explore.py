@@ -325,13 +325,11 @@ class TestGenerateRillConfig:
     def test_creates_source_yaml(self, tmp_path: Path, test_db: Path):
         from tycoon.scaffolding.rill_generator import generate_rill_config
 
-        warehouse_db = tmp_path / "warehouse.duckdb"
         rill_dir = tmp_path / "rill"
         rill_dir.mkdir()
         (rill_dir / "rill.yaml").write_text("compiler: rillv1\nolap_connector: duckdb\n")
         generate_rill_config(
             raw_db_path=test_db,
-            warehouse_db_path=warehouse_db,
             schema_name="test_schema",
             source_name="my_source",
             output_dir=rill_dir,
@@ -343,13 +341,11 @@ class TestGenerateRillConfig:
     def test_source_yaml_uses_local_file_connector(self, tmp_path: Path, test_db: Path):
         from tycoon.scaffolding.rill_generator import generate_rill_config
 
-        warehouse_db = tmp_path / "warehouse.duckdb"
         rill_dir = tmp_path / "rill"
         rill_dir.mkdir()
         (rill_dir / "rill.yaml").write_text("compiler: rillv1\nolap_connector: duckdb\n")
         generate_rill_config(
             raw_db_path=test_db,
-            warehouse_db_path=warehouse_db,
             schema_name="test_schema",
             source_name="my_source",
             output_dir=rill_dir,
@@ -362,13 +358,11 @@ class TestGenerateRillConfig:
     def test_creates_metrics_view_yaml(self, tmp_path: Path, test_db: Path):
         from tycoon.scaffolding.rill_generator import generate_rill_config
 
-        warehouse_db = tmp_path / "warehouse.duckdb"
         rill_dir = tmp_path / "rill"
         rill_dir.mkdir()
         (rill_dir / "rill.yaml").write_text("compiler: rillv1\nolap_connector: duckdb\n")
         generate_rill_config(
             raw_db_path=test_db,
-            warehouse_db_path=warehouse_db,
             schema_name="test_schema",
             source_name="my_source",
             output_dir=rill_dir,
@@ -382,13 +376,11 @@ class TestGenerateRillConfig:
     def test_creates_explore_dashboard_yaml(self, tmp_path: Path, test_db: Path):
         from tycoon.scaffolding.rill_generator import generate_rill_config
 
-        warehouse_db = tmp_path / "warehouse.duckdb"
         rill_dir = tmp_path / "rill"
         rill_dir.mkdir()
         (rill_dir / "rill.yaml").write_text("compiler: rillv1\nolap_connector: duckdb\n")
         generate_rill_config(
             raw_db_path=test_db,
-            warehouse_db_path=warehouse_db,
             schema_name="test_schema",
             source_name="my_source",
             output_dir=rill_dir,
@@ -402,13 +394,11 @@ class TestGenerateRillConfig:
     def test_metrics_view_has_count_measure(self, tmp_path: Path, test_db: Path):
         from tycoon.scaffolding.rill_generator import generate_rill_config
 
-        warehouse_db = tmp_path / "warehouse.duckdb"
         rill_dir = tmp_path / "rill"
         rill_dir.mkdir()
         (rill_dir / "rill.yaml").write_text("compiler: rillv1\nolap_connector: duckdb\n")
         generate_rill_config(
             raw_db_path=test_db,
-            warehouse_db_path=warehouse_db,
             schema_name="test_schema",
             source_name="my_source",
             output_dir=rill_dir,
@@ -421,13 +411,11 @@ class TestGenerateRillConfig:
     def test_returns_list_of_paths(self, tmp_path: Path, test_db: Path):
         from tycoon.scaffolding.rill_generator import generate_rill_config
 
-        warehouse_db = tmp_path / "warehouse.duckdb"
         rill_dir = tmp_path / "rill"
         rill_dir.mkdir()
         (rill_dir / "rill.yaml").write_text("compiler: rillv1\nolap_connector: duckdb\n")
         result = generate_rill_config(
             raw_db_path=test_db,
-            warehouse_db_path=warehouse_db,
             schema_name="test_schema",
             source_name="my_source",
             output_dir=rill_dir,
@@ -438,13 +426,11 @@ class TestGenerateRillConfig:
     def test_exports_parquet_files(self, tmp_path: Path, test_db: Path):
         from tycoon.scaffolding.rill_generator import generate_rill_config
 
-        warehouse_db = tmp_path / "warehouse.duckdb"
         rill_dir = tmp_path / "rill"
         rill_dir.mkdir()
         (rill_dir / "rill.yaml").write_text("compiler: rillv1\nolap_connector: duckdb\n")
         generate_rill_config(
             raw_db_path=test_db,
-            warehouse_db_path=warehouse_db,
             schema_name="test_schema",
             source_name="my_source",
             output_dir=rill_dir,
@@ -558,13 +544,11 @@ class TestExploreDashboardColumns:
     def test_varchar_column_is_dimension(self, tmp_path: Path, test_db: Path):
         from tycoon.scaffolding.rill_generator import generate_rill_config
 
-        warehouse_db = tmp_path / "warehouse.duckdb"
         rill_dir = tmp_path / "rill"
         rill_dir.mkdir()
         (rill_dir / "rill.yaml").write_text("compiler: rillv1\nolap_connector: duckdb\n")
         generate_rill_config(
             raw_db_path=test_db,
-            warehouse_db_path=warehouse_db,
             schema_name="test_schema",
             source_name="my_source",
             output_dir=rill_dir,
@@ -577,13 +561,11 @@ class TestExploreDashboardColumns:
     def test_double_column_is_avg_measure(self, tmp_path: Path, test_db: Path):
         from tycoon.scaffolding.rill_generator import generate_rill_config
 
-        warehouse_db = tmp_path / "warehouse.duckdb"
         rill_dir = tmp_path / "rill"
         rill_dir.mkdir()
         (rill_dir / "rill.yaml").write_text("compiler: rillv1\nolap_connector: duckdb\n")
         generate_rill_config(
             raw_db_path=test_db,
-            warehouse_db_path=warehouse_db,
             schema_name="test_schema",
             source_name="my_source",
             output_dir=rill_dir,
@@ -596,13 +578,11 @@ class TestExploreDashboardColumns:
     def test_dlt_columns_not_in_metrics_view(self, tmp_path: Path, test_db: Path):
         from tycoon.scaffolding.rill_generator import generate_rill_config
 
-        warehouse_db = tmp_path / "warehouse.duckdb"
         rill_dir = tmp_path / "rill"
         rill_dir.mkdir()
         (rill_dir / "rill.yaml").write_text("compiler: rillv1\nolap_connector: duckdb\n")
         generate_rill_config(
             raw_db_path=test_db,
-            warehouse_db_path=warehouse_db,
             schema_name="test_schema",
             source_name="my_source",
             output_dir=rill_dir,

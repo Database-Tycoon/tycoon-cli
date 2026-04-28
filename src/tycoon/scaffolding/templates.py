@@ -11,6 +11,7 @@ import os
 import shutil
 from pathlib import Path
 
+import typer
 import yaml
 
 from tycoon.project import StackConfig
@@ -289,11 +290,179 @@ def _scaffold_dbt_project(
 
 
 # ---------------------------------------------------------------------------
+# Template parameterization
+# ---------------------------------------------------------------------------
+
+# Metadata file sibling to tycoon.yml inside each template directory.
+# Declares parameters the template exposes for scaffold-time substitution.
+# Format:
+#
+#   parameters:
+#     - name: owner
+#       description: GitHub username or organization
+#       example: octocat
+#       required: true
+#     - name: repo
+#       description: Repository name
+#       example: hello-world
+#       required: true
+#
+# Placeholders in any template file are written as ``{{ name }}`` (with
+# optional whitespace). Substitution happens at scaffold time — once the
+# project is written, the values are fixed and the declaration is gone.
+_TEMPLATE_METADATA_FILENAME = "template.yml"
+
+# Files (relative to the template root) whose contents get parameter
+# substitution applied. Kept small and explicit rather than "everything"
+# so scaffolding can't accidentally mangle binary or unrelated files.
+_SUBSTITUTABLE_SUFFIXES = {".yml", ".yaml", ".sql", ".md", ".txt"}
+
+
+def load_template_parameters(template_name: str) -> list[dict]:
+    """Return the parameter declarations for a template, or [] if none.
+
+    Parameters are declared in the template's ``template.yml`` metadata
+    file. Each entry is a dict with keys: ``name``, ``description``,
+    ``example`` (optional), ``required`` (optional, default True).
+    """
+    template_path = get_template_path(template_name)
+    meta_path = template_path / _TEMPLATE_METADATA_FILENAME
+    if not meta_path.exists():
+        return []
+
+    try:
+        data = yaml.safe_load(meta_path.read_text()) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid YAML in {meta_path}: {exc}") from exc
+
+    params = data.get("parameters", []) or []
+    if not isinstance(params, list):
+        raise ValueError(
+            f"{meta_path}: 'parameters' must be a list, got {type(params).__name__}"
+        )
+
+    normalized: list[dict] = []
+    for i, entry in enumerate(params):
+        if not isinstance(entry, dict) or "name" not in entry:
+            raise ValueError(
+                f"{meta_path}: parameters[{i}] must be a dict with a 'name' key"
+            )
+        normalized.append(
+            {
+                "name": entry["name"],
+                "description": entry.get("description", ""),
+                "example": entry.get("example", ""),
+                "required": entry.get("required", True),
+            }
+        )
+    return normalized
+
+
+def _substitute_params(text: str, params: dict[str, str]) -> str:
+    """Replace every ``{{ name }}`` occurrence (with optional whitespace)
+    with the corresponding value from ``params``.
+
+    Unknown placeholders are left untouched — templates may intentionally
+    contain literal ``{{ ... }}`` (e.g. dbt Jinja references inside SQL).
+    Callers should validate that all declared parameters were supplied
+    before invoking this function.
+    """
+    import re
+
+    def replace(match: re.Match) -> str:
+        key = match.group(1).strip()
+        return params.get(key, match.group(0))
+
+    return re.sub(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}", replace, text)
+
+
+def _substitute_tree(target: Path, params: dict[str, str]) -> None:
+    """Walk ``target`` and substitute ``{{ name }}`` placeholders in every
+    text file with an allowlisted suffix. Files without those suffixes
+    (binary images, data blobs, etc.) are skipped."""
+    if not params:
+        return
+    for path in target.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in _SUBSTITUTABLE_SUFFIXES:
+            continue
+        try:
+            original = path.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        rewritten = _substitute_params(original, params)
+        if rewritten != original:
+            path.write_text(rewritten)
+
+
+def _resolve_template_parameters(
+    template_name: str,
+    supplied: dict[str, str] | None,
+) -> dict[str, str]:
+    """Return the concrete parameter values for a template.
+
+    For each declared parameter:
+    * If the name appears in ``supplied`` — use it verbatim.
+    * Otherwise — prompt the user interactively with the example as
+      the default hint (typer.prompt). Required params block; optional
+      params allow an empty answer that's skipped in substitution.
+
+    Extra keys in ``supplied`` that don't match any declared parameter
+    are ignored (with a warning) — users typo things.
+    """
+    declared = load_template_parameters(template_name)
+    if not declared:
+        if supplied:
+            warn(
+                f"Template '{template_name}' does not declare any parameters; "
+                f"ignoring --param: {', '.join(supplied)}"
+            )
+        return {}
+
+    supplied = dict(supplied or {})
+    resolved: dict[str, str] = {}
+
+    declared_names = {d["name"] for d in declared}
+    for key in list(supplied):
+        if key not in declared_names:
+            warn(f"Ignoring unknown parameter '{key}' (not declared by template)")
+            supplied.pop(key)
+
+    for spec in declared:
+        name = spec["name"]
+        if name in supplied:
+            resolved[name] = supplied[name]
+            continue
+
+        prompt_label = spec["name"]
+        if spec["description"]:
+            prompt_label = f"{spec['description']} ({name})"
+        default = spec["example"] if not spec["required"] else None
+
+        if default is None:
+            value = typer.prompt(prompt_label)
+        else:
+            value = typer.prompt(prompt_label, default=default, show_default=True)
+
+        if spec["required"] and not value:
+            raise ValueError(f"Required parameter '{name}' was not supplied")
+
+        resolved[name] = str(value)
+
+    return resolved
+
+
+# ---------------------------------------------------------------------------
 # Template-based scaffolding
 # ---------------------------------------------------------------------------
 
 
-def scaffold_from_template(target: Path, template_name: str) -> None:
+def scaffold_from_template(
+    target: Path,
+    template_name: str,
+    parameters: dict[str, str] | None = None,
+) -> None:
     """Copy a template into the target directory.
 
     Copies ``tycoon.yml`` from the template. For directories like
@@ -301,8 +470,18 @@ def scaffold_from_template(target: Path, template_name: str) -> None:
     target (e.g. when running inside the localhost-stack repo) and skips if so.
 
     Also creates ``data/`` and ``.gitignore`` if not present.
+
+    If the template declares parameters in ``template.yml`` (see
+    :func:`load_template_parameters`), missing values are prompted for
+    interactively. ``{{ name }}`` placeholders in text files with
+    allowlisted suffixes (``.yml/.yaml/.sql/.md/.txt``) are then replaced
+    with the resolved values.
     """
     template_path = get_template_path(template_name)
+
+    # Resolve parameter values before copying anything so a prompt
+    # failure doesn't leave a half-scaffolded project behind.
+    resolved_params = _resolve_template_parameters(template_name, parameters)
 
     # Copy tycoon.yml
     src_yml = template_path / "tycoon.yml"
@@ -314,8 +493,10 @@ def scaffold_from_template(target: Path, template_name: str) -> None:
         success(f"Created tycoon.yml from template '{template_name}'")
 
     # Copy any subdirectories from the template (e.g. dbt_project/, rill/)
+    # The template.yml metadata file itself is not copied into the target —
+    # it's build-time metadata, not runtime config.
     for item in template_path.iterdir():
-        if item.name == "tycoon.yml" or item.name == "README":
+        if item.name in ("tycoon.yml", "README", _TEMPLATE_METADATA_FILENAME):
             continue
         dst = target / item.name
         if item.is_dir():
@@ -330,6 +511,9 @@ def scaffold_from_template(target: Path, template_name: str) -> None:
             else:
                 shutil.copy2(item, dst)
                 success(f"Created {item.name} from template")
+
+    # Substitute parameters across everything we just copied.
+    _substitute_tree(target, resolved_params)
 
     # data/
     (target / "data").mkdir(parents=True, exist_ok=True)

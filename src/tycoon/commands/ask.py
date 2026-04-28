@@ -125,6 +125,26 @@ def _parse_frontmatter(text: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
+def _refresh_agents_md() -> None:
+    """Write or refresh AGENTS.md at the project root.
+
+    Best-effort: never raises. Prints a hint when a user-authored
+    AGENTS.md is preserved so the user knows tycoon's pointer file
+    isn't getting refreshed.
+    """
+    from tycoon.nao import write_agents_md
+
+    wrote, path = write_agents_md(config)
+    if wrote:
+        info(f"AGENTS.md refreshed at [bold]{path}[/bold]")
+    else:
+        warn(
+            f"AGENTS.md at [bold]{path}[/bold] is user-authored "
+            "(no tycoon sentinel) — left alone. Delete the file to let "
+            "[bold]tycoon ask[/bold] manage it again."
+        )
+
+
 @app.command("init")
 def ask_init() -> None:
     """Generate .tycoon/nao/nao_config.yaml from tycoon.yml."""
@@ -134,11 +154,13 @@ def ask_init() -> None:
     from tycoon.nao import write_nao_project
 
     write_nao_project(config)
+    _refresh_agents_md()
 
     success(f"Nao config written to [bold]{config.nao_dir}[/bold]")
     next_steps(
         ("tycoon ask sync", "build DB and dbt context (~30s first run)"),
         ("tycoon ask chat", "launch the query UI"),
+        ("tycoon ask context --help", "pipe synced context into any agent"),
     )
 
 
@@ -169,9 +191,12 @@ def ask_sync(
         error("nao sync failed.")
         raise typer.Exit(result.returncode)
 
+    _refresh_agents_md()
+
     success("Context synced.")
     next_steps(
         ("tycoon ask chat", "start querying your data in natural language"),
+        ("tycoon ask context --table <table>", "pipe table context into any agent"),
     )
 
 
@@ -220,6 +245,92 @@ def ask_chat(
         cwd=str(config.nao_dir),
         env=_nao_env(),
     )
+
+
+@app.command("context")
+def ask_context(
+    table: str | None = typer.Option(None, "--table", "-t", help="Filter to a single table name."),
+    schema: str | None = typer.Option(None, "--schema", "-s", help="Filter to a single schema name."),
+    include_dbt: bool = typer.Option(False, "--include-dbt", help="Also dump synced dbt model SQL."),
+    rules_only: bool = typer.Option(False, "--rules-only", help="Only print RULES.md."),
+) -> None:
+    """Print Nao-synced context for a table/schema. Pipe into any agent.
+
+    Output goes to stdout as plain markdown so it composes with
+    ``tycoon ask context --table foo | claude -p "explain this table"``.
+    """
+    _require_project()
+
+    nao_dir = config.nao_dir
+    if not nao_dir.exists():
+        error("No Nao context found. Run [bold]tycoon ask sync[/bold] first.")
+        raise typer.Exit(1)
+
+    if rules_only:
+        rules = nao_dir / "RULES.md"
+        if not rules.exists():
+            error(f"No RULES.md at [bold]{rules}[/bold]. Run [bold]tycoon ask init[/bold].")
+            raise typer.Exit(1)
+        typer.echo(rules.read_text(), nl=False)
+        return
+
+    db_root = nao_dir / "databases"
+    if not db_root.exists():
+        error("No Nao database context. Run [bold]tycoon ask sync[/bold] first.")
+        raise typer.Exit(1)
+
+    # Collect every synced table dir, optionally filtered.
+    candidates: list[Path] = []
+    for table_dir in db_root.glob("type=*/database=*/schema=*/table=*"):
+        t = table_dir.name.removeprefix("table=")
+        s = table_dir.parent.name.removeprefix("schema=")
+        if table is not None and t != table:
+            continue
+        if schema is not None and s != schema:
+            continue
+        candidates.append(table_dir)
+
+    candidates.sort()
+
+    # No filters and no candidates → nothing synced. Filter present and no
+    # candidates → user typo. Distinguish so the message is useful.
+    if not candidates:
+        if table is None and schema is None:
+            error("No tables in Nao context. Run [bold]tycoon ask sync[/bold] first.")
+        else:
+            filt = ", ".join(f"{k}={v}" for k, v in (("table", table), ("schema", schema)) if v)
+            error(f"No Nao context matched {filt}. Run [bold]tycoon ask context[/bold] (no flags) to list.")
+        raise typer.Exit(1)
+
+    # Listing mode: no filters, just print available tables.
+    if table is None and schema is None and not include_dbt:
+        typer.echo("# Available Nao context\n")
+        for table_dir in candidates:
+            t = table_dir.name.removeprefix("table=")
+            s = table_dir.parent.name.removeprefix("schema=")
+            typer.echo(f"- {s}.{t}")
+        typer.echo(
+            "\nRun `tycoon ask context --table <name>` "
+            "or `--schema <name>` to print a table's columns + preview."
+        )
+        return
+
+    # Selected mode: cat columns.md + preview.md per matching table.
+    for table_dir in candidates:
+        for filename in ("columns.md", "preview.md"):
+            f = table_dir / filename
+            if f.exists():
+                typer.echo(f.read_text(), nl=False)
+                typer.echo("")  # blank line between sections
+
+    if include_dbt:
+        dbt_root = nao_dir / "repos" / "dbt" / "models"
+        if dbt_root.exists():
+            for sql in sorted(dbt_root.rglob("*.sql")):
+                typer.echo(f"\n# {sql.relative_to(dbt_root)}\n")
+                typer.echo("```sql")
+                typer.echo(sql.read_text(), nl=False)
+                typer.echo("```")
 
 
 # ---------------------------------------------------------------------------

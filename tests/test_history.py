@@ -357,6 +357,111 @@ class TestHistoryShow:
         assert "stg_orders" in result.stdout
         assert "build" in result.stdout
 
+    def test_show_dlt_surfaces_trace_details_when_present(
+        self, history_project, cli_runner
+    ):
+        """v0.1.3: trace-enriched show view should display duration + bytes."""
+        _seed_metadata(
+            history_project,
+            dlt_runs=[
+                ("raw_src", "load-traceable-001", 0, datetime(2026, 4, 19, 12, 0), "h"),
+            ],
+            dlt_rows=[
+                ("raw_src", "widgets", "load-traceable-001", 42),
+            ],
+        )
+
+        from tycoon.observability import capture_dlt_trace_from_dict, metadata_db_path
+
+        trace = {
+            "transaction_id": "txn-history-001",
+            "pipeline_name": "demo",
+            "started_at": datetime(2026, 4, 19, 12, 0, 0),
+            "finished_at": datetime(2026, 4, 19, 12, 0, 3),
+            "engine_version": 1,
+            "steps": [
+                {
+                    "step": "load",
+                    "started_at": datetime(2026, 4, 19, 12, 0, 0),
+                    "finished_at": datetime(2026, 4, 19, 12, 0, 3),
+                    "step_exception": None,
+                    "step_info": {
+                        "load_packages": [
+                            {
+                                "load_id": "load-traceable-001",
+                                "jobs": [
+                                    {
+                                        "job_id": "widgets.aaa.insert_values",
+                                        "table_name": "widgets",
+                                        "file_format": "insert_values",
+                                        "file_size": 8192,
+                                        "elapsed": 0.5,
+                                        "state": "completed_jobs",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                }
+            ],
+        }
+        capture_dlt_trace_from_dict(metadata_db_path(history_project), trace)
+
+        result = cli_runner.invoke(app, ["data", "history", "show", "load-traceable"])
+        assert result.exit_code == 0
+        assert "Duration" in result.stdout
+        assert "Bytes written" in result.stdout
+        # 8192 bytes = 8.0 KB
+        assert "KB" in result.stdout
+
+    def test_show_dbt_surfaces_schema_changes_when_present(
+        self, history_project, cli_runner
+    ):
+        """v0.1.3: schema-diff drilldown should render below the Nodes table."""
+        _seed_metadata(
+            history_project,
+            dbt_runs=[
+                (
+                    "inv-schema-change",
+                    "build",
+                    datetime(2026, 4, 19, 12, 0),
+                    3.0,
+                    True,
+                    2, 0, 0, 0, "1.9.0", "dev",
+                ),
+            ],
+        )
+
+        from tycoon.observability import ensure_schema, metadata_db_path
+
+        meta = metadata_db_path(history_project)
+        ensure_schema(meta)
+        con = duckdb.connect(str(meta))
+        try:
+            con.execute(
+                """
+                INSERT INTO dbt_schema_changes
+                  (invocation_id, prev_invocation_id, change_type, unique_id,
+                   column_name, old_value, new_value, captured_at)
+                VALUES
+                  ('inv-schema-change', 'inv-prev', 'column_added',
+                   'model.demo.stg_widgets', 'name', NULL, 'VARCHAR', now()),
+                  ('inv-schema-change', 'inv-prev', 'sql_changed',
+                   'model.demo.stg_widgets', '', 'aaaa', 'bbbb', now())
+                """
+            )
+        finally:
+            con.close()
+
+        result = cli_runner.invoke(
+            app, ["data", "history", "show", "inv-schema-change"]
+        )
+        assert result.exit_code == 0
+        assert "Schema changes" in result.stdout
+        assert "column_added" in result.stdout
+        assert "sql_changed" in result.stdout
+        assert "stg_widgets" in result.stdout
+
     def test_show_unknown_id_errors(self, history_project, cli_runner):
         _seed_metadata(
             history_project,

@@ -296,6 +296,20 @@ def _resolve_id(
     return "dbt", invocation_id
 
 
+def _fmt_bytes(n: int | None) -> str:
+    if n is None:
+        return "—"
+    units = ("B", "KB", "MB", "GB", "TB")
+    size = float(n)
+    idx = 0
+    while size >= 1024 and idx < len(units) - 1:
+        size /= 1024
+        idx += 1
+    if idx == 0:
+        return f"{int(size)} {units[idx]}"
+    return f"{size:,.1f} {units[idx]}"
+
+
 def _show_dlt_run(con: duckdb.DuckDBPyConnection, load_id: str) -> None:
     run = con.execute(
         """
@@ -316,6 +330,48 @@ def _show_dlt_run(con: duckdb.DuckDBPyConnection, load_id: str) -> None:
     if svh:
         console.print(f"  [bold]Schema version:[/bold] {svh}")
 
+    # Trace enrichment (v0.1.3): the load_id maps back to a transaction_id
+    # via dlt_trace_jobs. When present, surface run duration + bytes.
+    trace_row = con.execute(
+        """
+        SELECT r.transaction_id, r.pipeline_name, r.duration_s, r.success,
+               (SELECT SUM(file_size_bytes) FROM dlt_trace_jobs j
+                WHERE j.transaction_id = r.transaction_id) AS total_bytes
+        FROM dlt_trace_runs r
+        WHERE r.transaction_id IN (
+            SELECT DISTINCT transaction_id FROM dlt_trace_jobs WHERE load_id = ?
+        )
+        LIMIT 1
+        """,
+        [load_id],
+    ).fetchone()
+    if trace_row is not None:
+        txn_id, pipeline_name, duration_s, tr_success, total_bytes = trace_row
+        console.print(f"  [bold]Pipeline:[/bold] {pipeline_name or '—'}")
+        console.print(f"  [bold]Duration:[/bold] {_fmt_duration(duration_s)}")
+        console.print(f"  [bold]Bytes written:[/bold] {_fmt_bytes(total_bytes)}")
+        if not tr_success:
+            console.print("  [bold]Trace:[/bold] [red]contained step exceptions[/red]")
+
+        steps = con.execute(
+            """
+            SELECT step, duration_s, step_exception
+            FROM dlt_trace_steps
+            WHERE transaction_id = ?
+            ORDER BY started_at
+            """,
+            [txn_id],
+        ).fetchall()
+        if steps:
+            steps_table = Table(title="Steps", show_lines=False)
+            steps_table.add_column("Step", style="cyan")
+            steps_table.add_column("Duration", justify="right")
+            steps_table.add_column("Status")
+            for step_name, dur_s, exc in steps:
+                status_str = "[green]ok[/green]" if not exc else "[red]error[/red]"
+                steps_table.add_row(step_name, _fmt_duration(dur_s), status_str)
+            console.print(steps_table)
+
     tables = con.execute(
         """
         SELECT table_name, rows_loaded
@@ -330,14 +386,41 @@ def _show_dlt_run(con: duckdb.DuckDBPyConnection, load_id: str) -> None:
         console.print("\n[dim]No per-table row counts captured for this load.[/dim]")
         return
 
+    # Join per-table row counts with trace job bytes (if available).
+    job_bytes = {
+        row[0]: row[1]
+        for row in con.execute(
+            """
+            SELECT table_name, SUM(file_size_bytes)
+            FROM dlt_trace_jobs
+            WHERE load_id = ?
+            GROUP BY table_name
+            """,
+            [load_id],
+        ).fetchall()
+    }
+
     table = Table(title="Tables", show_lines=False)
     table.add_column("Table", style="cyan")
     table.add_column("Rows", justify="right")
-    total = 0
+    if job_bytes:
+        table.add_column("Bytes", justify="right")
+
+    total_rows = 0
+    total_bytes = 0
     for name, rows_loaded in tables:
-        table.add_row(name, f"{rows_loaded:,}")
-        total += rows_loaded
-    table.add_row("[bold]Total[/bold]", f"[bold]{total:,}[/bold]")
+        row_values = [name, f"{rows_loaded:,}"]
+        if job_bytes:
+            b = job_bytes.get(name)
+            row_values.append(_fmt_bytes(b))
+            total_bytes += b or 0
+        table.add_row(*row_values)
+        total_rows += rows_loaded
+
+    totals = ["[bold]Total[/bold]", f"[bold]{total_rows:,}[/bold]"]
+    if job_bytes:
+        totals.append(f"[bold]{_fmt_bytes(total_bytes)}[/bold]")
+    table.add_row(*totals)
     console.print(table)
 
 
@@ -392,22 +475,49 @@ def _show_dbt_run(con: duckdb.DuckDBPyConnection, invocation_id: str) -> None:
         [invocation_id],
     ).fetchall()
 
-    if not nodes:
+    if nodes:
+        table = Table(title="Nodes", show_lines=False)
+        table.add_column("Node", style="cyan", overflow="fold")
+        table.add_column("Type", style="dim")
+        table.add_column("Status")
+        table.add_column("Duration", justify="right")
+        table.add_column("Rows", justify="right")
+        for name, rtype, status, exec_s, rows, _msg in nodes:
+            ok = status in ("success", "pass")
+            status_str = f"[green]{status}[/green]" if ok else f"[red]{status}[/red]"
+            rows_str = f"{rows:,}" if rows is not None else "—"
+            table.add_row(name, rtype or "—", status_str, _fmt_duration(exec_s), rows_str)
+        console.print(table)
+    else:
         console.print("\n[dim]No node-level detail captured.[/dim]")
-        return
 
-    table = Table(title="Nodes", show_lines=False)
-    table.add_column("Node", style="cyan", overflow="fold")
-    table.add_column("Type", style="dim")
-    table.add_column("Status")
-    table.add_column("Duration", justify="right")
-    table.add_column("Rows", justify="right")
-    for name, rtype, status, exec_s, rows, _msg in nodes:
-        ok = status in ("success", "pass")
-        status_str = f"[green]{status}[/green]" if ok else f"[red]{status}[/red]"
-        rows_str = f"{rows:,}" if rows is not None else "—"
-        table.add_row(name, rtype or "—", status_str, _fmt_duration(exec_s), rows_str)
-    console.print(table)
+    # Schema-diff enrichment (v0.1.3): when a manifest snapshot recorded
+    # changes vs. the previous run, surface them below the nodes table.
+    changes = con.execute(
+        """
+        SELECT change_type, unique_id, column_name, old_value, new_value
+        FROM dbt_schema_changes
+        WHERE invocation_id = ?
+        ORDER BY change_type, unique_id, column_name
+        """,
+        [invocation_id],
+    ).fetchall()
+    if changes:
+        diff_table = Table(title="Schema changes vs. previous run", show_lines=False)
+        diff_table.add_column("Change", style="yellow")
+        diff_table.add_column("Node", style="cyan", overflow="fold")
+        diff_table.add_column("Column", style="dim")
+        diff_table.add_column("Old → New")
+        for change_type, unique_id, column_name, old_value, new_value in changes:
+            old_disp = old_value if old_value is not None else "—"
+            new_disp = new_value if new_value is not None else "—"
+            diff_table.add_row(
+                change_type,
+                unique_id,
+                column_name or "—",
+                f"{old_disp} → {new_disp}",
+            )
+        console.print(diff_table)
 
 
 def _show_run(id_prefix: str) -> None:
