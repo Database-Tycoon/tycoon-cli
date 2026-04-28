@@ -6,7 +6,13 @@ from pathlib import Path
 
 
 from tycoon.config import TycoonConfig
-from tycoon.nao import _expand_schema_globs, build_nao_config
+from tycoon.nao import (
+    AGENTS_MD_SENTINEL,
+    _expand_schema_globs,
+    build_agents_md,
+    build_nao_config,
+    write_agents_md,
+)
 from tycoon.project import (
     AskConfig,
     DatabaseConfig,
@@ -88,3 +94,50 @@ class TestAccessorsRename:
         assert "templates" in db
         assert "accessors" not in db
         assert db["templates"] == ["columns", "preview"]
+
+
+class TestAgentsMd:
+    """AGENTS.md auto-generation: a pointer file at the project root telling
+    coding agents where the synced Nao context lives."""
+
+    def test_build_includes_project_name(self, tmp_path):
+        cfg = _make_cfg(tmp_path)
+        body = build_agents_md(cfg)
+        assert "demo" in body
+        assert ".tycoon/nao/databases" in body
+        assert ".tycoon/nao/repos/dbt" in body
+        assert ".tycoon/nao/RULES.md" in body
+
+    def test_build_contains_sentinel(self, tmp_path):
+        cfg = _make_cfg(tmp_path)
+        body = build_agents_md(cfg)
+        assert AGENTS_MD_SENTINEL in body[:200]
+
+    def test_write_creates_file_when_missing(self, tmp_path):
+        cfg = _make_cfg(tmp_path)
+        wrote, path = write_agents_md(cfg)
+        assert wrote is True
+        assert path == tmp_path / "AGENTS.md"
+        assert AGENTS_MD_SENTINEL in path.read_text()
+
+    def test_write_overwrites_when_sentinel_present(self, tmp_path):
+        cfg = _make_cfg(tmp_path)
+        target = tmp_path / "AGENTS.md"
+        # Pre-existing tycoon-owned file with stale content
+        target.write_text(f"{AGENTS_MD_SENTINEL}\n# stale demo\nstale content\n")
+        wrote, _ = write_agents_md(cfg)
+        assert wrote is True
+        body = target.read_text()
+        assert "stale content" not in body
+        assert ".tycoon/nao/databases" in body  # fresh content
+
+    def test_write_preserves_user_authored_file(self, tmp_path):
+        """A pre-existing AGENTS.md without our sentinel must NOT be touched."""
+        cfg = _make_cfg(tmp_path)
+        target = tmp_path / "AGENTS.md"
+        original = "# my hand-rolled AGENTS file\nDo not touch.\n"
+        target.write_text(original)
+        wrote, path = write_agents_md(cfg)
+        assert wrote is False
+        assert path == target
+        assert target.read_text() == original
