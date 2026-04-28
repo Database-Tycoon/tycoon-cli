@@ -1,6 +1,6 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.3] - UNRELEASED
+## [0.1.3] - 2026-04-28
 
 _Scope tracked in [`docs/releases/v0.1.3.md`](docs/releases/v0.1.3.md). Five of seven planned themes landed: template parameterization, csv-import buildable dbt + offline e2e, dlt trace enrichment (observability v2a), dbt manifest schema-diff (observability v2b), and Snowflake/BigQuery warehouse alignment. The two XL items — one-command MotherDuck/Nao/LM Studio setup ([#7][]) and `tycoon data sync` ([#12][]) — are deferred to v0.1.4._
 
@@ -19,6 +19,8 @@ _Scope tracked in [`docs/releases/v0.1.3.md`](docs/releases/v0.1.3.md). Five of 
 - `tycoon data history show <load_id>` (dlt drilldown) now renders pipeline duration, total bytes written, and a Steps table (extract/normalize/load durations) when a dlt trace is captured. The per-table row-count view gains a Bytes column.
 - `tycoon data history show <invocation_id>` (dbt drilldown) now appends a "Schema changes vs. previous run" table below the Nodes table when a manifest-diff recorded changes for that invocation.
 - `_extract_dbt_duckdb_path` is retained as a thin backwards-compatible shim over the new structured `_extract_dbt_warehouse_target`. Existing callers unchanged.
+- Dependency bumps: `dlt[duckdb]` 1.25.0 → 1.26.0, `dagster` 1.13.0 → 1.13.2 (and the three sibling packages `dagster-webserver`, `dagster-dbt` 0.29.0 → 0.29.2, `dagster-dlt` 0.29.0 → 0.29.2), `nao-core` 0.1.7 → 0.1.8, `typer` 0.24.1 → 0.25.0, `uvicorn` 0.44.0 → 0.46.0, `pydantic` 2.13.2 → 2.13.3, `fastapi` 0.136.0 → 0.136.1.
+- Rill 0.86 released the day this version shipped; the `rill_generator.py` module docstring is updated to reference 0.86, but the generator's output (Parquet bridge via `local_file` connector) is unchanged. Rill 0.86's "DuckLake live connector" was probed for v0.1.3 scope but deferred — SQLite-backed DuckLake catalogs hold an exclusive OS-level lock while attached, breaking the "Rill running while pipelines write" workflow that the Parquet bridge supports today.
 
 ### Fixed
 

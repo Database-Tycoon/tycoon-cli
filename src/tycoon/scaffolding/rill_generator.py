@@ -1,6 +1,6 @@
 """Auto-generate Rill sources, metrics views, and explore dashboards.
 
-Architecture (Rill 0.83 + local_file connector):
+Architecture (Rill 0.86 + local_file connector):
   1. Export each raw table to a Parquet file under {data_dir}/parquet/{schema_name}/
   2. Write a Rill source YAML (type: source, connector: local_file) per table
   3. Write a metrics_view YAML referencing the source name
