@@ -22,13 +22,19 @@ from tycoon.project import SourceConfig
 _UNEXPANDED_ENV_VAR = re.compile(r"\$\{[^}]+\}")
 
 
-def _check_unexpanded_env_vars(source_config: SourceConfig) -> list[str]:
-    """Return config keys whose values still contain un-substituted ${VAR} patterns."""
-    return [
-        key
-        for key, value in source_config.config.items()
-        if isinstance(value, str) and _UNEXPANDED_ENV_VAR.search(value)
-    ]
+def _check_unexpanded_env_vars(source_config: SourceConfig) -> list[tuple[str, str]]:
+    """Return (key, unexpanded_var) pairs for config values still containing ``${VAR}``.
+
+    Both pieces are returned so callers don't need to re-run the regex
+    (which loses the typed-Match → str narrowing).
+    """
+    out: list[tuple[str, str]] = []
+    for key, value in source_config.config.items():
+        if isinstance(value, str):
+            match = _UNEXPANDED_ENV_VAR.search(value)
+            if match is not None:
+                out.append((key, match.group()))
+    return out
 
 
 class IngestionError(RuntimeError):
@@ -78,9 +84,12 @@ _LEGACY_PIPELINES: dict[str, str] = {
 
 def _build_rest_api_source(source_config: SourceConfig) -> Any:
     """Build a dlt source for a generic REST API."""
-    from dlt.sources.rest_api import rest_api_source
+    from typing import cast
 
-    cfg = source_config.config
+    from dlt.sources.rest_api import rest_api_source
+    from dlt.sources.rest_api.typing import RESTAPIConfig
+
+    cfg = cast(RESTAPIConfig, source_config.config)
     return rest_api_source(cfg)
 
 
@@ -265,12 +274,10 @@ def _run_catalog(
         )
 
     # Warn about unexpanded env vars before hitting the API
-    bad_keys = _check_unexpanded_env_vars(source_config)
-    if bad_keys:
+    bad_pairs = _check_unexpanded_env_vars(source_config)
+    if bad_pairs:
         from tycoon.utils.console import warn
-        for key in bad_keys:
-            val = source_config.config[key]
-            var = _UNEXPANDED_ENV_VAR.search(val).group()  # type: ignore[union-attr]
+        for key, var in bad_pairs:
             warn(
                 f"Config key '{key}' contains an unexpanded env var: {var}\n"
                 f"  Set it with: export {var[2:-1]}=<your-value>"

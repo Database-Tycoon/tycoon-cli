@@ -26,7 +26,8 @@ _Scope tracked in [`docs/releases/v0.1.3.md`](docs/releases/v0.1.3.md). Five of 
 
 ### Fixed
 
-- No user-facing bug fixes this cycle — v0.1.2's fix-sweep covered the pending bugs; v0.1.3 is a feature release.
+- **`generate_rill_config` no longer accepts an unused `warehouse_db_path` param** (carried from v0.1.2 known issues). The function only introspects `raw_db_path`; the warehouse-path arg was a leftover. All call sites updated.
+- **Type diagnostics in `src/tycoon/ingestion/runner.py` cleared** (carried from v0.1.2 known issues). The `rest_api_source` call now `cast`s its config to dlt's `RESTAPIConfig` typed dict; the env-var warning loop reads the matched `${VAR}` from `_check_unexpanded_env_vars` directly, eliminating the `# type: ignore[union-attr]` on the regex re-search.
 
 [#7]: https://github.com/Database-Tycoon/tycoon-cli/issues/7
 [#12]: https://github.com/Database-Tycoon/tycoon-cli/issues/12

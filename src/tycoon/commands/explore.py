@@ -141,7 +141,6 @@ def analyze_cmd(
         try:
             rill_files = generate_rill_config(
                 raw_db_path=raw_db,
-                warehouse_db_path=config.local_db,
                 schema_name=schema_name,
                 source_name=source_name,
                 output_dir=rill_dir,

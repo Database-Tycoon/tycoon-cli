@@ -207,7 +207,6 @@ metrics_view: {metrics_view_name}
 
 def generate_rill_config(
     raw_db_path: Path,
-    warehouse_db_path: Path,
     schema_name: str,
     source_name: str,
     output_dir: Path,
