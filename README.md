@@ -74,6 +74,7 @@ Already have a pipeline? `tycoon init` will ask about your ingestion tool, wareh
 | `tycoon start` | Start Rill, Dagster, Nao, and the web UI |
 | `tycoon stop` | Stop all services |
 | `tycoon ask chat` | Query your data in natural language (Nao) |
+| `tycoon ask context` | Print synced table/schema context as markdown (pipe into any agent) |
 | `tycoon run <tool>` | Passthrough to dbt, dlt, rill, dagster |
 
 ---
@@ -219,4 +220,13 @@ Installs Nao and Ibis for natural language querying of the warehouse. Requires a
 tycoon ask init
 tycoon ask sync
 tycoon ask chat
+```
+
+`tycoon ask init` and `tycoon ask sync` also write an `AGENTS.md` at the project root pointing coding agents (Claude Code, Cursor, Windsurf, etc.) at the synced context tree under `.tycoon/nao/`. Commit `AGENTS.md` so it's available to anyone cloning the repo. Pipe context into any agent directly:
+
+```bash
+tycoon ask context --table dim_users | claude -p "explain this table"
+tycoon ask context --schema mart                   # all tables in a schema
+tycoon ask context --rules-only                    # just RULES.md
+tycoon ask context                                 # list available tables
 ```
