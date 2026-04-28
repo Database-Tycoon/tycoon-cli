@@ -1,5 +1,24 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - UNRELEASED
+
+_Scope tracked in [`docs/releases/v0.1.4.md`](docs/releases/v0.1.4.md). Carries forward two XL items deferred from v0.1.3 (one-command MotherDuck + Nao + LM Studio setup [#7][], `tycoon data sync` cloud↔local snapshots [#12][]), plus a flagged housekeeping item (Node 24 compatibility for GitHub Actions, due before June 2 2026) and the deferred Rill 0.86 DuckLake decision (revisit when Rill ships shared-lock support)._
+
+### Added
+
+_TBD — accumulating during the v0.1.4 cycle. See `docs/releases/v0.1.4.md` for planned scope._
+
+### Changed
+
+- **GitHub Actions runtime bumped to Node 24-compatible versions.** `actions/checkout` v4 → v6, `actions/upload-artifact` v4 → v7, `actions/download-artifact` v4 → v8, `astral-sh/setup-uv` v4 → v8. Node 20 was scheduled for removal from GitHub-hosted runners on September 16 2026, with the default flipping to Node 24 on June 2 2026; bumping early avoids the deprecation warning and removes any Node-20-only branch from the workflow paths.
+
+### Fixed
+
+_TBD._
+
+[#7]: https://github.com/Database-Tycoon/tycoon-cli/issues/7
+[#12]: https://github.com/Database-Tycoon/tycoon-cli/issues/12
+
 ## [0.1.3] - 2026-04-28
 
 _Scope tracked in [`docs/releases/v0.1.3.md`](docs/releases/v0.1.3.md). Five of seven planned themes landed: template parameterization, csv-import buildable dbt + offline e2e, dlt trace enrichment (observability v2a), dbt manifest schema-diff (observability v2b), and Snowflake/BigQuery warehouse alignment. The two XL items — one-command MotherDuck/Nao/LM Studio setup ([#7][]) and `tycoon data sync` ([#12][]) — are deferred to v0.1.4._
