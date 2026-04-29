@@ -47,6 +47,10 @@ ask = [
     "nao-core==0.1.8",
     "ibis-framework[duckdb]==12.0.0",
 ]
+docs = [
+    "mkdocs==1.6.1",
+    "mkdocs-material==9.5.49",
+]
 
 [project.urls]
 Homepage = "https://github.com/Database-Tycoon/tycoon-cli"
