@@ -108,9 +108,23 @@ class DatabaseConfig(BaseModel):
 class LLMConfig(BaseModel):
     """LLM provider config for the ask (Nao) feature."""
 
-    provider: str = Field(default="openai", description="LLM provider (openai, anthropic, ollama, mistral, gemini)")
+    provider: str = Field(
+        default="openai",
+        description=(
+            "LLM provider. Built-in shortcuts: openai, anthropic, ollama, "
+            "mistral, gemini, lm-studio. The lm-studio shortcut emits a "
+            "valid OpenAI-compatible config pointed at the local server."
+        ),
+    )
     model: str | None = Field(default=None, description="Model name override")
     api_key_env: str | None = Field(default=None, description="Env var name holding the API key")
+    base_url: str | None = Field(
+        default=None,
+        description=(
+            "OpenAI-compatible base URL (e.g. http://localhost:1234/v1 for "
+            "LM Studio). Auto-set when provider=lm-studio."
+        ),
+    )
 
 
 class AskConfig(BaseModel):

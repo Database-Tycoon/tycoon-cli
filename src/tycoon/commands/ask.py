@@ -146,12 +146,64 @@ def _refresh_agents_md() -> None:
 
 
 @app.command("init")
-def ask_init() -> None:
-    """Generate .tycoon/nao/nao_config.yaml from tycoon.yml."""
+def ask_init(
+    llm: str | None = typer.Option(
+        None,
+        "--llm",
+        help=(
+            "LLM provider shortcut to record in tycoon.yml. Options: "
+            "lm-studio, ollama, openai, anthropic, gemini, mistral. "
+            "If unset, leaves any existing ask.llm config alone."
+        ),
+    ),
+) -> None:
+    """Generate .tycoon/nao/nao_config.yaml from tycoon.yml.
+
+    Pre-creates the eight directories ``nao sync`` walks unconditionally
+    (databases, queries, docs, semantics, repos, agent/{tools,mcps,skills})
+    and writes a `.tycoon/nao/.gitignore` to keep PII previews + sync
+    artifacts out of version control.
+
+    Pass ``--llm <provider>`` to record a provider shortcut in
+    ``tycoon.yml``'s ``ask.llm.provider`` field. ``lm-studio`` is the
+    quickest zero-config local option — it expands to an OpenAI-compatible
+    config pointed at ``http://localhost:1234/v1`` so users don't have to
+    discover that "openai + custom base_url" is the LM Studio path.
+    """
     _require_project()
     _require_nao()
 
     from tycoon.nao import write_nao_project
+    from tycoon.project import AskConfig, LLMConfig, save_project
+
+    if llm is not None:
+        valid_llms = {"lm-studio", "ollama", "openai", "anthropic", "gemini", "mistral"}
+        if llm not in valid_llms:
+            error(
+                f"Unknown --llm {llm!r}. Expected one of: "
+                f"{', '.join(sorted(valid_llms))}."
+            )
+            raise typer.Exit(1)
+        project = config.project
+        if project is None:
+            error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
+            raise typer.Exit(1)
+        # Update ask.llm.provider in place. Preserve existing model /
+        # api_key_env / base_url if the user already configured them.
+        existing_llm = project.ask.llm if project.ask else None
+        new_llm = LLMConfig(
+            provider=llm,
+            model=existing_llm.model if existing_llm else None,
+            api_key_env=existing_llm.api_key_env if existing_llm else None,
+            base_url=existing_llm.base_url if existing_llm else None,
+        )
+        if project.ask is None:
+            project.ask = AskConfig(llm=new_llm)
+        else:
+            project.ask.llm = new_llm
+        save_project(project, config.root)
+        config.reload()
+        info(f"Updated [bold]ask.llm.provider[/bold] in tycoon.yml → {llm}")
 
     write_nao_project(config)
     _refresh_agents_md()
@@ -160,6 +212,7 @@ def ask_init() -> None:
     next_steps(
         ("tycoon ask sync", "build DB and dbt context (~30s first run)"),
         ("tycoon ask chat", "launch the query UI"),
+        ("tycoon ask doctor", "verify the ask stack is healthy"),
         ("tycoon ask context --help", "pipe synced context into any agent"),
     )
 
@@ -331,6 +384,127 @@ def ask_context(
                 typer.echo("```sql")
                 typer.echo(sql.read_text(), nl=False)
                 typer.echo("```")
+
+
+# ---------------------------------------------------------------------------
+# Doctor — health check for the ask stack
+# ---------------------------------------------------------------------------
+
+
+@app.command("doctor")
+def ask_doctor() -> None:
+    """Check the health of the ``tycoon ask`` setup.
+
+    Validates the four most common breakage modes called out in issue
+    #7: missing nao_config.yaml, missing required directories, missing
+    MotherDuck auth (token or OAuth), and an unreachable LM Studio
+    endpoint when configured. Reports a pass/warn/fail per check using
+    the same status_table layout as ``tycoon doctor``.
+    """
+    from tycoon.utils.console import status_table
+    from tycoon.nao import _NAO_REQUIRED_DIRS
+
+    _require_project()
+
+    nao_dir = config.nao_dir
+    rows: list[tuple[str, str, str]] = []
+
+    # 1. nao_config.yaml present?
+    cfg_path = nao_dir / "nao_config.yaml"
+    if cfg_path.exists():
+        rows.append(("nao_config.yaml", "OK", str(cfg_path)))
+    else:
+        rows.append(
+            ("nao_config.yaml", "FAIL", "missing — run `tycoon ask init`")
+        )
+
+    # 2. Required directories present?
+    missing = [d for d in _NAO_REQUIRED_DIRS if not (nao_dir / d).exists()]
+    if not missing:
+        rows.append(("nao directories", "OK", f"all {len(_NAO_REQUIRED_DIRS)} present"))
+    else:
+        rows.append(
+            (
+                "nao directories",
+                "FAIL",
+                f"missing: {', '.join(missing)} — run `tycoon ask init`",
+            )
+        )
+
+    # 3. Warehouse auth — only check MotherDuck. Local DuckDB has no auth.
+    project = config.project
+    warehouse_path = project.database.warehouse if project else ""
+    if warehouse_path.startswith("md:"):
+        token = os.environ.get("MOTHERDUCK_TOKEN")
+        if token:
+            rows.append(
+                (
+                    "MotherDuck auth",
+                    "OK",
+                    f"MOTHERDUCK_TOKEN set ({len(token)} chars)",
+                )
+            )
+        else:
+            # Possible OAuth — we can't verify without trying a connection.
+            # Fall through to a soft warning.
+            rows.append(
+                (
+                    "MotherDuck auth",
+                    "WARN",
+                    "MOTHERDUCK_TOKEN not set — relying on OAuth (run `tycoon doctor` for full check)",
+                )
+            )
+    else:
+        rows.append(("Warehouse", "OK", "local DuckDB (no auth)"))
+
+    # 4. LLM endpoint — only check when LM Studio is configured. We don't
+    #    probe Anthropic/OpenAI/etc. because those require key validation
+    #    and would slow `ask doctor` to a network round-trip every time.
+    llm = project.ask.llm if project and project.ask else None
+    if llm and llm.provider == "lm-studio":
+        from tycoon.nao import _LM_STUDIO_PRESET
+
+        base_url = llm.base_url or _LM_STUDIO_PRESET["base_url"]
+        try:
+            import httpx
+
+            with httpx.Client(timeout=2.0) as client:
+                resp = client.get(f"{base_url}/models")
+            if resp.status_code == 200:
+                model_count = len((resp.json() or {}).get("data", []))
+                rows.append(
+                    (
+                        "LM Studio",
+                        "OK",
+                        f"{base_url} responded ({model_count} model(s) loaded)",
+                    )
+                )
+            else:
+                rows.append(
+                    (
+                        "LM Studio",
+                        "WARN",
+                        f"{base_url} returned HTTP {resp.status_code}",
+                    )
+                )
+        except Exception as exc:
+            rows.append(
+                (
+                    "LM Studio",
+                    "FAIL",
+                    f"{base_url} unreachable: {exc}",
+                )
+            )
+    elif llm:
+        rows.append(("LLM", "OK", f"provider={llm.provider} (no probe)"))
+    else:
+        rows.append(("LLM", "WARN", "no llm configured in tycoon.yml"))
+
+    console.print(status_table(rows, title="tycoon ask doctor"))
+
+    # Exit non-zero on any FAIL so this command is CI-friendly.
+    if any(status == "FAIL" for _, status, _ in rows):
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
