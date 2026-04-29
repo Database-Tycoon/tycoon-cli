@@ -41,6 +41,8 @@ class _OrderedGroup(TyperGroup):
                 formatter.write_dl(rows)
 
 
+_HELP_OPTION_NAMES = ["-h", "--help"]
+
 app = typer.Typer(
     name="tycoon",
     help="Database Tycoon — local-first analytics CLI for exploring any dataset.",
@@ -48,6 +50,7 @@ app = typer.Typer(
     pretty_exceptions_enable=False,
     rich_markup_mode=None,
     cls=_OrderedGroup,
+    context_settings={"help_option_names": _HELP_OPTION_NAMES},
 )
 
 
