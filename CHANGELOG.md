@@ -6,7 +6,7 @@ _Scope tracked in [`docs/releases/v0.1.4.md`](docs/releases/v0.1.4.md). Carries 
 
 ### Added
 
-_TBD — accumulating during the v0.1.4 cycle. See `docs/releases/v0.1.4.md` for planned scope._
+- **`tycoon data sync` — cloud → local DuckDB snapshots ([#12][]).** Pulls one or more DuckDB-attachable sources (`md:<catalog>` for MotherDuck or any `/path/to/other.duckdb` file) into a single local DuckDB file you can point dbt-dev / notebooks / agents at instead of prod. Three modes: `replace` (default; full overwrite per table), `append` (accumulate new rows), `skip-existing` (only fill in missing tables). Optional `sync:` block in `tycoon.yml` lets you save defaults so day-to-day re-syncs are just `tycoon data sync` with no flags. v1 ships with a deliberately narrow scope per the issue: `md:` and local-DuckDB sources, full replace per table, no incremental, one-direction-only (cloud → local; never reverse). Per-table summary printed on success (source URL, schema, table, row count).
 
 ### Changed
 
@@ -14,10 +14,11 @@ _TBD — accumulating during the v0.1.4 cycle. See `docs/releases/v0.1.4.md` for
 
 ### Fixed
 
-_TBD._
+- **Legacy NYC pipelines no longer ignore the runner-provided `raw_db_path` ([#17][]).** Three legacy pipeline modules (`nyc_dot_pipeline`, `mta_pipeline`, `mta_bus_speeds_pipeline`) were importing the global `tycoon.config.config` singleton and reading `config.raw_db` to set dlt's destination, instead of using the `raw_db_path` that the generic runner threads through for everything else. Worked fine in real CLI processes, but broke `tests/test_templates_e2e.py::test_nyc_transit_e2e` because `monkeypatch.setattr(sources_mod, "config", cfg)` rebinds the command-side reference but not the singleton the legacy modules saw. `_run_legacy` now passes `raw_db_path` through and each pipeline takes it as a required argument; the global-config dependency is gone from the three modules.
 
 [#7]: https://github.com/Database-Tycoon/tycoon-cli/issues/7
 [#12]: https://github.com/Database-Tycoon/tycoon-cli/issues/12
+[#17]: https://github.com/Database-Tycoon/tycoon-cli/issues/17
 
 ## [0.1.3] - 2026-04-28
 

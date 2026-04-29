@@ -127,6 +127,44 @@ class AskConfig(BaseModel):
     )
 
 
+class SyncSourceSpec(BaseModel):
+    """One source-of-data for `tycoon data sync`.
+
+    The ``from`` field accepts any DuckDB-attachable URL: ``md:<catalog>`` for
+    MotherDuck, ``./other.duckdb`` for a local DuckDB file. v0.1.4 ships
+    MotherDuck + local-DuckDB only; Postgres / etc. land later.
+    """
+
+    from_: str = Field(
+        alias="from",
+        description="Source URL — md:<catalog>, /path/to/other.duckdb, etc.",
+    )
+    schemas: list[str] = Field(
+        default_factory=lambda: ["*"],
+        description="Schema-name globs (fnmatch) to include. Default: all.",
+    )
+    tables: list[str] = Field(
+        default_factory=lambda: ["*"],
+        description="Table-name globs (fnmatch) to include within the selected schemas. Default: all.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class SyncConfig(BaseModel):
+    """Top-level ``sync:`` block — defaults for ``tycoon data sync``."""
+
+    to: str = Field(
+        default="data/local_snapshot.duckdb",
+        description="Default destination DuckDB file (relative to project root).",
+    )
+    sources: list[SyncSourceSpec] = Field(default_factory=list)
+    mode: str = Field(
+        default="replace",
+        description="Default sync mode: replace | append | skip-existing.",
+    )
+
+
 class TycoonProject(BaseModel):
     """Top-level tycoon.yml schema."""
 
@@ -137,6 +175,7 @@ class TycoonProject(BaseModel):
     dbt_project_dir: str = Field(default="dbt_project", description="Path to dbt project")
     rill_dir: str = Field(default="rill", description="Path to Rill dashboards")
     ask: AskConfig | None = Field(default=None, description="Nao analytics agent configuration")
+    sync: SyncConfig | None = Field(default=None, description="`tycoon data sync` defaults")
     stack: StackConfig = Field(default_factory=StackConfig)
 
 
