@@ -6,12 +6,11 @@ import io
 import zipfile
 import csv
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import dlt
 import httpx
-
-from tycoon.config import config
 
 # MTA GTFS feed URLs
 MTA_GTFS_BASE_URL = "https://rrgtfsfeeds.s3.amazonaws.com"
@@ -88,13 +87,16 @@ def mta_source(max_records: int | None = None) -> list[Any]:
     ]
 
 
-def run_pipeline(max_records: int | None = None) -> tuple[dlt.Pipeline, Any]:
+def run_pipeline(
+    raw_db_path: Path,
+    max_records: int | None = None,
+) -> tuple[dlt.Pipeline, Any]:
     """Create, run, and return the MTA GTFS dlt pipeline."""
-    config.ensure_data_dir()
+    raw_db_path.parent.mkdir(parents=True, exist_ok=True)
 
     pipeline = dlt.pipeline(
         pipeline_name="mta_gtfs",
-        destination=dlt.destinations.duckdb(str(config.raw_db)),
+        destination=dlt.destinations.duckdb(str(raw_db_path)),
         dataset_name="raw_mta",
     )
 

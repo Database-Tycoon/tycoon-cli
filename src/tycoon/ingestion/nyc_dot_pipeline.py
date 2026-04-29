@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import dlt
 import httpx
-
-from tycoon.config import config
 
 # NYC DOT dataset constants (Socrata)
 NYC_DOT_DOMAIN = "data.cityofnewyork.us"
@@ -88,13 +87,16 @@ def nyc_dot_source(max_records: int | None = None) -> list[Any]:
     ]
 
 
-def run_pipeline(max_records: int | None = None) -> dlt.Pipeline:
+def run_pipeline(
+    raw_db_path: Path,
+    max_records: int | None = None,
+) -> tuple[dlt.Pipeline, Any]:
     """Create, run, and return the NYC DOT dlt pipeline."""
-    config.ensure_data_dir()
+    raw_db_path.parent.mkdir(parents=True, exist_ok=True)
 
     pipeline = dlt.pipeline(
         pipeline_name="nyc_dot",
-        destination=dlt.destinations.duckdb(str(config.raw_db)),
+        destination=dlt.destinations.duckdb(str(raw_db_path)),
         dataset_name="raw_nyc_dot",
     )
 

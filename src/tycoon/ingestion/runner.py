@@ -196,7 +196,9 @@ def run_source(
     """
     # 1. Legacy pipeline delegation (keyed by source name)
     if name in _LEGACY_PIPELINES:
-        pipeline, load_info = _run_legacy(name, max_records=max_records, **kwargs)
+        pipeline, load_info = _run_legacy(
+            name, raw_db_path=raw_db_path, max_records=max_records, **kwargs
+        )
         _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
         return pipeline, load_info
 
@@ -246,6 +248,7 @@ def run_source(
 
 def _run_legacy(
     name: str,
+    raw_db_path: Path,
     max_records: int | None = None,
     **kwargs: Any,
 ) -> tuple[dlt.Pipeline, Any]:
@@ -254,7 +257,7 @@ def _run_legacy(
 
     module_path = _LEGACY_PIPELINES[name]
     mod = importlib.import_module(module_path)
-    return mod.run_pipeline(max_records=max_records, **kwargs)
+    return mod.run_pipeline(raw_db_path=raw_db_path, max_records=max_records, **kwargs)
 
 
 def _run_catalog(
