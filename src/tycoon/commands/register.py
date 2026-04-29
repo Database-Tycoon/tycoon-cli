@@ -277,9 +277,58 @@ def _align_cloud_warehouse(raw: dict, stack: dict, dbt_target) -> None:
             )
 
 
+_LOCAL_TYPE_ALIASES = {"local", "l", "duckdb"}
+_CLOUD_TYPE_ALIASES = {"cloud", "c", "motherduck", "md"}
+
+
 @app.command(name="warehouse")
-def register_warehouse() -> None:
-    """Attach or switch the warehouse (local DuckDB or MotherDuck) in tycoon.yml."""
+def register_warehouse(
+    warehouse_type: Annotated[
+        Optional[str],
+        typer.Option(
+            "--type",
+            help=(
+                "Warehouse type — 'duckdb' (or 'local') for a local DuckDB file, "
+                "'motherduck' (or 'cloud') for a MotherDuck catalog. Skips the "
+                "interactive prompt when set."
+            ),
+        ),
+    ] = None,
+    path: Annotated[
+        Optional[str],
+        typer.Option(
+            "--path",
+            help="For --type duckdb: path to the local .duckdb file. Default: data/warehouse.duckdb.",
+        ),
+    ] = None,
+    catalog: Annotated[
+        Optional[str],
+        typer.Option(
+            "--catalog",
+            help="For --type motherduck: catalog name. Becomes md:<catalog> in tycoon.yml.",
+        ),
+    ] = None,
+    no_prompt: Annotated[
+        bool,
+        typer.Option(
+            "--no-prompt",
+            help="Fail rather than prompt — for CI / scripted setup.",
+        ),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            help="Overwrite an existing warehouse without prompting.",
+        ),
+    ] = False,
+) -> None:
+    """Attach or switch the warehouse (local DuckDB or MotherDuck) in tycoon.yml.
+
+    Fully scriptable when ``--type`` plus the type-specific value (``--path``
+    or ``--catalog``) is set; otherwise drops to interactive prompts.
+    Combine with ``--no-prompt`` and ``--force`` for non-interactive CI use.
+    """
     import os
 
     header("Register warehouse")
@@ -289,21 +338,61 @@ def register_warehouse() -> None:
 
     existing = raw.get("database", {}).get("warehouse", "")
     if existing:
-        warn(f"tycoon.yml already has warehouse = {existing!r}.")
-        if not typer.confirm("Overwrite it?", default=False):
-            info("Aborted; no changes made.")
-            raise typer.Exit(0)
+        if force:
+            info(f"Overwriting existing warehouse: {existing!r}.")
+        elif no_prompt:
+            error(
+                f"tycoon.yml already has warehouse = {existing!r}. "
+                "Re-run with --force to overwrite, or remove --no-prompt to be asked."
+            )
+            raise typer.Exit(1)
+        else:
+            warn(f"tycoon.yml already has warehouse = {existing!r}.")
+            if not typer.confirm("Overwrite it?", default=False):
+                info("Aborted; no changes made.")
+                raise typer.Exit(0)
 
-    choice = typer.prompt(
-        "Cloud (MotherDuck) or local DuckDB? [cloud/local]",
-        default="local",
-    ).strip().lower()
+    # ---- Resolve warehouse type ----
+    if warehouse_type:
+        normalized = warehouse_type.strip().lower()
+        if normalized in _LOCAL_TYPE_ALIASES:
+            choice = "local"
+        elif normalized in _CLOUD_TYPE_ALIASES:
+            choice = "cloud"
+        else:
+            error(
+                f"Unknown --type {warehouse_type!r}. Expected one of: "
+                f"{', '.join(sorted(_LOCAL_TYPE_ALIASES | _CLOUD_TYPE_ALIASES))}."
+            )
+            raise typer.Exit(1)
+    elif no_prompt:
+        error("--type is required when --no-prompt is set.")
+        raise typer.Exit(1)
+    else:
+        choice = typer.prompt(
+            "Cloud (MotherDuck) or local DuckDB? [cloud/local]",
+            default="local",
+        ).strip().lower()
+        if choice in _CLOUD_TYPE_ALIASES:
+            choice = "cloud"
+        elif choice in _LOCAL_TYPE_ALIASES:
+            choice = "local"
+        else:
+            error(f"Unknown choice: {choice!r}. Expected 'cloud' or 'local'.")
+            raise typer.Exit(1)
 
-    if choice in ("cloud", "c", "motherduck", "md"):
-        default_name = str(raw.get("name", config.root.name)).replace("-", "_")
-        md_name = typer.prompt("MotherDuck database name", default=default_name).strip()
+    # ---- Resolve type-specific value ----
+    if choice == "cloud":
+        if catalog is not None:
+            md_name = catalog.strip()
+        elif no_prompt:
+            error("--catalog is required when --no-prompt is set with --type motherduck.")
+            raise typer.Exit(1)
+        else:
+            default_name = str(raw.get("name", config.root.name)).replace("-", "_")
+            md_name = typer.prompt("MotherDuck database name", default=default_name).strip()
         if not md_name:
-            error("MotherDuck database name is required.")
+            error("MotherDuck catalog name is required.")
             raise typer.Exit(1)
         warehouse_value = f"md:{md_name}"
 
@@ -315,19 +404,21 @@ def register_warehouse() -> None:
             info("`tycoon doctor` will flag this until you set it.")
 
         stack_warehouse_type = WarehouseType.motherduck.value
-    elif choice in ("local", "l", "duckdb"):
-        path_input = typer.prompt(
-            "Path to your DuckDB file (will be created on first write if missing)",
-            default="data/warehouse.duckdb",
-        ).strip()
+    else:  # local
+        if path is not None:
+            path_input = path.strip()
+        elif no_prompt:
+            path_input = "data/warehouse.duckdb"
+        else:
+            path_input = typer.prompt(
+                "Path to your DuckDB file (will be created on first write if missing)",
+                default="data/warehouse.duckdb",
+            ).strip()
         if not path_input:
             error("Warehouse path is required.")
             raise typer.Exit(1)
         warehouse_value = path_input
         stack_warehouse_type = WarehouseType.duckdb.value
-    else:
-        error(f"Unknown choice: {choice!r}. Expected 'cloud' or 'local'.")
-        raise typer.Exit(1)
 
     db = raw.setdefault("database", {})
     old_warehouse = db.get("warehouse", "")

@@ -608,6 +608,113 @@ class TestRegisterWarehouse:
         assert data["database"]["warehouse"] == "md:myproj"
         assert data["stack"]["warehouse"] == "motherduck"
 
+    def test_register_warehouse_non_interactive_local(self, cli_runner, tmp_path, monkeypatch):
+        """`--type duckdb --path ./foo.duckdb --no-prompt` runs without prompts (#19)."""
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        # Wipe pre-existing warehouse so we don't hit the overwrite prompt
+        data = yaml.safe_load(yml.read_text())
+        data["database"] = {"raw": "data/raw.duckdb", "warehouse": ""}
+        yml.write_text(yaml.dump(data))
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app,
+            [
+                "register", "warehouse",
+                "--type", "duckdb",
+                "--path", "data/custom.duckdb",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        final = yaml.safe_load(yml.read_text())
+        assert final["database"]["warehouse"] == "data/custom.duckdb"
+        assert final["stack"]["warehouse"] == "duckdb"
+
+    def test_register_warehouse_non_interactive_motherduck(self, cli_runner, tmp_path, monkeypatch):
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        data = yaml.safe_load(yml.read_text())
+        data["database"] = {"raw": "data/raw.duckdb", "warehouse": ""}
+        yml.write_text(yaml.dump(data))
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app,
+            [
+                "register", "warehouse",
+                "--type", "motherduck",
+                "--catalog", "my_demo",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        final = yaml.safe_load(yml.read_text())
+        assert final["database"]["warehouse"] == "md:my_demo"
+        assert final["stack"]["warehouse"] == "motherduck"
+
+    def test_register_warehouse_no_prompt_requires_type(self, cli_runner, tmp_path, monkeypatch):
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(app, ["register", "warehouse", "--no-prompt"])
+        assert result.exit_code != 0
+
+    def test_register_warehouse_no_prompt_motherduck_requires_catalog(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        data = yaml.safe_load(yml.read_text())
+        data["database"]["warehouse"] = ""
+        yml.write_text(yaml.dump(data))
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app,
+            ["register", "warehouse", "--type", "motherduck", "--no-prompt"],
+        )
+        assert result.exit_code != 0
+
+    def test_register_warehouse_force_overrides_existing(self, cli_runner, tmp_path, monkeypatch):
+        """`--force` skips the overwrite prompt for an existing warehouse."""
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        # Pre-populate a warehouse value that would normally trigger the prompt.
+        data = yaml.safe_load(yml.read_text())
+        data["database"]["warehouse"] = "data/old.duckdb"
+        yml.write_text(yaml.dump(data))
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app,
+            [
+                "register", "warehouse",
+                "--type", "duckdb",
+                "--path", "data/new.duckdb",
+                "--force",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        final = yaml.safe_load(yml.read_text())
+        assert final["database"]["warehouse"] == "data/new.duckdb"
+
+    def test_register_warehouse_unknown_type_errors(self, cli_runner, tmp_path, monkeypatch):
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app,
+            ["register", "warehouse", "--type", "snowflake", "--no-prompt"],
+        )
+        assert result.exit_code != 0
+
     def test_register_warehouse_prompts_on_overwrite(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         yml = _scaffold_tycoon_project(project, "proj")
