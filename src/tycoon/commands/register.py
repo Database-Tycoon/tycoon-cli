@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 import typer
 import yaml
@@ -82,8 +82,38 @@ def register_dbt(
         str,
         typer.Argument(help="Local path or GitHub URL of the dbt project to register."),
     ],
+    profiles_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--profiles-dir",
+            help=(
+                "Directory containing profiles.yml. Defaults to <SOURCE>/profiles.yml "
+                "if present, then ~/.dbt/profiles.yml — same as dbt's own resolution."
+            ),
+        ),
+    ] = None,
+    profile: Annotated[
+        Optional[str],
+        typer.Option(
+            "--profile",
+            help="Profile name within profiles.yml. Default: the `profile:` field in dbt_project.yml.",
+        ),
+    ] = None,
+    target: Annotated[
+        Optional[str],
+        typer.Option(
+            "--target",
+            help="Target within the profile (dev / prod / ...). Default: the profile's `target:` field, then 'dev'.",
+        ),
+    ] = None,
 ) -> None:
-    """Attach an existing dbt project to the current tycoon.yml."""
+    """Attach an existing dbt project to the current tycoon.yml.
+
+    The three profile-related flags mirror dbt's own CLI options. Any value
+    you pass is also persisted in tycoon.yml under ``dbt_profiles_dir`` /
+    ``dbt_profile`` / ``dbt_target`` so subsequent ``tycoon data transform``
+    runs use them automatically.
+    """
     header("Register dbt project")
 
     yml_path = _require_tycoon_yml()
@@ -104,21 +134,51 @@ def register_dbt(
         error(f"{resolved} does not contain a dbt_project.yml")
         raise typer.Exit(1)
 
+    # Resolve profiles_dir to an absolute path so the warehouse-alignment
+    # extractor and the persisted tycoon.yml entry agree.
+    if profiles_dir is not None:
+        profiles_dir = profiles_dir.expanduser().resolve()
+        if not (profiles_dir / "profiles.yml").exists():
+            error(f"{profiles_dir} does not contain a profiles.yml")
+            raise typer.Exit(1)
+
     # Write path relative to tycoon.yml when possible, otherwise absolute
-    try:
-        import os
-        rel = os.path.relpath(resolved, config.root)
-        raw["dbt_project_dir"] = rel
-    except ValueError:
-        raw["dbt_project_dir"] = str(resolved)
+    import os
+
+    def _rel_or_abs(p: Path) -> str:
+        try:
+            return os.path.relpath(p, config.root)
+        except ValueError:
+            return str(p)
+
+    raw["dbt_project_dir"] = _rel_or_abs(resolved)
+    if profiles_dir is not None:
+        raw["dbt_profiles_dir"] = _rel_or_abs(profiles_dir)
+    elif "dbt_profiles_dir" in raw:
+        # Don't carry forward a stale value from a previous register call.
+        del raw["dbt_profiles_dir"]
+    if profile is not None:
+        raw["dbt_profile"] = profile
+    elif "dbt_profile" in raw:
+        del raw["dbt_profile"]
+    if target is not None:
+        raw["dbt_target"] = target
+    elif "dbt_target" in raw:
+        del raw["dbt_target"]
 
     # Update stack to reflect "external dbt"
     stack = raw.setdefault("stack", {})
     stack["transformation"] = TransformationTool.dbt.value
     stack["transformation_managed"] = False
 
-    # Warehouse alignment offer
-    dbt_target = _extract_dbt_warehouse_target(resolved)
+    # Warehouse alignment offer — pass the explicit profile/target through
+    # so alignment reads the right adapter config.
+    dbt_target = _extract_dbt_warehouse_target(
+        resolved,
+        profiles_dir=profiles_dir,
+        profile_name=profile,
+        target_name=target,
+    )
     if dbt_target is not None:
         if dbt_target.adapter_type == "duckdb":
             _align_duckdb_warehouse(raw, stack, dbt_target.identifier)

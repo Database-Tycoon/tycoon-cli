@@ -16,7 +16,15 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-_TARGET_OPTION = typer.Option("dev", "--target", "-t", help="dbt target profile (default: dev).")
+_TARGET_OPTION = typer.Option(
+    None,
+    "--target",
+    "-t",
+    help=(
+        "dbt target name (dev / prod / ...). Defaults to tycoon.yml's "
+        "`dbt_target` if set, then dbt's own resolution."
+    ),
+)
 _SELECT_OPTION = typer.Option(None, "--select", "-s", help="dbt model selection syntax (e.g. 'staging+').")
 _FULL_REFRESH_FLAG = typer.Option(False, "--full-refresh", help="Drop and recreate incremental models.")
 
@@ -64,25 +72,59 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
         pass
 
 
+def _resolved_dbt_target(cli_target: Optional[str]) -> str:
+    """CLI flag wins; else tycoon.yml's `dbt_target`; else dbt's default."""
+    if cli_target:
+        return cli_target
+    if config.project and config.project.dbt_target:
+        return config.project.dbt_target
+    return "dev"
+
+
+def _resolved_dbt_profiles_dir(project_dir):
+    """Find the profiles.yml directory for dbt, honoring tycoon.yml overrides.
+
+    Order:
+      1. ``tycoon.yml``'s ``dbt_profiles_dir`` (if set)
+      2. ``<dbt_project_dir>/profiles.yml`` if co-located
+      3. None — dbt falls back to ``~/.dbt/profiles.yml``
+    """
+    from pathlib import Path
+
+    if config.project and config.project.dbt_profiles_dir:
+        explicit = Path(config.project.dbt_profiles_dir)
+        if not explicit.is_absolute():
+            explicit = (config.root / explicit).resolve()
+        if (explicit / "profiles.yml").exists():
+            return explicit
+    if (project_dir / "profiles.yml").exists():
+        return project_dir
+    return None
+
+
 def _run_dbt(
     dbt_cmd: str,
-    target: str,
+    target: Optional[str],
     select: Optional[str],
     full_refresh: bool,
     extra: list[str] | None = None,
 ) -> int:
     """Invoke dbt as a subprocess from the configured dbt project directory.
 
-    Only passes ``--profiles-dir`` when the project has a co-located
-    ``profiles.yml``; otherwise dbt falls back to ``~/.dbt/profiles.yml``,
-    which is typical for externally-registered projects.
+    Honors ``tycoon.yml``'s ``dbt_profiles_dir`` / ``dbt_target`` /
+    ``dbt_profile`` settings (introduced in v0.1.4 via ``tycoon register
+    dbt``'s new flags). CLI flags still win.
     """
     dbt = _dbt_executable()
     project_dir = config.dbt_project_dir
+    resolved_target = _resolved_dbt_target(target)
 
-    cmd = [dbt, dbt_cmd, "--target", target]
-    if (project_dir / "profiles.yml").exists():
-        cmd += ["--profiles-dir", str(project_dir)]
+    cmd = [dbt, dbt_cmd, "--target", resolved_target]
+    profiles_dir = _resolved_dbt_profiles_dir(project_dir)
+    if profiles_dir is not None:
+        cmd += ["--profiles-dir", str(profiles_dir)]
+    if config.project and config.project.dbt_profile:
+        cmd += ["--profile", config.project.dbt_profile]
     if select:
         cmd += ["--select", select]
     if full_refresh:
@@ -103,7 +145,7 @@ def _run_dbt(
 
 @app.command()
 def run(
-    target: str = _TARGET_OPTION,
+    target: Optional[str] = _TARGET_OPTION,
     select: Optional[str] = _SELECT_OPTION,
     full_refresh: bool = _FULL_REFRESH_FLAG,
 ) -> None:
@@ -129,7 +171,7 @@ def run(
 
 @app.command()
 def test(
-    target: str = _TARGET_OPTION,
+    target: Optional[str] = _TARGET_OPTION,
     select: Optional[str] = _SELECT_OPTION,
 ) -> None:
     """Execute dbt test — run data quality tests against built models."""
@@ -151,7 +193,7 @@ def test(
 
 @app.command()
 def build(
-    target: str = _TARGET_OPTION,
+    target: Optional[str] = _TARGET_OPTION,
     select: Optional[str] = _SELECT_OPTION,
     full_refresh: bool = _FULL_REFRESH_FLAG,
 ) -> None:
@@ -173,7 +215,7 @@ def build(
 
 @app.command()
 def docs(
-    target: str = _TARGET_OPTION,
+    target: Optional[str] = _TARGET_OPTION,
     port: int = typer.Option(8080, "--port", "-p", help="Port for dbt docs serve."),
 ) -> None:
     """Generate and serve dbt documentation in the browser."""
@@ -194,8 +236,9 @@ def docs(
     dbt = _dbt_executable()
     project_dir = config.dbt_project_dir
     cmd = [dbt, "docs", "serve", "--port", str(port)]
-    if (project_dir / "profiles.yml").exists():
-        cmd += ["--profiles-dir", str(project_dir)]
+    profiles_dir = _resolved_dbt_profiles_dir(project_dir)
+    if profiles_dir is not None:
+        cmd += ["--profiles-dir", str(profiles_dir)]
 
     console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")
     console.print(f"[bold green]dbt docs available at http://localhost:{port}[/bold green]")

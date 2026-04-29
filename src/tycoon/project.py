@@ -187,6 +187,28 @@ class TycoonProject(BaseModel):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     sources: dict[str, SourceConfig] = Field(default_factory=dict, description="Registered data sources")
     dbt_project_dir: str = Field(default="dbt_project", description="Path to dbt project")
+    dbt_profiles_dir: str | None = Field(
+        default=None,
+        description=(
+            "Path to the directory containing profiles.yml. Defaults to "
+            "<dbt_project_dir>/profiles.yml if present, otherwise dbt's "
+            "default of ~/.dbt/profiles.yml."
+        ),
+    )
+    dbt_profile: str | None = Field(
+        default=None,
+        description=(
+            "Profile name within profiles.yml. Defaults to the `profile:` "
+            "field in dbt_project.yml."
+        ),
+    )
+    dbt_target: str | None = Field(
+        default=None,
+        description=(
+            "Target within the profile (dev / prod / ...). Defaults to the "
+            "profile's `target:` field, then 'dev'."
+        ),
+    )
     rill_dir: str = Field(default="rill", description="Path to Rill dashboards")
     ask: AskConfig | None = Field(default=None, description="Nao analytics agent configuration")
     sync: SyncConfig | None = Field(default=None, description="`tycoon data sync` defaults")
