@@ -67,7 +67,7 @@ The metadata DB is **fully disposable** — `tycoon data clean --metadata`
 nukes it without touching the warehouse. Tycoon recreates it on the
 next ingest / dbt run.
 
-## 4. The CLI is a façade over real tools
+## 4. The CLI is a thin facade over real tools
 
 `tycoon data sources run` shells out to dlt. `tycoon data transform run`
 shells out to dbt. `tycoon ask chat` shells out to Nao. `tycoon start
