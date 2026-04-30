@@ -106,6 +106,17 @@ def register_dbt(
             help="Target within the profile (dev / prod / ...). Default: the profile's `target:` field, then 'dev'.",
         ),
     ] = None,
+    no_attach_metadata: Annotated[
+        bool,
+        typer.Option(
+            "--no-attach-metadata",
+            help=(
+                "Skip wiring tycoon's observability metadata DB into the "
+                "registered profile. Default: attach `.tycoon/metadata.duckdb` "
+                "as `tycoon_meta` so dbt models can SELECT from it directly."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Attach an existing dbt project to the current tycoon.yml.
 
@@ -188,6 +199,43 @@ def register_dbt(
     _write_raw_tycoon_yml(yml_path, raw)
     success(f"Registered dbt project at {resolved}")
     info(f"Updated {yml_path.name}.")
+
+    # Wire tycoon's observability metadata into the registered profile so
+    # dbt models can SELECT from `tycoon_meta.main.<table>` directly.
+    # Idempotent — skipped if the ATTACH is already present, or if a
+    # profiles.yml isn't co-located (caller's choice). Opt out via flag.
+    if not no_attach_metadata:
+        from tycoon.scaffolding.observability_dbt import (
+            attach_metadata_to_profiles,
+            scaffold_observability_models,
+        )
+
+        # profiles.yml lookup: explicit --profiles-dir wins, then co-located
+        if profiles_dir is not None:
+            profiles_yml = profiles_dir / "profiles.yml"
+        else:
+            profiles_yml = resolved / "profiles.yml"
+
+        if profiles_yml.exists():
+            metadata_db = config.root / ".tycoon" / "metadata.duckdb"
+            try:
+                changed = attach_metadata_to_profiles(profiles_yml, metadata_db)
+                if changed:
+                    info(f"Added [bold]tycoon_meta[/bold] ATTACH to {profiles_yml}")
+                # Also generate the _tycoon staging models so users get the
+                # full surface (dbt + Nao via downstream sync).
+                scaffold_observability_models(resolved)
+                info(
+                    f"Generated [bold]models/_tycoon/[/bold] under {resolved}. "
+                    "Run [bold]tycoon data transform run[/bold] to build them."
+                )
+            except Exception as exc:  # best-effort
+                warn(f"Could not wire observability metadata: {exc}")
+        else:
+            info(
+                f"[dim]No co-located profiles.yml — skipping metadata ATTACH. "
+                "Run [bold]tycoon data observability scaffold[/bold] to add it later.[/dim]"
+            )
 
 
 def _align_duckdb_warehouse(raw: dict, stack: dict, dbt_warehouse: str) -> None:
