@@ -1,8 +1,8 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.4] - UNRELEASED
+## [0.1.4] - 2026-04-30
 
-_Scope tracked in [`docs/releases/v0.1.4.md`](docs/releases/v0.1.4.md). Carries forward two XL items deferred from v0.1.3 (one-command MotherDuck + Nao + LM Studio setup [#7][], `tycoon data sync` cloud↔local snapshots [#12][]), plus a flagged housekeeping item (Node 24 compatibility for GitHub Actions, due before June 2 2026) and the deferred Rill 0.86 DuckLake decision (revisit when Rill ships shared-lock support)._
+_Closes four open issues from v0.1.3 (#7, #12, #17) plus three filed during the cycle (#18, #19, #20). Adds a MkDocs Material docs site with `tycoon docs serve`, plus a long list of UX improvements. See [`docs/releases/v0.1.4.md`](docs/releases/v0.1.4.md) for the narrative._
 
 ### Added
 
@@ -10,18 +10,31 @@ _Scope tracked in [`docs/releases/v0.1.4.md`](docs/releases/v0.1.4.md). Carries 
 - **`tycoon ask doctor` health check ([#7][]).** Validates the four most common breakage modes called out in the issue: missing `nao_config.yaml`, missing required directories, missing MotherDuck auth (token or OAuth), and an unreachable LM Studio endpoint when configured. Renders a Rich `status_table` with one row per check (OK / WARN / FAIL); exits non-zero on any FAIL so the command is CI-friendly.
 - **`tycoon ask init --llm <provider>` ([#7][] §5).** Records an LLM provider shortcut in `tycoon.yml`'s `ask.llm.provider` field — `lm-studio`, `ollama`, `openai`, `anthropic`, `gemini`, `mistral`. The `lm-studio` shortcut is the marquee one: it expands to a valid OpenAI-compatible nao config pointed at `http://localhost:1234/v1` so users don't have to discover that "openai + custom base_url" is the LM Studio path. `LLMConfig` gains a `base_url` field for explicit overrides.
 - **`tycoon ask init` now scaffolds every directory `nao sync` walks ([#7][] §4).** All eight required dirs (`databases/`, `queries/`, `docs/`, `semantics/`, `repos/`, `agent/{tools,mcps,skills}`) are created up front, eliminating the `No such file or directory: 'repos'` / `'databases'` crash class. Auto-generated `.tycoon/nao/.gitignore` keeps PII row-previews + sync artifacts out of version control by default ([#7][] §7).
+- **`tycoon register dbt` profile flags ([#18][]).** Three new options mirror dbt's own CLI: `--profiles-dir`, `--profile`, `--target`. Each is persisted into `tycoon.yml` as `dbt_profiles_dir` / `dbt_profile` / `dbt_target` so subsequent `tycoon data transform` invocations reuse them automatically. The warehouse-alignment branch of `register dbt` now reads the right `outputs[]` entry rather than blindly walking dbt's default lookup.
+- **`tycoon register warehouse` non-interactive flags ([#19][]).** Five new options make the command CI-scriptable: `--type duckdb|motherduck`, `--path PATH`, `--catalog NAME`, `--no-prompt`, `--force`. Aliases (`local` / `cloud` / `md`) accepted for either UX preference.
+- **First-class observability metadata in dbt + Nao ([#20][]).** Tycoon's `.tycoon/metadata.duckdb` (already feeding Rill since v0.1.2) is now visible to dbt and to Nao. Every scaffolded dbt profile ATTACHes the metadata DB as `tycoon_meta` (READ_ONLY); `dbt_project/models/_tycoon/` ships nine `stg_tycoon__*` staging views (one per metadata table) plus a `dim_runs.sql` mart UNIONing dlt + dbt timelines. `tycoon ask sync` then exposes them to Nao automatically — no extra plumbing. New surfaces: `tycoon data observability scaffold` for retrofitting existing projects, `tycoon register dbt --no-attach-metadata` opt-out flag.
+- **`tycoon docs serve` / `tycoon docs build`.** Wraps MkDocs Material so contributors have one command for local documentation. `serve` runs with hot reload on `:8000`; `build --strict` is the CI-friendly one-shot. New `[docs]` optional extra pulls in `mkdocs==1.6.1` + `mkdocs-material==9.5.49`.
+- **MkDocs Material docs site at `docs/`.** ~30 user-facing pages organized into Getting started / Commands / Reference / Recipes / Releases. Local-first; `tycoon docs serve` is the entry point.
+- **`-h` short alias for `--help`** across every command. Configured once on the root typer app; click propagates it to every sub-command.
 
 ### Changed
 
 - **GitHub Actions runtime bumped to Node 24-compatible versions.** `actions/checkout` v4 → v6, `actions/upload-artifact` v4 → v7, `actions/download-artifact` v4 → v8, `astral-sh/setup-uv` v4 → v8. Node 20 was scheduled for removal from GitHub-hosted runners on September 16 2026, with the default flipping to Node 24 on June 2 2026; bumping early avoids the deprecation warning and removes any Node-20-only branch from the workflow paths.
+- **Drop the "Tables" column from `tycoon data sources list`.** Always rendered `(all)` for the source types most users actually have (rest_api / filesystem) — meaningless noise. The underlying `tables:` field still exists on `SourceConfig` and shows up in the per-source `tycoon data sources show <name>` view.
+- **Drop the `dbt-fusion` check from `tycoon doctor`.** Got its own panel and warned when `dbtf` was on `$PATH`, but the premise didn't survive scrutiny — `dbtf` is a separate binary, doesn't shadow `dbt`, they coexist fine. Singling out one specific competitor was disproportionate vs. the rest of doctor's checks.
 
 ### Fixed
 
 - **Legacy NYC pipelines no longer ignore the runner-provided `raw_db_path` ([#17][]).** Three legacy pipeline modules (`nyc_dot_pipeline`, `mta_pipeline`, `mta_bus_speeds_pipeline`) were importing the global `tycoon.config.config` singleton and reading `config.raw_db` to set dlt's destination, instead of using the `raw_db_path` that the generic runner threads through for everything else. Worked fine in real CLI processes, but broke `tests/test_templates_e2e.py::test_nyc_transit_e2e` because `monkeypatch.setattr(sources_mod, "config", cfg)` rebinds the command-side reference but not the singleton the legacy modules saw. `_run_legacy` now passes `raw_db_path` through and each pipeline takes it as a required argument; the global-config dependency is gone from the three modules.
+- **Repo `.gitignore` `data/` pattern was matching subdirectories anywhere.** Caused `docs/commands/data/` to be silently uncommitted across two earlier docs commits. Anchored to repo root (`/data/`). Also added `/rill/{sources,metrics,dashboards}/_tycoon_*` exclusions to the existing "this is the CLI source repo, not a tycoon project" block.
+- **`docs/reference/observability.md` schema reference was wrong.** Several columns were mistyped (`elapsed_seconds` instead of the actual `elapsed_s`, `execution_time_seconds` vs `execution_time_s`, `bytes_written` vs `file_size_bytes`, etc.). Reconciled against the live captured schema. Same root cause caught a `dim_runs.sql` bug during e2e validation.
 
 [#7]: https://github.com/Database-Tycoon/tycoon-cli/issues/7
 [#12]: https://github.com/Database-Tycoon/tycoon-cli/issues/12
 [#17]: https://github.com/Database-Tycoon/tycoon-cli/issues/17
+[#18]: https://github.com/Database-Tycoon/tycoon-cli/issues/18
+[#19]: https://github.com/Database-Tycoon/tycoon-cli/issues/19
+[#20]: https://github.com/Database-Tycoon/tycoon-cli/issues/20
 
 ## [0.1.3] - 2026-04-28
 

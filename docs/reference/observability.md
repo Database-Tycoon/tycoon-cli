@@ -58,14 +58,15 @@ One row per dlt invocation, populated from `~/.dlt/pipelines/<name>/trace.pickle
 
 | Column | Type | Notes |
 |---|---|---|
+| `transaction_id` | VARCHAR | dlt's transaction id |
 | `pipeline_name` | VARCHAR | |
-| `transaction_id` | VARCHAR | |
 | `started_at` | TIMESTAMP | |
 | `finished_at` | TIMESTAMP | |
-| `duration_seconds` | DOUBLE | |
+| `duration_s` | DOUBLE | seconds |
 | `engine_version` | VARCHAR | dlt version that ran |
 | `success` | BOOLEAN | |
 | `exception` | VARCHAR | NULL on success |
+| `captured_at` | TIMESTAMP | |
 
 ### `dlt_trace_steps` (v0.1.3+)
 
@@ -74,10 +75,11 @@ Per-step timing breakdown.
 | Column | Type | Notes |
 |---|---|---|
 | `transaction_id` | VARCHAR | Foreign key to `dlt_trace_runs` |
-| `step_name` | VARCHAR | extract / normalize / load |
+| `step` | VARCHAR | extract / normalize / load |
 | `started_at` | TIMESTAMP | |
 | `finished_at` | TIMESTAMP | |
-| `duration_seconds` | DOUBLE | |
+| `duration_s` | DOUBLE | seconds |
+| `step_exception` | VARCHAR | NULL on success |
 
 ### `dlt_trace_jobs` (v0.1.3+)
 
@@ -85,11 +87,16 @@ Per-job byte sizes and elapsed times.
 
 | Column | Type | Notes |
 |---|---|---|
-| `transaction_id` | VARCHAR | |
-| `job_name` | VARCHAR | |
-| `bytes_written` | BIGINT | |
-| `elapsed_seconds` | DOUBLE | |
+| `transaction_id` | VARCHAR | Foreign key to `dlt_trace_runs` |
+| `load_id` | VARCHAR | |
+| `job_id` | VARCHAR | |
+| `table_name` | VARCHAR | |
+| `file_format` | VARCHAR | parquet / jsonl / etc. |
+| `state` | VARCHAR | dlt's job state |
+| `file_size_bytes` | BIGINT | |
+| `elapsed_s` | DOUBLE | seconds |
 | `failed_message` | VARCHAR | NULL on success |
+| `created_at` | TIMESTAMP | |
 
 ## dbt tables
 
@@ -102,7 +109,7 @@ One row per dbt invocation.
 | `invocation_id` | VARCHAR | dbt's invocation_id |
 | `command` | VARCHAR | run / test / build / docs |
 | `started_at` | TIMESTAMP | |
-| `elapsed_seconds` | DOUBLE | |
+| `elapsed_s` | DOUBLE | seconds |
 | `success` | BOOLEAN | |
 | `models_ok` | INTEGER | |
 | `models_error` | INTEGER | |
@@ -122,9 +129,9 @@ One row per (model, test) per invocation.
 | `node_name` | VARCHAR | |
 | `resource_type` | VARCHAR | model / test / snapshot / seed |
 | `status` | VARCHAR | |
-| `execution_time_seconds` | DOUBLE | |
+| `execution_time_s` | DOUBLE | seconds |
 | `rows_affected` | BIGINT | NULL for tests |
-| `compile_time_seconds` | DOUBLE | |
+| `compile_time_s` | DOUBLE | seconds |
 | `message` | VARCHAR | dbt's message (error text on failure, NULL on success) |
 
 ### `dbt_manifest_snapshots` (v0.1.3+)
@@ -134,9 +141,10 @@ One row per dbt invocation. Stores a fingerprint of `target/manifest.json` so su
 | Column | Type | Notes |
 |---|---|---|
 | `invocation_id` | VARCHAR | Foreign key to `dbt_runs` |
-| `snapshot_at` | TIMESTAMP | |
-| `manifest_fingerprint` | VARCHAR | Hash over per-node SQL checksums + column maps |
-| `manifest_payload` | JSON | Compact representation: per-node SQL checksum + column name → type map |
+| `generated_at` | TIMESTAMP | The `generated_at` from the manifest itself |
+| `dbt_schema_version` | VARCHAR | dbt manifest schema version |
+| `fingerprint_json` | VARCHAR | Compact JSON: per-node SQL checksum + column name → type map |
+| `captured_at` | TIMESTAMP | |
 
 ### `dbt_schema_changes` (v0.1.3+)
 
@@ -145,8 +153,9 @@ One row per change detected when comparing the latest snapshot against the previ
 | Column | Type | Notes |
 |---|---|---|
 | `invocation_id` | VARCHAR | The invocation whose snapshot revealed the change |
+| `prev_invocation_id` | VARCHAR | The invocation we diffed against |
 | `change_type` | VARCHAR | `model_added`, `model_removed`, `sql_changed`, `column_added`, `column_removed`, `column_type_changed` |
-| `node_name` | VARCHAR | |
+| `unique_id` | VARCHAR | dbt's stable node id (e.g. `model.my_project.fct_orders`) |
 | `column_name` | VARCHAR | NULL for `model_*` and `sql_changed` |
 | `old_value` | VARCHAR | NULL for adds; previous type for `column_type_changed`; previous SHA for `sql_changed` |
 | `new_value` | VARCHAR | NULL for removes |
@@ -213,10 +222,11 @@ tycoon data query --db .tycoon/metadata.duckdb \
 
 ```bash
 tycoon data query --db .tycoon/metadata.duckdb \
-  "SELECT pipeline_name, sum(bytes_written) AS total_bytes
-   FROM dlt_trace_jobs
-   GROUP BY pipeline_name
-   ORDER BY total_bytes DESC"
+  "SELECT j.transaction_id, sum(j.file_size_bytes) AS total_bytes
+   FROM dlt_trace_jobs j
+   GROUP BY j.transaction_id
+   ORDER BY total_bytes DESC
+   LIMIT 10"
 ```
 
 ## Best-effort capture

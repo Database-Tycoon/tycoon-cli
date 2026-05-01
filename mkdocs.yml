@@ -26,12 +26,12 @@ theme:
         icon: material/weather-sunny
         name: Switch to light mode
   features:
-    - navigation.tabs
-    - navigation.tabs.sticky
     - navigation.sections
     - navigation.indexes
+    - navigation.expand
     - navigation.top
     - navigation.tracking
+    - toc.integrate
     - search.suggest
     - search.highlight
     - content.code.copy
@@ -106,6 +106,7 @@ nav:
     - reference/templates.md
     - reference/observability.md
     - reference/environment.md
+    - "All commands + options": reference/all-commands.md
   - Recipes:
     - recipes/csv-to-dashboard.md
     - recipes/motherduck-cloud-sync.md
