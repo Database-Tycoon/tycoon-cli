@@ -1,0 +1,93 @@
+name: Nightly e2e (live APIs)
+
+# Runs the no-credential live-API tests overnight so upstream API drift
+# surfaces against an issue rather than failing during a release. Tests
+# that need credentials (test_github_analytics_e2e) are deliberately
+# excluded — they live in e2e.yml on manual dispatch with a token slot.
+#
+# Why nightly: the live-API tests are flaky on the order of upstream
+# infrastructure. A daily cadence catches drift fast enough to act on,
+# without burning CI minutes on every PR.
+
+on:
+  schedule:
+    # 08:00 UTC = 04:00 ET / 01:00 PT — low-traffic window for the
+    # NYC Open Data and NOAA APIs.
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: pytest -m e2e (no credentials)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync project (all extras)
+        run: uv sync --all-extras --python 3.12
+
+      - name: Run no-credential live-API e2e tests
+        id: e2e
+        # Pin to the two no-cred tests; skip github-analytics (needs
+        # GITHUB_TOKEN) and the offline csv-import (already in default).
+        run: |
+          uv run pytest -m e2e -v \
+            tests/test_templates_e2e.py::test_nyc_transit_e2e \
+            tests/test_templates_e2e.py::test_weather_station_e2e \
+            2>&1 | tee /tmp/e2e.log
+
+      - name: Open issue on failure
+        # The pytest step exits non-zero on any failure; this step
+        # only runs in that case. Body links the failed run for
+        # reproducibility.
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DATE=$(date -u +"%Y-%m-%d")
+          TITLE="nightly-e2e: live-API tests failed on $DATE"
+          BODY=$(cat <<EOF
+          The nightly e2e workflow failed on \`$DATE\` (UTC).
+
+          **Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          **Tests:** \`pytest -m e2e\` against the no-credential subset
+          (nyc-transit + weather-station).
+
+          ## Triage steps
+
+          1. Check the linked run for the actual failure mode.
+          2. If the failure is upstream-API flake (NOAA infra, rate
+             limit, etc.) — close this issue and let the next nightly
+             clear the state. The tests have \`xfail\`-on-flake hooks
+             that should catch most of this; outright failures here
+             usually mean the API contract changed.
+          3. If the failure is a tycoon-side regression — the run logs
+             will show the failing assertion. Fix in a PR; the
+             default \`ci.yml\` workflow on that PR exercises the same
+             code paths offline.
+
+          Once fixed, manually trigger this workflow via
+          [workflow_dispatch](${{ github.server_url }}/${{ github.repository }}/actions/workflows/nightly-e2e.yml) to confirm.
+          EOF
+          )
+          # Avoid duplicating the same alert daily — only open if no
+          # open issue with the same title-prefix exists.
+          existing=$(gh issue list --search "nightly-e2e in:title state:open" --json number --jq 'length')
+          if [ "$existing" = "0" ]; then
+            gh issue create --title "$TITLE" --body "$BODY" --label "ci,upstream-flake"
+          else
+            echo "Existing nightly-e2e issue already open; skipping create."
+          fi

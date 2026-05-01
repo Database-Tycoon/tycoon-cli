@@ -4,7 +4,61 @@ on:
     tags:
       - "v*"
 jobs:
+  preflight:
+    # Fail-fast gate before any artifact builds. Validates that the tag,
+    # the version pins, and the release-notes machinery all agree —
+    # catches half-prepared releases (CHANGELOG still says UNRELEASED,
+    # __version__ wasn't bumped, etc.) before they hit PyPI.
+    name: pre-flight (version + changelog coherence)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate version + changelog coherence
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"               # e.g. v0.1.4
+          VERSION="${TAG#v}"                            # e.g. 0.1.4
+
+          echo "Validating tag=${TAG} version=${VERSION}"
+
+          # 1. pyproject.toml version must match the tag.
+          PYPROJECT_VERSION=$(awk -F'"' '/^version *= *"/ { print $2; exit }' pyproject.toml)
+          if [ "$PYPROJECT_VERSION" != "$VERSION" ]; then
+            echo "::error::pyproject.toml version=${PYPROJECT_VERSION} does not match tag ${TAG}"
+            exit 1
+          fi
+
+          # 2. src/tycoon/__init__.py __version__ must match the tag.
+          INIT_VERSION=$(awk -F'"' '/^__version__ *= *"/ { print $2; exit }' src/tycoon/__init__.py)
+          if [ "$INIT_VERSION" != "$VERSION" ]; then
+            echo "::error::src/tycoon/__init__.py __version__=${INIT_VERSION} does not match tag ${TAG}"
+            exit 1
+          fi
+
+          # 3. CHANGELOG.md must have a dated entry — not UNRELEASED.
+          if ! grep -q "^## \[${VERSION}\] - 20" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md is missing a dated '## [${VERSION}] - YYYY-MM-DD' entry"
+            grep -E "^## \[${VERSION}\]" CHANGELOG.md || true
+            exit 1
+          fi
+
+          # 4. docs/releases/v<version>.md must exist with a real Released line.
+          RELEASE_NOTES="docs/releases/v${VERSION}.md"
+          if [ ! -f "$RELEASE_NOTES" ]; then
+            echo "::error::missing $RELEASE_NOTES"
+            exit 1
+          fi
+          if grep -q "_Released: TBD_" "$RELEASE_NOTES"; then
+            echo "::error::$RELEASE_NOTES still has '_Released: TBD_' — set the date before tagging"
+            exit 1
+          fi
+
+          echo "OK — pyproject, __init__, CHANGELOG, and release notes all agree on ${VERSION}"
+
   build:
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

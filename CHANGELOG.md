@@ -16,6 +16,7 @@ _Closes four open issues from v0.1.3 (#7, #12, #17) plus three filed during the 
 - **`tycoon docs serve` / `tycoon docs build`.** Wraps MkDocs Material so contributors have one command for local documentation. `serve` runs with hot reload on `:8000`; `build --strict` is the CI-friendly one-shot. New `[docs]` optional extra pulls in `mkdocs==1.6.1` + `mkdocs-material==9.5.49`.
 - **MkDocs Material docs site at `docs/`.** ~30 user-facing pages organized into Getting started / Commands / Reference / Recipes / Releases. Local-first; `tycoon docs serve` is the entry point.
 - **`-h` short alias for `--help`** across every command. Configured once on the root typer app; click propagates it to every sub-command.
+- **CI/CD automation** — `ci.yml` gains three jobs (build + wheel install smoke, `mkdocs build --strict`, template scaffold + doctor matrix over the four built-in templates), new `nightly-e2e.yml` runs the no-credential live-API tests on a daily cron and auto-opens a GitHub issue on failure, and `publish.yml` gains a `preflight` job that asserts version-pin / CHANGELOG / release-notes coherence before any artifact builds. Removes most of the Claude-driven manual pre-release checklist.
 
 ### Changed
 
