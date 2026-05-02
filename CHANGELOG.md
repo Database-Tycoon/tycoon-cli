@@ -20,7 +20,7 @@ _Closes four open issues from v0.1.3 (#7, #12, #17) plus three filed during the 
 
 ### Changed
 
-- **GitHub Actions runtime bumped to Node 24-compatible versions.** `actions/checkout` v4 → v6, `actions/upload-artifact` v4 → v7, `actions/download-artifact` v4 → v8, `astral-sh/setup-uv` v4 → v8. Node 20 was scheduled for removal from GitHub-hosted runners on September 16 2026, with the default flipping to Node 24 on June 2 2026; bumping early avoids the deprecation warning and removes any Node-20-only branch from the workflow paths.
+- **GitHub Actions runtime bumped to Node 24-compatible versions.** `actions/checkout` v4 → v6, `actions/upload-artifact` v4 → v7, `actions/download-artifact` v4 → v8, `astral-sh/setup-uv` v4 → v7 (the latest moving major tag — v8 ships as specific versions only). Node 20 was scheduled for removal from GitHub-hosted runners on September 16 2026, with the default flipping to Node 24 on June 2 2026; bumping early avoids the deprecation warning and removes any Node-20-only branch from the workflow paths.
 - **Drop the "Tables" column from `tycoon data sources list`.** Always rendered `(all)` for the source types most users actually have (rest_api / filesystem) — meaningless noise. The underlying `tables:` field still exists on `SourceConfig` and shows up in the per-source `tycoon data sources show <name>` view.
 - **Drop the `dbt-fusion` check from `tycoon doctor`.** Got its own panel and warned when `dbtf` was on `$PATH`, but the premise didn't survive scrutiny — `dbtf` is a separate binary, doesn't shadow `dbt`, they coexist fine. Singling out one specific competitor was disproportionate vs. the rest of doctor's checks.
 
