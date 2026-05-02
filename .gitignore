@@ -14,10 +14,10 @@ venv/
 # DuckDB
 *.duckdb
 *.duckdb.wal
-data/
-!data/README.md
+/data/
+!/data/README.md
 # Template-bundled sample data is shipped with the package — exempt
-# from the repo-level data/ ignore rule.
+# from the repo-level /data/ ignore rule.
 !src/tycoon/templates/**/data/
 !src/tycoon/templates/**/data/**
 
@@ -74,6 +74,14 @@ gha-creds-*.json
 # (this is the CLI source repo, not a tycoon project — keep these out)
 /tycoon.yml
 /recce.yml
+# Auto-generated tycoon observability dashboards from refresh_usage_dashboards.
+# Show up when tycoon is run against the CLI source repo during testing.
+/rill/sources/_tycoon_*
+/rill/metrics/_tycoon_*
+/rill/dashboards/_tycoon_*
+
+# MkDocs build output
+/site/
 
 # Test coverage artifacts (pytest-cov)
 .coverage

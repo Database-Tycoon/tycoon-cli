@@ -7,7 +7,7 @@ from typer.core import TyperGroup
 
 import tycoon
 
-_COMMAND_ORDER = ["init", "register", "ask", "data", "start", "stop", "run", "doctor"]
+_COMMAND_ORDER = ["init", "register", "ask", "data", "start", "stop", "run", "doctor", "docs"]
 
 _SECTIONS = {
     "init":  "Project",
@@ -18,6 +18,7 @@ _SECTIONS = {
     "stop":  "Services",
     "run":   "Tools",
     "doctor": "Utilities",
+    "docs":  "Utilities",
 }
 
 
@@ -41,6 +42,8 @@ class _OrderedGroup(TyperGroup):
                 formatter.write_dl(rows)
 
 
+_HELP_OPTION_NAMES = ["-h", "--help"]
+
 app = typer.Typer(
     name="tycoon",
     help="Database Tycoon — local-first analytics CLI for exploring any dataset.",
@@ -48,6 +51,7 @@ app = typer.Typer(
     pretty_exceptions_enable=False,
     rich_markup_mode=None,
     cls=_OrderedGroup,
+    context_settings={"help_option_names": _HELP_OPTION_NAMES},
 )
 
 
@@ -71,7 +75,7 @@ def _root(
     pass
 
 
-from tycoon.commands import ask, data, register
+from tycoon.commands import ask, data, docs as docs_cmd_mod, register
 from tycoon.commands.doctor import doctor_cmd
 from tycoon.commands.init import init_cmd
 from tycoon.commands.run import run_cmd
@@ -82,6 +86,7 @@ app.command(name="init")(init_cmd)
 app.add_typer(register.app, name="register")
 app.add_typer(ask.app, name="ask")
 app.add_typer(data.app, name="data")
+app.add_typer(docs_cmd_mod.app, name="docs")
 app.command(name="start")(start_cmd)
 app.command(name="stop")(stop_cmd)
 app.command(

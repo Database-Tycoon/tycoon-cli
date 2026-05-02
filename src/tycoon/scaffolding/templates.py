@@ -252,6 +252,25 @@ def _scaffold_dbt_project(
         )
     )
 
+    # Compute the metadata DB path relative to the dbt project — same shape
+    # as the raw / warehouse paths. Pre-create the metadata DB with the
+    # empty observability schema so the first `dbt run` doesn't fail on
+    # ATTACH.
+    metadata_abs = (target / ".tycoon" / "metadata.duckdb").resolve()
+    metadata_rel_for_dbt = os.path.relpath(metadata_abs, start=dbt_dir)
+    try:
+        from tycoon.observability import ensure_schema
+        ensure_schema(metadata_abs)
+    except Exception:
+        # Best-effort — observability scaffolding shouldn't block project setup.
+        pass
+
+    metadata_attach = {
+        "path": metadata_rel_for_dbt,
+        "alias": "tycoon_meta",
+        "read_only": True,
+    }
+
     if warehouse == WarehouseType.motherduck:
         profiles_data = {
             profile_name: {
@@ -260,7 +279,10 @@ def _scaffold_dbt_project(
                     "dev": {
                         "type": "duckdb",
                         "path": warehouse_db_path,
-                        "attach": [{"path": raw_db_path, "alias": "raw", "read_only": True}],
+                        "attach": [
+                            {"path": raw_db_path, "alias": "raw", "read_only": True},
+                            metadata_attach,
+                        ],
                     }
                 },
             }
@@ -277,7 +299,10 @@ def _scaffold_dbt_project(
                     "dev": {
                         "type": "duckdb",
                         "path": warehouse_rel,
-                        "attach": [{"path": raw_rel, "alias": "raw", "read_only": True}],
+                        "attach": [
+                            {"path": raw_rel, "alias": "raw", "read_only": True},
+                            metadata_attach,
+                        ],
                     }
                 },
             }
@@ -287,6 +312,15 @@ def _scaffold_dbt_project(
         yaml.dump(profiles_data, default_flow_style=False, sort_keys=False)
     )
     info(f"Created dbt project at {dbt_dir} with dbt_project.yml and profiles.yml")
+
+    # Generate the _tycoon staging models so users have a working dbt
+    # surface over the metadata from the very first run.
+    try:
+        from tycoon.scaffolding.observability_dbt import scaffold_observability_models
+        scaffold_observability_models(dbt_dir)
+    except Exception:
+        # Best-effort — observability scaffolding shouldn't block project setup.
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -525,6 +559,27 @@ def scaffold_from_template(
 
     # .gitignore
     _write_gitignore(target)
+
+    # Ensure .tycoon/metadata.duckdb exists with the empty observability
+    # schema so any dbt profile that ATTACHes it (csv-import does, by
+    # default) doesn't fail on the very first `dbt run`. Best-effort —
+    # observability bookkeeping should never block project setup.
+    try:
+        from tycoon.observability import ensure_schema
+        ensure_schema(target / ".tycoon" / "metadata.duckdb")
+    except Exception:
+        pass
+
+    # Generate _tycoon staging models if the template ships a dbt project
+    # but didn't pre-include them. Idempotent — overwrites the
+    # auto-generated files only.
+    template_dbt = target / "dbt_project"
+    if template_dbt.exists() and (template_dbt / "dbt_project.yml").exists():
+        try:
+            from tycoon.scaffolding.observability_dbt import scaffold_observability_models
+            scaffold_observability_models(template_dbt)
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

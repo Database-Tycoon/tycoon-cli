@@ -195,6 +195,97 @@ class TestRegisterDbt:
         data = yaml.safe_load((project / "tycoon.yml").read_text())
         assert data["database"]["warehouse"] == str(divergent)
 
+    def test_register_dbt_persists_profile_flags(self, cli_runner, tmp_path, monkeypatch):
+        """`--profiles-dir / --profile / --target` save into tycoon.yml (#18)."""
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        dbt_dir = tmp_path / "proj-dbt"
+        _make_dbt_project(dbt_dir, "proj", str(project / "data" / "warehouse.duckdb"))
+
+        # Stage profiles.yml in a non-default sibling dir
+        external_profiles = tmp_path / "ci-profiles"
+        external_profiles.mkdir()
+        (external_profiles / "profiles.yml").write_text(
+            yaml.dump(
+                {
+                    "ci_profile": {
+                        "target": "prod",
+                        "outputs": {
+                            "prod": {
+                                "type": "duckdb",
+                                "path": str(project / "data" / "warehouse.duckdb"),
+                            }
+                        },
+                    }
+                }
+            )
+        )
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app,
+            [
+                "register", "dbt", str(dbt_dir),
+                "--profiles-dir", str(external_profiles),
+                "--profile", "ci_profile",
+                "--target", "prod",
+            ],
+            input="\n",
+        )
+        assert result.exit_code == 0, result.stdout
+
+        data = yaml.safe_load(yml.read_text())
+        # Persisted flags
+        assert "dbt_profiles_dir" in data
+        assert Path(data["dbt_profiles_dir"]).expanduser().resolve() == external_profiles
+        assert data["dbt_profile"] == "ci_profile"
+        assert data["dbt_target"] == "prod"
+
+    def test_register_dbt_drops_stale_profile_keys_when_unspecified(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """Re-registering without --profile should drop a previously-persisted value."""
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        # Pre-populate stale values
+        data = yaml.safe_load(yml.read_text())
+        data["dbt_profile"] = "old_profile"
+        data["dbt_target"] = "old_target"
+        yml.write_text(yaml.dump(data))
+
+        dbt_dir = tmp_path / "proj-dbt"
+        _make_dbt_project(dbt_dir, "proj", str(project / "data" / "warehouse.duckdb"))
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        # "y" overwrites the existing dbt_project_dir prompt (none here, so just newline)
+        result = cli_runner.invoke(app, ["register", "dbt", str(dbt_dir)], input="\n")
+        assert result.exit_code == 0, result.stdout
+
+        final = yaml.safe_load(yml.read_text())
+        assert "dbt_profile" not in final
+        assert "dbt_target" not in final
+
+    def test_register_dbt_refuses_missing_profiles_dir(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+        dbt_dir = tmp_path / "proj-dbt"
+        _make_dbt_project(dbt_dir, "proj", str(project / "data" / "warehouse.duckdb"))
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app,
+            [
+                "register", "dbt", str(dbt_dir),
+                "--profiles-dir", str(tmp_path / "does-not-exist"),
+            ],
+        )
+        assert result.exit_code != 0
+
     def test_register_dbt_offers_motherduck_alignment(self, cli_runner, tmp_path, monkeypatch):
         """If dbt project targets md:foo and tycoon warehouse is a local DuckDB, offer to adopt."""
         project = tmp_path / "proj"
@@ -294,6 +385,90 @@ class TestExtractDbtWarehouseTarget:
         assert target is not None
         assert target.adapter_type == "databricks"
         assert target.tycoon_warehouse_type is None  # unknown to tycoon
+
+    def test_explicit_profiles_dir_override(self, tmp_path):
+        """`profiles_dir` arg should win over the co-located profiles.yml."""
+        from tycoon.commands.init import _extract_dbt_warehouse_target
+
+        dbt_dir = tmp_path / "dbt"
+        # Co-located profile points at "wrong.duckdb"
+        _make_dbt_project(dbt_dir, "p", str(tmp_path / "wrong.duckdb"))
+
+        # External profile points at "right.duckdb"
+        external = tmp_path / "external_profiles"
+        external.mkdir()
+        (external / "profiles.yml").write_text(
+            yaml.dump(
+                {
+                    "p": {
+                        "target": "dev",
+                        "outputs": {"dev": {"type": "duckdb", "path": str(tmp_path / "right.duckdb")}},
+                    }
+                }
+            )
+        )
+
+        target = _extract_dbt_warehouse_target(dbt_dir, profiles_dir=external)
+        assert target is not None
+        assert "right.duckdb" in target.identifier
+        assert "wrong.duckdb" not in target.identifier
+
+    def test_explicit_profile_name_override(self, tmp_path):
+        """`profile_name` arg should win over dbt_project.yml's `profile:` field."""
+        from tycoon.commands.init import _extract_dbt_warehouse_target
+
+        dbt_dir = tmp_path / "dbt"
+        dbt_dir.mkdir()
+        # dbt_project.yml says profile=primary
+        (dbt_dir / "dbt_project.yml").write_text(
+            yaml.dump({"name": "p", "profile": "primary", "config-version": 2})
+        )
+        # profiles.yml has BOTH primary and secondary
+        (dbt_dir / "profiles.yml").write_text(
+            yaml.dump(
+                {
+                    "primary": {
+                        "target": "dev",
+                        "outputs": {"dev": {"type": "duckdb", "path": str(tmp_path / "primary.duckdb")}},
+                    },
+                    "secondary": {
+                        "target": "dev",
+                        "outputs": {"dev": {"type": "duckdb", "path": str(tmp_path / "secondary.duckdb")}},
+                    },
+                }
+            )
+        )
+
+        target = _extract_dbt_warehouse_target(dbt_dir, profile_name="secondary")
+        assert target is not None
+        assert "secondary.duckdb" in target.identifier
+
+    def test_explicit_target_name_override(self, tmp_path):
+        """`target_name` arg should win over the profile's `target:` field."""
+        from tycoon.commands.init import _extract_dbt_warehouse_target
+
+        dbt_dir = tmp_path / "dbt"
+        dbt_dir.mkdir()
+        (dbt_dir / "dbt_project.yml").write_text(
+            yaml.dump({"name": "p", "profile": "p", "config-version": 2})
+        )
+        (dbt_dir / "profiles.yml").write_text(
+            yaml.dump(
+                {
+                    "p": {
+                        "target": "dev",
+                        "outputs": {
+                            "dev": {"type": "duckdb", "path": str(tmp_path / "dev.duckdb")},
+                            "prod": {"type": "duckdb", "path": str(tmp_path / "prod.duckdb")},
+                        },
+                    }
+                }
+            )
+        )
+
+        target = _extract_dbt_warehouse_target(dbt_dir, target_name="prod")
+        assert target is not None
+        assert "prod.duckdb" in target.identifier
 
     def test_missing_profile_returns_none(self, tmp_path):
         from tycoon.commands.init import _extract_dbt_warehouse_target
@@ -432,6 +607,113 @@ class TestRegisterWarehouse:
         data = yaml.safe_load(yml.read_text())
         assert data["database"]["warehouse"] == "md:myproj"
         assert data["stack"]["warehouse"] == "motherduck"
+
+    def test_register_warehouse_non_interactive_local(self, cli_runner, tmp_path, monkeypatch):
+        """`--type duckdb --path ./foo.duckdb --no-prompt` runs without prompts (#19)."""
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        # Wipe pre-existing warehouse so we don't hit the overwrite prompt
+        data = yaml.safe_load(yml.read_text())
+        data["database"] = {"raw": "data/raw.duckdb", "warehouse": ""}
+        yml.write_text(yaml.dump(data))
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app,
+            [
+                "register", "warehouse",
+                "--type", "duckdb",
+                "--path", "data/custom.duckdb",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        final = yaml.safe_load(yml.read_text())
+        assert final["database"]["warehouse"] == "data/custom.duckdb"
+        assert final["stack"]["warehouse"] == "duckdb"
+
+    def test_register_warehouse_non_interactive_motherduck(self, cli_runner, tmp_path, monkeypatch):
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        data = yaml.safe_load(yml.read_text())
+        data["database"] = {"raw": "data/raw.duckdb", "warehouse": ""}
+        yml.write_text(yaml.dump(data))
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app,
+            [
+                "register", "warehouse",
+                "--type", "motherduck",
+                "--catalog", "my_demo",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        final = yaml.safe_load(yml.read_text())
+        assert final["database"]["warehouse"] == "md:my_demo"
+        assert final["stack"]["warehouse"] == "motherduck"
+
+    def test_register_warehouse_no_prompt_requires_type(self, cli_runner, tmp_path, monkeypatch):
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(app, ["register", "warehouse", "--no-prompt"])
+        assert result.exit_code != 0
+
+    def test_register_warehouse_no_prompt_motherduck_requires_catalog(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        data = yaml.safe_load(yml.read_text())
+        data["database"]["warehouse"] = ""
+        yml.write_text(yaml.dump(data))
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app,
+            ["register", "warehouse", "--type", "motherduck", "--no-prompt"],
+        )
+        assert result.exit_code != 0
+
+    def test_register_warehouse_force_overrides_existing(self, cli_runner, tmp_path, monkeypatch):
+        """`--force` skips the overwrite prompt for an existing warehouse."""
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        # Pre-populate a warehouse value that would normally trigger the prompt.
+        data = yaml.safe_load(yml.read_text())
+        data["database"]["warehouse"] = "data/old.duckdb"
+        yml.write_text(yaml.dump(data))
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app,
+            [
+                "register", "warehouse",
+                "--type", "duckdb",
+                "--path", "data/new.duckdb",
+                "--force",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        final = yaml.safe_load(yml.read_text())
+        assert final["database"]["warehouse"] == "data/new.duckdb"
+
+    def test_register_warehouse_unknown_type_errors(self, cli_runner, tmp_path, monkeypatch):
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app,
+            ["register", "warehouse", "--type", "snowflake", "--no-prompt"],
+        )
+        assert result.exit_code != 0
 
     def test_register_warehouse_prompts_on_overwrite(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"

@@ -16,17 +16,6 @@ from tycoon.utils.console import error, header, info, success, warn
 console = Console()
 
 
-def _check_dbt_fusion():
-    """Check if dbt-fusion is installed and warn the user."""
-    if shutil.which("dbtf"):
-        warn(
-            "Found `dbtf` executable, which can conflict with `dbt`."
-            " If you are not using dbt Fusion, you may want to uninstall it."
-        )
-    else:
-        success("`dbtf` not found.")
-
-
 def _check_tycoon_yml():
     """Check if tycoon.yml exists."""
     if config.has_project_file:
@@ -233,9 +222,6 @@ def doctor_cmd() -> None:
     header("Tycoon Doctor")
 
     with console.status("[bold green]Running checks...[/bold green]"):
-        console.print(Panel("Checking for dbt-fusion...", expand=False))
-        _check_dbt_fusion()
-
         console.print(Panel("Checking for tycoon.yml...", expand=False))
         _check_tycoon_yml()
 

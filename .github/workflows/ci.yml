@@ -26,10 +26,10 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload coverage report
         if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-xml
           path: coverage.xml
@@ -63,13 +63,135 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
       - name: Ruff lint
         # Use uvx so we don't need to add ruff to project deps.
         run: uvx ruff check src tests
+
+  build:
+    # Verifies the wheel + sdist build cleanly with current pins, and
+    # that the built wheel installs into a fresh venv with a working
+    # `tycoon` entry point. Catches packaging regressions (manifest
+    # typos, broken extras, console-script wiring drift) before they
+    # reach a tagged release.
+    name: build + install smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Build wheel + sdist
+        run: uv build
+
+      - name: Upload built artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+      - name: Install built wheel into a fresh venv
+        # Use a separate venv so we exercise the published wheel rather
+        # than the editable install. Picks the wheel by glob so the
+        # version doesn't have to be hard-coded.
+        run: |
+          uv venv /tmp/wheel-smoke --python 3.12
+          /tmp/wheel-smoke/bin/python -m ensurepip
+          /tmp/wheel-smoke/bin/python -m pip install dist/database_tycoon-*.whl
+
+      - name: Smoke-check tycoon entry point
+        run: |
+          /tmp/wheel-smoke/bin/tycoon --version
+          /tmp/wheel-smoke/bin/tycoon -h | head -20
+
+  docs:
+    # Builds the MkDocs site in --strict mode so broken internal links,
+    # missing nav targets, and deprecated config keys block the merge
+    # rather than landing silently.
+    name: docs (mkdocs --strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Sync docs extra
+        run: uv sync --extra docs
+
+      - name: Build docs (strict)
+        run: uv run mkdocs build --strict
+
+  template-smoke:
+    # Initializes a fresh project from each built-in template and runs
+    # `tycoon doctor` against it, asserting clean exit. Catches
+    # template-side regressions (missing files, bad placeholder
+    # substitution, profile alignment errors) without spinning up the
+    # full e2e ingestion suite.
+    name: template smoke (${{ matrix.template }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [csv-import, nyc-transit, github-analytics, weather-station]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Sync project (default extras)
+        run: uv sync
+
+      - name: Init project from template
+        # Each template that takes parameters supplies them inline. We
+        # don't need real values — `init` only validates that the
+        # placeholders are non-empty before scaffolding.
+        run: |
+          mkdir -p /tmp/smoke-${{ matrix.template }}
+          cd /tmp/smoke-${{ matrix.template }}
+          case "${{ matrix.template }}" in
+            github-analytics)
+              uv run --project ${{ github.workspace }} tycoon init \
+                --template ${{ matrix.template }} \
+                --param owner=anthropics --param repo=claude-code
+              ;;
+            weather-station)
+              uv run --project ${{ github.workspace }} tycoon init \
+                --template ${{ matrix.template }} \
+                --param station_id=KJFK --param office=OKX \
+                --param gridX=32 --param gridY=34
+              ;;
+            *)
+              uv run --project ${{ github.workspace }} tycoon init \
+                --template ${{ matrix.template }}
+              ;;
+          esac
+
+      - name: tycoon doctor (no errors)
+        run: |
+          cd /tmp/smoke-${{ matrix.template }}
+          uv run --project ${{ github.workspace }} tycoon doctor 2>&1 | tee /tmp/doctor.log
+          # Doctor always exits 0 today; assert no ERROR lines made it
+          # into the output as a stronger gate.
+          if grep -q "^ERROR" /tmp/doctor.log; then
+            echo "::error::tycoon doctor reported errors against template ${{ matrix.template }}"
+            exit 1
+          fi

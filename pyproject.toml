@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "database-tycoon"
-version = "0.1.3"
+version = "0.1.4"
 description = "Database Tycoon — local-first analytics CLI that adapts to your existing data stack"
 readme = "README.md"
 license = {text = "MIT"}
@@ -46,6 +46,10 @@ dagster = [
 ask = [
     "nao-core==0.1.8",
     "ibis-framework[duckdb]==12.0.0",
+]
+docs = [
+    "mkdocs==1.6.1",
+    "mkdocs-material==9.5.49",
 ]
 
 [project.urls]

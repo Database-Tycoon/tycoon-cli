@@ -108,9 +108,23 @@ class DatabaseConfig(BaseModel):
 class LLMConfig(BaseModel):
     """LLM provider config for the ask (Nao) feature."""
 
-    provider: str = Field(default="openai", description="LLM provider (openai, anthropic, ollama, mistral, gemini)")
+    provider: str = Field(
+        default="openai",
+        description=(
+            "LLM provider. Built-in shortcuts: openai, anthropic, ollama, "
+            "mistral, gemini, lm-studio. The lm-studio shortcut emits a "
+            "valid OpenAI-compatible config pointed at the local server."
+        ),
+    )
     model: str | None = Field(default=None, description="Model name override")
     api_key_env: str | None = Field(default=None, description="Env var name holding the API key")
+    base_url: str | None = Field(
+        default=None,
+        description=(
+            "OpenAI-compatible base URL (e.g. http://localhost:1234/v1 for "
+            "LM Studio). Auto-set when provider=lm-studio."
+        ),
+    )
 
 
 class AskConfig(BaseModel):
@@ -127,6 +141,44 @@ class AskConfig(BaseModel):
     )
 
 
+class SyncSourceSpec(BaseModel):
+    """One source-of-data for `tycoon data sync`.
+
+    The ``from`` field accepts any DuckDB-attachable URL: ``md:<catalog>`` for
+    MotherDuck, ``./other.duckdb`` for a local DuckDB file. v0.1.4 ships
+    MotherDuck + local-DuckDB only; Postgres / etc. land later.
+    """
+
+    from_: str = Field(
+        alias="from",
+        description="Source URL — md:<catalog>, /path/to/other.duckdb, etc.",
+    )
+    schemas: list[str] = Field(
+        default_factory=lambda: ["*"],
+        description="Schema-name globs (fnmatch) to include. Default: all.",
+    )
+    tables: list[str] = Field(
+        default_factory=lambda: ["*"],
+        description="Table-name globs (fnmatch) to include within the selected schemas. Default: all.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class SyncConfig(BaseModel):
+    """Top-level ``sync:`` block — defaults for ``tycoon data sync``."""
+
+    to: str = Field(
+        default="data/local_snapshot.duckdb",
+        description="Default destination DuckDB file (relative to project root).",
+    )
+    sources: list[SyncSourceSpec] = Field(default_factory=list)
+    mode: str = Field(
+        default="replace",
+        description="Default sync mode: replace | append | skip-existing.",
+    )
+
+
 class TycoonProject(BaseModel):
     """Top-level tycoon.yml schema."""
 
@@ -135,8 +187,31 @@ class TycoonProject(BaseModel):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     sources: dict[str, SourceConfig] = Field(default_factory=dict, description="Registered data sources")
     dbt_project_dir: str = Field(default="dbt_project", description="Path to dbt project")
+    dbt_profiles_dir: str | None = Field(
+        default=None,
+        description=(
+            "Path to the directory containing profiles.yml. Defaults to "
+            "<dbt_project_dir>/profiles.yml if present, otherwise dbt's "
+            "default of ~/.dbt/profiles.yml."
+        ),
+    )
+    dbt_profile: str | None = Field(
+        default=None,
+        description=(
+            "Profile name within profiles.yml. Defaults to the `profile:` "
+            "field in dbt_project.yml."
+        ),
+    )
+    dbt_target: str | None = Field(
+        default=None,
+        description=(
+            "Target within the profile (dev / prod / ...). Defaults to the "
+            "profile's `target:` field, then 'dev'."
+        ),
+    )
     rill_dir: str = Field(default="rill", description="Path to Rill dashboards")
     ask: AskConfig | None = Field(default=None, description="Nao analytics agent configuration")
+    sync: SyncConfig | None = Field(default=None, description="`tycoon data sync` defaults")
     stack: StackConfig = Field(default_factory=StackConfig)
 
 

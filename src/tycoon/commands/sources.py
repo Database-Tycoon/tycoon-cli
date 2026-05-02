@@ -91,11 +91,9 @@ def _list_sources() -> None:
     table.add_column("Name", style="cyan")
     table.add_column("Type", style="bold")
     table.add_column("Schema", style="green")
-    table.add_column("Tables", style="dim")
 
     for name, src in sources.items():
-        tables_str = ", ".join(src.tables) if src.tables else "(all)"
-        table.add_row(name, src.type, src.schema_name, tables_str)
+        table.add_row(name, src.type, src.schema_name)
 
     console.print(table)
 

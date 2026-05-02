@@ -334,26 +334,57 @@ class DbtWarehouseTarget:
         return None
 
 
-def _read_dbt_target(dbt_project_dir: Path) -> dict | None:
-    """Return the active dbt target dict, or None if it can't be resolved.
+def _profiles_yml_search_paths(
+    dbt_project_dir: Path,
+    profiles_dir: Path | None,
+) -> list[Path]:
+    """Build the ordered list of ``profiles.yml`` candidates.
 
-    Walks dbt's profile lookup order: the co-located ``profiles.yml`` if
-    present, otherwise ``~/.dbt/profiles.yml``.
+    When ``profiles_dir`` is supplied, it wins outright (matches dbt's
+    own ``--profiles-dir`` semantics). Otherwise we walk dbt's default
+    lookup order: co-located ``profiles.yml`` if present, then
+    ``~/.dbt/profiles.yml``.
     """
-    try:
-        project_yml = yaml.safe_load((dbt_project_dir / "dbt_project.yml").read_text())
-    except (OSError, yaml.YAMLError):
-        return None
-    if not isinstance(project_yml, dict):
-        return None
-    profile_name = project_yml.get("profile")
-    if not profile_name:
-        return None
-
-    for candidate in (
+    if profiles_dir is not None:
+        return [profiles_dir / "profiles.yml"]
+    return [
         dbt_project_dir / "profiles.yml",
         Path.home() / ".dbt" / "profiles.yml",
-    ):
+    ]
+
+
+def _read_dbt_target(
+    dbt_project_dir: Path,
+    profiles_dir: Path | None = None,
+    profile_name: str | None = None,
+    target_name: str | None = None,
+) -> dict | None:
+    """Return the active dbt target dict, or None if it can't be resolved.
+
+    Resolution rules — each defaultable field lets the caller override
+    so ``tycoon register dbt --profiles-dir / --profile / --target`` (and
+    its persisted ``tycoon.yml`` equivalents) work the way dbt's own CLI
+    flags do:
+
+    - ``profiles_dir`` (CLI override) → ``<dbt_project_dir>/profiles.yml``
+      → ``~/.dbt/profiles.yml``.
+    - ``profile_name`` (CLI override) → ``profile:`` field in
+      ``dbt_project.yml``.
+    - ``target_name`` (CLI override) → profile's ``target:`` field →
+      ``"dev"``.
+    """
+    if profile_name is None:
+        try:
+            project_yml = yaml.safe_load((dbt_project_dir / "dbt_project.yml").read_text())
+        except (OSError, yaml.YAMLError):
+            return None
+        if not isinstance(project_yml, dict):
+            return None
+        profile_name = project_yml.get("profile")
+        if not profile_name:
+            return None
+
+    for candidate in _profiles_yml_search_paths(dbt_project_dir, profiles_dir):
         if not candidate.exists():
             continue
         try:
@@ -365,14 +396,19 @@ def _read_dbt_target(dbt_project_dir: Path) -> dict | None:
         profile = profiles.get(profile_name)
         if not isinstance(profile, dict):
             continue
-        target_name = profile.get("target", "dev")
-        target = profile.get("outputs", {}).get(target_name, {})
+        chosen_target = target_name or profile.get("target", "dev")
+        target = profile.get("outputs", {}).get(chosen_target, {})
         if isinstance(target, dict):
             return target
     return None
 
 
-def _extract_dbt_warehouse_target(dbt_project_dir: Path) -> DbtWarehouseTarget | None:
+def _extract_dbt_warehouse_target(
+    dbt_project_dir: Path,
+    profiles_dir: Path | None = None,
+    profile_name: str | None = None,
+    target_name: str | None = None,
+) -> DbtWarehouseTarget | None:
     """Extract a structured warehouse target from a dbt project's active profile.
 
     Returns ``None`` if the profile can't be read. For DuckDB / MotherDuck
@@ -381,7 +417,12 @@ def _extract_dbt_warehouse_target(dbt_project_dir: Path) -> DbtWarehouseTarget |
     ``details`` map keeps per-adapter extras (database / dataset / host)
     so callers can render richer warnings without re-parsing profiles.
     """
-    target = _read_dbt_target(dbt_project_dir)
+    target = _read_dbt_target(
+        dbt_project_dir,
+        profiles_dir=profiles_dir,
+        profile_name=profile_name,
+        target_name=target_name,
+    )
     if target is None:
         return None
     adapter_type = target.get("type") or ""

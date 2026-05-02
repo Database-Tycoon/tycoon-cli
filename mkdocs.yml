@@ -1,0 +1,126 @@
+site_name: Database Tycoon
+site_description: A local-first analytics CLI for exploring any dataset.
+site_url: https://database-tycoon.github.io/tycoon-cli/
+repo_url: https://github.com/Database-Tycoon/tycoon-cli
+repo_name: Database-Tycoon/tycoon-cli
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.expand
+    - navigation.top
+    - navigation.tracking
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Database-Tycoon/tycoon-cli
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/database-tycoon/
+
+nav:
+  - Home: index.md
+  - Getting started:
+    - getting-started/installation.md
+    - getting-started/first-project.md
+    - getting-started/concepts.md
+  - Commands:
+    - Overview: commands/index.md
+    - Project:
+      - "tycoon init": commands/init.md
+      - "tycoon register": commands/register.md
+      - "tycoon doctor": commands/doctor.md
+      - "tycoon docs": commands/docs.md
+    - Data pipeline:
+      - "tycoon data sources": commands/data/sources.md
+      - "tycoon data transform": commands/data/transform.md
+      - "tycoon data sync": commands/data/sync.md
+      - "tycoon data query / schema / clean": commands/data/query.md
+      - "tycoon data history": commands/data/history.md
+      - "tycoon data analyze": commands/data/analyze.md
+      - "tycoon data status": commands/data/status.md
+      - "tycoon data run-all": commands/data/run-all.md
+    - AI agent:
+      - "tycoon ask": commands/ask/index.md
+    - Services:
+      - "tycoon start / stop": commands/start.md
+    - Tools:
+      - "tycoon run": commands/run.md
+  - Reference:
+    - reference/tycoon-yml.md
+    - reference/templates.md
+    - reference/observability.md
+    - reference/environment.md
+    - "All commands + options": reference/all-commands.md
+  - Recipes:
+    - recipes/csv-to-dashboard.md
+    - recipes/motherduck-cloud-sync.md
+    - recipes/lm-studio-local-llm.md
+    - recipes/existing-dbt-project.md
+  - Releases:
+    - "v0.1.4 (in flight)": releases/v0.1.4.md
+    - "v0.1.3": releases/v0.1.3.md
+    - "v0.1.2": releases/v0.1.2.md
+    - "v0.1.1": releases/v0.1.1.md
+
+# Pages not in nav (not user-facing): docs/openmetadata.md, docs/publishing-to-pypi.md
+# Suppress mkdocs warnings about them.
+not_in_nav: |
+  /openmetadata.md
+  /publishing-to-pypi.md
+  /install_rill.sh

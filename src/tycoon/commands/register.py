@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 import typer
 import yaml
@@ -82,8 +82,49 @@ def register_dbt(
         str,
         typer.Argument(help="Local path or GitHub URL of the dbt project to register."),
     ],
+    profiles_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--profiles-dir",
+            help=(
+                "Directory containing profiles.yml. Defaults to <SOURCE>/profiles.yml "
+                "if present, then ~/.dbt/profiles.yml — same as dbt's own resolution."
+            ),
+        ),
+    ] = None,
+    profile: Annotated[
+        Optional[str],
+        typer.Option(
+            "--profile",
+            help="Profile name within profiles.yml. Default: the `profile:` field in dbt_project.yml.",
+        ),
+    ] = None,
+    target: Annotated[
+        Optional[str],
+        typer.Option(
+            "--target",
+            help="Target within the profile (dev / prod / ...). Default: the profile's `target:` field, then 'dev'.",
+        ),
+    ] = None,
+    no_attach_metadata: Annotated[
+        bool,
+        typer.Option(
+            "--no-attach-metadata",
+            help=(
+                "Skip wiring tycoon's observability metadata DB into the "
+                "registered profile. Default: attach `.tycoon/metadata.duckdb` "
+                "as `tycoon_meta` so dbt models can SELECT from it directly."
+            ),
+        ),
+    ] = False,
 ) -> None:
-    """Attach an existing dbt project to the current tycoon.yml."""
+    """Attach an existing dbt project to the current tycoon.yml.
+
+    The three profile-related flags mirror dbt's own CLI options. Any value
+    you pass is also persisted in tycoon.yml under ``dbt_profiles_dir`` /
+    ``dbt_profile`` / ``dbt_target`` so subsequent ``tycoon data transform``
+    runs use them automatically.
+    """
     header("Register dbt project")
 
     yml_path = _require_tycoon_yml()
@@ -104,21 +145,51 @@ def register_dbt(
         error(f"{resolved} does not contain a dbt_project.yml")
         raise typer.Exit(1)
 
+    # Resolve profiles_dir to an absolute path so the warehouse-alignment
+    # extractor and the persisted tycoon.yml entry agree.
+    if profiles_dir is not None:
+        profiles_dir = profiles_dir.expanduser().resolve()
+        if not (profiles_dir / "profiles.yml").exists():
+            error(f"{profiles_dir} does not contain a profiles.yml")
+            raise typer.Exit(1)
+
     # Write path relative to tycoon.yml when possible, otherwise absolute
-    try:
-        import os
-        rel = os.path.relpath(resolved, config.root)
-        raw["dbt_project_dir"] = rel
-    except ValueError:
-        raw["dbt_project_dir"] = str(resolved)
+    import os
+
+    def _rel_or_abs(p: Path) -> str:
+        try:
+            return os.path.relpath(p, config.root)
+        except ValueError:
+            return str(p)
+
+    raw["dbt_project_dir"] = _rel_or_abs(resolved)
+    if profiles_dir is not None:
+        raw["dbt_profiles_dir"] = _rel_or_abs(profiles_dir)
+    elif "dbt_profiles_dir" in raw:
+        # Don't carry forward a stale value from a previous register call.
+        del raw["dbt_profiles_dir"]
+    if profile is not None:
+        raw["dbt_profile"] = profile
+    elif "dbt_profile" in raw:
+        del raw["dbt_profile"]
+    if target is not None:
+        raw["dbt_target"] = target
+    elif "dbt_target" in raw:
+        del raw["dbt_target"]
 
     # Update stack to reflect "external dbt"
     stack = raw.setdefault("stack", {})
     stack["transformation"] = TransformationTool.dbt.value
     stack["transformation_managed"] = False
 
-    # Warehouse alignment offer
-    dbt_target = _extract_dbt_warehouse_target(resolved)
+    # Warehouse alignment offer — pass the explicit profile/target through
+    # so alignment reads the right adapter config.
+    dbt_target = _extract_dbt_warehouse_target(
+        resolved,
+        profiles_dir=profiles_dir,
+        profile_name=profile,
+        target_name=target,
+    )
     if dbt_target is not None:
         if dbt_target.adapter_type == "duckdb":
             _align_duckdb_warehouse(raw, stack, dbt_target.identifier)
@@ -128,6 +199,43 @@ def register_dbt(
     _write_raw_tycoon_yml(yml_path, raw)
     success(f"Registered dbt project at {resolved}")
     info(f"Updated {yml_path.name}.")
+
+    # Wire tycoon's observability metadata into the registered profile so
+    # dbt models can SELECT from `tycoon_meta.main.<table>` directly.
+    # Idempotent — skipped if the ATTACH is already present, or if a
+    # profiles.yml isn't co-located (caller's choice). Opt out via flag.
+    if not no_attach_metadata:
+        from tycoon.scaffolding.observability_dbt import (
+            attach_metadata_to_profiles,
+            scaffold_observability_models,
+        )
+
+        # profiles.yml lookup: explicit --profiles-dir wins, then co-located
+        if profiles_dir is not None:
+            profiles_yml = profiles_dir / "profiles.yml"
+        else:
+            profiles_yml = resolved / "profiles.yml"
+
+        if profiles_yml.exists():
+            metadata_db = config.root / ".tycoon" / "metadata.duckdb"
+            try:
+                changed = attach_metadata_to_profiles(profiles_yml, metadata_db)
+                if changed:
+                    info(f"Added [bold]tycoon_meta[/bold] ATTACH to {profiles_yml}")
+                # Also generate the _tycoon staging models so users get the
+                # full surface (dbt + Nao via downstream sync).
+                scaffold_observability_models(resolved)
+                info(
+                    f"Generated [bold]models/_tycoon/[/bold] under {resolved}. "
+                    "Run [bold]tycoon data transform run[/bold] to build them."
+                )
+            except Exception as exc:  # best-effort
+                warn(f"Could not wire observability metadata: {exc}")
+        else:
+            info(
+                "[dim]No co-located profiles.yml — skipping metadata ATTACH. "
+                "Run [bold]tycoon data observability scaffold[/bold] to add it later.[/dim]"
+            )
 
 
 def _align_duckdb_warehouse(raw: dict, stack: dict, dbt_warehouse: str) -> None:
@@ -217,9 +325,58 @@ def _align_cloud_warehouse(raw: dict, stack: dict, dbt_target) -> None:
             )
 
 
+_LOCAL_TYPE_ALIASES = {"local", "l", "duckdb"}
+_CLOUD_TYPE_ALIASES = {"cloud", "c", "motherduck", "md"}
+
+
 @app.command(name="warehouse")
-def register_warehouse() -> None:
-    """Attach or switch the warehouse (local DuckDB or MotherDuck) in tycoon.yml."""
+def register_warehouse(
+    warehouse_type: Annotated[
+        Optional[str],
+        typer.Option(
+            "--type",
+            help=(
+                "Warehouse type — 'duckdb' (or 'local') for a local DuckDB file, "
+                "'motherduck' (or 'cloud') for a MotherDuck catalog. Skips the "
+                "interactive prompt when set."
+            ),
+        ),
+    ] = None,
+    path: Annotated[
+        Optional[str],
+        typer.Option(
+            "--path",
+            help="For --type duckdb: path to the local .duckdb file. Default: data/warehouse.duckdb.",
+        ),
+    ] = None,
+    catalog: Annotated[
+        Optional[str],
+        typer.Option(
+            "--catalog",
+            help="For --type motherduck: catalog name. Becomes md:<catalog> in tycoon.yml.",
+        ),
+    ] = None,
+    no_prompt: Annotated[
+        bool,
+        typer.Option(
+            "--no-prompt",
+            help="Fail rather than prompt — for CI / scripted setup.",
+        ),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            help="Overwrite an existing warehouse without prompting.",
+        ),
+    ] = False,
+) -> None:
+    """Attach or switch the warehouse (local DuckDB or MotherDuck) in tycoon.yml.
+
+    Fully scriptable when ``--type`` plus the type-specific value (``--path``
+    or ``--catalog``) is set; otherwise drops to interactive prompts.
+    Combine with ``--no-prompt`` and ``--force`` for non-interactive CI use.
+    """
     import os
 
     header("Register warehouse")
@@ -229,21 +386,61 @@ def register_warehouse() -> None:
 
     existing = raw.get("database", {}).get("warehouse", "")
     if existing:
-        warn(f"tycoon.yml already has warehouse = {existing!r}.")
-        if not typer.confirm("Overwrite it?", default=False):
-            info("Aborted; no changes made.")
-            raise typer.Exit(0)
+        if force:
+            info(f"Overwriting existing warehouse: {existing!r}.")
+        elif no_prompt:
+            error(
+                f"tycoon.yml already has warehouse = {existing!r}. "
+                "Re-run with --force to overwrite, or remove --no-prompt to be asked."
+            )
+            raise typer.Exit(1)
+        else:
+            warn(f"tycoon.yml already has warehouse = {existing!r}.")
+            if not typer.confirm("Overwrite it?", default=False):
+                info("Aborted; no changes made.")
+                raise typer.Exit(0)
 
-    choice = typer.prompt(
-        "Cloud (MotherDuck) or local DuckDB? [cloud/local]",
-        default="local",
-    ).strip().lower()
+    # ---- Resolve warehouse type ----
+    if warehouse_type:
+        normalized = warehouse_type.strip().lower()
+        if normalized in _LOCAL_TYPE_ALIASES:
+            choice = "local"
+        elif normalized in _CLOUD_TYPE_ALIASES:
+            choice = "cloud"
+        else:
+            error(
+                f"Unknown --type {warehouse_type!r}. Expected one of: "
+                f"{', '.join(sorted(_LOCAL_TYPE_ALIASES | _CLOUD_TYPE_ALIASES))}."
+            )
+            raise typer.Exit(1)
+    elif no_prompt:
+        error("--type is required when --no-prompt is set.")
+        raise typer.Exit(1)
+    else:
+        choice = typer.prompt(
+            "Cloud (MotherDuck) or local DuckDB? [cloud/local]",
+            default="local",
+        ).strip().lower()
+        if choice in _CLOUD_TYPE_ALIASES:
+            choice = "cloud"
+        elif choice in _LOCAL_TYPE_ALIASES:
+            choice = "local"
+        else:
+            error(f"Unknown choice: {choice!r}. Expected 'cloud' or 'local'.")
+            raise typer.Exit(1)
 
-    if choice in ("cloud", "c", "motherduck", "md"):
-        default_name = str(raw.get("name", config.root.name)).replace("-", "_")
-        md_name = typer.prompt("MotherDuck database name", default=default_name).strip()
+    # ---- Resolve type-specific value ----
+    if choice == "cloud":
+        if catalog is not None:
+            md_name = catalog.strip()
+        elif no_prompt:
+            error("--catalog is required when --no-prompt is set with --type motherduck.")
+            raise typer.Exit(1)
+        else:
+            default_name = str(raw.get("name", config.root.name)).replace("-", "_")
+            md_name = typer.prompt("MotherDuck database name", default=default_name).strip()
         if not md_name:
-            error("MotherDuck database name is required.")
+            error("MotherDuck catalog name is required.")
             raise typer.Exit(1)
         warehouse_value = f"md:{md_name}"
 
@@ -255,19 +452,21 @@ def register_warehouse() -> None:
             info("`tycoon doctor` will flag this until you set it.")
 
         stack_warehouse_type = WarehouseType.motherduck.value
-    elif choice in ("local", "l", "duckdb"):
-        path_input = typer.prompt(
-            "Path to your DuckDB file (will be created on first write if missing)",
-            default="data/warehouse.duckdb",
-        ).strip()
+    else:  # local
+        if path is not None:
+            path_input = path.strip()
+        elif no_prompt:
+            path_input = "data/warehouse.duckdb"
+        else:
+            path_input = typer.prompt(
+                "Path to your DuckDB file (will be created on first write if missing)",
+                default="data/warehouse.duckdb",
+            ).strip()
         if not path_input:
             error("Warehouse path is required.")
             raise typer.Exit(1)
         warehouse_value = path_input
         stack_warehouse_type = WarehouseType.duckdb.value
-    else:
-        error(f"Unknown choice: {choice!r}. Expected 'cloud' or 'local'.")
-        raise typer.Exit(1)
 
     db = raw.setdefault("database", {})
     old_warehouse = db.get("warehouse", "")

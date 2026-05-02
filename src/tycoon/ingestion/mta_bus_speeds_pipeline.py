@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import dlt
 import httpx
-
-from tycoon.config import config
 
 # MTA Bus Speeds dataset constants (NY State Socrata)
 MTA_BUS_SPEEDS_DOMAIN = "data.ny.gov"
@@ -90,15 +89,16 @@ def mta_bus_speeds_source(
 
 
 def run_pipeline(
+    raw_db_path: Path,
     max_records: int | None = None,
     years: list[str] | None = None,
 ) -> tuple[dlt.Pipeline, Any]:
     """Create, run, and return the MTA bus speeds dlt pipeline."""
-    config.ensure_data_dir()
+    raw_db_path.parent.mkdir(parents=True, exist_ok=True)
 
     pipeline = dlt.pipeline(
         pipeline_name="mta_bus_speeds",
-        destination=dlt.destinations.duckdb(str(config.raw_db)),
+        destination=dlt.destinations.duckdb(str(raw_db_path)),
         dataset_name="raw_mta_bus_speeds",
     )
 
