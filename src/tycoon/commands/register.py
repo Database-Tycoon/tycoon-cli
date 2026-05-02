@@ -233,7 +233,7 @@ def register_dbt(
                 warn(f"Could not wire observability metadata: {exc}")
         else:
             info(
-                f"[dim]No co-located profiles.yml — skipping metadata ATTACH. "
+                "[dim]No co-located profiles.yml — skipping metadata ATTACH. "
                 "Run [bold]tycoon data observability scaffold[/bold] to add it later.[/dim]"
             )
 

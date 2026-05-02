@@ -180,7 +180,6 @@ class TestAskDoctor:
 
     def test_passes_when_init_was_run(self, project, cli_runner):
         # Simulate `tycoon ask init`
-        from tycoon.commands import sync_cmd as sync_mod  # ensure module loaded
         from tycoon.config import TycoonConfig
         from tycoon.nao import write_nao_project
 

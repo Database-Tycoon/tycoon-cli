@@ -113,7 +113,7 @@ def observability_scaffold(
             if changed:
                 info(f"Added [bold]tycoon_meta[/bold] ATTACH to {profiles_yml.relative_to(config.root)}")
             else:
-                info(f"[dim]profiles.yml already has the tycoon_meta ATTACH — nothing to do.[/dim]")
+                info("[dim]profiles.yml already has the tycoon_meta ATTACH — nothing to do.[/dim]")
 
     success("Observability scaffolding complete.")
     next_steps(
