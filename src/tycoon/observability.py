@@ -237,6 +237,14 @@ def capture_dlt(metadata_db: Path, raw_db: Path) -> int:
     using ``ON CONFLICT DO NOTHING`` — safe to call repeatedly; only
     new loads produce new rows.
 
+    Implementation note (issue #24): we ATTACH ``raw_db`` from
+    ``meta_con`` rather than opening a second python-level connection,
+    because DuckDB rejects intra-process opens of the same file with
+    mismatched config — and capture typically runs immediately after a
+    ``dlt.pipeline.run`` whose destination connection is still alive
+    with whatever config dlt picked. ATTACH coexists fine with that
+    open handle.
+
     Returns the number of newly-captured load entries.
     """
     if not raw_db.exists():
@@ -245,74 +253,118 @@ def capture_dlt(metadata_db: Path, raw_db: Path) -> int:
     ensure_schema(metadata_db)
 
     meta_con = duckdb.connect(str(metadata_db))
-    raw_con = duckdb.connect(str(raw_db), read_only=True)
+    raw_alias = "_tycoon_raw_capture"
     new_loads = 0
 
+    def q(name: str) -> str:
+        # Quote a SQL identifier; capture handles arbitrary user-named
+        # schemas/tables coming back from information_schema.
+        return '"' + name.replace('"', '""') + '"'
+
     try:
-        captured_at = datetime.now(tz=timezone.utc)
-        schemas = _dlt_schemas(raw_con)
+        meta_con.execute(f"ATTACH '{raw_db}' AS {q(raw_alias)} (READ_ONLY)")
+        try:
+            captured_at = datetime.now(tz=timezone.utc)
 
-        for schema in schemas:
-            cols = _dlt_loads_columns(raw_con, schema)
-            svh_expr = (
-                '"schema_version_hash"'
-                if "schema_version_hash" in cols
-                else "NULL"
-            )
-
-            loads = raw_con.execute(
-                f"""
-                SELECT
-                    load_id,
-                    status,
-                    inserted_at,
-                    {svh_expr} AS schema_version_hash
-                FROM "{schema}"."_dlt_loads"
+            schema_rows = meta_con.execute(
                 """
+                SELECT DISTINCT table_schema
+                FROM information_schema.tables
+                WHERE table_catalog = ? AND table_name = '_dlt_loads'
+                ORDER BY table_schema
+                """,
+                [raw_alias],
             ).fetchall()
+            schemas = [r[0] for r in schema_rows]
 
-            for load_id, status, inserted_at, svh in loads:
-                result = meta_con.execute(
+            for schema in schemas:
+                col_rows = meta_con.execute(
                     """
-                    INSERT INTO dlt_runs
-                      (source_schema, load_id, status, inserted_at,
-                       schema_version_hash, captured_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT DO NOTHING
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_catalog = ?
+                      AND table_schema = ?
+                      AND table_name = '_dlt_loads'
                     """,
-                    [schema, load_id, status, inserted_at, svh, captured_at],
+                    [raw_alias, schema],
+                ).fetchall()
+                cols = {r[0] for r in col_rows}
+                svh_expr = (
+                    '"schema_version_hash"'
+                    if "schema_version_hash" in cols
+                    else "NULL"
                 )
-                # DuckDB's rowcount isn't reliable for ON CONFLICT, so we
-                # track "new loads" as loads we just inserted by checking
-                # pre-existence. For v1 we'll just report len(loads) as
-                # "seen" and not over-engineer.
-                del result
-                new_loads += 1
 
-            for table in _dlt_user_tables(raw_con, schema):
-                per_load = raw_con.execute(
+                loads = meta_con.execute(
                     f"""
-                    SELECT _dlt_load_id, COUNT(*) AS rows_loaded
-                    FROM "{schema}"."{table}"
-                    WHERE _dlt_load_id IS NOT NULL
-                    GROUP BY _dlt_load_id
+                    SELECT
+                        load_id,
+                        status,
+                        inserted_at,
+                        {svh_expr} AS schema_version_hash
+                    FROM {q(raw_alias)}.{q(schema)}.{q("_dlt_loads")}
                     """
                 ).fetchall()
-                for load_id, rows_loaded in per_load:
+
+                for load_id, status, inserted_at, svh in loads:
                     meta_con.execute(
                         """
-                        INSERT INTO dlt_rows_by_table
-                          (source_schema, table_name, load_id,
-                           rows_loaded, captured_at)
-                        VALUES (?, ?, ?, ?, ?)
+                        INSERT INTO dlt_runs
+                          (source_schema, load_id, status, inserted_at,
+                           schema_version_hash, captured_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
                         ON CONFLICT DO NOTHING
                         """,
-                        [schema, table, load_id, rows_loaded, captured_at],
+                        [schema, load_id, status, inserted_at, svh, captured_at],
                     )
+                    new_loads += 1
 
-        return new_loads
+                # Per-table row counts. Filter to user-named tables
+                # (skip dlt internals + nested-table mangled names).
+                table_rows = meta_con.execute(
+                    """
+                    SELECT DISTINCT table_name
+                    FROM information_schema.columns
+                    WHERE table_catalog = ?
+                      AND table_schema = ?
+                      AND column_name = '_dlt_load_id'
+                    ORDER BY table_name
+                    """,
+                    [raw_alias, schema],
+                ).fetchall()
+                user_tables = [
+                    r[0]
+                    for r in table_rows
+                    if r[0] not in _DLT_INTERNAL_TABLES
+                    and "__" not in r[0]
+                    and not r[0].startswith("_")
+                ]
+
+                for table in user_tables:
+                    per_load = meta_con.execute(
+                        f"""
+                        SELECT _dlt_load_id, COUNT(*) AS rows_loaded
+                        FROM {q(raw_alias)}.{q(schema)}.{q(table)}
+                        WHERE _dlt_load_id IS NOT NULL
+                        GROUP BY _dlt_load_id
+                        """
+                    ).fetchall()
+                    for load_id, rows_loaded in per_load:
+                        meta_con.execute(
+                            """
+                            INSERT INTO dlt_rows_by_table
+                              (source_schema, table_name, load_id,
+                               rows_loaded, captured_at)
+                            VALUES (?, ?, ?, ?, ?)
+                            ON CONFLICT DO NOTHING
+                            """,
+                            [schema, table, load_id, rows_loaded, captured_at],
+                        )
+
+            return new_loads
+        finally:
+            meta_con.execute(f"DETACH {q(raw_alias)}")
     finally:
-        raw_con.close()
         meta_con.close()
 
 
