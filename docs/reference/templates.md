@@ -1,7 +1,8 @@
 # Templates reference
 
-Tycoon ships four built-in templates. Pick one with `tycoon init
---template <name>` or list them with `tycoon init --list-templates`.
+Tycoon ships two featured built-in templates. Pick one with `tycoon
+init --template <name>` or list them with `tycoon init
+--list-templates`.
 
 ## When to use which
 
@@ -9,8 +10,6 @@ Tycoon ships four built-in templates. Pick one with `tycoon init
 |---|---|---|---|
 | [`csv-import`](#csv-import) | CSV ingest + dbt + Rill | No | Smoke-testing the full pipeline offline |
 | [`nyc-transit`](#nyc-transit) | Live NYC public-data feeds | Yes (no auth) | Demo / showing real ingestion |
-| [`github-analytics`](#github-analytics) | GitHub repo metrics | Yes (`GITHUB_TOKEN`) | Tracking your own / a target repo |
-| [`weather-station`](#weather-station) | NOAA weather data | Yes (no auth) | Time-series / parameterized template demo |
 
 ---
 
@@ -105,76 +104,6 @@ sources:
 - Showing the full live-ingestion path
 - Time-series tables that play well with Rill dashboards
 - Conference talks (the public-data part is the legible bit)
-
----
-
-## `github-analytics`
-
-Pulls commits, issues, and PRs from a parameterized GitHub repo.
-
-```bash
-tycoon init --template github-analytics --name gh-demo \
-  --param owner=anthropics --param repo=claude-code
-
-export GITHUB_TOKEN=ghp_...
-tycoon data sources run github
-```
-
-### Template parameters
-
-The `github-analytics` template declares two required parameters via
-its `template.yml`:
-
-| Param | Description |
-|---|---|
-| `owner` | GitHub org or user (e.g. `anthropics`) |
-| `repo` | Repository name (e.g. `claude-code`) |
-
-If you omit them on the CLI, `tycoon init` prompts interactively.
-
-### Auth
-
-`GITHUB_TOKEN` must be set in the environment. `tycoon data sources run
-github` will warn loudly if the token is missing or unexpanded in
-`tycoon.yml`.
-
-### Useful for
-
-- Tracking metrics on a specific OSS project
-- Demoing template parameterization (`--param name=value`)
-
----
-
-## `weather-station`
-
-NOAA weather data for a specific station, parameterized per location.
-
-```bash
-tycoon init --template weather-station --name kjfk \
-  --param station_id=KJFK --param office=OKX \
-  --param gridX=32 --param gridY=34
-
-tycoon data sources run noaa
-```
-
-### Template parameters
-
-| Param | Description |
-|---|---|
-| `station_id` | NOAA station code (e.g. `KJFK`, `KSFO`) |
-| `office` | NOAA forecast office identifier (e.g. `OKX`) |
-| `gridX` | NOAA grid X coordinate |
-| `gridY` | NOAA grid Y coordinate |
-
-Find the right values for any location at
-[weather.gov](https://forecast.weather.gov/).
-
-### Useful for
-
-- Time-series demos that need a known stable data source
-- Showing template parameterization with multi-param prompts
-- The `xfail`-on-upstream-flake e2e marker — when NOAA's API has an
-  outage, the test marks as expected-fail rather than red
 
 ---
 

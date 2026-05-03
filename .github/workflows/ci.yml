@@ -148,7 +148,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        template: [csv-import, nyc-transit, github-analytics, weather-station]
+        template: [csv-import, nyc-transit]
     steps:
       - uses: actions/checkout@v6
 
@@ -161,29 +161,11 @@ jobs:
         run: uv sync
 
       - name: Init project from template
-        # Each template that takes parameters supplies them inline. We
-        # don't need real values — `init` only validates that the
-        # placeholders are non-empty before scaffolding.
         run: |
           mkdir -p /tmp/smoke-${{ matrix.template }}
           cd /tmp/smoke-${{ matrix.template }}
-          case "${{ matrix.template }}" in
-            github-analytics)
-              uv run --project ${{ github.workspace }} tycoon init \
-                --template ${{ matrix.template }} \
-                --param owner=anthropics --param repo=claude-code
-              ;;
-            weather-station)
-              uv run --project ${{ github.workspace }} tycoon init \
-                --template ${{ matrix.template }} \
-                --param station_id=KJFK --param office=OKX \
-                --param gridX=32 --param gridY=34
-              ;;
-            *)
-              uv run --project ${{ github.workspace }} tycoon init \
-                --template ${{ matrix.template }}
-              ;;
-          esac
+          uv run --project ${{ github.workspace }} tycoon init \
+            --template ${{ matrix.template }}
 
       - name: tycoon doctor (no errors)
         run: |

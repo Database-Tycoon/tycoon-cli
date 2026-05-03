@@ -127,10 +127,12 @@ Tycoon's own CI workflows (`.github/workflows/ci.yml`, `.github/workflows/e2e.ym
 
 ## Used by tests
 
-The `e2e` pytest marker requires network access; some tests (currently `test_github_analytics_e2e`) also need `GITHUB_TOKEN`. Tests that need a token `pytest.skip()` when it's absent, so a partial run is still useful.
+The `e2e` pytest marker requires network access. Tests live under
+`tests/test_templates_e2e.py`; tests that need credentials
+`pytest.skip()` when the relevant env var is absent.
 
 ```bash
-GITHUB_TOKEN=ghp_… uv run pytest -m e2e
+uv run pytest -m e2e
 ```
 
 ## Not consulted by tycoon

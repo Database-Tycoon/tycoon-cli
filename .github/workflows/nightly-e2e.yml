@@ -1,9 +1,7 @@
 name: Nightly e2e (live APIs)
 
 # Runs the no-credential live-API tests overnight so upstream API drift
-# surfaces against an issue rather than failing during a release. Tests
-# that need credentials (test_github_analytics_e2e) are deliberately
-# excluded — they live in e2e.yml on manual dispatch with a token slot.
+# surfaces against an issue rather than failing during a release.
 #
 # Why nightly: the live-API tests are flaky on the order of upstream
 # infrastructure. A daily cadence catches drift fast enough to act on,
@@ -40,12 +38,9 @@ jobs:
 
       - name: Run no-credential live-API e2e tests
         id: e2e
-        # Pin to the two no-cred tests; skip github-analytics (needs
-        # GITHUB_TOKEN) and the offline csv-import (already in default).
         run: |
           uv run pytest -m e2e -v \
             tests/test_templates_e2e.py::test_nyc_transit_e2e \
-            tests/test_templates_e2e.py::test_weather_station_e2e \
             2>&1 | tee /tmp/e2e.log
 
       - name: Open issue on failure
@@ -64,7 +59,7 @@ jobs:
           **Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
           **Tests:** \`pytest -m e2e\` against the no-credential subset
-          (nyc-transit + weather-station).
+          (nyc-transit).
 
           ## Triage steps
 
