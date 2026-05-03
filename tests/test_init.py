@@ -154,7 +154,7 @@ class TestBlankScaffold:
         from tycoon.commands import ask as ask_mod
 
         # Stub the probe: LM Studio dead, Ollama reachable.
-        def stub_probe(url):
+        def stub_probe(url, _provider="lm-studio"):
             if "11434" in url:
                 return (True, 1, None)
             return (False, 0, "no")
@@ -186,7 +186,7 @@ class TestBlankScaffold:
         from tycoon.commands import ask as ask_mod
 
         # Stub: LM Studio reachable.
-        def stub_probe(url):
+        def stub_probe(url, _provider="lm-studio"):
             if "1234" in url:
                 return (True, 1, None)
             return (False, 0, "no")
@@ -214,7 +214,7 @@ class TestBlankScaffold:
         """Both reachable, both have models — truly ambiguous, fall to menu."""
         from tycoon.commands import ask as ask_mod
 
-        monkeypatch.setattr(ask_mod, "_probe_local_llm", lambda _url: (True, 1, None))
+        monkeypatch.setattr(ask_mod, "_probe_local_llm", lambda *_a, **_kw: (True, 1, None))
 
         proj = tmp_path / "isolated" / "both-loaded"
         proj.mkdir(parents=True)
@@ -236,7 +236,7 @@ class TestBlankScaffold:
         (LM Studio would need a model install anyway)."""
         from tycoon.commands import ask as ask_mod
 
-        def stub_probe(url):
+        def stub_probe(url, _provider="lm-studio"):
             if "11434" in url:
                 return (True, 2, None)  # Ollama: 2 models loaded
             return (True, 0, None)  # LM Studio: 0 models loaded

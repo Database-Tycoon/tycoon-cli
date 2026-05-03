@@ -569,10 +569,10 @@ def _detect_local_llm() -> list[tuple[str, int]]:
     from tycoon.nao import _LM_STUDIO_PRESET, _OLLAMA_PRESET
 
     detected: list[tuple[str, int]] = []
-    lm_ok, lm_count, _ = _probe_local_llm(_LM_STUDIO_PRESET["base_url"])
+    lm_ok, lm_count, _ = _probe_local_llm(_LM_STUDIO_PRESET["base_url"], "lm-studio")
     if lm_ok:
         detected.append(("lm-studio", lm_count))
-    ol_ok, ol_count, _ = _probe_local_llm(_OLLAMA_PRESET["base_url"])
+    ol_ok, ol_count, _ = _probe_local_llm(_OLLAMA_PRESET["base_url"], "ollama")
     if ol_ok:
         detected.append(("ollama", ol_count))
     return detected

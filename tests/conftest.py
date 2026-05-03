@@ -37,5 +37,5 @@ def _stub_local_llm_probe(monkeypatch):
     from tycoon.commands import ask as ask_mod
 
     monkeypatch.setattr(
-        ask_mod, "_probe_local_llm", lambda _url: (False, 0, "stub: no probe")
+        ask_mod, "_probe_local_llm", lambda *_args, **_kw: (False, 0, "stub: no probe")
     )

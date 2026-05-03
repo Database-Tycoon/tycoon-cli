@@ -90,18 +90,45 @@ def _local_llm_base_url(llm) -> str | None:
     return None
 
 
-def _probe_local_llm(base_url: str) -> tuple[bool, int, str | None]:
-    """Hit ``GET <base_url>/models`` to count loaded models.
+def _probe_local_llm(
+    base_url: str, provider: str = "lm-studio"
+) -> tuple[bool, int, str | None]:
+    """Hit the runtime's models endpoint and return loaded-model count.
 
-    Returns ``(reachable, model_count, error_message)``. Both LM Studio
-    and Ollama (since 0.1.27) expose the OpenAI-compatible endpoint at
-    ``/models`` — same probe works for both.
+    Returns ``(reachable, model_count, error_message)``.
 
-    Used by `tycoon ask doctor` and the pre-launch check in
-    `tycoon ask chat`. Bounded at 2s so doctor stays snappy.
+    **Provider-specific behavior:**
+
+    - For LM Studio, hits the richer ``/api/v0/models`` endpoint and
+      counts models with ``state == "loaded"`` (i.e. actively held in
+      memory). The OpenAI-compat ``/v1/models`` endpoint LM Studio
+      exposes returns *downloaded* models regardless of load state —
+      using it would falsely say "2 models loaded" when the user has
+      gemma downloaded but ejected. Fallback to /v1/models if the v0
+      endpoint isn't available (older LM Studio versions).
+    - For Ollama, /v1/models is sufficient: Ollama auto-loads on
+      first request, so "pulled" effectively means "ready".
+    - For unknown providers, fall back to /v1/models.
+
+    Bounded at 2s so wizard auto-detect + doctor stay snappy.
     """
     try:
         import httpx
+
+        # LM Studio's loaded-state-aware endpoint. base_url usually ends
+        # in /v1; strip it to reach the API root, then hit /api/v0/models.
+        if provider == "lm-studio":
+            api_root = base_url.rstrip("/").rsplit("/v1", 1)[0]
+            try:
+                with httpx.Client(timeout=2.0) as client:
+                    resp = client.get(f"{api_root}/api/v0/models")
+                if resp.status_code == 200:
+                    data = (resp.json() or {}).get("data") or []
+                    loaded = [m for m in data if m.get("state") == "loaded"]
+                    return True, len(loaded), None
+                # Fall through to /v1/models on non-200 (e.g. older LM Studio).
+            except Exception:
+                pass  # Fall through to /v1/models.
 
         with httpx.Client(timeout=2.0) as client:
             resp = client.get(f"{base_url}/models")
@@ -150,7 +177,7 @@ def _offer_model_install(provider: str) -> None:
         if provider == "lm-studio"
         else _OLLAMA_PRESET["base_url"]
     )
-    reachable, model_count, err = _probe_local_llm(base_url)
+    reachable, model_count, err = _probe_local_llm(base_url, provider)
 
     if not reachable:
         warn(
@@ -474,7 +501,7 @@ def ask_chat(
     if llm.provider in ("lm-studio", "ollama"):
         base_url = _local_llm_base_url(llm)
         if base_url:
-            reachable, model_count, probe_err = _probe_local_llm(base_url)
+            reachable, model_count, probe_err = _probe_local_llm(base_url, llm.provider)
             label = "LM Studio" if llm.provider == "lm-studio" else "Ollama"
             if not reachable:
                 error(
@@ -693,7 +720,9 @@ def ask_doctor() -> None:
     if llm and llm.provider in ("lm-studio", "ollama"):
         label = label_for[llm.provider]
         base_url = _local_llm_base_url(llm)
-        reachable, model_count, err = _probe_local_llm(base_url) if base_url else (False, 0, "no base_url")
+        reachable, model_count, err = (
+            _probe_local_llm(base_url, llm.provider) if base_url else (False, 0, "no base_url")
+        )
         if not reachable:
             rows.append((label, "FAIL", f"{base_url} unreachable: {err}"))
         elif model_count == 0:

@@ -14,6 +14,12 @@ import pytest
 
 from tycoon.cli import app
 
+# Captured at module-load time, BEFORE the autouse `_stub_local_llm_probe`
+# fixture replaces `ask._probe_local_llm` with a stub. Tests that need
+# to exercise the real probe (against a stubbed httpx) reach for this
+# rather than re-importing inside the test body.
+from tycoon.commands.ask import _probe_local_llm as _REAL_PROBE_LOCAL_LLM
+
 
 def _write_tycoon_yml(root: Path) -> None:
     (root / "tycoon.yml").write_text(
@@ -391,6 +397,168 @@ class TestRegisterLlmSeedExcludeSchemas:
         assert data["ask"]["exclude_schemas"] == ["my_custom_noise"]
 
 
+class TestProbeLocalLlm:
+    """Provider-specific probe behavior. Issue: LM Studio's
+    ``GET /v1/models`` returns DOWNLOADED models regardless of load
+    state, so counting it gives a misleading "N model(s) loaded"
+    when 0 are actually held in memory. Fix: hit the richer
+    ``/api/v0/models`` endpoint for LM Studio and count only
+    ``state == "loaded"`` rows.
+    """
+
+    def test_lm_studio_uses_v0_endpoint_and_filters_loaded(self, monkeypatch):
+        """LM Studio probe must distinguish downloaded from loaded."""
+        from tycoon.commands import ask as ask_mod
+
+        # Restore the real probe (autouse stub replaced it).
+        monkeypatch.setattr(ask_mod, "_probe_local_llm", _REAL_PROBE_LOCAL_LLM)
+
+        # Stub httpx so we can simulate LM Studio's /api/v0/models response.
+        recorded_urls: list[str] = []
+
+        class _StubResp:
+            def __init__(self, status: int, body: dict):
+                self.status_code = status
+                self._body = body
+
+            def json(self):
+                return self._body
+
+        class _StubClient:
+            def __init__(self, *_a, **_kw):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+            def get(self, url):
+                recorded_urls.append(url)
+                # Mimic LM Studio: 2 models DOWNLOADED, 0 LOADED.
+                return _StubResp(
+                    200,
+                    {
+                        "data": [
+                            {
+                                "id": "google/gemma-4-26b-a4b",
+                                "state": "not-loaded",
+                            },
+                            {
+                                "id": "text-embedding-nomic-embed-text-v1.5",
+                                "state": "not-loaded",
+                            },
+                        ]
+                    },
+                )
+
+        import httpx
+        monkeypatch.setattr(httpx, "Client", _StubClient)
+
+        reachable, count, err = _REAL_PROBE_LOCAL_LLM(
+            "http://localhost:1234/v1", provider="lm-studio"
+        )
+        # Critical assertion: 0 loaded even though 2 are downloaded.
+        # Without the v0-endpoint fix, this would say 2.
+        assert reachable is True
+        assert count == 0, (
+            f"expected 0 loaded models, got {count} — probe is "
+            f"counting downloaded models instead of loaded"
+        )
+        assert err is None
+        # Verify the v0 endpoint was actually called.
+        assert any("/api/v0/models" in u for u in recorded_urls)
+
+    def test_lm_studio_v0_counts_loaded_models(self, monkeypatch):
+        """When some models ARE loaded, count them correctly."""
+        from tycoon.commands import ask as ask_mod
+        from tycoon.commands.ask import _probe_local_llm
+
+        monkeypatch.setattr(ask_mod, "_probe_local_llm", _probe_local_llm)
+
+        class _StubResp:
+            def __init__(self, body):
+                self.status_code = 200
+                self._body = body
+
+            def json(self):
+                return self._body
+
+        class _StubClient:
+            def __init__(self, *_a, **_kw):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+            def get(self, url):
+                return _StubResp(
+                    {
+                        "data": [
+                            {"id": "qwen2.5-coder", "state": "loaded"},
+                            {"id": "embedding", "state": "loaded"},
+                            {"id": "llama-3", "state": "not-loaded"},
+                        ]
+                    }
+                )
+
+        import httpx
+        monkeypatch.setattr(httpx, "Client", _StubClient)
+
+        reachable, count, _ = _REAL_PROBE_LOCAL_LLM(
+            "http://localhost:1234/v1", provider="lm-studio"
+        )
+        assert reachable is True
+        assert count == 2  # qwen + embedding loaded; llama not
+
+    def test_ollama_uses_v1_models(self, monkeypatch):
+        """Ollama doesn't expose a v0 endpoint; v1/models is fine since
+        Ollama auto-loads on first request."""
+        from tycoon.commands import ask as ask_mod
+        from tycoon.commands.ask import _probe_local_llm
+
+        monkeypatch.setattr(ask_mod, "_probe_local_llm", _probe_local_llm)
+
+        recorded_urls: list[str] = []
+
+        class _StubResp:
+            def __init__(self, body):
+                self.status_code = 200
+                self._body = body
+
+            def json(self):
+                return self._body
+
+        class _StubClient:
+            def __init__(self, *_a, **_kw):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+            def get(self, url):
+                recorded_urls.append(url)
+                return _StubResp({"data": [{"id": "llama3.2"}]})
+
+        import httpx
+        monkeypatch.setattr(httpx, "Client", _StubClient)
+
+        reachable, count, _ = _REAL_PROBE_LOCAL_LLM(
+            "http://localhost:11434/v1", provider="ollama"
+        )
+        assert reachable is True
+        assert count == 1
+        # Ollama should NOT be hit at /api/v0/models (LM-Studio-only).
+        assert all("/api/v0/models" not in u for u in recorded_urls)
+
+
 class TestAskChatRequiresLLM:
     """`tycoon ask chat` must fail-fast with a directing error when no
     LLM provider is configured. Launching Nao with no brain is a worse
@@ -439,7 +607,7 @@ class TestAskChatRequiresLLM:
         monkeypatch.setattr(ask_mod, "config", TycoonConfig(project_root=project))
         # Stub the probe to simulate "reachable, 0 models".
         monkeypatch.setattr(
-            ask_mod, "_probe_local_llm", lambda _url: (True, 0, None)
+            ask_mod, "_probe_local_llm", lambda *_a, **_kw: (True, 0, None)
         )
 
         result = cli_runner.invoke(app, ["ask", "chat"])
@@ -464,7 +632,7 @@ class TestOfferModelInstall:
 
         monkeypatch.setattr(
             ask_mod, "_probe_local_llm",
-            lambda _url: (reachable, model_count, None if reachable else "stub error"),
+            lambda *_a, **_kw: (reachable, model_count, None if reachable else "stub error"),
         )
         # Pretend `ollama` binary is / isn't on PATH.
         import shutil
