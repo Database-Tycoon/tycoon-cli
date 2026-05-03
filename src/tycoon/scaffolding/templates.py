@@ -199,9 +199,10 @@ def scaffold_blank_project(
             "orchestrator_managed": stack.orchestrator_managed,
         }
 
-    # Record the LLM provider chosen during the wizard so `tycoon ask init`
-    # can expand the shortcut without re-prompting. Skipping (None) leaves
-    # the ask block off — `tycoon ask init --llm <provider>` adds it later.
+    # Record the LLM provider chosen during the wizard so the chained
+    # `setup_ask_stack()` call (or a later `tycoon register llm`) can
+    # expand the shortcut without re-prompting. Skipping (None) leaves
+    # the ask block off — `tycoon register llm <provider>` adds it later.
     if llm_provider:
         project_data["ask"] = {"llm": {"provider": llm_provider}}
 

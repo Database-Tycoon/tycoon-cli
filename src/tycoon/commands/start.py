@@ -110,13 +110,13 @@ def _preflight_checks(targets: list[str]) -> None:
             targets.remove("nao")
             return
         if not (config.nao_dir / "nao_config.yaml").exists():
-            warn("Nao not initialised. Run [bold]tycoon ask init && tycoon ask sync[/bold] first.")
+            warn("Nao not initialised. Run [bold]tycoon register llm <provider> && tycoon ask sync[/bold] first.")
             targets.remove("nao")
 
     if "dagster" in targets:
         import shutil
         if not shutil.which("dagster"):
-            warn("dagster not found — skipping. Install with: [bold]pip install tycoon\\[dagster][/bold]")
+            warn("dagster not found — skipping. Install with: [bold]pip install 'database-tycoon[dagster]'[/bold]")
             targets.remove("dagster")
 
 

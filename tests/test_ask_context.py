@@ -452,7 +452,7 @@ class TestAskChatRequiresLLM:
 
 class TestOfferModelInstall:
     """The probe-and-offer flow that runs at the tail of `tycoon init`
-    (when wizard picks a local LLM) and `tycoon ask init --llm <p>`.
+    (when wizard picks a local LLM) and `tycoon register llm <p>`.
 
     Calls `_offer_model_install` directly rather than via the CLI so we
     can exhaustively cover the four states (cloud / unreachable / ready /
