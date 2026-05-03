@@ -559,6 +559,161 @@ class TestProbeLocalLlm:
         assert all("/api/v0/models" not in u for u in recorded_urls)
 
 
+class TestLmStudioAutoLoad:
+    """`_offer_lm_studio_load` runs `lms load <model>` to put a
+    downloaded-but-not-loaded chat model into memory. Saves the user a
+    trip to the LM Studio GUI when they have models on disk but
+    nothing currently active.
+    """
+
+    def _stub_chat_models(self, monkeypatch, models: list[dict]):
+        """Override the LM Studio /api/v0/models probe."""
+        from tycoon.commands import ask as ask_mod
+        monkeypatch.setattr(
+            ask_mod, "_lm_studio_chat_models", lambda _url: models
+        )
+
+    def _stub_lms_binary(self, monkeypatch, path: str | None):
+        """Override the lms-binary lookup."""
+        from tycoon.commands import ask as ask_mod
+        monkeypatch.setattr(ask_mod, "_lms_binary", lambda: path)
+
+    def _stub_subprocess(self, monkeypatch, returncode: int = 0):
+        """Capture subprocess.run calls."""
+        import subprocess
+        calls: list[list[str]] = []
+
+        class _R:
+            def __init__(self, rc):
+                self.returncode = rc
+
+        def fake_run(cmd, *_a, **_kw):
+            calls.append(cmd)
+            return _R(returncode)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        return calls
+
+    def test_returns_false_when_no_chat_models_downloaded(self, monkeypatch):
+        from tycoon.commands.ask import _offer_lm_studio_load
+
+        self._stub_chat_models(monkeypatch, [])
+        self._stub_lms_binary(monkeypatch, "/usr/bin/lms")
+        assert _offer_lm_studio_load("http://localhost:1234/v1") is False
+
+    def test_returns_true_when_already_loaded(self, monkeypatch):
+        """If a chat model is already loaded, no work to do."""
+        from tycoon.commands.ask import _offer_lm_studio_load
+
+        self._stub_chat_models(monkeypatch, [
+            {"id": "qwen2.5-coder:7b", "type": "llm", "state": "loaded"},
+        ])
+        # Even without lms binary, returns True since nothing to do.
+        self._stub_lms_binary(monkeypatch, None)
+        assert _offer_lm_studio_load("http://localhost:1234/v1") is True
+
+    def test_returns_false_when_lms_missing(self, monkeypatch):
+        """Models downloaded but lms CLI not on PATH → can't auto-load."""
+        from tycoon.commands.ask import _offer_lm_studio_load
+
+        self._stub_chat_models(monkeypatch, [
+            {"id": "gemma-4-26b", "type": "vlm", "state": "not-loaded"},
+        ])
+        self._stub_lms_binary(monkeypatch, None)
+        assert _offer_lm_studio_load("http://localhost:1234/v1") is False
+
+    def test_returns_false_when_user_declines(self, monkeypatch):
+        from tycoon.commands.ask import _offer_lm_studio_load
+        import typer
+
+        self._stub_chat_models(monkeypatch, [
+            {"id": "gemma-4-26b", "type": "vlm", "state": "not-loaded"},
+        ])
+        self._stub_lms_binary(monkeypatch, "/usr/bin/lms")
+        monkeypatch.setattr(typer, "confirm", lambda *_a, **_kw: False)
+        calls = self._stub_subprocess(monkeypatch)
+
+        assert _offer_lm_studio_load("http://localhost:1234/v1") is False
+        assert calls == []  # never invoked lms
+
+    def test_loads_via_lms_when_user_confirms(self, monkeypatch):
+        from tycoon.commands.ask import _offer_lm_studio_load
+        import typer
+
+        self._stub_chat_models(monkeypatch, [
+            {"id": "gemma-4-26b", "type": "vlm", "state": "not-loaded"},
+        ])
+        self._stub_lms_binary(monkeypatch, "/path/to/lms")
+        monkeypatch.setattr(typer, "confirm", lambda *_a, **_kw: True)
+        calls = self._stub_subprocess(monkeypatch, returncode=0)
+
+        assert _offer_lm_studio_load("http://localhost:1234/v1") is True
+        assert calls == [["/path/to/lms", "load", "gemma-4-26b"]]
+
+    def test_returns_false_on_lms_failure(self, monkeypatch):
+        from tycoon.commands.ask import _offer_lm_studio_load
+        import typer
+
+        self._stub_chat_models(monkeypatch, [
+            {"id": "gemma-4-26b", "type": "vlm", "state": "not-loaded"},
+        ])
+        self._stub_lms_binary(monkeypatch, "/path/to/lms")
+        monkeypatch.setattr(typer, "confirm", lambda *_a, **_kw: True)
+        self._stub_subprocess(monkeypatch, returncode=1)
+
+        assert _offer_lm_studio_load("http://localhost:1234/v1") is False
+
+    def test_prefers_qwen_coder_when_available(self, monkeypatch):
+        """Multiple chat models — Qwen 2.5 Coder is the recommended pick."""
+        from tycoon.commands.ask import _offer_lm_studio_load
+        import typer
+
+        self._stub_chat_models(monkeypatch, [
+            {"id": "google/gemma-4-26b", "type": "vlm", "state": "not-loaded"},
+            {"id": "qwen/Qwen2.5-Coder-7B-Instruct", "type": "llm", "state": "not-loaded"},
+            {"id": "meta-llama/llama-3.2-3b", "type": "llm", "state": "not-loaded"},
+        ])
+        self._stub_lms_binary(monkeypatch, "/path/to/lms")
+        monkeypatch.setattr(typer, "confirm", lambda *_a, **_kw: True)
+        calls = self._stub_subprocess(monkeypatch, returncode=0)
+
+        assert _offer_lm_studio_load("http://localhost:1234/v1") is True
+        # Qwen Coder was picked despite gemma being first in the list.
+        assert calls[0][2] == "qwen/Qwen2.5-Coder-7B-Instruct"
+
+
+class TestLmStudioChatModelsHelper:
+    """`_lm_studio_chat_models` filters embeddings out of /api/v0/models
+    response so the auto-load offer only considers models that can
+    actually answer chat queries.
+    """
+
+    def test_filters_embeddings(self, monkeypatch):
+        from tycoon.commands.ask import _lm_studio_chat_models
+        import httpx
+
+        class _Resp:
+            status_code = 200
+            def json(self):
+                return {"data": [
+                    {"id": "qwen2.5-coder", "type": "llm", "state": "loaded"},
+                    {"id": "nomic-embed", "type": "embeddings", "state": "loaded"},
+                    {"id": "gemma-vlm", "type": "vlm", "state": "not-loaded"},
+                ]}
+
+        class _Client:
+            def __init__(self, *_a, **_kw): pass
+            def __enter__(self): return self
+            def __exit__(self, *_a): return False
+            def get(self, _url): return _Resp()
+
+        monkeypatch.setattr(httpx, "Client", _Client)
+
+        models = _lm_studio_chat_models("http://localhost:1234/v1")
+        assert {m["id"] for m in models} == {"qwen2.5-coder", "gemma-vlm"}
+        assert not any(m["type"] == "embeddings" for m in models)
+
+
 class TestAskChatRequiresLLM:
     """`tycoon ask chat` must fail-fast with a directing error when no
     LLM provider is configured. Launching Nao with no brain is a worse
@@ -651,6 +806,10 @@ class TestOfferModelInstall:
         # Auto-confirm the prompt.
         import typer as _t
         monkeypatch.setattr(_t, "confirm", lambda *a, **kw: True)
+        # Default: no LM Studio chat models downloaded so the auto-load
+        # path is a no-op for the LM Studio test. Tests that exercise
+        # auto-load specifically live in TestLmStudioAutoLoad.
+        monkeypatch.setattr(ask_mod, "_lm_studio_chat_models", lambda _url: [])
         ask_mod._offer_model_install(provider)
         return run_calls
 

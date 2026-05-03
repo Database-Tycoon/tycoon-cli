@@ -153,6 +153,111 @@ _RECOMMENDED_MODEL = {
 }
 
 
+def _lm_studio_chat_models(base_url: str) -> list[dict]:
+    """Return chat-capable downloaded models from LM Studio with state info.
+
+    Each entry is a dict from LM Studio's /api/v0/models response — at
+    minimum has ``id``, ``state`` (``"loaded"`` / ``"not-loaded"``), and
+    ``type`` (``"llm"`` / ``"vlm"`` / ``"embeddings"``). Filters out
+    embeddings (can't chat). Returns empty list if probe fails or
+    endpoint is unavailable (older LM Studio versions).
+    """
+    try:
+        import httpx
+
+        api_root = base_url.rstrip("/").rsplit("/v1", 1)[0]
+        with httpx.Client(timeout=2.0) as client:
+            resp = client.get(f"{api_root}/api/v0/models")
+        if resp.status_code != 200:
+            return []
+        data = (resp.json() or {}).get("data") or []
+        # Embeddings can't satisfy a chat completion. Everything else
+        # (llm, vlm, etc.) is potentially chat-capable.
+        return [m for m in data if m.get("type") != "embeddings"]
+    except Exception:
+        return []
+
+
+def _lms_binary() -> str | None:
+    """Locate the LM Studio CLI (`lms`) for auto-load.
+
+    Tries PATH first, then the standard install location LM Studio's
+    Mac installer drops at ``~/.cache/lm-studio/bin/lms``. Returns None
+    if neither is present — caller falls back to the GUI hint.
+    """
+    import shutil
+    from pathlib import Path
+
+    found = shutil.which("lms")
+    if found:
+        return found
+    standard = Path.home() / ".cache" / "lm-studio" / "bin" / "lms"
+    if standard.exists():
+        return str(standard)
+    return None
+
+
+def _offer_lm_studio_load(base_url: str) -> bool:
+    """Offer to load an already-downloaded LM Studio chat model.
+
+    Returns True if a model is now loaded (either was already, or just
+    got loaded by us). Returns False if:
+
+    - Probe failed or no chat models are downloaded
+    - ``lms`` CLI isn't on PATH (or at the standard cache location)
+    - User declined the prompt
+    - ``lms load`` exited non-zero
+
+    On False, the caller should fall through to the download offer.
+    """
+    chat_models = _lm_studio_chat_models(base_url)
+    if not chat_models:
+        return False
+
+    loaded = [m for m in chat_models if m.get("state") == "loaded"]
+    if loaded:
+        return True  # already in memory, no work needed
+    not_loaded = [m for m in chat_models if m.get("state") != "loaded"]
+    if not not_loaded:
+        return False
+
+    lms = _lms_binary()
+    if lms is None:
+        return False
+
+    # Pick which to load. Prefer the recommended Qwen 2.5 Coder if it's
+    # downloaded; otherwise pick the first available chat model.
+    preferred = next(
+        (
+            m for m in not_loaded
+            if "qwen" in m["id"].lower() and "coder" in m["id"].lower()
+        ),
+        not_loaded[0],
+    )
+    model_id = preferred["id"]
+
+    info(
+        f"LM Studio has [bold]{len(not_loaded)}[/bold] chat model(s) "
+        "downloaded but none in memory."
+    )
+    if not typer.confirm(f"Load [bold]{model_id}[/bold] now?", default=True):
+        return False
+
+    info(
+        f"Running [bold]lms load {model_id}[/bold] — may take 5-30s "
+        "depending on model size and disk speed..."
+    )
+    result = subprocess.run([lms, "load", model_id])
+    if result.returncode == 0:
+        success(f"Loaded {model_id} — chat is ready.")
+        return True
+    warn(
+        f"`lms load` exited {result.returncode}. Try manually: "
+        f"[bold]{lms} load {model_id}[/bold]"
+    )
+    return False
+
+
 def _offer_model_install(provider: str) -> None:
     """Probe the local LLM provider and, if no model is loaded, offer
     to install the recommended one. Best-effort — bails quietly if the
@@ -195,12 +300,20 @@ def _offer_model_install(provider: str) -> None:
         )
         return
 
-    # Reachable, 0 models — offer the install.
+    # Reachable, 0 models — try to load an existing downloaded model
+    # before offering download. For LM Studio specifically: if chat
+    # models are downloaded but ejected, `lms load` puts one in memory
+    # in 5-30s. No download required.
+    if provider == "lm-studio" and _offer_lm_studio_load(base_url):
+        return  # successfully loaded an already-downloaded model
+
+    # Reachable, 0 models, nothing to load — offer the download.
     rec = _RECOMMENDED_MODEL
     warn(f"{label} reachable at {base_url} but 0 models are loaded.")
 
     if provider == "lm-studio":
-        # No clean LM Studio CLI flow — just surface the GUI steps.
+        # No chat models downloaded (or `lms` not available) — fall back
+        # to the GUI install steps.
         info(_model_install_hint("lm-studio"))
         return
 
@@ -510,12 +623,18 @@ def ask_chat(
                 )
                 raise typer.Exit(1)
             if model_count == 0:
-                error(
-                    f"{label} is reachable at [bold]{base_url}[/bold] but "
-                    f"has 0 models loaded — chat would have nothing to ask."
-                )
-                info(_model_install_hint(llm.provider))
-                raise typer.Exit(1)
+                # Try to load an existing downloaded model before
+                # bailing — users hitting `tycoon ask chat` with a
+                # cold LM Studio shouldn't have to switch commands.
+                if llm.provider == "lm-studio" and _offer_lm_studio_load(base_url):
+                    pass  # successfully loaded; continue to launch chat
+                else:
+                    error(
+                        f"{label} is reachable at [bold]{base_url}[/bold] but "
+                        f"has 0 models loaded — chat would have nothing to ask."
+                    )
+                    info(_model_install_hint(llm.provider))
+                    raise typer.Exit(1)
 
     # Auto-init if no config exists yet
     nao_config = config.nao_dir / "nao_config.yaml"
