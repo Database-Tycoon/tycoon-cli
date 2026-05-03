@@ -109,11 +109,12 @@ class TestWizardGreenfield:
         project = tmp_path / "green"
         project.mkdir()
         monkeypatch.chdir(project)
-        # ingestion=dlt, warehouse=local, dbt=create, rill=create, orch=dagster
+        # ingestion=dlt, warehouse=local, dbt=create, rill=create,
+        # llm=lm-studio, orch=dagster
         result = cli_runner.invoke(
             app,
             ["init", "--name", "green"],
-            input="1\n1\n1\n1\n1\n",
+            input="1\n1\n1\n1\n1\n1\n",
         )
         assert result.exit_code == 0, result.stdout
 
@@ -130,11 +131,12 @@ class TestWizardGreenfield:
         project = tmp_path / "skippy"
         project.mkdir()
         monkeypatch.chdir(project)
-        # ingestion=skip, warehouse=local, dbt=skip, rill=skip, orch=skip
+        # ingestion=skip(3), warehouse=local(1), dbt=skip(3), rill=skip(3),
+        # llm=skip(7), orch=skip(3)
         result = cli_runner.invoke(
             app,
             ["init", "--name", "skippy"],
-            input="3\n1\n3\n3\n3\n",
+            input="3\n1\n3\n3\n7\n3\n",
         )
         assert result.exit_code == 0, result.stdout
 
@@ -153,7 +155,7 @@ class TestWizardGreenfield:
         result = cli_runner.invoke(
             app,
             ["init", "--name", "myproj"],
-            input="1\n1\n1\n1\n1\n",  # dbt "create" = sibling
+            input="1\n1\n1\n1\n1\n1\n",  # dbt "create" = sibling
         )
         assert result.exit_code == 0, result.stdout
 
@@ -175,11 +177,12 @@ class TestWizardDetection:
         (dbt / "dbt_project.yml").write_text("name: mine\nversion: '1.0.0'\nconfig-version: 2\nprofile: mine\n")
 
         monkeypatch.chdir(project)
-        # ingestion=dlt, warehouse=local, dbt=1 (detected), rill=1 (create), orch=1
+        # ingestion=dlt, warehouse=local, dbt=1 (detected), rill=1 (create),
+        # llm=lm-studio, orch=1
         result = cli_runner.invoke(
             app,
             ["init", "--name", "myproj"],
-            input="1\n1\n1\n1\n1\n",
+            input="1\n1\n1\n1\n1\n1\n",
         )
         assert result.exit_code == 0, result.stdout
 
@@ -273,7 +276,7 @@ class TestWizardSkipSemantics:
         init_result = cli_runner.invoke(
             app,
             ["init", "--name", "skippy"],
-            input="3\n1\n3\n3\n3\n",
+            input="3\n1\n3\n3\n7\n3\n",  # ingest/dbt/rill/llm/orch all skip
         )
         assert init_result.exit_code == 0
 

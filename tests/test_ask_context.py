@@ -1,7 +1,9 @@
 """Tests for `tycoon ask context` (#7-related) and `tycoon ask doctor` (#7 §6).
 
-Also covers the `tycoon ask init --llm <provider>` shortcut that records
-the LLM provider in tycoon.yml — the headline UX win called out in #7 §5.
+Also covers `tycoon register llm <provider>` — the LLM provider config
+flow lives in the `register` namespace (symmetric with register dbt /
+register warehouse), not under `ask`. The `ask` namespace is reserved
+for analytics endpoints (chat, sync, context, doctor).
 """
 
 from __future__ import annotations
@@ -50,14 +52,18 @@ def _seed_nao_context(
 
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch):
-    """tycoon.yml + monkey-patched config pointing the ask command at tmp_path."""
+    """tycoon.yml + monkey-patched config singletons for the ask
+    namespace (analytics endpoints) and the register namespace (where
+    register_llm lives)."""
     _write_tycoon_yml(tmp_path)
 
     from tycoon.commands import ask as ask_mod
+    from tycoon.commands import register as register_mod
     from tycoon.config import TycoonConfig
 
     cfg = TycoonConfig(project_root=tmp_path)
     monkeypatch.setattr(ask_mod, "config", cfg)
+    monkeypatch.setattr(register_mod, "config", cfg)
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
@@ -179,7 +185,7 @@ class TestAskDoctor:
         assert "FAIL" in result.stdout
 
     def test_passes_when_init_was_run(self, project, cli_runner):
-        # Simulate `tycoon ask init`
+        # Simulate the post-register state by writing nao project files
         from tycoon.config import TycoonConfig
         from tycoon.nao import write_nao_project
 
@@ -254,27 +260,26 @@ class TestAskDoctor:
         assert "WARN" in result.stdout
 
 
-class TestAskInitLlmFlag:
-    """`tycoon ask init --llm <provider>` records a provider shortcut in tycoon.yml.
+class TestRegisterLlmCommand:
+    """`tycoon register llm <provider>` records a provider shortcut in
+    tycoon.yml and triggers setup_ask_stack (write nao config, refresh
+    AGENTS.md, seed exclude_schemas, offer model install).
 
-    Issue #7 §5 — make LM Studio (and other providers) reachable without
-    making users hand-edit YAML.
+    Symmetric with `register dbt` / `register warehouse`. Issue #7 §5.
     """
 
     def test_unknown_provider_errors(self, project, cli_runner):
-        # nao_core can't actually be missing for ask init to run, but
-        # the validation happens before the nao import so this still works.
-        result = cli_runner.invoke(app, ["ask", "init", "--llm", "made-up"])
+        result = cli_runner.invoke(app, ["register", "llm", "made-up"])
         assert result.exit_code == 1
         combined = (result.stdout or "") + (result.stderr or "")
-        assert "Unknown --llm" in combined
+        assert "Unknown provider" in combined
 
     def test_lm_studio_writes_provider_to_tycoon_yml(self, project, cli_runner):
-        result = cli_runner.invoke(app, ["ask", "init", "--llm", "lm-studio"])
-        # If nao_core isn't installed in the test env, ask_init exits 1 at
-        # `_require_nao` before we get to the YAML write. Our test env
-        # has nao-core (it's in the [ask] extra installed via uv sync
-        # --all-extras), so this should succeed.
+        result = cli_runner.invoke(
+            app, ["register", "llm", "lm-studio", "--skip-install"]
+        )
+        # nao-core must be installed for register llm; the [ask] extra
+        # is in our test env via uv sync --all-extras.
         assert result.exit_code == 0, result.stdout
 
         yml_text = (project / "tycoon.yml").read_text()
@@ -285,3 +290,231 @@ class TestAskInitLlmFlag:
         nao_cfg = (project / ".tycoon" / "nao" / "nao_config.yaml").read_text()
         assert "base_url: http://localhost:1234/v1" in nao_cfg
         assert "api_key: lm-studio" in nao_cfg
+
+    def test_no_args_with_no_existing_provider_errors(self, project, cli_runner):
+        """Re-run path requires an existing provider in tycoon.yml."""
+        result = cli_runner.invoke(app, ["register", "llm"])
+        assert result.exit_code == 1
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "No LLM provider in tycoon.yml" in combined
+
+    def test_skip_install_bypasses_offer(self, project, cli_runner, monkeypatch):
+        """--skip-install must not call _offer_model_install."""
+        from tycoon.commands import ask as ask_mod
+
+        called = []
+        monkeypatch.setattr(
+            ask_mod, "_offer_model_install", lambda p: called.append(p)
+        )
+        result = cli_runner.invoke(
+            app, ["register", "llm", "ollama", "--skip-install"]
+        )
+        assert result.exit_code == 0, result.stdout
+        assert called == []
+
+    def test_register_offers_install_by_default(
+        self, project, cli_runner, monkeypatch
+    ):
+        from tycoon.commands import ask as ask_mod
+
+        called = []
+        monkeypatch.setattr(
+            ask_mod, "_offer_model_install", lambda p: called.append(p)
+        )
+        result = cli_runner.invoke(app, ["register", "llm", "ollama"])
+        assert result.exit_code == 0, result.stdout
+        assert called == ["ollama"]
+
+
+class TestRegisterLlmSeedExcludeSchemas:
+    """Issue #7 §3: registering an LLM provider should seed
+    `ask.exclude_schemas` with conservative noise patterns when the
+    user hasn't configured either include_schemas or exclude_schemas
+    yet. Triggered via `register llm`'s call to setup_ask_stack."""
+
+    def test_seeds_defaults_when_unset(self, project, cli_runner):
+        result = cli_runner.invoke(
+            app, ["register", "llm", "lm-studio", "--skip-install"]
+        )
+        assert result.exit_code == 0, result.stdout
+
+        import yaml as _y
+        data = _y.safe_load((project / "tycoon.yml").read_text())
+        excludes = data["ask"]["exclude_schemas"]
+        assert "information_schema" in excludes
+        assert "_tycoon" in excludes
+        assert "sqlmesh__main" in excludes
+
+    def _rewrite_with_ask(self, project, ask_block: str, monkeypatch):
+        """Rewrite tycoon.yml with a custom `ask` block, then refresh
+        the cached config so the next register llm call sees it.
+
+        Rebinds both ask_mod and register_mod since setup_ask_stack
+        (called by register_llm) reads the ask_mod-scoped config."""
+        existing = (project / "tycoon.yml").read_text()
+        (project / "tycoon.yml").write_text(existing + ask_block)
+        from tycoon.commands import ask as ask_mod
+        from tycoon.commands import register as register_mod
+        from tycoon.config import TycoonConfig
+
+        cfg = TycoonConfig(project_root=project)
+        monkeypatch.setattr(register_mod, "config", cfg)
+        monkeypatch.setattr(ask_mod, "config", cfg)
+
+    def test_preserves_user_set_include_schemas(self, project, cli_runner, monkeypatch):
+        self._rewrite_with_ask(
+            project,
+            "ask:\n  include_schemas: [mart]\n  llm:\n    provider: lm-studio\n",
+            monkeypatch,
+        )
+        result = cli_runner.invoke(app, ["register", "llm", "--skip-install"])
+        assert result.exit_code == 0, result.stdout
+
+        import yaml as _y
+        data = _y.safe_load((project / "tycoon.yml").read_text())
+        assert data["ask"]["include_schemas"] == ["mart"]
+        # exclude_schemas left empty since include_schemas already constrained the surface
+        assert not data["ask"].get("exclude_schemas", [])
+
+    def test_preserves_user_set_exclude_schemas(self, project, cli_runner, monkeypatch):
+        self._rewrite_with_ask(
+            project,
+            "ask:\n  exclude_schemas: [my_custom_noise]\n  llm:\n    provider: lm-studio\n",
+            monkeypatch,
+        )
+        result = cli_runner.invoke(app, ["register", "llm", "--skip-install"])
+        assert result.exit_code == 0, result.stdout
+
+        import yaml as _y
+        data = _y.safe_load((project / "tycoon.yml").read_text())
+        # User's value preserved; defaults NOT merged in.
+        assert data["ask"]["exclude_schemas"] == ["my_custom_noise"]
+
+
+class TestAskChatRequiresLLM:
+    """`tycoon ask chat` must fail-fast with a directing error when no
+    LLM provider is configured. Launching Nao with no brain is a worse
+    UX than refusing — the chat UI sits there doing nothing.
+    """
+
+    def test_chat_errors_when_no_llm_configured(self, project, cli_runner):
+        # The base project fixture writes a tycoon.yml with no `ask:` block.
+        result = cli_runner.invoke(app, ["ask", "chat"])
+        assert result.exit_code == 1
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "No LLM configured" in combined
+        # Surfaces the specific commands the user can run to fix it.
+        assert "tycoon register llm" in combined
+
+    def test_chat_errors_when_lm_studio_unreachable(
+        self, project, cli_runner, monkeypatch
+    ):
+        # Configure LM Studio at an unreachable URL so the probe fails.
+        existing = (project / "tycoon.yml").read_text()
+        (project / "tycoon.yml").write_text(
+            existing
+            + "ask:\n  llm:\n    provider: lm-studio\n    base_url: http://127.0.0.1:1/v1\n"
+        )
+        from tycoon.commands import ask as ask_mod
+        from tycoon.config import TycoonConfig
+        monkeypatch.setattr(ask_mod, "config", TycoonConfig(project_root=project))
+
+        result = cli_runner.invoke(app, ["ask", "chat"])
+        assert result.exit_code == 1
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "not reachable" in combined
+        assert "LM Studio" in combined
+
+    def test_chat_errors_when_no_models_loaded(
+        self, project, cli_runner, monkeypatch
+    ):
+        # Configure LM Studio at a URL that responds 200 but with 0 models.
+        existing = (project / "tycoon.yml").read_text()
+        (project / "tycoon.yml").write_text(
+            existing
+            + "ask:\n  llm:\n    provider: lm-studio\n    base_url: http://stub/v1\n"
+        )
+        from tycoon.commands import ask as ask_mod
+        from tycoon.config import TycoonConfig
+        monkeypatch.setattr(ask_mod, "config", TycoonConfig(project_root=project))
+        # Stub the probe to simulate "reachable, 0 models".
+        monkeypatch.setattr(
+            ask_mod, "_probe_local_llm", lambda _url: (True, 0, None)
+        )
+
+        result = cli_runner.invoke(app, ["ask", "chat"])
+        assert result.exit_code == 1
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "0 models loaded" in combined
+        # Provider-specific install hint surfaced.
+        assert "LM Studio" in combined or "Discover" in combined
+
+
+class TestOfferModelInstall:
+    """The probe-and-offer flow that runs at the tail of `tycoon init`
+    (when wizard picks a local LLM) and `tycoon ask init --llm <p>`.
+
+    Calls `_offer_model_install` directly rather than via the CLI so we
+    can exhaustively cover the four states (cloud / unreachable / ready /
+    needs-install) without rebuilding init scaffolding each time.
+    """
+
+    def _call(self, monkeypatch, provider, *, reachable, model_count, has_ollama=True):
+        from tycoon.commands import ask as ask_mod
+
+        monkeypatch.setattr(
+            ask_mod, "_probe_local_llm",
+            lambda _url: (reachable, model_count, None if reachable else "stub error"),
+        )
+        # Pretend `ollama` binary is / isn't on PATH.
+        import shutil
+        monkeypatch.setattr(
+            shutil, "which", lambda name: "/usr/bin/ollama" if (has_ollama and name == "ollama") else None
+        )
+        # Don't actually shell out.
+        import subprocess as _sp
+        run_calls = []
+        def fake_run(cmd, *a, **kw):
+            run_calls.append(cmd)
+            class R:
+                returncode = 0
+            return R()
+        monkeypatch.setattr(_sp, "run", fake_run)
+        # Auto-confirm the prompt.
+        import typer as _t
+        monkeypatch.setattr(_t, "confirm", lambda *a, **kw: True)
+        ask_mod._offer_model_install(provider)
+        return run_calls
+
+    def test_cloud_provider_is_noop(self, monkeypatch):
+        calls = self._call(monkeypatch, "anthropic", reachable=False, model_count=0)
+        assert calls == []
+
+    def test_unreachable_warns_no_pull(self, monkeypatch):
+        calls = self._call(monkeypatch, "ollama", reachable=False, model_count=0)
+        assert calls == []  # Did not attempt `ollama pull`.
+
+    def test_ready_state_no_pull(self, monkeypatch):
+        calls = self._call(monkeypatch, "ollama", reachable=True, model_count=2)
+        assert calls == []
+
+    def test_ollama_zero_models_pulls(self, monkeypatch):
+        calls = self._call(monkeypatch, "ollama", reachable=True, model_count=0)
+        assert len(calls) == 1
+        assert calls[0][0] == "ollama"
+        assert calls[0][1] == "pull"
+        assert calls[0][2] == "qwen2.5-coder:7b"  # the recommended tag
+
+    def test_ollama_zero_models_no_binary(self, monkeypatch):
+        # Ollama binary not on PATH — falls back to printed instructions.
+        calls = self._call(
+            monkeypatch, "ollama", reachable=True, model_count=0, has_ollama=False
+        )
+        assert calls == []
+
+    def test_lm_studio_zero_models_no_pull(self, monkeypatch):
+        # LM Studio has no auto-pull path; we just print instructions.
+        calls = self._call(monkeypatch, "lm-studio", reachable=True, model_count=0)
+        assert calls == []
+
+

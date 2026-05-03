@@ -111,14 +111,229 @@ class TestBlankScaffold:
     def test_blank_scaffold_via_cli(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         # Per-component wizard: ingestion=dlt, warehouse=local, dbt=create,
-        # rill=create, orchestrator=dagster
+        # rill=create, llm=lm-studio, orchestrator=dagster
         result = cli_runner.invoke(
             app,
             ["init", "--name", "my-project"],
-            input="1\n1\n1\n1\n1\n",
+            input="1\n1\n1\n1\n1\n1\n",
         )
         assert result.exit_code == 0, f"init failed: {result.stdout}"
         assert (tmp_path / "tycoon.yml").exists()
+
+    def test_wizard_llm_choice_persists_to_ask_block(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """Wizard's LLM prompt should write `ask.llm.provider` to
+        tycoon.yml so `tycoon register llm` doesn't have to re-prompt.
+        Closes #7 §5b.
+
+        Uses a nested ``isolated/`` subdir so ``_detect_existing``'s
+        sibling-scan can't pick up dbt projects scaffolded by other
+        tests sharing the pytest-tmp parent.
+        """
+        proj = tmp_path / "isolated" / "lm-proj"
+        proj.mkdir(parents=True)
+        monkeypatch.chdir(proj)
+        # ingestion=dlt(1), warehouse=local(1), dbt=create(1), rill=create(1),
+        # llm=lm-studio(1), orchestrator=dagster(1)
+        result = cli_runner.invoke(
+            app,
+            ["init", "--name", "lm-proj"],
+            input="1\n1\n1\n1\n1\n1\n",
+        )
+        assert result.exit_code == 0, f"init failed: {result.stdout}"
+        data = yaml.safe_load((proj / "tycoon.yml").read_text())
+        assert data.get("ask", {}).get("llm", {}).get("provider") == "lm-studio"
+
+    def test_wizard_autodetects_running_ollama(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """When Ollama's port is reachable at wizard time, skip the
+        7-option menu and present a 1-keystroke confirmation. The user
+        accepts → ask.llm.provider = ollama, no menu choice consumed."""
+        from tycoon.commands import ask as ask_mod
+
+        # Stub the probe: LM Studio dead, Ollama reachable.
+        def stub_probe(url):
+            if "11434" in url:
+                return (True, 1, None)
+            return (False, 0, "no")
+
+        monkeypatch.setattr(ask_mod, "_probe_local_llm", stub_probe)
+
+        proj = tmp_path / "isolated" / "auto-ollama"
+        proj.mkdir(parents=True)
+        monkeypatch.chdir(proj)
+        # 5 menu choices (ingest/warehouse/dbt/rill) + Y for Ollama detect
+        # + 1 menu choice (orch). One fewer than the un-detected path.
+        result = cli_runner.invoke(
+            app,
+            ["init", "--name", "auto-ollama"],
+            input="1\n1\n1\n1\nY\n1\n",
+        )
+        assert result.exit_code == 0, result.stdout
+        # The confirmation prompt fired (proves the short-circuit branch).
+        assert "Detected" in result.stdout
+        assert "Ollama" in result.stdout
+        data = yaml.safe_load((proj / "tycoon.yml").read_text())
+        assert data["ask"]["llm"]["provider"] == "ollama"
+
+    def test_wizard_autodetect_decline_falls_through_to_menu(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """User declines the auto-detect confirm → full 7-option menu
+        appears as normal."""
+        from tycoon.commands import ask as ask_mod
+
+        # Stub: LM Studio reachable.
+        def stub_probe(url):
+            if "1234" in url:
+                return (True, 1, None)
+            return (False, 0, "no")
+
+        monkeypatch.setattr(ask_mod, "_probe_local_llm", stub_probe)
+
+        proj = tmp_path / "isolated" / "decline"
+        proj.mkdir(parents=True)
+        monkeypatch.chdir(proj)
+        # ingestion(1), warehouse(1), dbt(1), rill(1), Decline LM Studio (n),
+        # then full menu — pick OpenAI (3), then orch(1).
+        result = cli_runner.invoke(
+            app,
+            ["init", "--name", "decline"],
+            input="1\n1\n1\n1\nn\n3\n1\n",
+        )
+        assert result.exit_code == 0, result.stdout
+        data = yaml.safe_load((proj / "tycoon.yml").read_text())
+        # User picked OpenAI from the menu after declining LM Studio.
+        assert data["ask"]["llm"]["provider"] == "openai"
+
+    def test_wizard_both_detected_both_have_models_shows_menu(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """Both reachable, both have models — truly ambiguous, fall to menu."""
+        from tycoon.commands import ask as ask_mod
+
+        monkeypatch.setattr(ask_mod, "_probe_local_llm", lambda _url: (True, 1, None))
+
+        proj = tmp_path / "isolated" / "both-loaded"
+        proj.mkdir(parents=True)
+        monkeypatch.chdir(proj)
+        result = cli_runner.invoke(
+            app,
+            ["init", "--name", "both-loaded"],
+            input="1\n1\n1\n1\n2\n1\n",
+        )
+        assert result.exit_code == 0, result.stdout
+        assert "both runtimes" in result.stdout.lower()
+        data = yaml.safe_load((proj / "tycoon.yml").read_text())
+        assert data["ask"]["llm"]["provider"] == "ollama"
+
+    def test_wizard_both_reachable_only_one_has_models_suggests_loaded(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """Both reachable, only Ollama has models — auto-suggest Ollama
+        (LM Studio would need a model install anyway)."""
+        from tycoon.commands import ask as ask_mod
+
+        def stub_probe(url):
+            if "11434" in url:
+                return (True, 2, None)  # Ollama: 2 models loaded
+            return (True, 0, None)  # LM Studio: 0 models loaded
+
+        monkeypatch.setattr(ask_mod, "_probe_local_llm", stub_probe)
+
+        proj = tmp_path / "isolated" / "tiebreak"
+        proj.mkdir(parents=True)
+        monkeypatch.chdir(proj)
+        # Confirm Ollama with Y, then orchestrator(1).
+        result = cli_runner.invoke(
+            app,
+            ["init", "--name", "tiebreak"],
+            input="1\n1\n1\n1\nY\n1\n",
+        )
+        assert result.exit_code == 0, result.stdout
+        assert "Detected" in result.stdout
+        assert "Ollama" in result.stdout
+        data = yaml.safe_load((proj / "tycoon.yml").read_text())
+        assert data["ask"]["llm"]["provider"] == "ollama"
+
+    def test_wizard_chains_ask_setup_when_provider_picked(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """When the user picks a provider in the wizard AND nao_core
+        is importable, `tycoon init` should:
+          - write nao_config.yaml under .tycoon/nao/
+          - refresh AGENTS.md at project root
+          - seed exclude_schemas
+        Without the user having to run `tycoon register llm` separately.
+        """
+        proj = tmp_path / "isolated" / "chained"
+        proj.mkdir(parents=True)
+        monkeypatch.chdir(proj)
+        # ingest(1), warehouse(1), dbt(1), rill(1), llm=lm-studio(1), orch(1)
+        result = cli_runner.invoke(
+            app,
+            ["init", "--name", "chained"],
+            input="1\n1\n1\n1\n1\n1\n",
+        )
+        assert result.exit_code == 0, result.stdout
+
+        # AI setup ran:
+        assert (proj / ".tycoon" / "nao" / "nao_config.yaml").exists()
+        assert (proj / "AGENTS.md").exists()
+
+        # exclude_schemas was seeded.
+        data = yaml.safe_load((proj / "tycoon.yml").read_text())
+        excludes = data["ask"]["exclude_schemas"]
+        assert "information_schema" in excludes
+        assert "_tycoon" in excludes
+
+        # Next steps should point at `tycoon ask chat` directly, not
+        # `tycoon register llm` (since the chain already did that work).
+        assert "tycoon ask chat" in result.stdout
+        next_steps_section = result.stdout.split("What's next?")[-1] if "What's next?" in result.stdout else result.stdout
+        assert "tycoon register llm" not in next_steps_section
+
+    def test_wizard_skip_llm_doesnt_chain_ask_setup(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """If user picks Skip on the LLM prompt, no ask setup should run
+        — no nao_config.yaml, no AGENTS.md, no ask block in tycoon.yml."""
+        proj = tmp_path / "isolated" / "no-chain"
+        proj.mkdir(parents=True)
+        monkeypatch.chdir(proj)
+        # llm=skip(7)
+        result = cli_runner.invoke(
+            app,
+            ["init", "--name", "no-chain"],
+            input="1\n1\n1\n1\n7\n1\n",
+        )
+        assert result.exit_code == 0, result.stdout
+        assert not (proj / ".tycoon" / "nao" / "nao_config.yaml").exists()
+        assert not (proj / "AGENTS.md").exists()
+        # next_steps should point at `tycoon register llm`, not chat
+        assert "tycoon register llm" in result.stdout
+
+    def test_wizard_llm_skip_omits_ask_block(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """Choosing 'Skip' on the LLM prompt leaves the ask block out so
+        `tycoon register llm <provider>` can later add it without a
+        merge conflict against placeholder values."""
+        proj = tmp_path / "isolated" / "skip-llm"
+        proj.mkdir(parents=True)
+        monkeypatch.chdir(proj)
+        # ingestion=dlt(1), warehouse=local(1), dbt=create(1), rill=create(1),
+        # llm=skip(7), orchestrator=dagster(1)
+        result = cli_runner.invoke(
+            app,
+            ["init", "--name", "skip-llm"],
+            input="1\n1\n1\n1\n7\n1\n",
+        )
+        assert result.exit_code == 0, f"init failed: {result.stdout}"
+        data = yaml.safe_load((proj / "tycoon.yml").read_text())
+        assert "ask" not in data
 
 
 class TestTemplateScaffold:

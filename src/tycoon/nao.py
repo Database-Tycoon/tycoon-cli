@@ -50,6 +50,14 @@ _LM_STUDIO_PRESET = {
     "api_key": "lm-studio",
 }
 
+# Ollama's OpenAI-compatible endpoint (added in Ollama 0.1.27+). Same
+# api_key-is-ignored story as LM Studio.
+_OLLAMA_PRESET = {
+    "provider": "openai",
+    "base_url": "http://localhost:11434/v1",
+    "api_key": "ollama",
+}
+
 _DEFAULT_RULES_TEMPLATE = """\
 You are an analytics assistant for the {name} project.
 
@@ -191,6 +199,12 @@ def build_nao_config(cfg: TycoonConfig) -> dict:
         # users discover that "openai + custom base_url" is the path.
         if llm.provider == "lm-studio":
             llm_entry: dict = dict(_LM_STUDIO_PRESET)
+            if llm.base_url:
+                llm_entry["base_url"] = llm.base_url
+            if llm.model:
+                llm_entry["model"] = llm.model
+        elif llm.provider == "ollama":
+            llm_entry = dict(_OLLAMA_PRESET)
             if llm.base_url:
                 llm_entry["base_url"] = llm.base_url
             if llm.model:
