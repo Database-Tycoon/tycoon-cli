@@ -236,7 +236,7 @@ def _require_nao() -> None:
     try:
         import nao_core  # noqa: F401
     except ImportError:
-        error("Nao is not installed. Run: [bold]pip install tycoon\\[ask][/bold]")
+        error("Nao is not installed. Run: [bold]pip install 'database-tycoon[ask]'[/bold]")
         raise typer.Exit(1)
 
 
