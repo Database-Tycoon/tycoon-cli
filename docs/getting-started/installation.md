@@ -26,7 +26,7 @@ uv add database-tycoon
 ## Verify
 
 ```bash
-tycoon --version       # tycoon 0.1.4
+tycoon --version       # tycoon 0.1.5
 tycoon --help          # top-level command surface
 ```
 

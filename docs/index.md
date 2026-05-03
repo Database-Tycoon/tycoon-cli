@@ -66,7 +66,7 @@ tycoon run identically on a laptop and on a cloud VM.
     The `tycoon.yml` schema, built-in templates, observability tables,
     and environment variables.
 
--   :material-tag: **[Releases](releases/v0.1.4.md)**
+-   :material-tag: **[Releases](releases/v0.1.5.md)**
 
     ---
 
@@ -76,7 +76,7 @@ tycoon run identically on a laptop and on a cloud VM.
 
 ## A note on this site
 
-These docs are written for tycoon **v0.1.4**. Anything called out as
+These docs are written for tycoon **v0.1.5**. Anything called out as
 "deferred to v0.2.0" links to a tracking issue on the
 [GitHub repo](https://github.com/Database-Tycoon/tycoon-cli/issues).
 The `releases/` section carries the canonical change history.
