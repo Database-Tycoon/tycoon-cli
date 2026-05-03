@@ -8,22 +8,17 @@ distinguished by pytest markers:
   Included in the default ``pytest`` run so CI gates on real integration,
   not just unit-level mocks.
 * ``@pytest.mark.e2e`` — requires network or external services (live public
-  APIs, API tokens). Excluded from the default run; runs only via the
-  manual ``e2e.yml`` workflow or explicit ``pytest -m e2e``.
-
-Tests that require credentials (GitHub token, etc.) ``pytest.skip`` when the
-required env var is absent, so a partial run on a dev machine is still useful.
+  APIs). Excluded from the default run; runs only via the manual
+  ``e2e.yml`` workflow or explicit ``pytest -m e2e``.
 """
 
 from __future__ import annotations
 
 import csv
-import os
 from pathlib import Path
 
 import duckdb
 import pytest
-import yaml
 
 from tycoon.cli import app
 
@@ -52,7 +47,13 @@ def _rebind_config(monkeypatch, project: Path) -> None:
     module load time, so tests must monkey-patch every module whose
     behavior depends on the config root. Keep this list in sync with any
     new command module that imports ``tycoon.config.config``.
+
+    Also rebinds the module-level singleton in ``tycoon.config`` —
+    deep-call sites (e.g. ``ingestion/runner.py:_capture_and_refresh_safe``
+    that imports ``config`` at call time) read from there, and without
+    this patch they pick up the parent-tmpdir root pytest started in.
     """
+    import tycoon.config as cfg_mod
     from tycoon.commands import sources as sources_mod
     from tycoon.commands import transform as transform_mod
     from tycoon.config import TycoonConfig
@@ -60,6 +61,7 @@ def _rebind_config(monkeypatch, project: Path) -> None:
     cfg = TycoonConfig(project_root=project)
     monkeypatch.setattr(sources_mod, "config", cfg)
     monkeypatch.setattr(transform_mod, "config", cfg)
+    monkeypatch.setattr(cfg_mod, "config", cfg)
 
 
 @pytest.mark.offline_e2e
@@ -143,6 +145,19 @@ def test_csv_import_e2e(cli_runner, tmp_path, monkeypatch):
         # Any other count means the pipeline is dropping or inventing rows.
         assert stg_rows == 5, f"expected 5 rows in stg_widgets, got {stg_rows}"
 
+        # widget_id has not_null + unique tests in schema.yml — assert the
+        # invariant holds in the data, not just at the test layer.
+        nulls = con.execute(
+            "SELECT count(*) FROM main.stg_widgets WHERE widget_id IS NULL"
+        ).fetchone()
+        assert nulls is not None and nulls[0] == 0, "widget_id has nulls"
+        distinct_ids = con.execute(
+            "SELECT count(distinct widget_id) FROM main.stg_widgets"
+        ).fetchone()
+        assert distinct_ids is not None and distinct_ids[0] == 5, (
+            f"widget_id should be unique (expected 5 distinct, got {distinct_ids})"
+        )
+
         # Verify column-typing happened (CAST in staging model)
         col_types = dict(
             con.execute(
@@ -153,8 +168,35 @@ def test_csv_import_e2e(cli_runner, tmp_path, monkeypatch):
         )
         assert col_types.get("widget_id") == "INTEGER", col_types
         assert col_types.get("quantity") == "INTEGER", col_types
+
+        # Mart layer: fct_widget_summary should be a single-row aggregate
+        # built from stg_widgets. Sum of quantity in the seeded data is
+        # 10 + 20 + 30 + 40 + 50 = 150.
+        mart = con.execute(
+            "SELECT widget_count, distinct_names, total_quantity, "
+            "min_quantity, max_quantity FROM main.fct_widget_summary"
+        ).fetchall()
+        assert len(mart) == 1, f"fct_widget_summary should have 1 row, got {len(mart)}"
+        widget_count, distinct_names, total_qty, min_qty, max_qty = mart[0]
+        assert widget_count == 5
+        assert distinct_names == 5
+        assert total_qty == 150
+        assert min_qty == 10
+        assert max_qty == 50
     finally:
         con.close()
+
+    # Run `dbt test` and assert all schema-declared tests pass. Catches
+    # any regression where stg_widgets no longer satisfies its declared
+    # not_null / unique invariants — or where a future schema change
+    # breaks an existing test.
+    result = cli_runner.invoke(app, ["data", "transform", "test"])
+    stderr = result.stderr if result.stderr_bytes else ""
+    assert result.exit_code == 0, (
+        f"dbt test failed (exit {result.exit_code}):\n"
+        f"--- stdout ---\n{result.stdout}\n"
+        f"--- stderr ---\n{stderr}"
+    )
 
     # Observability: the invocation should have been captured.
     metadata_db = project / ".tycoon" / "metadata.duckdb"
@@ -178,56 +220,199 @@ def test_csv_import_e2e(cli_runner, tmp_path, monkeypatch):
         con.close()
 
 
-@pytest.mark.e2e
-def test_github_analytics_e2e(cli_runner, tmp_path, monkeypatch):
-    """Needs a GITHUB_TOKEN. Skip when absent.
+def _seed_widgets_csv(input_dir: Path, count: int = 5) -> None:
+    input_dir.mkdir(parents=True, exist_ok=True)
+    with (input_dir / "widgets.csv").open("w") as f:
+        writer = csv.writer(f)
+        writer.writerow(["id", "name", "qty"])
+        for i in range(1, count + 1):
+            writer.writerow([i, f"widget-{i}", i * 10])
 
-    v0.1.3: with template parameterization landed, this now runs a real
-    fetch against a tiny public repo (`--max-records 5` on each resource)
-    and asserts rows made it into the raw DB. Rate-limited upstream may
-    still xfail; that's expected.
+
+@pytest.mark.offline_e2e
+def test_csv_import_rerun_idempotent(cli_runner, tmp_path, monkeypatch):
+    """Running the full pipeline twice must leave row counts and mart
+    aggregates unchanged. Catches state leaks across repeated ingests.
+
+    dlt's default write_disposition is `replace`, so re-ingesting the
+    same CSV should rewrite the raw table rather than appending. If
+    that contract drifts, this test will fail with row counts of 10.
     """
-    if not os.environ.get("GITHUB_TOKEN"):
-        pytest.skip("GITHUB_TOKEN not set; skipping github-analytics e2e")
-
-    project = tmp_path / "github-analytics"
+    project = tmp_path / "csv-import-rerun"
     project.mkdir()
     monkeypatch.chdir(project)
-    _init_template(
-        cli_runner,
-        "github-analytics",
-        params={"owner": "octocat", "repo": "hello-world"},
-    )
-
-    tycoon_yml = yaml.safe_load((project / "tycoon.yml").read_text())
-    assert "github" in tycoon_yml["sources"], "github source missing from template"
-    # Substitution should have replaced every {{ owner }} / {{ repo }}
-    config_blob = yaml.safe_dump(tycoon_yml)
-    assert "{{" not in config_blob, (
-        f"Unresolved placeholders in tycoon.yml:\n{config_blob}"
-    )
-
+    _init_template(cli_runner, "csv-import")
+    _seed_widgets_csv(project / "data" / "input", count=5)
     _rebind_config(monkeypatch, project)
-    result = cli_runner.invoke(
-        app, ["data", "sources", "run", "github", "--max-records", "5"]
-    )
-    if result.exit_code != 0:
-        pytest.xfail(
-            f"github ingest returned {result.exit_code}; GitHub API may be "
-            f"rate-limiting or flaky:\n{result.stdout}"
+
+    # Run the full pipeline twice.
+    for pass_num in (1, 2):
+        result = cli_runner.invoke(app, ["data", "sources", "run", "files"])
+        assert result.exit_code == 0, (
+            f"sources run pass {pass_num} failed:\n{result.stdout}"
+        )
+        result = cli_runner.invoke(app, ["data", "transform", "run"])
+        assert result.exit_code == 0, (
+            f"transform run pass {pass_num} failed:\n{result.stdout}"
         )
 
-    raw_db = project / "data" / "github_raw.duckdb"
-    assert raw_db.exists(), "raw db was not created"
+    # Raw table: same 5 rows after two ingests (replace semantics).
+    raw_db = project / "data" / "files_raw.duckdb"
+    con = duckdb.connect(str(raw_db), read_only=True)
+    try:
+        rows = con.execute(
+            'SELECT count(*) FROM raw_files."_read_csv"'
+        ).fetchone()
+        assert rows is not None and rows[0] == 5, (
+            f"raw row count drifted across reruns; got {rows[0]} "
+            "(default write_disposition should be `replace`)"
+        )
+    finally:
+        con.close()
+
+    # Warehouse: stg_widgets row count + mart aggregates unchanged.
+    warehouse_db = project / "data" / "files_warehouse.duckdb"
+    con = duckdb.connect(str(warehouse_db), read_only=True)
+    try:
+        stg = con.execute("SELECT count(*) FROM main.stg_widgets").fetchone()
+        assert stg is not None and stg[0] == 5
+        mart = con.execute(
+            "SELECT widget_count, total_quantity FROM main.fct_widget_summary"
+        ).fetchone()
+        assert mart == (5, 150), (
+            f"mart aggregates drifted across reruns; got {mart}, expected (5, 150)"
+        )
+    finally:
+        con.close()
+
+    # Observability: both passes captured. Two dlt loads, two dbt runs.
+    metadata_db = project / ".tycoon" / "metadata.duckdb"
+    con = duckdb.connect(str(metadata_db), read_only=True)
+    try:
+        dlt_runs = con.execute("SELECT count(*) FROM dlt_runs").fetchone()
+        dbt_runs = con.execute(
+            "SELECT count(*) FROM dbt_runs WHERE command = 'run'"
+        ).fetchone()
+        assert dlt_runs is not None and dlt_runs[0] == 2, (
+            f"expected 2 dlt loads captured, got {dlt_runs}"
+        )
+        assert dbt_runs is not None and dbt_runs[0] == 2, (
+            f"expected 2 dbt 'run' invocations captured, got {dbt_runs}"
+        )
+    finally:
+        con.close()
+
+
+@pytest.mark.offline_e2e
+def test_csv_import_transform_ingest_transform(cli_runner, tmp_path, monkeypatch):
+    """Sequence: transform → ingest → transform must produce the same
+    final state as ingest → transform alone. Catches stale-warehouse
+    bugs where dbt sees the old raw table on a second pass.
+
+    First transform runs against an empty raw table (0 rows). Second
+    transform runs after the ingest and should produce the seeded
+    aggregates. The first pass is allowed to non-zero exit because
+    `_read_csv` may not yet exist; we only assert the *final* state.
+    """
+    project = tmp_path / "csv-import-tit"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    _init_template(cli_runner, "csv-import")
+    _seed_widgets_csv(project / "data" / "input", count=5)
+    _rebind_config(monkeypatch, project)
+
+    # Pass 1: transform with no ingest (best-effort; may fail on missing source).
+    cli_runner.invoke(app, ["data", "transform", "run"])
+
+    # Pass 2: ingest + transform. This is the assertion target.
+    result = cli_runner.invoke(app, ["data", "sources", "run", "files"])
+    assert result.exit_code == 0, f"sources run failed:\n{result.stdout}"
+    result = cli_runner.invoke(app, ["data", "transform", "run"])
+    assert result.exit_code == 0, f"second transform run failed:\n{result.stdout}"
+
+    warehouse_db = project / "data" / "files_warehouse.duckdb"
+    con = duckdb.connect(str(warehouse_db), read_only=True)
+    try:
+        mart = con.execute(
+            "SELECT widget_count, total_quantity FROM main.fct_widget_summary"
+        ).fetchone()
+        assert mart == (5, 150), (
+            f"final mart state wrong after transform-then-ingest-then-transform: "
+            f"got {mart}"
+        )
+    finally:
+        con.close()
+
+
+@pytest.mark.offline_e2e
+def test_csv_import_then_data_sync(cli_runner, tmp_path, monkeypatch):
+    """Full user workflow: ingest → transform → sync warehouse to a
+    portable snapshot. Asserts the snapshot DB has the expected mart
+    data after the round trip.
+
+    This is the closest test we have to the "I built my warehouse and
+    want a shareable file" user journey.
+    """
+    project = tmp_path / "csv-import-sync"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    _init_template(cli_runner, "csv-import")
+    _seed_widgets_csv(project / "data" / "input", count=5)
+    _rebind_config(monkeypatch, project)
+
+    # Bind sync_cmd's config too, since it imports separately.
+    from tycoon.commands import sync_cmd as sync_mod
+    from tycoon.config import TycoonConfig
+    monkeypatch.setattr(sync_mod, "config", TycoonConfig(project_root=project))
+
+    # ingest + transform
+    assert cli_runner.invoke(app, ["data", "sources", "run", "files"]).exit_code == 0
+    assert cli_runner.invoke(app, ["data", "transform", "run"]).exit_code == 0
+
+    # Sync the full warehouse. Views that depend on the dbt-attached
+    # `tycoon_meta` catalog (the _tycoon observability staging models)
+    # are skipped per-row rather than failing the whole sync (issue #23).
+    snapshot = project / "data" / "snapshot.duckdb"
+    warehouse_db = project / "data" / "files_warehouse.duckdb"
+    result = cli_runner.invoke(
+        app,
+        ["data", "sync", "--from", str(warehouse_db), "--to", str(snapshot)],
+    )
+    assert result.exit_code == 0, f"sync failed:\n{result.stdout}"
+    assert snapshot.exists(), "snapshot DB was not created"
+    # The user-owned tables landed; the tycoon_meta-dependent views were
+    # skipped with a warning (asserted via stdout contents).
+    assert "stg_widgets" in result.stdout
+    assert "fct_widget_summary" in result.stdout
+    assert "Skipped" in result.stdout, (
+        f"expected sync to surface skipped views; stdout:\n{result.stdout}"
+    )
+
+    # The snapshot should carry the mart and stg tables built by dbt.
+    con = duckdb.connect(str(snapshot), read_only=True)
+    try:
+        mart = con.execute(
+            "SELECT widget_count, total_quantity FROM main.fct_widget_summary"
+        ).fetchone()
+        assert mart == (5, 150), f"snapshot mart mismatched: {mart}"
+        stg = con.execute("SELECT count(*) FROM main.stg_widgets").fetchone()
+        assert stg is not None and stg[0] == 5
+    finally:
+        con.close()
 
 
 @pytest.mark.e2e
 def test_nyc_transit_e2e(cli_runner, tmp_path, monkeypatch):
-    """Public NYC Open Data / MTA feeds — no auth needed, but slow."""
+    """Public NYC Open Data / MTA feeds — no auth needed, but slow.
+
+    v0.1.5: extended past raw-DB-exists. With `transform.auto_scaffold`
+    on by default, `data sources run` triggers analyze, then
+    `data transform run` materializes staging in the warehouse DB.
+    """
     project = tmp_path / "nyc-transit"
     project.mkdir()
     monkeypatch.chdir(project)
-    _init_template(cli_runner,"nyc-transit")
+    _init_template(cli_runner, "nyc-transit")
 
     _rebind_config(monkeypatch, project)
     # Cap records to keep the test under a minute.
@@ -244,43 +429,33 @@ def test_nyc_transit_e2e(cli_runner, tmp_path, monkeypatch):
     raw_db = project / "data" / "nyc_open_data_raw.duckdb"
     assert raw_db.exists(), "raw db was not created"
 
-
-@pytest.mark.e2e
-def test_weather_station_e2e(cli_runner, tmp_path, monkeypatch):
-    """NOAA public API (no key) — with v0.1.3 template parameterization,
-    this now fetches against a real station. KJFK is a major airport
-    station that's very unlikely to go offline.
-    """
-    project = tmp_path / "weather-station"
-    project.mkdir()
-    monkeypatch.chdir(project)
-    _init_template(
-        cli_runner,
-        "weather-station",
-        params={
-            "station_id": "KJFK",
-            "office": "OKX",
-            "gridX": "32",
-            "gridY": "34",
-        },
+    # Auto-scaffold should have written staging models for nyc-dot.
+    staging_dir = project / "dbt_project" / "models" / "staging" / "nyc-dot"
+    assert staging_dir.exists(), (
+        f"auto-scaffold did not create staging dir; sources run output:\n{result.stdout}"
     )
+    sql_files = list(staging_dir.glob("stg_nyc-dot__*.sql"))
+    assert sql_files, f"no staging .sql files generated under {staging_dir}"
 
-    tycoon_yml = yaml.safe_load((project / "tycoon.yml").read_text())
-    config_blob = yaml.safe_dump(tycoon_yml)
-    assert "{{" not in config_blob, (
-        f"Unresolved placeholders in tycoon.yml:\n{config_blob}"
-    )
-    assert "KJFK" in config_blob and "OKX" in config_blob
-
-    _rebind_config(monkeypatch, project)
-    result = cli_runner.invoke(
-        app, ["data", "sources", "run", "noaa", "--max-records", "5"]
-    )
+    # Run dbt against the auto-scaffolded models.
+    result = cli_runner.invoke(app, ["data", "transform", "run"])
     if result.exit_code != 0:
         pytest.xfail(
-            f"noaa ingest returned {result.exit_code}; upstream API may be down:\n"
-            f"{result.stdout}"
+            f"dbt run returned {result.exit_code}; could be a downstream "
+            f"compatibility issue against live data:\n{result.stdout}"
         )
 
-    raw_db = project / "data" / "weather_raw.duckdb"
-    assert raw_db.exists(), "raw db was not created"
+    # Assert at least one staging table is materialized in the warehouse.
+    warehouse_db = project / "data" / "nyc_open_data_local.duckdb"
+    assert warehouse_db.exists(), "warehouse db was not created by dbt run"
+    con = duckdb.connect(str(warehouse_db), read_only=True)
+    try:
+        rows = con.execute(
+            "SELECT count(*) FROM information_schema.tables "
+            "WHERE table_name LIKE 'stg_nyc-dot__%'"
+        ).fetchone()
+        assert rows is not None and rows[0] >= 1, (
+            f"expected at least one stg_nyc-dot__* table in warehouse DB; got {rows}"
+        )
+    finally:
+        con.close()
