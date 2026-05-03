@@ -16,7 +16,13 @@ For analytics on sensitive data, this matters a lot. Anthropic / OpenAI / etc. m
 
 ### 1. Install LM Studio
 
-Download from [lmstudio.ai](https://lmstudio.ai). Pull a model — for analytics queries, anything in the **Qwen2.5-Coder** family or **Llama 3.1** family works well. Bigger is better for complex SQL; 32B-70B params is the sweet spot if you have the RAM.
+Download from [lmstudio.ai](https://lmstudio.ai).
+
+**Recommended model:** [Qwen 2.5 Coder 7B Instruct](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct) at the **Q4_K_M** quant (~4.7 GB). It's tuned specifically for code (SQL inclusive) and outperforms similar-size general-purpose models on coding benchmarks (HumanEval 88.4%). Comfortably fits in 8 GB of RAM with headroom for the warehouse + dbt context.
+
+In LM Studio: click **Discover** → search `Qwen2.5-Coder-7B-Instruct-GGUF` → pick the `Q4_K_M` quant → Download → Load.
+
+If you have more RAM and want sharper SQL on complex joins, step up to the **32B Coder Instruct** variant (~20 GB at Q4_K_M). For very tight machines, **Llama 3.2 3B** (~2 GB) works for simple analytics questions.
 
 Open LM Studio's "Local Server" tab and start the server. Default port `1234`.
 
@@ -40,7 +46,7 @@ This pulls `nao-core` and `ibis-framework[duckdb]`.
 
 ```bash
 cd my-project           # any tycoon project with at least one ingested source
-tycoon ask init --llm lm-studio
+tycoon register llm lm-studio
 ```
 
 This:
@@ -150,7 +156,7 @@ ask:
 
 The schema names get glob-expanded automatically (`mart` → `mart.*`).
 
-Re-run `tycoon ask init` (or `tycoon ask sync --reinit`) after editing `tycoon.yml`.
+Re-run `tycoon register llm` (no provider arg = refresh against the existing one) after editing `tycoon.yml`.
 
 ### Pin a specific model
 
@@ -182,7 +188,7 @@ Or use the `ollama` shortcut for Ollama specifically.
 | Symptom | Fix |
 |---|---|
 | `LM Studio FAIL: unreachable` | LM Studio server isn't running — open the UI, click "Start Server" |
-| `nao sync` says "No such file or directory: 'repos'" | Stale install. Re-run `tycoon ask init` (it pre-creates all 8 dirs) |
+| `nao sync` says "No such file or directory: 'repos'" | Stale install. Re-run `tycoon register llm` (it pre-creates all 8 dirs) |
 | Chat UI shows no schemas | `ask.include_schemas` is too restrictive, or `tycoon ask sync` hasn't run |
 | Slow / hallucinated SQL | Pick a bigger model. 32B+ params is where SQL accuracy gets reliable. |
 

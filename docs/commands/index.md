@@ -37,9 +37,13 @@ command for full reference.
 
 ## AI analytics ([`tycoon ask`](ask/index.md))
 
+LLM provider configuration lives under `tycoon register llm` — see
+[Register](register.md). `tycoon ask` is reserved for analytics
+endpoints.
+
 | Command | What it does |
 |---|---|
-| `tycoon ask init` | Generate `nao_config.yaml`, write `AGENTS.md`, scaffold dirs |
+| `tycoon register llm <provider>` | Configure an LLM, write `nao_config.yaml`, scaffold dirs, offer model install |
 | `tycoon ask sync` | Run `nao sync` — refresh DB + dbt context |
 | `tycoon ask chat` | Open the Nao web UI |
 | `tycoon ask context` | Cat synced context to stdout for piping into agents |
@@ -70,7 +74,7 @@ Every command supports `--help`:
 
 ```bash
 tycoon data sync --help
-tycoon ask init --help
+tycoon register llm --help
 tycoon doctor --help
 ```
 

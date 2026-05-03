@@ -95,7 +95,7 @@ which tool ships its CLI under what name.
 
 ## 5. AGENTS.md is a static pointer file
 
-When you run `tycoon ask init` (or `tycoon ask sync`), tycoon writes
+When you run `tycoon register llm <provider>` (or `tycoon ask sync`), tycoon writes
 an `AGENTS.md` at the project root. Coding agents that auto-read
 `AGENTS.md` (Claude Code, Cursor, Windsurf, etc.) get oriented to
 the project's data context for free:
