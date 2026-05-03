@@ -179,6 +179,21 @@ class SyncConfig(BaseModel):
     )
 
 
+class TransformConfig(BaseModel):
+    """Top-level ``transform:`` block — defaults for transform-side commands."""
+
+    auto_scaffold: bool = Field(
+        default=True,
+        description=(
+            "When True (default), `tycoon data sources run <name>` "
+            "auto-runs the `tycoon data analyze` flow after a successful "
+            "ingest if no staging models exist yet for that source. Set "
+            "to False to opt out project-wide; pass --no-scaffold for a "
+            "one-shot opt-out."
+        ),
+    )
+
+
 class TycoonProject(BaseModel):
     """Top-level tycoon.yml schema."""
 
@@ -212,6 +227,10 @@ class TycoonProject(BaseModel):
     rill_dir: str = Field(default="rill", description="Path to Rill dashboards")
     ask: AskConfig | None = Field(default=None, description="Nao analytics agent configuration")
     sync: SyncConfig | None = Field(default=None, description="`tycoon data sync` defaults")
+    transform: TransformConfig = Field(
+        default_factory=lambda: TransformConfig(),
+        description="Defaults for transform-side commands (`data analyze`, `data sources run`).",
+    )
     stack: StackConfig = Field(default_factory=StackConfig)
 
 

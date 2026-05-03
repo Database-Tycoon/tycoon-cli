@@ -406,10 +406,80 @@ _MaxRecordsOption = typer.Option(
 )
 
 
+def _source_already_referenced(dbt_dir: Path, source_name: str) -> bool:
+    """Return True if any .sql under models/ already references this dbt
+    source — meaning the user has wired it up, by hand or via a previous
+    scaffold. We cover both quote styles dbt accepts.
+    """
+    needles = (f"source('{source_name}',", f'source("{source_name}",')
+    models_dir = dbt_dir / "models"
+    if not models_dir.exists():
+        return False
+    for sql_file in models_dir.rglob("*.sql"):
+        try:
+            text = sql_file.read_text(errors="replace")
+        except OSError:
+            continue
+        if any(n in text for n in needles):
+            return True
+    return False
+
+
+def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, scaffold: bool) -> None:
+    """Auto-run the analyze flow if a dbt project exists and no staging
+    models are present for this source yet.
+
+    Honors `transform.auto_scaffold` in tycoon.yml (default True) and the
+    per-call ``scaffold`` flag (driven by ``--no-scaffold``). Failures are
+    soft: log a warning and return — the ingest itself already succeeded.
+    """
+    if not scaffold:
+        return
+    project = config.project
+    if project is not None and not project.transform.auto_scaffold:
+        return
+    dbt_dir = config.dbt_project_dir
+    if not dbt_dir.exists():
+        return  # No dbt project to scaffold into.
+
+    if _source_already_referenced(dbt_dir, source_name):
+        return  # User already has staging models referencing this source.
+
+    staging_dir = dbt_dir / "models" / "staging" / source_name
+    info(f"No staging models exist for {source_name} — auto-scaffolding...")
+    try:
+        from tycoon.scaffolding.dbt_generator import generate_staging_models
+
+        result = generate_staging_models(
+            raw_db_path=config.raw_db,
+            schema_name=source_config.schema_name,
+            source_name=source_name,
+            output_dir=staging_dir,
+        )
+    except Exception as exc:
+        warn(f"Auto-scaffold failed: {exc}. Run `tycoon data analyze {source_name}` to retry.")
+        return
+
+    if result.generated:
+        success(f"Generated {len(result.generated)} dbt file(s) in {staging_dir}")
+    else:
+        info("No staging models generated (no eligible tables found).")
+
+
 @app.command(name="run")
 def run_source(
     source_name: Optional[str] = typer.Argument(None, help="Name of the registered source to ingest."),
     max_records: Optional[int] = _MaxRecordsOption,
+    no_scaffold: bool = typer.Option(
+        False,
+        "--no-scaffold",
+        help=(
+            "Skip the post-ingest auto-scaffold of dbt staging models. "
+            "Default: scaffold if a dbt project exists and no staging "
+            "models are present for this source. Project-wide opt-out: "
+            "set `transform.auto_scaffold: false` in tycoon.yml."
+        ),
+    ),
 ) -> None:
     """Ingest data from a registered source by name."""
     from tycoon.ingestion.runner import run_source as _run_source
@@ -447,6 +517,7 @@ def run_source(
             max_records=max_records,
         )
         success(f"{source_name} load complete. {load_info}")
+        _maybe_auto_scaffold(source_name, source_config, scaffold=not no_scaffold)
         next_steps(
             ("tycoon data transform run", "run dbt models on the ingested data"),
             ("tycoon start --only rill", "open the Rill dashboard"),
@@ -462,6 +533,14 @@ def run_source(
 @app.command(name="run-all")
 def run_all(
     max_records: Optional[int] = _MaxRecordsOption,
+    no_scaffold: bool = typer.Option(
+        False,
+        "--no-scaffold",
+        help=(
+            "Skip the post-ingest auto-scaffold of dbt staging models "
+            "for every source. See `tycoon data sources run --help`."
+        ),
+    ),
 ) -> None:
     """Run all registered source pipelines sequentially."""
     from tycoon.ingestion.runner import run_source as _run_source
@@ -490,6 +569,7 @@ def run_all(
                 max_records=max_records,
             )
             success(f"{name} complete. {load_info}")
+            _maybe_auto_scaffold(name, source_config, scaffold=not no_scaffold)
         except Exception as exc:
             error(f"{name} pipeline failed: {exc}")
             ai_hint(f"help me debug the {name} ingestion")

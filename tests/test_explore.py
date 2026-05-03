@@ -102,14 +102,14 @@ class TestGenerateStagingModels:
         from tycoon.scaffolding.dbt_generator import generate_staging_models
 
         output_dir = tmp_path / "staging" / "my_source"
-        generated = generate_staging_models(
+        result = generate_staging_models(
             raw_db_path=test_db,
             schema_name="test_schema",
             source_name="my_source",
             output_dir=output_dir,
         )
 
-        sql_files = [f for f in generated if f.endswith(".sql")]
+        sql_files = [f for f in result.generated if f.endswith(".sql")]
         assert len(sql_files) == 1
         assert "stg_my_source__my_table.sql" in sql_files[0]
 
@@ -148,14 +148,14 @@ class TestGenerateStagingModels:
         from tycoon.scaffolding.dbt_generator import generate_staging_models
 
         output_dir = tmp_path / "staging"
-        generated = generate_staging_models(
+        result = generate_staging_models(
             raw_db_path=test_db,
             schema_name="test_schema",
             source_name="my_source",
             output_dir=output_dir,
         )
 
-        yaml_files = [f for f in generated if f.endswith(".yml")]
+        yaml_files = [f for f in result.generated if f.endswith(".yml")]
         assert len(yaml_files) == 1
         assert "_my_source__models.yml" in yaml_files[0]
 
@@ -254,14 +254,14 @@ class TestGenerateStagingModels:
         from tycoon.scaffolding.dbt_generator import generate_staging_models
 
         output_dir = tmp_path / "staging"
-        generated = generate_staging_models(
+        result = generate_staging_models(
             raw_db_path=test_db_with_nested,
             schema_name="s",
             source_name="src",
             output_dir=output_dir,
         )
 
-        file_names = [Path(f).name for f in generated]
+        file_names = [Path(f).name for f in result.generated]
         # orders should be included, orders__items should not
         assert any("stg_src__orders" in n for n in file_names)
         assert not any("items" in n for n in file_names)
@@ -270,14 +270,14 @@ class TestGenerateStagingModels:
         from tycoon.scaffolding.dbt_generator import generate_staging_models
 
         output_dir = tmp_path / "staging"
-        generated = generate_staging_models(
+        result = generate_staging_models(
             raw_db_path=test_db_with_nested,
             schema_name="s",
             source_name="src",
             output_dir=output_dir,
         )
 
-        file_names = [Path(f).name for f in generated]
+        file_names = [Path(f).name for f in result.generated]
         assert not any("_dlt_" in n for n in file_names)
 
     def test_creates_output_directory(self, tmp_path: Path, test_db: Path):
@@ -293,8 +293,82 @@ class TestGenerateStagingModels:
         )
         assert output_dir.is_dir()
 
-    def test_returns_list_of_paths(self, tmp_path: Path, test_db: Path):
+    def test_generated_files_carry_sentinel(self, tmp_path: Path, test_db: Path):
+        """Re-runs depend on the sentinel; first run must embed it."""
+        from tycoon.scaffolding.dbt_generator import (
+            SQL_SENTINEL,
+            YAML_SENTINEL,
+            generate_staging_models,
+        )
+
+        output_dir = tmp_path / "staging"
+        generate_staging_models(
+            raw_db_path=test_db,
+            schema_name="test_schema",
+            source_name="my_source",
+            output_dir=output_dir,
+        )
+        sql = (output_dir / "stg_my_source__my_table.sql").read_text()
+        yml = (output_dir / "_my_source__models.yml").read_text()
+        assert SQL_SENTINEL in sql
+        assert YAML_SENTINEL in yml
+
+    def test_rerun_preserves_hand_edited_file(self, tmp_path: Path, test_db: Path):
+        """If the user removes the sentinel, the file is left alone on re-run."""
         from tycoon.scaffolding.dbt_generator import generate_staging_models
+
+        output_dir = tmp_path / "staging"
+        generate_staging_models(
+            raw_db_path=test_db,
+            schema_name="test_schema",
+            source_name="my_source",
+            output_dir=output_dir,
+        )
+        sql_path = output_dir / "stg_my_source__my_table.sql"
+        # User takes ownership: removes the sentinel + hand-edits.
+        hand_edited = "-- my custom version\nselect 42 as the_answer\n"
+        sql_path.write_text(hand_edited)
+
+        result = generate_staging_models(
+            raw_db_path=test_db,
+            schema_name="test_schema",
+            source_name="my_source",
+            output_dir=output_dir,
+        )
+        # SQL was preserved; YAML was regenerated (still has sentinel).
+        assert sql_path.read_text() == hand_edited
+        assert str(sql_path) in result.skipped
+        assert str(sql_path) not in result.generated
+
+    def test_force_overwrites_hand_edited_file(self, tmp_path: Path, test_db: Path):
+        from tycoon.scaffolding.dbt_generator import (
+            SQL_SENTINEL,
+            generate_staging_models,
+        )
+
+        output_dir = tmp_path / "staging"
+        generate_staging_models(
+            raw_db_path=test_db,
+            schema_name="test_schema",
+            source_name="my_source",
+            output_dir=output_dir,
+        )
+        sql_path = output_dir / "stg_my_source__my_table.sql"
+        sql_path.write_text("-- hand-edited, no sentinel\nselect 42\n")
+
+        result = generate_staging_models(
+            raw_db_path=test_db,
+            schema_name="test_schema",
+            source_name="my_source",
+            output_dir=output_dir,
+            force=True,
+        )
+        assert SQL_SENTINEL in sql_path.read_text()
+        assert str(sql_path) in result.generated
+        assert result.skipped == []
+
+    def test_returns_generated_and_skipped(self, tmp_path: Path, test_db: Path):
+        from tycoon.scaffolding.dbt_generator import GenerateResult, generate_staging_models
 
         output_dir = tmp_path / "staging"
         result = generate_staging_models(
@@ -303,8 +377,12 @@ class TestGenerateStagingModels:
             source_name="my_source",
             output_dir=output_dir,
         )
-        assert isinstance(result, list)
-        assert all(isinstance(p, str) for p in result)
+        assert isinstance(result, GenerateResult)
+        assert all(isinstance(p, str) for p in result.generated)
+        assert all(isinstance(p, str) for p in result.skipped)
+        # First-time generation: nothing should be skipped.
+        assert result.skipped == []
+        assert result.generated, "should have generated at least one file"
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +710,66 @@ class TestAnalyzeCLIErrors:
         # Do NOT create the raw db
         result = cli_runner.invoke(app, ["data", "analyze", "my-src"])
         assert result.exit_code != 0
+
+    def test_analyze_all_with_source_name_errors(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "tycoon.yml").write_text(
+            "name: test\nversion: 0.1.0\nsources: {}\n"
+        )
+        from tycoon.commands import explore as explore_mod
+        from tycoon.config import TycoonConfig
+        monkeypatch.setattr(explore_mod, "config", TycoonConfig(project_root=tmp_path))
+
+        result = cli_runner.invoke(app, ["data", "analyze", "my-source", "--all"])
+        assert result.exit_code != 0
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "either a source name or --all" in combined
+
+    def test_analyze_all_iterates_every_source(self, cli_runner, tmp_path, monkeypatch):
+        """`--all` should generate staging for sources whose raw DB exists,
+        and soft-skip the ones that don't."""
+        monkeypatch.chdir(tmp_path)
+        tycoon_yml = (
+            "name: test\n"
+            "version: 0.1.0\n"
+            "database:\n"
+            "  raw: data/raw.duckdb\n"
+            "  warehouse: data/warehouse.duckdb\n"
+            "sources:\n"
+            "  src_a:\n"
+            "    type: rest_api\n"
+            "    schema: raw_src_a\n"
+            "  src_b:\n"
+            "    type: rest_api\n"
+            "    schema: raw_src_b\n"
+        )
+        (tmp_path / "tycoon.yml").write_text(tycoon_yml)
+        (tmp_path / "data").mkdir()
+        # Only seed src_a's schema; src_b has no raw data.
+        con = duckdb.connect(str(tmp_path / "data" / "raw.duckdb"))
+        con.execute("CREATE SCHEMA raw_src_a")
+        con.execute("CREATE TABLE raw_src_a.items (id INTEGER, name VARCHAR)")
+        con.execute("INSERT INTO raw_src_a.items VALUES (1, 'a')")
+        con.close()
+        # Need a dbt project dir so output_dir parent is valid.
+        (tmp_path / "dbt_project" / "models").mkdir(parents=True)
+
+        from tycoon.commands import explore as explore_mod
+        from tycoon.config import TycoonConfig
+        monkeypatch.setattr(explore_mod, "config", TycoonConfig(project_root=tmp_path))
+
+        result = cli_runner.invoke(app, ["data", "analyze", "--all"])
+        assert result.exit_code == 0, result.stdout
+
+        # src_a generated; src_b skipped (raw DB has no schema for it but
+        # the DB file exists, so the path is "no eligible tables" — still
+        # a soft-skip in --all mode).
+        assert (
+            tmp_path / "dbt_project" / "models" / "staging" / "src_a"
+            / "stg_src_a__items.sql"
+        ).exists()
+        assert "src_a" in result.stdout
+        assert "src_b" in result.stdout
 
     def test_analyze_interactive_prompt_does_not_crash(self, cli_runner, tmp_path, monkeypatch):
         """Regression: `tycoon data analyze` without a source argument must

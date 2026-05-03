@@ -277,3 +277,109 @@ class TestSourceInstaller:
         with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result):
             result = install_dlt_extra("rest_api")
             assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Auto-scaffold (`_maybe_auto_scaffold` — used by `data sources run`)
+# ---------------------------------------------------------------------------
+
+
+class TestAutoScaffold:
+    """Unit tests for the post-ingest auto-scaffold helper."""
+
+    def _seed_raw_db(self, path: Path, schema: str, table: str) -> None:
+        """Write a tiny DuckDB with one schema-qualified table."""
+        import duckdb
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        con = duckdb.connect(str(path))
+        try:
+            con.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+            con.execute(f"CREATE TABLE {schema}.{table} (id INTEGER, name VARCHAR)")
+            con.execute(f"INSERT INTO {schema}.{table} VALUES (1, 'a'), (2, 'b')")
+        finally:
+            con.close()
+
+    def _bind_config(self, monkeypatch, project_root: Path) -> None:
+        from tycoon.commands import sources as sources_mod
+        from tycoon.config import TycoonConfig
+
+        cfg = TycoonConfig(project_root=project_root)
+        monkeypatch.setattr(sources_mod, "config", cfg)
+
+    def test_no_dbt_project_is_noop(self, tmp_path: Path, monkeypatch):
+        from tycoon.commands.sources import _maybe_auto_scaffold
+
+        _setup_project(tmp_path)
+        self._bind_config(monkeypatch, tmp_path)
+        # No dbt_project/ directory exists.
+
+        sc = SourceConfig(type="rest_api", schema="raw_nyc_dot", config={})
+        _maybe_auto_scaffold("nyc-dot", sc, scaffold=True)
+        # No exception, no files written. Nothing to assert beyond "didn't raise."
+
+    def test_skips_when_source_already_referenced(self, tmp_path: Path, monkeypatch):
+        from tycoon.commands.sources import _maybe_auto_scaffold
+
+        _setup_project(tmp_path)
+        # Hand-written staging model already references the source.
+        models = tmp_path / "dbt_project" / "models" / "staging"
+        models.mkdir(parents=True)
+        (models / "stg_existing.sql").write_text(
+            "select * from {{ source('nyc-dot', 'i4gi-tjb9') }}\n"
+        )
+        self._seed_raw_db(tmp_path / "data" / "raw.duckdb", "raw_nyc_dot", "i4gi_tjb9")
+        self._bind_config(monkeypatch, tmp_path)
+
+        sc = SourceConfig(type="rest_api", schema="raw_nyc_dot", config={})
+        _maybe_auto_scaffold("nyc-dot", sc, scaffold=True)
+
+        # No nyc-dot subdirectory was created.
+        assert not (models / "nyc-dot").exists()
+
+    def test_generates_when_dbt_exists_and_no_prior_reference(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from tycoon.commands.sources import _maybe_auto_scaffold
+
+        _setup_project(tmp_path)
+        (tmp_path / "dbt_project" / "models").mkdir(parents=True)
+        self._seed_raw_db(tmp_path / "data" / "raw.duckdb", "raw_nyc_dot", "i4gi_tjb9")
+        self._bind_config(monkeypatch, tmp_path)
+
+        sc = SourceConfig(type="rest_api", schema="raw_nyc_dot", config={})
+        _maybe_auto_scaffold("nyc-dot", sc, scaffold=True)
+
+        sql = tmp_path / "dbt_project" / "models" / "staging" / "nyc-dot" / "stg_nyc-dot__i4gi_tjb9.sql"
+        assert sql.exists()
+        assert "source('nyc-dot', 'i4gi_tjb9')" in sql.read_text()
+
+    def test_no_scaffold_flag_skips(self, tmp_path: Path, monkeypatch):
+        from tycoon.commands.sources import _maybe_auto_scaffold
+
+        _setup_project(tmp_path)
+        (tmp_path / "dbt_project" / "models").mkdir(parents=True)
+        self._seed_raw_db(tmp_path / "data" / "raw.duckdb", "raw_nyc_dot", "i4gi_tjb9")
+        self._bind_config(monkeypatch, tmp_path)
+
+        sc = SourceConfig(type="rest_api", schema="raw_nyc_dot", config={})
+        _maybe_auto_scaffold("nyc-dot", sc, scaffold=False)
+
+        assert not (tmp_path / "dbt_project" / "models" / "staging" / "nyc-dot").exists()
+
+    def test_config_opt_out_skips(self, tmp_path: Path, monkeypatch):
+        from tycoon.commands.sources import _maybe_auto_scaffold
+
+        # tycoon.yml with transform.auto_scaffold: false
+        (tmp_path / "tycoon.yml").write_text(
+            _SAMPLE_YML + "transform:\n  auto_scaffold: false\n"
+        )
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        (tmp_path / "dbt_project" / "models").mkdir(parents=True)
+        self._seed_raw_db(tmp_path / "data" / "raw.duckdb", "raw_nyc_dot", "i4gi_tjb9")
+        self._bind_config(monkeypatch, tmp_path)
+
+        sc = SourceConfig(type="rest_api", schema="raw_nyc_dot", config={})
+        _maybe_auto_scaffold("nyc-dot", sc, scaffold=True)
+
+        assert not (tmp_path / "dbt_project" / "models" / "staging" / "nyc-dot").exists()

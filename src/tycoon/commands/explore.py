@@ -42,6 +42,30 @@ def analyze_cmd(
             ),
         ),
     ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help=(
+                "Overwrite hand-edited staging files (those whose tycoon "
+                "sentinel has been removed). Without --force, such files "
+                "are skipped with a warning."
+            ),
+        ),
+    ] = False,
+    all_sources: Annotated[
+        bool,
+        typer.Option(
+            "--all",
+            help=(
+                "Analyze every registered source. Sources whose raw DB "
+                "doesn't exist yet are skipped with a warning rather than "
+                "failing the run. Mutually exclusive with the source-name "
+                "argument."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Auto-scaffold dbt staging models for a registered source.
 
@@ -56,8 +80,18 @@ def analyze_cmd(
         error("No tycoon.yml found. Run 'tycoon init' first.")
         raise typer.Exit(1)
 
-    # 2. Verify source is registered
+    # 2. Resolve which source(s) we're analyzing.
     sources = config.sources
+    if all_sources:
+        if source_name:
+            error("Pass either a source name or --all, not both.")
+            raise typer.Exit(1)
+        if not sources:
+            error("No sources registered in tycoon.yml. Run 'tycoon data sources add' first.")
+            raise typer.Exit(1)
+        _analyze_all(force=force, no_dbt=no_dbt, rill=rill, build=build)
+        return
+
     if not source_name:
         if not sources:
             error("No sources found in tycoon.yml. Run 'tycoon sources add' first.")
@@ -108,19 +142,27 @@ def analyze_cmd(
         info("Generating dbt staging models...")
         staging_dir = config.dbt_project_dir / "models" / "staging" / source_name
         try:
-            dbt_files = generate_staging_models(
+            result = generate_staging_models(
                 raw_db_path=raw_db,
                 schema_name=schema_name,
                 source_name=source_name,
                 output_dir=staging_dir,
+                force=force,
             )
-            all_generated.extend(dbt_files)
-            if dbt_files:
-                success(f"Generated {len(dbt_files)} dbt file(s) in {staging_dir}")
-                for f in dbt_files:
+            all_generated.extend(result.generated)
+            if result.generated:
+                success(f"Generated {len(result.generated)} dbt file(s) in {staging_dir}")
+                for f in result.generated:
                     info(f"  {Path(f).name}")
-            else:
+            elif not result.skipped:
                 warn("No dbt staging models generated (no eligible tables found).")
+            if result.skipped:
+                warn(
+                    f"Skipped {len(result.skipped)} hand-edited file(s) "
+                    f"(sentinel removed). Re-run with --force to overwrite:"
+                )
+                for f in result.skipped:
+                    warn(f"  {Path(f).name}")
         except Exception as exc:
             error(f"dbt generation failed: {exc}")
             raise typer.Exit(1) from exc
@@ -187,3 +229,69 @@ def analyze_cmd(
             success("dbt build completed successfully.")
 
     ai_hint(f"improve the staging models for {source_name}")
+
+
+def _analyze_all(*, force: bool, no_dbt: bool, rill: bool, build: bool) -> None:
+    """Iterate every registered source and analyze each.
+
+    Soft-skips sources whose raw DB doesn't exist yet. ``--rill`` and
+    ``--build`` apply per-source. Single summary at the end.
+    """
+    from tycoon.scaffolding.dbt_generator import generate_staging_models
+
+    sources = config.sources
+    header(f"Analyzing all sources ({len(sources)})")
+
+    total_generated: list[str] = []
+    total_skipped: list[str] = []
+    skipped_sources: list[str] = []
+
+    for src_name, src_cfg in sources.items():
+        info(f"  → {src_name} (schema: {src_cfg.schema_name})")
+        raw_db = config.raw_db
+        if not raw_db.exists():
+            warn(
+                f"    Skipping {src_name} — raw DB not found at {raw_db}. "
+                f"(run `tycoon data sources run {src_name}` first)"
+            )
+            skipped_sources.append(src_name)
+            continue
+
+        if no_dbt:
+            continue
+
+        staging_dir = config.dbt_project_dir / "models" / "staging" / src_name
+        try:
+            result = generate_staging_models(
+                raw_db_path=raw_db,
+                schema_name=src_cfg.schema_name,
+                source_name=src_name,
+                output_dir=staging_dir,
+                force=force,
+            )
+        except Exception as exc:
+            warn(f"    {src_name}: generation failed — {exc}")
+            skipped_sources.append(src_name)
+            continue
+
+        total_generated.extend(result.generated)
+        total_skipped.extend(result.skipped)
+        if result.generated:
+            success(f"    Generated {len(result.generated)} dbt file(s)")
+        elif not result.skipped:
+            warn(f"    No staging models generated for {src_name} (no eligible tables).")
+
+    success(
+        f"Analyzed {len(sources) - len(skipped_sources)} of {len(sources)} sources, "
+        f"generated {len(total_generated)} dbt file(s) total"
+    )
+    if total_skipped:
+        warn(
+            f"Skipped {len(total_skipped)} hand-edited file(s) (sentinel removed). "
+            f"Re-run with --force to overwrite."
+        )
+
+    # Note: --rill and --build aren't yet wired for --all to keep the
+    # initial surface small. File a follow-up issue if needed.
+    if rill or build:
+        warn("--rill and --build are not yet supported with --all; skipped.")
