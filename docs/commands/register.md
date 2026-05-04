@@ -204,13 +204,18 @@ tycoon register llm ollama --skip-install
 
 ### Local model install
 
-After registering LM Studio or Ollama, `register llm` probes the runtime:
+After registering LM Studio or Ollama, `register llm` probes the runtime and routes based on what it finds:
 
-- **Reachable + ≥1 model loaded** → "ready" message, no prompt.
-- **Reachable + 0 models loaded** → for Ollama, prompts to `ollama pull qwen2.5-coder:7b` (~4.7 GB, the recommended SQL-leaning model). For LM Studio, prints GUI download instructions.
-- **Unreachable** → warns and prints start-the-server hint, leaves `tycoon.yml` configured so the next attempt finds the work done.
+| State | LM Studio response | Ollama response |
+|---|---|---|
+| Reachable + ≥1 model loaded | "ready" message, no prompt | "ready" message, no prompt |
+| Reachable + 0 loaded but ≥1 chat model **downloaded** | **Prompts to `lms load <model>`** — the auto-load offer (v0.1.5+). Hits in 5-30s, then chat is ready. Falls back to GUI hint if `lms` isn't on PATH or user declines. | (Ollama auto-loads on first request, so this state only matters if you genuinely have nothing pulled — see next row.) |
+| Reachable + nothing downloaded | Prints LM Studio GUI download hint (Discover tab → search → download → load) | Prompts to `ollama pull qwen2.5-coder:7b` (~4.7 GB) |
+| Unreachable | Warns + prints start-the-server hint; `tycoon.yml` already saved | Same |
 
-The recommended model is the same across both runtimes: **Qwen 2.5 Coder 7B Instruct (Q4_K_M, ~4.7 GB)**. See [Recipe: LM Studio local LLM](../recipes/lm-studio-local-llm.md) for the rationale.
+The recommended model is the same across both runtimes: **Qwen 2.5 Coder 7B Instruct (Q4_K_M, ~4.7 GB)**. The auto-load offer prefers it when it's downloaded; otherwise picks the first chat-capable model (embeddings filtered out). See [Recipe: LM Studio local LLM](../recipes/lm-studio-local-llm.md) for the rationale.
+
+The same auto-load offer fires from `tycoon ask chat` when you launch chat against a cold LM Studio — no need to switch back to `register llm`.
 
 ### Flags
 

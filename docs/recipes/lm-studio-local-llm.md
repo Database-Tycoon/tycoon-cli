@@ -55,6 +55,7 @@ This:
 - Writes `AGENTS.md` at the project root (Claude Code / Cursor / Windsurf will find this)
 - Pre-creates the eight directories `nao sync` walks
 - Writes `.tycoon/nao/.gitignore` so PII previews stay local
+- **Probes LM Studio** and offers to load a chat model if you have one downloaded but not in memory (see "Auto-load downloaded models" below)
 
 The generated `nao_config.yaml` LLM block:
 
@@ -108,7 +109,32 @@ Output:
 ┃ LM Studio       │ OK     │ http://localhost:1234/v1 responded (1 …)   ┃
 ```
 
-The LM Studio row hits `/v1/models` and confirms the server is reachable. If it's red, restart the LM Studio server and re-run `ask doctor`.
+The LM Studio row hits `/api/v0/models` and counts models with `state: "loaded"` (i.e. actively held in memory — not just downloaded). If the panel goes red:
+
+- **`unreachable`** → start LM Studio's local server (Developer tab → Start Server) and re-run.
+- **`reachable but 0 models loaded`** → load a model. See the next section for the auto-load flow.
+
+## Auto-load downloaded models
+
+If you have a chat model **downloaded in LM Studio but not loaded into memory**, tycoon offers to call `lms load` for you rather than punt you to the GUI. Triggers fire from two places:
+
+1. After `tycoon register llm lm-studio` — if the runtime is up but no model is loaded
+2. When you run `tycoon ask chat` — if the same state holds at chat-launch time
+
+```
+> LM Studio has 1 chat model(s) downloaded but none in memory.
+Load google/gemma-4-26b-a4b now? [Y/n]:
+```
+
+Hit Enter (the default is Yes) and tycoon runs `lms load <model_id>`. Loading takes ~5-30s depending on model size and disk speed; then chat is ready.
+
+The auto-load picks the recommended Qwen 2.5 Coder if it's downloaded; otherwise the first chat-capable model (embedding-only models are filtered out — they can't satisfy chat). Decline the prompt (or if `lms` isn't on your PATH or at the standard `~/.cache/lm-studio/bin/lms` location) and tycoon falls back to the GUI hint.
+
+To preempt the prompt entirely, load a model in the LM Studio UI before invoking `tycoon ask chat`. Or call `lms` directly:
+
+```bash
+~/.cache/lm-studio/bin/lms load <model-id>
+```
 
 ## Day-to-day usage
 
