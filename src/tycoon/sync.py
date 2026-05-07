@@ -51,11 +51,25 @@ class SyncedTable:
 
 
 @dataclass
+class SyncSkip:
+    """Record of a table/view we couldn't copy. Surfaced in the summary
+    so callers can warn the user (most often: a view that references a
+    catalog the destination doesn't have attached, e.g. dbt's
+    `tycoon_meta`)."""
+
+    source: str
+    schema: str
+    table: str
+    reason: str
+
+
+@dataclass
 class SyncResult:
     """Aggregate result of a sync run."""
 
     dest: Path
     tables: list[SyncedTable] = field(default_factory=list)
+    skipped: list[SyncSkip] = field(default_factory=list)
 
     @property
     def total_rows(self) -> int:
@@ -213,7 +227,22 @@ def sync_to_local(
             try:
                 tables = _list_source_tables(con, alias, spec.schemas, spec.tables)
                 for schema, table in tables:
-                    rows = _copy_one(con, alias, schema, table, mode)
+                    try:
+                        rows = _copy_one(con, alias, schema, table, mode)
+                    except duckdb.Error as exc:
+                        # Per-table resilience: a single broken view (most
+                        # often a dbt staging model that references an
+                        # unattached catalog like `tycoon_meta`) shouldn't
+                        # fail the whole sync. Log + continue.
+                        result.skipped.append(
+                            SyncSkip(
+                                source=spec.from_,
+                                schema=schema,
+                                table=table,
+                                reason=str(exc).splitlines()[0][:200],
+                            )
+                        )
+                        continue
                     if rows is not None:
                         result.tables.append(
                             SyncedTable(

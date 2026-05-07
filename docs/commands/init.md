@@ -47,12 +47,10 @@ The exact tree depends on the template. See [Reference: Templates](../reference/
 
 ## Templates
 
-`tycoon init --list-templates` shows them. The four built-in:
+`tycoon init --list-templates` shows them. The two featured built-in:
 
 - `csv-import` — fully offline, smoke-test the full pipeline
 - `nyc-transit` — live ingestion from NYC public APIs
-- `github-analytics` — GitHub repo metrics (needs `GITHUB_TOKEN`)
-- `weather-station` — NOAA weather data, parameterized
 
 See [Reference: Templates](../reference/templates.md) for the full list.
 
@@ -61,8 +59,7 @@ See [Reference: Templates](../reference/templates.md) for the full list.
 Some templates declare parameters in their `template.yml`. Pass them with `--param`:
 
 ```bash
-tycoon init --template github-analytics --name gh-demo \
-  --param owner=anthropics --param repo=claude-code
+tycoon init --template <name> --param key=value --param other=value
 ```
 
 If you omit a parameter the template requires, `init` prompts interactively.

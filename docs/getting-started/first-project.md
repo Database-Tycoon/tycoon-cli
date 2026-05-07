@@ -31,9 +31,8 @@ my-project/
 ```
 
 The `csv-import` template ships a working `dbt_project/` and a sample
-CSV so the full pipeline runs end-to-end on a fresh install. Other
-templates (`nyc-transit`, `github-analytics`, `weather-station`) need
-network access; `csv-import` does not.
+CSV so the full pipeline runs end-to-end on a fresh install. The
+`nyc-transit` template needs network access; `csv-import` does not.
 
 ## 2. Health check
 
@@ -138,7 +137,7 @@ vs. previous run" table when columns shifted.
 
 ```bash
 pip install 'database-tycoon[ask]'    # if you didn't already
-tycoon ask init --llm lm-studio       # configures Nao + writes AGENTS.md
+tycoon register llm lm-studio         # configures Nao + writes AGENTS.md + offers model install
 tycoon ask sync                       # introspects warehouse + dbt project
 tycoon ask doctor                     # health check
 tycoon ask chat                       # opens Nao UI on :5005

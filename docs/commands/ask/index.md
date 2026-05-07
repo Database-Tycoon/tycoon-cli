@@ -11,9 +11,13 @@ agent (Nao's own chat UI, Claude Code, Cursor, etc.).
 
 ## Subcommands at a glance
 
+The `ask` namespace is the **analytics surface**: chat, sync data
+context, query exposure. LLM provider configuration lives under
+[`tycoon register llm`](../register.md#tycoon-register-llm) (symmetric
+with `register dbt` and `register warehouse`).
+
 | Command | What it does |
 |---|---|
-| `tycoon ask init [--llm <p>]` | Generate config + write AGENTS.md + scaffold 8 nao dirs |
 | `tycoon ask sync` | Run `nao sync` — refresh DB schema + dbt context |
 | `tycoon ask chat` | Open the Nao web UI on `:5005` |
 | `tycoon ask context [...]` | Cat synced context to stdout (for piping into other agents) |
@@ -24,8 +28,9 @@ agent (Nao's own chat UI, Claude Code, Cursor, etc.).
 ## The 30-second tour
 
 ```bash
-# Once per project
-tycoon ask init --llm lm-studio
+# Once per project — register the LLM (this writes nao_config.yaml,
+# AGENTS.md, scaffolds 8 nao dirs, and offers to pull a model).
+tycoon register llm lm-studio
 tycoon ask sync                # ~30s first time
 tycoon ask doctor              # all green?
 
@@ -34,33 +39,35 @@ tycoon ask chat                # web UI
 tycoon ask context --table dim_users | claude -p "explain this table"
 ```
 
-## What `ask init` actually does
+`tycoon init` chains the register-llm step automatically if you pick a
+provider in the wizard, so for net-new projects you can usually skip
+the explicit `tycoon register llm` call.
 
-- Generates `.tycoon/nao/nao_config.yaml` from your `tycoon.yml`. Translates `database.warehouse: md:my_catalog` to a `path: md:my_catalog` Nao DB entry, applies `ask.include_schemas` / `ask.exclude_schemas` glob filters, expands the `provider: lm-studio` shortcut to a valid OpenAI-compat config, and so on.
+## What `tycoon register llm` does
+
+- Writes `ask.llm.provider` in `tycoon.yml` (and any `--base-url` /
+  `--model` / `--api-key-env` overrides).
+- Generates `.tycoon/nao/nao_config.yaml` from `tycoon.yml`. Translates `database.warehouse: md:my_catalog` to a `path: md:my_catalog` Nao DB entry, applies `ask.include_schemas` / `ask.exclude_schemas` filters, expands the `lm-studio` / `ollama` shortcuts to valid OpenAI-compat configs.
 - Writes a default `.tycoon/nao/RULES.md` (or yours, if you set `ask.rules` in `tycoon.yml`).
 - Creates **all eight directories** `nao sync` expects: `databases/`, `queries/`, `docs/`, `semantics/`, `repos/`, `agent/{tools,mcps,skills}`. Eliminates the `No such file or directory: 'repos'` crash class.
 - Writes `.tycoon/nao/.gitignore` ignoring `databases/`, `repos/`, `db.sqlite*` — the directories that carry PII row-previews and machine-state.
 - Writes `AGENTS.md` at the project root pointing coding agents at the synced context tree. Sentinel-marked so re-runs don't stomp user-authored AGENTS.md files.
+- For local providers (`lm-studio`, `ollama`), probes the runtime and offers to pull the recommended model (Qwen 2.5 Coder 7B, ~4.7 GB).
+- Seeds `ask.exclude_schemas` with conservative noise patterns (`information_schema`, `_tycoon`, `sqlmesh*`) when unset.
 
-## The `--llm <provider>` shortcut
+## Provider shortcuts
 
-`tycoon ask init --llm <provider>` updates `tycoon.yml`'s
-`ask.llm.provider` field and regenerates the nao config in one shot.
-Six shortcuts:
-
-| `--llm` | Expands to |
+| Provider arg | Expands to |
 |---|---|
 | `lm-studio` | `provider: openai` + `base_url: http://localhost:1234/v1` + `api_key: lm-studio` (the placeholder is intentional — LM Studio ignores it) |
-| `ollama` | `provider: ollama` |
-| `openai` | `provider: openai` |
-| `anthropic` | `provider: anthropic` |
-| `gemini` | `provider: gemini` |
-| `mistral` | `provider: mistral` |
+| `ollama` | `provider: openai` + `base_url: http://localhost:11434/v1` + `api_key: ollama` |
+| `openai` | `provider: openai` (set `OPENAI_API_KEY` in your env) |
+| `anthropic` | `provider: anthropic` (set `ANTHROPIC_API_KEY`) |
+| `gemini` | `provider: gemini` (set `GEMINI_API_KEY`) |
+| `mistral` | `provider: mistral` (set `MISTRAL_API_KEY`) |
 
 `lm-studio` is the marquee shortcut: zero-config local LLM without an
-account or API key. The other shortcuts just record the provider name;
-you'll need to set `model` and `api_key_env` in `tycoon.yml` separately
-for cloud providers.
+account or API key.
 
 ## What `ask sync` does
 
@@ -115,7 +122,7 @@ The full reference — all flags, exit codes, error paths — is on the
 
 Validates the four most common breakage modes:
 
-1. **`nao_config.yaml` exists** — fails if `ask init` was never run.
+1. **`nao_config.yaml` exists** — fails if `tycoon register llm` (or `tycoon init` with an LLM picked) was never run.
 2. **All eight required directories exist** — fails if any are missing.
 3. **Warehouse auth** — for MotherDuck warehouses, checks `MOTHERDUCK_TOKEN`. Warns (not fails) if unset, since OAuth is also valid.
 4. **LLM endpoint reachable** — when `provider: lm-studio` is configured, hits `<base_url>/models` to confirm LM Studio is running. Fails if unreachable.

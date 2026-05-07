@@ -169,3 +169,88 @@ class TestRunSourceDispatch:
             assert native in CATALOG, (
                 f"{native} should still appear in the catalog for browsing"
             )
+
+
+# ---------------------------------------------------------------------------
+# dlt write_disposition contract — replace / append / merge
+# ---------------------------------------------------------------------------
+
+
+class TestWriteDispositionContract:
+    """Lock in the row-level contract of dlt's three write modes against
+    DuckDB. These tests use small in-process resources (no network) so
+    a regression in either dlt or duckdb-destination wiring shows up
+    immediately, not only when running the live e2e suite.
+
+    The modes:
+
+    - replace : second load wipes the table and writes only the new rows.
+    - append  : second load adds rows on top of the first; primary key
+                duplication is allowed.
+    - merge   : second load upserts on the declared primary key; second
+                batch's values win for matching keys, novel keys land.
+    """
+
+    def _run_two_loads(
+        self,
+        tmp_path,
+        *,
+        write_disposition: str,
+        primary_key: str | None = None,
+    ) -> list[tuple]:
+        """Load two batches with the given disposition; return the final
+        (id, name) rows ordered by id."""
+        import dlt
+
+        first = [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}]
+        second = [{"id": 2, "name": "B-updated"}, {"id": 3, "name": "c"}]
+
+        kwargs: dict = {"name": "items", "write_disposition": write_disposition}
+        if primary_key is not None:
+            kwargs["primary_key"] = primary_key
+
+        @dlt.resource(**kwargs)
+        def items_first():
+            yield from first
+
+        @dlt.resource(**kwargs)
+        def items_second():
+            yield from second
+
+        db_path = tmp_path / "raw.duckdb"
+        pipeline = dlt.pipeline(
+            pipeline_name="write_mode_test",
+            destination=dlt.destinations.duckdb(str(db_path)),
+            dataset_name="raw_test",
+            pipelines_dir=str(tmp_path / "_dlt"),
+        )
+        pipeline.run(items_first())
+        pipeline.run(items_second())
+
+        import duckdb
+
+        con = duckdb.connect(str(db_path), read_only=True)
+        try:
+            return sorted(
+                con.execute("SELECT id, name FROM raw_test.items").fetchall(),
+                key=lambda r: (r[0], r[1]),
+            )
+        finally:
+            con.close()
+
+    def test_replace_keeps_only_second_batch(self, tmp_path):
+        rows = self._run_two_loads(tmp_path, write_disposition="replace")
+        assert rows == [(2, "B-updated"), (3, "c")], rows
+
+    def test_append_keeps_both_batches(self, tmp_path):
+        rows = self._run_two_loads(tmp_path, write_disposition="append")
+        # 2 + 2 = 4 rows total. Two rows have id=2 (one from each batch);
+        # we sort by (id, name) so the order is deterministic.
+        assert rows == [(1, "a"), (2, "B-updated"), (2, "b"), (3, "c")], rows
+
+    def test_merge_upserts_on_primary_key(self, tmp_path):
+        rows = self._run_two_loads(
+            tmp_path, write_disposition="merge", primary_key="id"
+        )
+        # id=1 carries from batch 1; id=2 wins from batch 2; id=3 added.
+        assert rows == [(1, "a"), (2, "B-updated"), (3, "c")], rows

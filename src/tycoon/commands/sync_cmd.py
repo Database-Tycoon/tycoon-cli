@@ -123,7 +123,7 @@ def sync_cmd(
         error(f"Sync failed: {exc}")
         raise typer.Exit(1) from exc
 
-    if not result.tables:
+    if not result.tables and not result.skipped:
         warn("No tables matched the filters. Check --schema / --tables / sync.sources.")
         return
 
@@ -133,6 +133,16 @@ def sync_cmd(
             f"  [cyan]{t.schema}.{t.table}[/cyan]  "
             f"[dim]{t.rows:,} rows from {t.source}[/dim]"
         )
+
+    if result.skipped:
+        warn(
+            f"Skipped {len(result.skipped)} table(s) that couldn't be copied "
+            f"(usually views referencing unattached catalogs):"
+        )
+        for s in result.skipped:
+            console.print(
+                f"  [yellow]{s.schema}.{s.table}[/yellow]  [dim]{s.reason}[/dim]"
+            )
 
     success(
         f"Synced {result.total_rows:,} rows across {len(result.tables)} "

@@ -164,6 +164,76 @@ When you set warehouse to `md:<catalog>`, `register warehouse` warns if `MOTHERD
 
 ---
 
+## `tycoon register llm`
+
+Wire tycoon's AI analytics agent up to an LLM provider. Symmetric with `register dbt` and `register warehouse` — one external resource, recorded in `tycoon.yml`, all setup chained off the registration call.
+
+```bash
+# Register a provider (writes tycoon.yml + nao_config.yaml +
+# AGENTS.md, seeds exclude_schemas, offers model install).
+tycoon register llm lm-studio
+
+# No-arg form refreshes the existing setup against tycoon.yml — use
+# this after editing the file by hand.
+tycoon register llm
+
+# Opt out of the post-register install offer (useful for scripts).
+tycoon register llm ollama --skip-install
+```
+
+### Provider choices
+
+| Provider | Local? | Notes |
+|---|---|---|
+| `lm-studio` | yes | OpenAI-compat at `http://localhost:1234/v1`. Recommended local option. |
+| `ollama` | yes | OpenAI-compat at `http://localhost:11434/v1`. CLI-friendly. |
+| `openai` | cloud | needs `OPENAI_API_KEY` |
+| `anthropic` | cloud | needs `ANTHROPIC_API_KEY` |
+| `gemini` | cloud | needs `GEMINI_API_KEY` |
+| `mistral` | cloud | needs `MISTRAL_API_KEY` |
+
+### What gets written
+
+- `ask.llm` block in `tycoon.yml` (provider + optional model / base_url / api_key_env overrides)
+- `.tycoon/nao/nao_config.yaml` — Nao runtime config
+- `.tycoon/nao/{databases,queries,docs,semantics,repos,agent/{tools,mcps,skills}}/` — eight directories Nao expects
+- `.tycoon/nao/RULES.md` — project rules surfaced to the agent
+- `.tycoon/nao/.gitignore` — keeps PII previews + sync state out of git
+- `AGENTS.md` at the project root — sentinel-marked pointer for coding agents
+- `ask.exclude_schemas` seeded with conservative noise patterns (DuckDB internals, `_tycoon`, `sqlmesh*`) when unset
+
+### Local model install
+
+After registering LM Studio or Ollama, `register llm` probes the runtime and routes based on what it finds:
+
+| State | LM Studio response | Ollama response |
+|---|---|---|
+| Reachable + ≥1 model loaded | "ready" message, no prompt | "ready" message, no prompt |
+| Reachable + 0 loaded but ≥1 chat model **downloaded** | **Prompts to `lms load <model>`** — the auto-load offer (v0.1.5+). Hits in 5-30s, then chat is ready. Falls back to GUI hint if `lms` isn't on PATH or user declines. | (Ollama auto-loads on first request, so this state only matters if you genuinely have nothing pulled — see next row.) |
+| Reachable + nothing downloaded | Prints LM Studio GUI download hint (Discover tab → search → download → load) | Prompts to `ollama pull qwen2.5-coder:7b` (~4.7 GB) |
+| Unreachable | Warns + prints start-the-server hint; `tycoon.yml` already saved | Same |
+
+The recommended model is the same across both runtimes: **Qwen 2.5 Coder 7B Instruct (Q4_K_M, ~4.7 GB)**. The auto-load offer prefers it when it's downloaded; otherwise picks the first chat-capable model (embeddings filtered out). See [Recipe: LM Studio local LLM](../recipes/lm-studio-local-llm.md) for the rationale.
+
+The same auto-load offer fires from `tycoon ask chat` when you launch chat against a cold LM Studio — no need to switch back to `register llm`.
+
+### Flags
+
+```
+--base-url     URL    Override the OpenAI-compat base URL (e.g. for an LM
+                      Studio server on a non-default port).
+--model        TEXT   Pin a specific model name; otherwise the runtime picks.
+--api-key-env  TEXT   Env var holding the API key for cloud providers
+                      (e.g. OPENAI_API_KEY). Ignored for local providers.
+--skip-install        Skip the post-register model install offer.
+```
+
+### Auto-detection in `tycoon init`
+
+If you skip the explicit `register llm` call and run `tycoon init`, the wizard probes the same ports and offers a one-keystroke "Detected Ollama running locally — use it? [Y/n]" confirm. Picking a provider in the wizard chains the same setup automatically.
+
+---
+
 ## Related
 
 - [Reference: tycoon.yml](../reference/tycoon-yml.md#stack) — `stack` block schema

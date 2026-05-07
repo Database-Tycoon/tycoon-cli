@@ -33,20 +33,31 @@ def _project_relative(tycoon_root: Path, path: Path) -> str:
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
+# Templates kept on disk (so `--template <name>` still works for anyone who
+# depends on them) but hidden from `--list-templates` and the docs landing
+# pages. Demoted in v0.1.5 to focus the demo surface on csv-import +
+# nyc-transit.
+_DEMOTED_TEMPLATES: frozenset[str] = frozenset({"github-analytics", "weather-station"})
 
-def list_templates() -> list[str]:
+
+def list_templates(*, include_demoted: bool = False) -> list[str]:
     """Return names of available templates.
 
     Each subdirectory under ``src/tycoon/templates/`` that contains a
-    ``tycoon.yml`` file is considered a template.
+    ``tycoon.yml`` file is considered a template. Demoted templates are
+    excluded by default; pass ``include_demoted=True`` to surface them
+    (used by tests that exercise template-loading machinery).
     """
     if not _TEMPLATES_DIR.is_dir():
         return []
-    return sorted(
+    names = (
         d.name
         for d in _TEMPLATES_DIR.iterdir()
         if d.is_dir() and (d / "tycoon.yml").exists()
     )
+    if not include_demoted:
+        names = (n for n in names if n not in _DEMOTED_TEMPLATES)
+    return sorted(names)
 
 
 def get_template_path(name: str) -> Path:
@@ -113,6 +124,7 @@ def scaffold_blank_project(
     existing_dbt_path: str | None = None,
     existing_warehouse_path: str | None = None,
     existing_rill_path: str | None = None,
+    llm_provider: str | None = None,
 ) -> None:
     """Create a minimal tycoon project with a ``tycoon.yml`` and supporting dirs.
 
@@ -186,6 +198,13 @@ def scaffold_blank_project(
             "orchestrator": stack.orchestrator.value,
             "orchestrator_managed": stack.orchestrator_managed,
         }
+
+    # Record the LLM provider chosen during the wizard so the chained
+    # `setup_ask_stack()` call (or a later `tycoon register llm`) can
+    # expand the shortcut without re-prompting. Skipping (None) leaves
+    # the ask block off — `tycoon register llm <provider>` adds it later.
+    if llm_provider:
+        project_data["ask"] = {"llm": {"provider": llm_provider}}
 
     yml_path = target / "tycoon.yml"
     yml_path.write_text(yaml.dump(project_data, default_flow_style=False, sort_keys=False))
@@ -568,6 +587,31 @@ def scaffold_from_template(
         from tycoon.observability import ensure_schema
         ensure_schema(target / ".tycoon" / "metadata.duckdb")
     except Exception:
+        pass
+
+    # If the template declares dbt_project_dir but doesn't ship one
+    # (e.g. nyc-transit), scaffold a fresh blank dbt project so the
+    # auto-scaffold flow has a place to write staging models. Templates
+    # that ship their own dbt_project/ (csv-import) hit the if-branch
+    # below directly.
+    try:
+        from tycoon.project import WarehouseType, load_project
+
+        proj = load_project(target)
+        if proj is not None:
+            dbt_rel = Path(proj.dbt_project_dir)
+            dbt_abs = dbt_rel if dbt_rel.is_absolute() else target / dbt_rel
+            if not (dbt_abs / "dbt_project.yml").exists():
+                _scaffold_dbt_project(
+                    dbt_dir=dbt_abs,
+                    name=proj.name,
+                    warehouse=WarehouseType.duckdb,
+                    warehouse_db_path=proj.database.warehouse,
+                    raw_db_path=proj.database.raw,
+                    target=target,
+                )
+    except Exception:
+        # Best-effort — a missing dbt project should not block init.
         pass
 
     # Generate _tycoon staging models if the template ships a dbt project

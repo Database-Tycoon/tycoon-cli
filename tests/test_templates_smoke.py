@@ -15,25 +15,13 @@ import yaml
 from tycoon.cli import app
 
 
-TEMPLATES = ["csv-import", "github-analytics", "nyc-transit", "weather-station"]
+TEMPLATES = ["csv-import", "nyc-transit"]
 
 
 # Dummy parameter values for templates that declare parameters. Smoke tests
 # don't care about the substituted values — they just need init to complete
-# cleanly without blocking on a prompt. Real e2e tests use domain-meaningful
-# values like `owner=octocat`.
-_SMOKE_PARAMS: dict[str, list[str]] = {
-    "github-analytics": [
-        "--param", "owner=smoke-owner",
-        "--param", "repo=smoke-repo",
-    ],
-    "weather-station": [
-        "--param", "station_id=KJFK",
-        "--param", "office=OKX",
-        "--param", "gridX=32",
-        "--param", "gridY=34",
-    ],
-}
+# cleanly without blocking on a prompt.
+_SMOKE_PARAMS: dict[str, list[str]] = {}
 
 
 def _init_args(template: str) -> list[str]:

@@ -20,7 +20,7 @@ tycoon init [OPTIONS]
 
 Options:
   -t, --template TEXT      Template to scaffold from (csv-import,
-                           nyc-transit, github-analytics, weather-station)
+                           nyc-transit)
   -n, --name TEXT          Project name (default: current directory name)
   --list-templates         List available templates and exit
   -p, --param TEXT         Template parameter in 'name=value' form (repeatable)
@@ -65,6 +65,23 @@ Options:
   --catalog TEXT           For --type motherduck: catalog name (becomes md:<NAME>)
   --no-prompt              Fail rather than prompt — for CI
   --force                  Overwrite an existing warehouse without prompting
+```
+
+### [`tycoon register llm`](../commands/register.md#tycoon-register-llm)
+
+```
+tycoon register llm [PROVIDER] [OPTIONS]
+
+Arguments:
+  PROVIDER                 lm-studio / ollama / openai / anthropic / gemini /
+                           mistral. Omit to refresh setup against existing
+                           ask.llm.provider.
+
+Options:
+  --base-url TEXT          Override the OpenAI-compat base URL
+  --model TEXT             Pin a specific model name
+  --api-key-env TEXT       Env var holding the API key (cloud providers)
+  --skip-install           Skip the post-register model install offer
 ```
 
 ### [`tycoon doctor`](../commands/doctor.md)
@@ -311,15 +328,9 @@ Generates `dbt_project/models/_tycoon/` (nine `stg_tycoon__*` views + `dim_runs`
 
 ## AI agent
 
-### [`tycoon ask init`](../commands/ask/index.md#what-ask-init-actually-does)
-
-```
-tycoon ask init [OPTIONS]
-
-Options:
-  --llm TEXT               LLM provider shortcut: lm-studio, ollama, openai,
-                           anthropic, gemini, mistral
-```
+LLM provider configuration lives under `tycoon register llm` (see the
+Project section above). The `tycoon ask` namespace is reserved for
+analytics endpoints — chat, sync data context, query exposure.
 
 ### [`tycoon ask sync`](../commands/ask/index.md#what-ask-sync-does)
 

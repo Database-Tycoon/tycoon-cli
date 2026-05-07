@@ -47,11 +47,336 @@ LIMIT 10
 """
 
 
+def _default_exclude_schemas() -> list[str]:
+    """Conservative noise list for the `ask.exclude_schemas` seed.
+
+    These are schemas a user almost never wants their AI agent
+    iterating: DuckDB system schemas, the auto-generated _tycoon
+    observability staging layer, and stale schemas from prior
+    transformation-tool migrations (sqlmesh, dlt internals).
+
+    Glob patterns aren't supported in include/exclude_schemas as of
+    v0.1.5 — these are exact-match names. Add more patterns as users
+    surface new noise sources.
+    """
+    return [
+        "information_schema",
+        "pg_catalog",
+        "main_pg_catalog",
+        "system",
+        "_tycoon",
+        "sqlmesh__main",
+        "sqlmesh",
+    ]
+
+
+def _local_llm_base_url(llm) -> str | None:
+    """Default OpenAI-compat base_url for our two local-LLM shortcuts.
+
+    Returns None for cloud providers (no probe is meaningful — the
+    endpoint is always reachable, the question is whether the API key
+    works, which doctor doesn't validate to avoid burning round-trips).
+    """
+    if llm is None:
+        return None
+    if llm.base_url:
+        return llm.base_url
+    from tycoon.nao import _LM_STUDIO_PRESET, _OLLAMA_PRESET
+
+    if llm.provider == "lm-studio":
+        return _LM_STUDIO_PRESET["base_url"]
+    if llm.provider == "ollama":
+        return _OLLAMA_PRESET["base_url"]
+    return None
+
+
+def _probe_local_llm(
+    base_url: str, provider: str = "lm-studio"
+) -> tuple[bool, int, str | None]:
+    """Hit the runtime's models endpoint and return loaded-model count.
+
+    Returns ``(reachable, model_count, error_message)``.
+
+    **Provider-specific behavior:**
+
+    - For LM Studio, hits the richer ``/api/v0/models`` endpoint and
+      counts models with ``state == "loaded"`` (i.e. actively held in
+      memory). The OpenAI-compat ``/v1/models`` endpoint LM Studio
+      exposes returns *downloaded* models regardless of load state —
+      using it would falsely say "2 models loaded" when the user has
+      gemma downloaded but ejected. Fallback to /v1/models if the v0
+      endpoint isn't available (older LM Studio versions).
+    - For Ollama, /v1/models is sufficient: Ollama auto-loads on
+      first request, so "pulled" effectively means "ready".
+    - For unknown providers, fall back to /v1/models.
+
+    Bounded at 2s so wizard auto-detect + doctor stay snappy.
+    """
+    try:
+        import httpx
+
+        # LM Studio's loaded-state-aware endpoint. base_url usually ends
+        # in /v1; strip it to reach the API root, then hit /api/v0/models.
+        if provider == "lm-studio":
+            api_root = base_url.rstrip("/").rsplit("/v1", 1)[0]
+            try:
+                with httpx.Client(timeout=2.0) as client:
+                    resp = client.get(f"{api_root}/api/v0/models")
+                if resp.status_code == 200:
+                    data = (resp.json() or {}).get("data") or []
+                    loaded = [m for m in data if m.get("state") == "loaded"]
+                    return True, len(loaded), None
+                # Fall through to /v1/models on non-200 (e.g. older LM Studio).
+            except Exception:
+                pass  # Fall through to /v1/models.
+
+        with httpx.Client(timeout=2.0) as client:
+            resp = client.get(f"{base_url}/models")
+        if resp.status_code != 200:
+            return False, 0, f"HTTP {resp.status_code}"
+        data = (resp.json() or {}).get("data") or []
+        return True, len(data), None
+    except Exception as exc:
+        return False, 0, str(exc)
+
+
+_RECOMMENDED_MODEL = {
+    # Qwen 2.5 Coder 7B Instruct — Q4_K_M quant, ~4.7 GB. Tuned
+    # specifically for code (SQL inclusive); outperforms Llama 3.1 8B on
+    # coding benchmarks (HumanEval 88.4%). Comfortably under our 8 GB
+    # ceiling. Same weights work for both Ollama and LM Studio. See
+    # `docs/recipes/lm-studio-local-llm.md` for the rationale.
+    "display_name": "Qwen 2.5 Coder 7B Instruct (Q4_K_M, ~4.7 GB)",
+    "ollama_tag": "qwen2.5-coder:7b",
+    "lm_studio_search": "Qwen2.5-Coder-7B-Instruct-GGUF",
+    "lm_studio_quant": "Q4_K_M",
+}
+
+
+def _lm_studio_chat_models(base_url: str) -> list[dict]:
+    """Return chat-capable downloaded models from LM Studio with state info.
+
+    Each entry is a dict from LM Studio's /api/v0/models response — at
+    minimum has ``id``, ``state`` (``"loaded"`` / ``"not-loaded"``), and
+    ``type`` (``"llm"`` / ``"vlm"`` / ``"embeddings"``). Filters out
+    embeddings (can't chat). Returns empty list if probe fails or
+    endpoint is unavailable (older LM Studio versions).
+    """
+    try:
+        import httpx
+
+        api_root = base_url.rstrip("/").rsplit("/v1", 1)[0]
+        with httpx.Client(timeout=2.0) as client:
+            resp = client.get(f"{api_root}/api/v0/models")
+        if resp.status_code != 200:
+            return []
+        data = (resp.json() or {}).get("data") or []
+        # Embeddings can't satisfy a chat completion. Everything else
+        # (llm, vlm, etc.) is potentially chat-capable.
+        return [m for m in data if m.get("type") != "embeddings"]
+    except Exception:
+        return []
+
+
+def _lms_binary() -> str | None:
+    """Locate the LM Studio CLI (`lms`) for auto-load.
+
+    Tries PATH first, then the standard install location LM Studio's
+    Mac installer drops at ``~/.cache/lm-studio/bin/lms``. Returns None
+    if neither is present — caller falls back to the GUI hint.
+    """
+    import shutil
+    from pathlib import Path
+
+    found = shutil.which("lms")
+    if found:
+        return found
+    standard = Path.home() / ".cache" / "lm-studio" / "bin" / "lms"
+    if standard.exists():
+        return str(standard)
+    return None
+
+
+def _offer_lm_studio_load(base_url: str) -> bool:
+    """Offer to load an already-downloaded LM Studio chat model.
+
+    Returns True if a model is now loaded (either was already, or just
+    got loaded by us). Returns False if:
+
+    - Probe failed or no chat models are downloaded
+    - ``lms`` CLI isn't on PATH (or at the standard cache location)
+    - User declined the prompt
+    - ``lms load`` exited non-zero
+
+    On False, the caller should fall through to the download offer.
+    """
+    chat_models = _lm_studio_chat_models(base_url)
+    if not chat_models:
+        return False
+
+    loaded = [m for m in chat_models if m.get("state") == "loaded"]
+    if loaded:
+        return True  # already in memory, no work needed
+    not_loaded = [m for m in chat_models if m.get("state") != "loaded"]
+    if not not_loaded:
+        return False
+
+    lms = _lms_binary()
+    if lms is None:
+        return False
+
+    # Pick which to load. Prefer the recommended Qwen 2.5 Coder if it's
+    # downloaded; otherwise pick the first available chat model.
+    preferred = next(
+        (
+            m for m in not_loaded
+            if "qwen" in m["id"].lower() and "coder" in m["id"].lower()
+        ),
+        not_loaded[0],
+    )
+    model_id = preferred["id"]
+
+    info(
+        f"LM Studio has [bold]{len(not_loaded)}[/bold] chat model(s) "
+        "downloaded but none in memory."
+    )
+    if not typer.confirm(f"Load [bold]{model_id}[/bold] now?", default=True):
+        return False
+
+    info(
+        f"Running [bold]lms load {model_id}[/bold] — may take 5-30s "
+        "depending on model size and disk speed..."
+    )
+    result = subprocess.run([lms, "load", model_id])
+    if result.returncode == 0:
+        success(f"Loaded {model_id} — chat is ready.")
+        return True
+    warn(
+        f"`lms load` exited {result.returncode}. Try manually: "
+        f"[bold]{lms} load {model_id}[/bold]"
+    )
+    return False
+
+
+def _offer_model_install(provider: str) -> None:
+    """Probe the local LLM provider and, if no model is loaded, offer
+    to install the recommended one. Best-effort — bails quietly if the
+    runtime isn't reachable, the binary isn't on PATH, or the user
+    declines. The rest of tycoon works without an LLM, so we never
+    fail the calling command on this path.
+
+    For Ollama: auto-pulls via ``ollama pull <tag>`` (CLI-friendly,
+    streams progress to the user). For LM Studio: prints the GUI
+    instructions because there's no clean CLI install flow.
+    """
+    if provider not in ("lm-studio", "ollama"):
+        return  # Cloud providers — nothing to install locally.
+
+    label = "LM Studio" if provider == "lm-studio" else "Ollama"
+
+    # Probe takes a config-like shape — synthesize one from the preset.
+    from tycoon.nao import _LM_STUDIO_PRESET, _OLLAMA_PRESET
+
+    base_url = (
+        _LM_STUDIO_PRESET["base_url"]
+        if provider == "lm-studio"
+        else _OLLAMA_PRESET["base_url"]
+    )
+    reachable, model_count, err = _probe_local_llm(base_url, provider)
+
+    if not reachable:
+        warn(
+            f"{label} not reachable at {base_url} ({err}). "
+            f"Start the {label} app/server, then run "
+            f"[bold]tycoon ask doctor[/bold] to verify."
+        )
+        info(_model_install_hint(provider))
+        return
+
+    if model_count >= 1:
+        success(
+            f"{label} ready: {model_count} model(s) already loaded at "
+            f"{base_url}."
+        )
+        return
+
+    # Reachable, 0 models — try to load an existing downloaded model
+    # before offering download. For LM Studio specifically: if chat
+    # models are downloaded but ejected, `lms load` puts one in memory
+    # in 5-30s. No download required.
+    if provider == "lm-studio" and _offer_lm_studio_load(base_url):
+        return  # successfully loaded an already-downloaded model
+
+    # Reachable, 0 models, nothing to load — offer the download.
+    rec = _RECOMMENDED_MODEL
+    warn(f"{label} reachable at {base_url} but 0 models are loaded.")
+
+    if provider == "lm-studio":
+        # No chat models downloaded (or `lms` not available) — fall back
+        # to the GUI install steps.
+        info(_model_install_hint("lm-studio"))
+        return
+
+    # Ollama path: try the auto-pull if the binary is on PATH.
+    import shutil
+
+    if shutil.which("ollama") is None:
+        warn("`ollama` binary not found on PATH — can't auto-pull.")
+        info(_model_install_hint("ollama"))
+        return
+
+    if not typer.confirm(
+        f"Pull the recommended model [bold]{rec['ollama_tag']}[/bold] "
+        f"([dim]{rec['display_name']}[/dim]) now?",
+        default=True,
+    ):
+        info(_model_install_hint("ollama"))
+        return
+
+    info(
+        f"Running [bold]ollama pull {rec['ollama_tag']}[/bold]. "
+        "This may take several minutes on first run..."
+    )
+    pull = subprocess.run(["ollama", "pull", rec["ollama_tag"]])
+    if pull.returncode == 0:
+        success(f"Pulled {rec['ollama_tag']} — chat is ready.")
+    else:
+        warn(
+            f"`ollama pull` exited {pull.returncode}. Try manually: "
+            f"[bold]ollama pull {rec['ollama_tag']}[/bold]"
+        )
+
+
+def _model_install_hint(provider: str) -> str:
+    """User-facing instructions for getting a model loaded for the local
+    LLM provider. LM Studio is GUI-driven; Ollama has a clean CLI flow.
+
+    Recommends the same model on both providers (Qwen 2.5 Coder 7B) so
+    users get consistent SQL/analytics behavior regardless of runtime.
+    """
+    rec = _RECOMMENDED_MODEL
+    if provider == "lm-studio":
+        return (
+            f"Recommended: [bold]{rec['display_name']}[/bold].\n"
+            f"Open LM Studio → click [bold]Discover[/bold] → search "
+            f"[bold]{rec['lm_studio_search']}[/bold] → pick the "
+            f"[bold]{rec['lm_studio_quant']}[/bold] quant → Download → Load.\n"
+            "After loading, re-run the command."
+        )
+    if provider == "ollama":
+        return (
+            f"Recommended: [bold]{rec['display_name']}[/bold].\n"
+            f"Run [bold]ollama pull {rec['ollama_tag']}[/bold] "
+            "(Ollama auto-loads on first request — no separate Load step)."
+        )
+    return ""
+
+
 def _require_nao() -> None:
     try:
         import nao_core  # noqa: F401
     except ImportError:
-        error("Nao is not installed. Run: [bold]pip install tycoon\\[ask][/bold]")
+        error("Nao is not installed. Run: [bold]pip install 'database-tycoon[ask]'[/bold]")
         raise typer.Exit(1)
 
 
@@ -125,7 +450,7 @@ def _parse_frontmatter(text: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def _refresh_agents_md() -> None:
+def _refresh_agents_md(cfg=None) -> None:
     """Write or refresh AGENTS.md at the project root.
 
     Best-effort: never raises. Prints a hint when a user-authored
@@ -134,7 +459,7 @@ def _refresh_agents_md() -> None:
     """
     from tycoon.nao import write_agents_md
 
-    wrote, path = write_agents_md(config)
+    wrote, path = write_agents_md(cfg if cfg is not None else config)
     if wrote:
         info(f"AGENTS.md refreshed at [bold]{path}[/bold]")
     else:
@@ -145,76 +470,65 @@ def _refresh_agents_md() -> None:
         )
 
 
-@app.command("init")
-def ask_init(
-    llm: str | None = typer.Option(
-        None,
-        "--llm",
-        help=(
-            "LLM provider shortcut to record in tycoon.yml. Options: "
-            "lm-studio, ollama, openai, anthropic, gemini, mistral. "
-            "If unset, leaves any existing ask.llm config alone."
-        ),
-    ),
-) -> None:
-    """Generate .tycoon/nao/nao_config.yaml from tycoon.yml.
+def setup_ask_stack(cfg=None) -> None:
+    """Run the post-LLM-config setup: seed exclude_schemas, write
+    nao_config.yaml, refresh AGENTS.md, and offer a model install if a
+    local provider is configured.
 
-    Pre-creates the eight directories ``nao sync`` walks unconditionally
-    (databases, queries, docs, semantics, repos, agent/{tools,mcps,skills})
-    and writes a `.tycoon/nao/.gitignore` to keep PII previews + sync
-    artifacts out of version control.
+    Idempotent — preserves user-set values, skips writes when nothing
+    needs to change. Both `tycoon register llm` and the chained call
+    from `tycoon init` go through this so the UX is identical.
 
-    Pass ``--llm <provider>`` to record a provider shortcut in
-    ``tycoon.yml``'s ``ask.llm.provider`` field. ``lm-studio`` is the
-    quickest zero-config local option — it expands to an OpenAI-compatible
-    config pointed at ``http://localhost:1234/v1`` so users don't have to
-    discover that "openai + custom base_url" is the LM Studio path.
+    ``cfg`` defaults to the module-level ``config`` singleton; pass an
+    explicit ``TycoonConfig`` from callers (e.g. ``tycoon init``) that
+    just wrote a new tycoon.yml and need a fresh view without mutating
+    module-level state.
+
+    Caller must ensure ``nao_core`` is importable (run ``_require_nao()``
+    or do an ImportError-safe import) — this function uses
+    ``write_nao_project`` which depends on it.
     """
-    _require_project()
-    _require_nao()
-
     from tycoon.nao import write_nao_project
-    from tycoon.project import AskConfig, LLMConfig, save_project
+    from tycoon.project import AskConfig, save_project
 
-    if llm is not None:
-        valid_llms = {"lm-studio", "ollama", "openai", "anthropic", "gemini", "mistral"}
-        if llm not in valid_llms:
-            error(
-                f"Unknown --llm {llm!r}. Expected one of: "
-                f"{', '.join(sorted(valid_llms))}."
-            )
-            raise typer.Exit(1)
-        project = config.project
-        if project is None:
-            error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
-            raise typer.Exit(1)
-        # Update ask.llm.provider in place. Preserve existing model /
-        # api_key_env / base_url if the user already configured them.
-        existing_llm = project.ask.llm if project.ask else None
-        new_llm = LLMConfig(
-            provider=llm,
-            model=existing_llm.model if existing_llm else None,
-            api_key_env=existing_llm.api_key_env if existing_llm else None,
-            base_url=existing_llm.base_url if existing_llm else None,
+    if cfg is None:
+        cfg = config
+    project = cfg.project
+
+    # Seed exclude_schemas defaults (issue #7 §3). Skip if the user
+    # already populated either include_schemas or exclude_schemas.
+    if project is not None:
+        ask = project.ask
+        already_configured = ask is not None and (
+            ask.include_schemas or ask.exclude_schemas
         )
-        if project.ask is None:
-            project.ask = AskConfig(llm=new_llm)
-        else:
-            project.ask.llm = new_llm
-        save_project(project, config.root)
-        config.reload()
-        info(f"Updated [bold]ask.llm.provider[/bold] in tycoon.yml → {llm}")
+        if not already_configured:
+            defaults = _default_exclude_schemas()
+            if ask is None:
+                project.ask = AskConfig(exclude_schemas=defaults)
+            else:
+                ask.exclude_schemas = defaults
+            info(
+                f"Seeded [bold]ask.exclude_schemas[/bold] with "
+                f"{len(defaults)} noise patterns "
+                "(DuckDB internals, _tycoon staging, sqlmesh leftovers)."
+            )
+            save_project(project, cfg.root)
+            cfg.reload()
 
-    write_nao_project(config)
-    _refresh_agents_md()
+    write_nao_project(cfg)
+    _refresh_agents_md(cfg)
+    success(f"Nao config written to [bold]{cfg.nao_dir}[/bold]")
 
-    success(f"Nao config written to [bold]{config.nao_dir}[/bold]")
-    next_steps(
-        ("tycoon ask sync", "build DB and dbt context (~30s first run)"),
-        ("tycoon ask chat", "launch the query UI"),
-        ("tycoon ask doctor", "verify the ask stack is healthy"),
-        ("tycoon ask context --help", "pipe synced context into any agent"),
+    # Local-runtime probe + install offer. Best-effort.
+    project = cfg.project  # re-read after the seed branch may have saved
+    final_provider = (
+        project.ask.llm.provider
+        if project is not None and project.ask is not None and project.ask.llm is not None
+        else None
     )
+    if final_provider in ("lm-studio", "ollama"):
+        _offer_model_install(final_provider)
 
 
 @app.command("sync")
@@ -231,7 +545,7 @@ def ask_sync(
         info("Config regenerated.")
 
     if not (config.nao_dir / "nao_config.yaml").exists():
-        error("No nao_config.yaml found. Run [bold]tycoon ask init[/bold] first.")
+        error("No nao_config.yaml found. Run [bold]tycoon register llm[/bold] first.")
         raise typer.Exit(1)
 
     info("Syncing Nao context...")
@@ -260,14 +574,72 @@ def ask_chat(
     """Launch the Nao chat UI in your browser.
 
     Automatically runs init and sync on first use if not already done.
+
+    Requires an LLM provider to be configured in tycoon.yml's
+    ``ask.llm.provider`` field. The chat UI is unusable without one
+    (Nao has nothing to ask), so we fail fast with a directing error
+    rather than launching a dead UI.
     """
     _require_project()
     _require_nao()
 
+    # No LLM configured → chat is unusable. Direct the user to
+    # `tycoon register llm <provider>` (or re-run `tycoon init` to
+    # pick one in the wizard).
+    project = config.project
+    has_llm = project is not None and project.ask is not None and project.ask.llm is not None
+    if not has_llm:
+        error(
+            "No LLM configured. `tycoon ask chat` needs a provider in "
+            "[bold]ask.llm.provider[/bold] to do anything useful."
+        )
+        info(
+            "Run one of:\n"
+            "  [bold]tycoon register llm lm-studio[/bold]   "
+            "(local, recommended — install LM Studio first)\n"
+            "  [bold]tycoon register llm ollama[/bold]      "
+            "(local — install Ollama first)\n"
+            "  [bold]tycoon register llm openai[/bold]      "
+            "(needs OPENAI_API_KEY)\n"
+            "  [bold]tycoon register llm anthropic[/bold]   "
+            "(needs ANTHROPIC_API_KEY)"
+        )
+        raise typer.Exit(1)
+
+    # Local-LLM model check: server up + at least one model loaded.
+    # Catches the "installed LM Studio but didn't download a model"
+    # case which would otherwise show a working-looking chat UI that
+    # errors on first message.
+    llm = project.ask.llm
+    if llm.provider in ("lm-studio", "ollama"):
+        base_url = _local_llm_base_url(llm)
+        if base_url:
+            reachable, model_count, probe_err = _probe_local_llm(base_url, llm.provider)
+            label = "LM Studio" if llm.provider == "lm-studio" else "Ollama"
+            if not reachable:
+                error(
+                    f"{label} not reachable at [bold]{base_url}[/bold] "
+                    f"({probe_err}). Start the {label} app/server, then re-run."
+                )
+                raise typer.Exit(1)
+            if model_count == 0:
+                # Try to load an existing downloaded model before
+                # bailing — users hitting `tycoon ask chat` with a
+                # cold LM Studio shouldn't have to switch commands.
+                if llm.provider == "lm-studio" and _offer_lm_studio_load(base_url):
+                    pass  # successfully loaded; continue to launch chat
+                else:
+                    error(
+                        f"{label} is reachable at [bold]{base_url}[/bold] but "
+                        f"has 0 models loaded — chat would have nothing to ask."
+                    )
+                    info(_model_install_hint(llm.provider))
+                    raise typer.Exit(1)
+
     # Auto-init if no config exists yet
     nao_config = config.nao_dir / "nao_config.yaml"
     if not nao_config.exists():
-        info("No nao_config.yaml found — running [bold]tycoon ask init[/bold] automatically...")
+        info("No nao_config.yaml found — running [bold]tycoon register llm[/bold] automatically...")
         from tycoon.nao import write_nao_project
         write_nao_project(config)
         success(f"Nao config written to [bold]{config.nao_dir}[/bold]")
@@ -322,7 +694,7 @@ def ask_context(
     if rules_only:
         rules = nao_dir / "RULES.md"
         if not rules.exists():
-            error(f"No RULES.md at [bold]{rules}[/bold]. Run [bold]tycoon ask init[/bold].")
+            error(f"No RULES.md at [bold]{rules}[/bold]. Run [bold]tycoon register llm[/bold].")
             raise typer.Exit(1)
         typer.echo(rules.read_text(), nl=False)
         return
@@ -415,7 +787,7 @@ def ask_doctor() -> None:
         rows.append(("nao_config.yaml", "OK", str(cfg_path)))
     else:
         rows.append(
-            ("nao_config.yaml", "FAIL", "missing — run `tycoon ask init`")
+            ("nao_config.yaml", "FAIL", "missing — run `tycoon register llm`")
         )
 
     # 2. Required directories present?
@@ -427,7 +799,7 @@ def ask_doctor() -> None:
             (
                 "nao directories",
                 "FAIL",
-                f"missing: {', '.join(missing)} — run `tycoon ask init`",
+                f"missing: {', '.join(missing)} — run `tycoon register llm`",
             )
         )
 
@@ -457,48 +829,46 @@ def ask_doctor() -> None:
     else:
         rows.append(("Warehouse", "OK", "local DuckDB (no auth)"))
 
-    # 4. LLM endpoint — only check when LM Studio is configured. We don't
-    #    probe Anthropic/OpenAI/etc. because those require key validation
-    #    and would slow `ask doctor` to a network round-trip every time.
+    # 4. LLM endpoint — probe local providers (LM Studio / Ollama) for
+    #    reachability AND for a non-zero loaded-model count. Cloud
+    #    providers aren't probed because key validation is a network
+    #    round-trip every doctor run; we just confirm the provider is
+    #    set.
     llm = project.ask.llm if project and project.ask else None
-    if llm and llm.provider == "lm-studio":
-        from tycoon.nao import _LM_STUDIO_PRESET
-
-        base_url = llm.base_url or _LM_STUDIO_PRESET["base_url"]
-        try:
-            import httpx
-
-            with httpx.Client(timeout=2.0) as client:
-                resp = client.get(f"{base_url}/models")
-            if resp.status_code == 200:
-                model_count = len((resp.json() or {}).get("data", []))
-                rows.append(
-                    (
-                        "LM Studio",
-                        "OK",
-                        f"{base_url} responded ({model_count} model(s) loaded)",
-                    )
-                )
-            else:
-                rows.append(
-                    (
-                        "LM Studio",
-                        "WARN",
-                        f"{base_url} returned HTTP {resp.status_code}",
-                    )
-                )
-        except Exception as exc:
+    label_for = {"lm-studio": "LM Studio", "ollama": "Ollama"}
+    if llm and llm.provider in ("lm-studio", "ollama"):
+        label = label_for[llm.provider]
+        base_url = _local_llm_base_url(llm)
+        reachable, model_count, err = (
+            _probe_local_llm(base_url, llm.provider) if base_url else (False, 0, "no base_url")
+        )
+        if not reachable:
+            rows.append((label, "FAIL", f"{base_url} unreachable: {err}"))
+        elif model_count == 0:
             rows.append(
                 (
-                    "LM Studio",
+                    label,
                     "FAIL",
-                    f"{base_url} unreachable: {exc}",
+                    f"{base_url} reachable but 0 models loaded — "
+                    f"`tycoon ask chat` will be unusable. "
+                    f"{_model_install_hint(llm.provider)}",
                 )
+            )
+        else:
+            rows.append(
+                (label, "OK", f"{base_url} responded ({model_count} model(s) loaded)")
             )
     elif llm:
         rows.append(("LLM", "OK", f"provider={llm.provider} (no probe)"))
     else:
-        rows.append(("LLM", "WARN", "no llm configured in tycoon.yml"))
+        rows.append(
+            (
+                "LLM",
+                "WARN",
+                "no provider configured — `tycoon ask chat` unavailable. "
+                "Run `tycoon register llm<provider>` to enable.",
+            )
+        )
 
     console.print(status_table(rows, title="tycoon ask doctor"))
 

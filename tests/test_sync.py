@@ -199,6 +199,50 @@ class TestSyncToLocal:
         assert len(result.tables) == 2
         assert result.total_rows == 3 + 7
 
+    def test_skips_uncopyable_view_with_record(self, tmp_path: Path):
+        """A view in the source whose definition references an unattached
+        catalog should be skipped per-row, not crash the whole sync.
+        Regression test for issue #23 (dbt's `tycoon_meta` views).
+        """
+        from tycoon.sync import SyncSourceSpec, sync_to_local
+
+        src_path = tmp_path / "source.duckdb"
+        # Build a source DB with one good base table and one broken view.
+        # The view references a catalog that won't be attached when the
+        # destination tries to evaluate it.
+        src = duckdb.connect(str(src_path))
+        try:
+            src.execute("CREATE SCHEMA mart")
+            src.execute("CREATE TABLE mart.good (id INTEGER)")
+            src.execute("INSERT INTO mart.good VALUES (1), (2)")
+            # Attach a phantom catalog only the source can see, then
+            # define a view against it. Detach so the file doesn't
+            # carry an active attach reference.
+            phantom = tmp_path / "phantom.duckdb"
+            ph = duckdb.connect(str(phantom))
+            ph.execute("CREATE TABLE other (x INTEGER)")
+            ph.execute("INSERT INTO other VALUES (99)")
+            ph.close()
+            src.execute(f"ATTACH '{phantom}' AS phantom")
+            src.execute(
+                "CREATE VIEW mart.broken AS SELECT * FROM phantom.main.other"
+            )
+            src.execute("DETACH phantom")
+        finally:
+            src.close()
+
+        dest = tmp_path / "snap.duckdb"
+        result = sync_to_local(
+            [SyncSourceSpec(from_=str(src_path))], dest, mode="replace"
+        )
+
+        copied = {(t.schema, t.table) for t in result.tables}
+        skipped = {(s.schema, s.table) for s in result.skipped}
+        assert ("mart", "good") in copied
+        assert ("mart", "broken") in skipped
+        assert len(result.skipped) == 1
+        assert result.skipped[0].reason  # non-empty reason
+
 
 # ---------------------------------------------------------------------------
 # CLI surface

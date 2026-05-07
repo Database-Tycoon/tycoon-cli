@@ -305,6 +305,105 @@ class TestRegisterDbt:
         assert data["stack"]["warehouse"] == "motherduck"
 
 
+class TestRegisterDbtExternalE2E:
+    """End-to-end: scaffold a standalone dbt project, register it with
+    custom profile/target flags, then run a real `tycoon data transform
+    run` and assert the model materialized with the registered profile.
+
+    Distinct from the persistence tests above (which only check
+    tycoon.yml keys) — this one proves the registered config is honored
+    by the transform runner.
+    """
+
+    def test_external_dbt_project_runs_with_registered_profile(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        import duckdb
+
+        # 1. Standalone dbt project at <tmp>/external_dbt with a custom
+        #    profile name + non-default target name.
+        external_dbt = tmp_path / "external_dbt"
+        warehouse_path = tmp_path / "proj" / "data" / "warehouse.duckdb"
+        external_dbt.mkdir()
+        (external_dbt / "dbt_project.yml").write_text(
+            yaml.dump(
+                {
+                    "name": "extproj",
+                    "profile": "ci_profile",
+                    "config-version": 2,
+                    "model-paths": ["models"],
+                }
+            )
+        )
+        models_dir = external_dbt / "models"
+        models_dir.mkdir()
+        (models_dir / "hello.sql").write_text(
+            "{{ config(materialized='table') }}\nselect 42 as the_answer\n"
+        )
+
+        # 2. Profiles.yml in a sibling 'ci-profiles/' dir (proves
+        #    --profiles-dir is honored, not the default lookup).
+        external_profiles = tmp_path / "ci-profiles"
+        external_profiles.mkdir()
+        (external_profiles / "profiles.yml").write_text(
+            yaml.dump(
+                {
+                    "ci_profile": {
+                        "target": "prod",
+                        "outputs": {
+                            "prod": {
+                                "type": "duckdb",
+                                "path": str(warehouse_path),
+                            }
+                        },
+                    }
+                }
+            )
+        )
+
+        # 3. Tycoon project + register dbt with all three flags.
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "register", "dbt", str(external_dbt),
+                "--profiles-dir", str(external_profiles),
+                "--profile", "ci_profile",
+                "--target", "prod",
+            ],
+            input="\n",
+        )
+        assert result.exit_code == 0, result.stdout
+
+        # 4. Transform commands have their own config singleton — rebind.
+        from tycoon.commands import transform as transform_mod
+        from tycoon.config import TycoonConfig
+        monkeypatch.setattr(
+            transform_mod, "config", TycoonConfig(project_root=project)
+        )
+
+        # 5. Run transform — proves the persisted profile/target/profiles_dir
+        #    are picked up by `_run_dbt`.
+        result = cli_runner.invoke(app, ["data", "transform", "run"])
+        assert result.exit_code == 0, (
+            f"transform run failed:\n--- stdout ---\n{result.stdout}\n"
+            f"--- stderr ---\n{result.stderr if result.stderr_bytes else ''}"
+        )
+
+        # 6. Verify the model materialized in the registered warehouse path.
+        assert warehouse_path.exists(), "warehouse DB was not created"
+        con = duckdb.connect(str(warehouse_path), read_only=True)
+        try:
+            row = con.execute("SELECT the_answer FROM main.hello").fetchone()
+            assert row == (42,), f"hello model not materialized: {row}"
+        finally:
+            con.close()
+
+
 class TestExtractDbtWarehouseTarget:
     """v0.1.3 theme #2: structured target extraction across adapters."""
 

@@ -112,6 +112,11 @@ def _build_filesystem_source(source_config: SourceConfig) -> Any:
     the appropriate dlt transformer so that parsed rows are loaded into
     DuckDB rather than file-level metadata.  Any other glob pattern falls
     back to the raw filesystem source.
+
+    All piped resources land with ``write_disposition="replace"`` so a
+    second `tycoon data sources run` rewrites the raw table rather than
+    appending. Matches the convention used by every other tycoon-shipped
+    pipeline (nyc_dot, mta, mta_bus_speeds). Issue #22.
     """
     from dlt.sources.filesystem import filesystem, read_csv, read_parquet
 
@@ -123,9 +128,13 @@ def _build_filesystem_source(source_config: SourceConfig) -> Any:
 
     glob_lower = file_glob.lower()
     if glob_lower.endswith(".csv") or glob_lower.endswith("*.csv"):
-        return files | read_csv()
+        piped = files | read_csv()
+        piped.apply_hints(write_disposition="replace")
+        return piped
     if glob_lower.endswith(".parquet") or glob_lower.endswith("*.parquet"):
-        return files | read_parquet()
+        piped = files | read_parquet()
+        piped.apply_hints(write_disposition="replace")
+        return piped
 
     return files
 

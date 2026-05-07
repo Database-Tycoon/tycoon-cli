@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: fct_widget_summary
+    description: >
+      Single-row aggregate fact over stg_widgets — total / avg / min / max
+      quantity plus widget and distinct-name counts. Demonstrates the
+      staging→mart pattern.
+    columns:
+      - name: widget_count
+        description: Total number of widgets (rows in stg_widgets).
+        tests:
+          - not_null
+      - name: distinct_names
+        description: Count of distinct widget_name values.
+      - name: total_quantity
+        description: Sum of quantity across all widgets.
+      - name: avg_quantity
+        description: Mean quantity.
+      - name: min_quantity
+        description: Smallest quantity.
+      - name: max_quantity
+        description: Largest quantity.

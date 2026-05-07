@@ -141,7 +141,7 @@ Both update the warehouse, refresh the Parquet exports, and the open Rill dashbo
 
 ```bash
 pip install 'database-tycoon[ask,server]'
-tycoon ask init --llm lm-studio       # zero-config local LLM
+tycoon register llm lm-studio         # zero-config local LLM
 tycoon ask sync                       # ~30s, builds context
 tycoon ask chat                       # http://localhost:5005
 ```

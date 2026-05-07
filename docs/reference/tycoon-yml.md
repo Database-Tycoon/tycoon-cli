@@ -126,8 +126,10 @@ ask:
 | `base_url` | string | (provider default) | OpenAI-compatible base URL — set automatically when `provider: lm-studio` |
 | `api_key_env` | string | unset | Env var name (e.g. `ANTHROPIC_API_KEY`) holding the key. Tycoon writes `{{ env('VAR_NAME') }}` into nao_config.yaml so the key isn't committed. |
 
-`tycoon ask init --llm <provider>` is the easiest way to set the
-provider shortcut from the command line; it edits this block in place.
+`tycoon register llm <provider>` is the easiest way to set the
+provider shortcut from the command line; it edits this block in place
+and runs the post-register setup (nao_config.yaml, AGENTS.md, model
+install offer for local providers).
 
 ## `sync`
 

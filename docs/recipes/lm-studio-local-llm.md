@@ -16,7 +16,13 @@ For analytics on sensitive data, this matters a lot. Anthropic / OpenAI / etc. m
 
 ### 1. Install LM Studio
 
-Download from [lmstudio.ai](https://lmstudio.ai). Pull a model — for analytics queries, anything in the **Qwen2.5-Coder** family or **Llama 3.1** family works well. Bigger is better for complex SQL; 32B-70B params is the sweet spot if you have the RAM.
+Download from [lmstudio.ai](https://lmstudio.ai).
+
+**Recommended model:** [Qwen 2.5 Coder 7B Instruct](https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct) at the **Q4_K_M** quant (~4.7 GB). It's tuned specifically for code (SQL inclusive) and outperforms similar-size general-purpose models on coding benchmarks (HumanEval 88.4%). Comfortably fits in 8 GB of RAM with headroom for the warehouse + dbt context.
+
+In LM Studio: click **Discover** → search `Qwen2.5-Coder-7B-Instruct-GGUF` → pick the `Q4_K_M` quant → Download → Load.
+
+If you have more RAM and want sharper SQL on complex joins, step up to the **32B Coder Instruct** variant (~20 GB at Q4_K_M). For very tight machines, **Llama 3.2 3B** (~2 GB) works for simple analytics questions.
 
 Open LM Studio's "Local Server" tab and start the server. Default port `1234`.
 
@@ -40,7 +46,7 @@ This pulls `nao-core` and `ibis-framework[duckdb]`.
 
 ```bash
 cd my-project           # any tycoon project with at least one ingested source
-tycoon ask init --llm lm-studio
+tycoon register llm lm-studio
 ```
 
 This:
@@ -49,6 +55,7 @@ This:
 - Writes `AGENTS.md` at the project root (Claude Code / Cursor / Windsurf will find this)
 - Pre-creates the eight directories `nao sync` walks
 - Writes `.tycoon/nao/.gitignore` so PII previews stay local
+- **Probes LM Studio** and offers to load a chat model if you have one downloaded but not in memory (see "Auto-load downloaded models" below)
 
 The generated `nao_config.yaml` LLM block:
 
@@ -102,7 +109,32 @@ Output:
 ┃ LM Studio       │ OK     │ http://localhost:1234/v1 responded (1 …)   ┃
 ```
 
-The LM Studio row hits `/v1/models` and confirms the server is reachable. If it's red, restart the LM Studio server and re-run `ask doctor`.
+The LM Studio row hits `/api/v0/models` and counts models with `state: "loaded"` (i.e. actively held in memory — not just downloaded). If the panel goes red:
+
+- **`unreachable`** → start LM Studio's local server (Developer tab → Start Server) and re-run.
+- **`reachable but 0 models loaded`** → load a model. See the next section for the auto-load flow.
+
+## Auto-load downloaded models
+
+If you have a chat model **downloaded in LM Studio but not loaded into memory**, tycoon offers to call `lms load` for you rather than punt you to the GUI. Triggers fire from two places:
+
+1. After `tycoon register llm lm-studio` — if the runtime is up but no model is loaded
+2. When you run `tycoon ask chat` — if the same state holds at chat-launch time
+
+```
+> LM Studio has 1 chat model(s) downloaded but none in memory.
+Load google/gemma-4-26b-a4b now? [Y/n]:
+```
+
+Hit Enter (the default is Yes) and tycoon runs `lms load <model_id>`. Loading takes ~5-30s depending on model size and disk speed; then chat is ready.
+
+The auto-load picks the recommended Qwen 2.5 Coder if it's downloaded; otherwise the first chat-capable model (embedding-only models are filtered out — they can't satisfy chat). Decline the prompt (or if `lms` isn't on your PATH or at the standard `~/.cache/lm-studio/bin/lms` location) and tycoon falls back to the GUI hint.
+
+To preempt the prompt entirely, load a model in the LM Studio UI before invoking `tycoon ask chat`. Or call `lms` directly:
+
+```bash
+~/.cache/lm-studio/bin/lms load <model-id>
+```
 
 ## Day-to-day usage
 
@@ -150,7 +182,7 @@ ask:
 
 The schema names get glob-expanded automatically (`mart` → `mart.*`).
 
-Re-run `tycoon ask init` (or `tycoon ask sync --reinit`) after editing `tycoon.yml`.
+Re-run `tycoon register llm` (no provider arg = refresh against the existing one) after editing `tycoon.yml`.
 
 ### Pin a specific model
 
@@ -182,7 +214,7 @@ Or use the `ollama` shortcut for Ollama specifically.
 | Symptom | Fix |
 |---|---|
 | `LM Studio FAIL: unreachable` | LM Studio server isn't running — open the UI, click "Start Server" |
-| `nao sync` says "No such file or directory: 'repos'" | Stale install. Re-run `tycoon ask init` (it pre-creates all 8 dirs) |
+| `nao sync` says "No such file or directory: 'repos'" | Stale install. Re-run `tycoon register llm` (it pre-creates all 8 dirs) |
 | Chat UI shows no schemas | `ask.include_schemas` is too restrictive, or `tycoon ask sync` hasn't run |
 | Slow / hallucinated SQL | Pick a bigger model. 32B+ params is where SQL accuracy gets reliable. |
 

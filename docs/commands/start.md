@@ -62,7 +62,7 @@ tycoon stop --only rill      # one service
 
 - **Rill** — needs the `rill` binary on `$PATH` (`curl https://rill.sh | sh`)
 - **Dagster** — needs `pip install 'database-tycoon[dagster]'`
-- **Nao** — needs `pip install 'database-tycoon[ask]'` AND `tycoon ask init` to have run
+- **Nao** — needs `pip install 'database-tycoon[ask]'` AND `tycoon register llm <provider>` to have run
 - **Web UI** — needs `pip install 'database-tycoon[server]'`
 
 If a service is missing its dependency, `tycoon start` prints a one-line note and continues with the others.
