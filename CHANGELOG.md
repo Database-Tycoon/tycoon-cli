@@ -2,13 +2,18 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [0.1.6] - UNRELEASED
 
-_In-flight cycle. See [`docs/releases/v0.1.6.md`](docs/releases/v0.1.6.md) for the running narrative._
+_In-flight cycle. Headline target: OSI semantic-layer scaffolding. First PR is dependency hygiene (this section). See [`docs/releases/v0.1.6.md`](docs/releases/v0.1.6.md) for the running narrative._
 
 ### Added
 
 ### Changed
 
+- **`nao-core` bumped `0.1.8 → 0.1.11`** in the `[ask]` extra. Patch-level upstream — picks up the latest fixes from the nao-core team.
+
 ### Removed
+
+- **Redundant `websockets==16.0` pin** dropped from the `[server]` extra. `uvicorn[standard]==0.46.0` already pulls websockets transitively as the protocol implementation behind fastapi's `WebSocket` class. Tycoon never imported `websockets` directly. No change to what gets installed; just removes our redundant declaration. Flagged during the v0.1.5 dependency audit.
+- **Redundant `ibis-framework[duckdb]==12.0.0` pin** dropped from the `[ask]` extra. `nao-core` already lists `ibis-framework` in its requires, and tycoon never imported `ibis` directly. No change to what gets installed; just removes our redundant declaration. Flagged during the v0.1.5 dependency audit.
 
 ### Fixed
 
