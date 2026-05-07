@@ -106,6 +106,7 @@ nav:
     - reference/templates.md
     - reference/observability.md
     - reference/environment.md
+    - reference/dependencies.md
     - "All commands + options": reference/all-commands.md
   - Recipes:
     - recipes/csv-to-dashboard.md

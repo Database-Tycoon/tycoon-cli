@@ -16,6 +16,7 @@ _Polish + correctness release. Closes [#7][] (4/6 → 6/6 sub-asks complete) and
 - **`ask.exclude_schemas` smart defaults ([#7][] §3).** When unset, `tycoon register llm` seeds with conservative noise patterns (`information_schema`, `pg_catalog`, `_tycoon`, `sqlmesh__main`, etc.). Idempotent — preserves user-set values.
 - **csv-import mart layer.** `dbt_project/models/marts/fct_widget_summary.sql` + `schema.yml`. Demonstrates the staging→mart pattern; the offline e2e asserts mart values + runs `dbt test`.
 - **Templates that declare `dbt_project_dir` but don't ship one now get one scaffolded** during `tycoon init --template <name>`. Previously only `csv-import` had a working dbt project on init.
+- **`docs/reference/dependencies.md`** — per-package documentation of every pin in `pyproject.toml` (base + each extra + dev), what each package is used for at runtime, and an "install footprint" summary. Flags two pins (`websockets` in `[server]`, `ibis-framework[duckdb]` in `[ask]`) as candidates for removal in v0.1.6 since both are pulled transitively.
 
 ### Changed
 
