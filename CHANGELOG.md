@@ -1,5 +1,17 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - UNRELEASED
+
+_In-flight cycle. See [`docs/releases/v0.1.6.md`](docs/releases/v0.1.6.md) for the running narrative._
+
+### Added
+
+### Changed
+
+### Removed
+
+### Fixed
+
 ## [0.1.5] - 2026-05-03
 
 _Polish + correctness release. Closes [#7][] (4/6 → 6/6 sub-asks complete) and three bugs caught by new e2e coverage ([#22][], [#23][], [#24][]). Moves LLM config from `tycoon ask init` to `tycoon register llm` so the `ask` namespace is reserved for analytics endpoints. See [`docs/releases/v0.1.5.md`](docs/releases/v0.1.5.md) for the narrative._
