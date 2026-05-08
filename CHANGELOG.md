@@ -2,7 +2,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [0.1.6] - UNRELEASED
 
-_In-flight cycle. Three tracks: dependency hygiene (shipped — this section), OSI semantic-layer scaffolding (headline; design pending), and first-class dbt profile handling ([#27][]). See [`docs/releases/v0.1.6.md`](docs/releases/v0.1.6.md) for the running narrative._
+_In-flight cycle. Four tracks: dependency hygiene (shipped — this section), OSI semantic-layer scaffolding (headline; design pending), first-class dbt profile handling ([#27][], landed), and Fivetran metadata read-out ([#26][], pulled in from v0.2.x). See [`docs/releases/v0.1.6.md`](docs/releases/v0.1.6.md) for the running narrative._
 
 ### Added
 
@@ -23,6 +23,7 @@ _In-flight cycle. Three tracks: dependency hygiene (shipped — this section), O
 
 ### Fixed
 
+[#26]: https://github.com/Database-Tycoon/tycoon-cli/issues/26
 [#27]: https://github.com/Database-Tycoon/tycoon-cli/issues/27
 
 ## [0.1.5] - 2026-05-03
