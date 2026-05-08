@@ -2,12 +2,18 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [0.1.6] - UNRELEASED
 
-_In-flight cycle. Headline target: OSI semantic-layer scaffolding. First PR is dependency hygiene (this section). See [`docs/releases/v0.1.6.md`](docs/releases/v0.1.6.md) for the running narrative._
+_In-flight cycle. Three tracks: dependency hygiene (shipped — this section), OSI semantic-layer scaffolding (headline; design pending), and first-class dbt profile handling ([#27][]). See [`docs/releases/v0.1.6.md`](docs/releases/v0.1.6.md) for the running narrative._
 
 ### Added
 
+- **`tycoon profiles` namespace** ([#27][]). New top-level command group with three subcommands: `list` (every profile + targets + adapters, flagging the active one), `show NAME` (pretty-print a profile with secrets redacted), `doctor` (verify resolution + adapter matches `stack.warehouse`). Sits alongside `tycoon register` and `tycoon doctor` in the Project section.
+- **`--profile` / `--profiles-dir` / `--target` flags** on every dbt-touching command — `tycoon data transform run/test/build/docs`. Flag names match dbt's CLI exactly. Resolution order: CLI flag → `tycoon.yml` → `<dbt_project_dir>/profiles.yml` → `$DBT_PROFILES_DIR` → `~/.dbt/profiles.yml`.
+- **`tycoon doctor` now includes a non-fatal "dbt profile" check** that validates the resolved profile's adapter matches `stack.warehouse`, catching duckdb-vs-snowflake mismatches before a `dbt build` does.
+- **`docs/recipes/existing-dbt-profile.md`** — recipe for using an existing `profiles.yml` from anywhere on disk (under `~/.dbt`, in a shared config repo, alongside an existing dbt project).
+
 ### Changed
 
+- **dbt profile resolution centralized in `src/tycoon/dbt_profiles.py`** ([#27][]). Previously, only `tycoon register dbt` resolved profiles correctly; `tycoon data transform`, the Dagster `DbtCliResource`, and the FastAPI `/run/dbt` route all hardcoded `profiles_dir` to a path relative to the tycoon source tree (broken for installed users). Every dbt-touching surface now routes through one helper that matches dbt's own resolution.
 - **`nao-core` bumped `0.1.8 → 0.1.11`** in the `[ask]` extra. Patch-level upstream — picks up the latest fixes from the nao-core team.
 
 ### Removed
@@ -16,6 +22,8 @@ _In-flight cycle. Headline target: OSI semantic-layer scaffolding. First PR is d
 - **Redundant `ibis-framework[duckdb]==12.0.0` pin** dropped from the `[ask]` extra. `nao-core` already lists `ibis-framework` in its requires, and tycoon never imported `ibis` directly. No change to what gets installed; just removes our redundant declaration. Flagged during the v0.1.5 dependency audit.
 
 ### Fixed
+
+[#27]: https://github.com/Database-Tycoon/tycoon-cli/issues/27
 
 ## [0.1.5] - 2026-05-03
 

@@ -165,6 +165,28 @@ def _check_stack_config() -> None:
             error(f"External dbt project not found at {project.dbt_project_dir}.")
 
 
+def _check_dbt_profile() -> None:
+    """Resolve + validate the active dbt profile, non-fatal."""
+    project = config.project
+    if project is None:
+        return
+    if project.stack.transformation == TransformationTool.none:
+        info("dbt profile: skipped (stack.transformation = none).")
+        return
+    if not config.dbt_project_dir.exists():
+        info("dbt profile: skipped (dbt project directory missing).")
+        return
+
+    from tycoon.commands.profiles import run_profile_checks
+
+    # run_profile_checks returns 0/1 but emits its own success/warn/error
+    # rows — we don't bubble the rc since doctor stays non-fatal overall.
+    try:
+        run_profile_checks()
+    except Exception as exc:  # defensive: bad YAML shouldn't kill doctor
+        warn(f"dbt profile check raised unexpectedly: {exc}")
+
+
 def _check_observability() -> None:
     """Report whether run-history capture has fired at least once.
 
@@ -234,6 +256,9 @@ def doctor_cmd() -> None:
         if config.has_project_file:
             console.print(Panel("Checking stack configuration...", expand=False))
             _check_stack_config()
+
+            console.print(Panel("Checking dbt profile...", expand=False))
+            _check_dbt_profile()
 
             console.print(Panel("Checking observability...", expand=False))
             _check_observability()

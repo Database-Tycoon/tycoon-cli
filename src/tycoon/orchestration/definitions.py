@@ -55,7 +55,9 @@ if ingestion_assets:
 
 resources: dict = {"dlt": get_dlt_resource()}
 if dbt_project_assets is not None:
-    resources["dbt"] = get_dbt_resource()
+    dbt_resource = get_dbt_resource()
+    if dbt_resource is not None:
+        resources["dbt"] = dbt_resource
 
 defs = Definitions(
     assets=all_assets,

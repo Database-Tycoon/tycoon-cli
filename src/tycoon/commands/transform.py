@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Optional
 
 import typer
 
 from tycoon.config import config
+from tycoon.dbt_profiles import ProfileOverrides, resolve_profile
 from tycoon.utils.console import ai_hint, console, error, header, next_steps, success
 
 app = typer.Typer(
@@ -20,10 +22,17 @@ _TARGET_OPTION = typer.Option(
     None,
     "--target",
     "-t",
-    help=(
-        "dbt target name (dev / prod / ...). Defaults to tycoon.yml's "
-        "`dbt_target` if set, then dbt's own resolution."
-    ),
+    help="dbt target name (dev / prod / ...). Default: tycoon.yml's `dbt_target`, then the profile's own `target`, then 'dev'.",
+)
+_PROFILE_OPTION = typer.Option(
+    None,
+    "--profile",
+    help="Profile name within profiles.yml. Default: tycoon.yml's `dbt_profile`, then dbt_project.yml's `profile:` field.",
+)
+_PROFILES_DIR_OPTION = typer.Option(
+    None,
+    "--profiles-dir",
+    help="Directory containing profiles.yml. Default: tycoon.yml's `dbt_profiles_dir`, then <dbt_project_dir>, then $DBT_PROFILES_DIR, then ~/.dbt.",
 )
 _SELECT_OPTION = typer.Option(None, "--select", "-s", help="dbt model selection syntax (e.g. 'staging+').")
 _FULL_REFRESH_FLAG = typer.Option(False, "--full-refresh", help="Drop and recreate incremental models.")
@@ -32,9 +41,7 @@ _FULL_REFRESH_FLAG = typer.Option(False, "--full-refresh", help="Drop and recrea
 def _dbt_executable() -> str:
     """Find the dbt binary, preferring the one co-located with this Python."""
     import sys
-    from pathlib import Path
 
-    # Prefer dbt in the same virtualenv bin dir as the running Python
     venv_dbt = Path(sys.executable).parent / "dbt"
     if venv_dbt.exists():
         return str(venv_dbt)
@@ -46,12 +53,7 @@ def _dbt_executable() -> str:
 
 
 def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
-    """Best-effort dbt observability capture + Rill dashboard refresh.
-
-    Parses target/run_results.json, inserts into ``.tycoon/metadata.duckdb``,
-    and (if Rill is present) re-exports the usage dashboard Parquets + YAMLs.
-    Silently no-ops on any failure — the dbt invocation result is authoritative.
-    """
+    """Best-effort dbt observability capture + Rill dashboard refresh."""
     try:
         from tycoon.observability import (
             capture_dbt_manifest_safe,
@@ -72,59 +74,72 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
         pass
 
 
-def _resolved_dbt_target(cli_target: Optional[str]) -> str:
-    """CLI flag wins; else tycoon.yml's `dbt_target`; else dbt's default."""
-    if cli_target:
-        return cli_target
-    if config.project and config.project.dbt_target:
-        return config.project.dbt_target
-    return "dev"
+def _resolve_for_run(
+    profile: Optional[str],
+    profiles_dir: Optional[Path],
+    target: Optional[str],
+) -> tuple[Path | None, str | None, str]:
+    """Resolve profile/profiles_dir/target via the central resolver.
 
-
-def _resolved_dbt_profiles_dir(project_dir):
-    """Find the profiles.yml directory for dbt, honoring tycoon.yml overrides.
-
-    Order:
-      1. ``tycoon.yml``'s ``dbt_profiles_dir`` (if set)
-      2. ``<dbt_project_dir>/profiles.yml`` if co-located
-      3. None — dbt falls back to ``~/.dbt/profiles.yml``
+    Returns ``(profiles_dir, profile_name, target)`` ready to splice into
+    a dbt CLI invocation. Any of the first two may be ``None`` if the
+    user is happy with dbt's own discovery; ``target`` is always set.
     """
-    from pathlib import Path
+    project = config.project
+    project_root = config.root
+    dbt_dir = config.dbt_project_dir
 
-    if config.project and config.project.dbt_profiles_dir:
-        explicit = Path(config.project.dbt_profiles_dir)
-        if not explicit.is_absolute():
-            explicit = (config.root / explicit).resolve()
-        if (explicit / "profiles.yml").exists():
-            return explicit
-    if (project_dir / "profiles.yml").exists():
-        return project_dir
-    return None
+    overrides = ProfileOverrides(
+        profiles_dir=profiles_dir,
+        profile=profile,
+        target=target,
+    )
+
+    resolved = resolve_profile(
+        project_root=project_root,
+        dbt_project_dir=dbt_dir,
+        project_dbt_profiles_dir=project.dbt_profiles_dir if project else None,
+        project_dbt_profile=project.dbt_profile if project else None,
+        project_dbt_target=project.dbt_target if project else None,
+        overrides=overrides,
+    )
+
+    if resolved is not None:
+        return resolved.profiles_yml.parent, resolved.profile, resolved.target
+
+    # Resolver couldn't find a profile; fall back to whatever the user
+    # passed on the CLI / had in tycoon.yml so dbt's own discovery still
+    # has a chance.
+    fallback_target = (
+        target
+        or (project.dbt_target if project else None)
+        or "dev"
+    )
+    return profiles_dir, profile, fallback_target
 
 
 def _run_dbt(
     dbt_cmd: str,
+    profile: Optional[str],
+    profiles_dir: Optional[Path],
     target: Optional[str],
     select: Optional[str],
     full_refresh: bool,
     extra: list[str] | None = None,
 ) -> int:
-    """Invoke dbt as a subprocess from the configured dbt project directory.
-
-    Honors ``tycoon.yml``'s ``dbt_profiles_dir`` / ``dbt_target`` /
-    ``dbt_profile`` settings (introduced in v0.1.4 via ``tycoon register
-    dbt``'s new flags). CLI flags still win.
-    """
+    """Invoke dbt as a subprocess from the configured dbt project directory."""
     dbt = _dbt_executable()
     project_dir = config.dbt_project_dir
-    resolved_target = _resolved_dbt_target(target)
+
+    resolved_dir, resolved_profile, resolved_target = _resolve_for_run(
+        profile=profile, profiles_dir=profiles_dir, target=target
+    )
 
     cmd = [dbt, dbt_cmd, "--target", resolved_target]
-    profiles_dir = _resolved_dbt_profiles_dir(project_dir)
-    if profiles_dir is not None:
-        cmd += ["--profiles-dir", str(profiles_dir)]
-    if config.project and config.project.dbt_profile:
-        cmd += ["--profile", config.project.dbt_profile]
+    if resolved_dir is not None:
+        cmd += ["--profiles-dir", str(resolved_dir)]
+    if resolved_profile:
+        cmd += ["--profile", resolved_profile]
     if select:
         cmd += ["--select", select]
     if full_refresh:
@@ -139,13 +154,11 @@ def _run_dbt(
     return result.returncode
 
 
-# ---------------------------------------------------------------------------
-# Sub-commands
-# ---------------------------------------------------------------------------
-
 @app.command()
 def run(
     target: Optional[str] = _TARGET_OPTION,
+    profile: Optional[str] = _PROFILE_OPTION,
+    profiles_dir: Optional[Path] = _PROFILES_DIR_OPTION,
     select: Optional[str] = _SELECT_OPTION,
     full_refresh: bool = _FULL_REFRESH_FLAG,
 ) -> None:
@@ -156,7 +169,14 @@ def run(
         error(f"dbt project directory not found: {config.dbt_project_dir}")
         raise typer.Exit(1)
 
-    rc = _run_dbt("run", target=target, select=select, full_refresh=full_refresh)
+    rc = _run_dbt(
+        "run",
+        profile=profile,
+        profiles_dir=profiles_dir,
+        target=target,
+        select=select,
+        full_refresh=full_refresh,
+    )
 
     if rc == 0:
         success("dbt run completed successfully.")
@@ -172,6 +192,8 @@ def run(
 @app.command()
 def test(
     target: Optional[str] = _TARGET_OPTION,
+    profile: Optional[str] = _PROFILE_OPTION,
+    profiles_dir: Optional[Path] = _PROFILES_DIR_OPTION,
     select: Optional[str] = _SELECT_OPTION,
 ) -> None:
     """Execute dbt test — run data quality tests against built models."""
@@ -181,7 +203,14 @@ def test(
         error(f"dbt project directory not found: {config.dbt_project_dir}")
         raise typer.Exit(1)
 
-    rc = _run_dbt("test", target=target, select=select, full_refresh=False)
+    rc = _run_dbt(
+        "test",
+        profile=profile,
+        profiles_dir=profiles_dir,
+        target=target,
+        select=select,
+        full_refresh=False,
+    )
 
     if rc == 0:
         success("dbt test completed successfully.")
@@ -194,6 +223,8 @@ def test(
 @app.command()
 def build(
     target: Optional[str] = _TARGET_OPTION,
+    profile: Optional[str] = _PROFILE_OPTION,
+    profiles_dir: Optional[Path] = _PROFILES_DIR_OPTION,
     select: Optional[str] = _SELECT_OPTION,
     full_refresh: bool = _FULL_REFRESH_FLAG,
 ) -> None:
@@ -204,7 +235,14 @@ def build(
         error(f"dbt project directory not found: {config.dbt_project_dir}")
         raise typer.Exit(1)
 
-    rc = _run_dbt("build", target=target, select=select, full_refresh=full_refresh)
+    rc = _run_dbt(
+        "build",
+        profile=profile,
+        profiles_dir=profiles_dir,
+        target=target,
+        select=select,
+        full_refresh=full_refresh,
+    )
 
     if rc == 0:
         success("dbt build completed successfully.")
@@ -216,6 +254,8 @@ def build(
 @app.command()
 def docs(
     target: Optional[str] = _TARGET_OPTION,
+    profile: Optional[str] = _PROFILE_OPTION,
+    profiles_dir: Optional[Path] = _PROFILES_DIR_OPTION,
     port: int = typer.Option(8080, "--port", "-p", help="Port for dbt docs serve."),
 ) -> None:
     """Generate and serve dbt documentation in the browser."""
@@ -226,7 +266,15 @@ def docs(
         raise typer.Exit(1)
 
     console.print("[bold]Generating dbt docs...[/bold]")
-    gen_rc = _run_dbt("docs", target=target, select=None, full_refresh=False, extra=["generate"])
+    gen_rc = _run_dbt(
+        "docs",
+        profile=profile,
+        profiles_dir=profiles_dir,
+        target=target,
+        select=None,
+        full_refresh=False,
+        extra=["generate"],
+    )
     if gen_rc != 0:
         error(f"dbt docs generate failed with code {gen_rc}.")
         raise typer.Exit(gen_rc)
@@ -236,9 +284,13 @@ def docs(
     dbt = _dbt_executable()
     project_dir = config.dbt_project_dir
     cmd = [dbt, "docs", "serve", "--port", str(port)]
-    profiles_dir = _resolved_dbt_profiles_dir(project_dir)
-    if profiles_dir is not None:
-        cmd += ["--profiles-dir", str(profiles_dir)]
+    resolved_dir, resolved_profile, _ = _resolve_for_run(
+        profile=profile, profiles_dir=profiles_dir, target=target
+    )
+    if resolved_dir is not None:
+        cmd += ["--profiles-dir", str(resolved_dir)]
+    if resolved_profile:
+        cmd += ["--profile", resolved_profile]
 
     console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")
     console.print(f"[bold green]dbt docs available at http://localhost:{port}[/bold green]")

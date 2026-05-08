@@ -128,9 +128,24 @@ async def run_dbt() -> dict:
         "build",
         "--project-dir",
         str(config.dbt_project_dir),
-        "--profiles-dir",
-        str(config.dbt_project_dir),
     ]
+    # Resolve profiles_dir / profile / target via the same path the CLI
+    # uses, so a server-triggered build matches `tycoon data transform build`.
+    from tycoon.dbt_profiles import resolve_profile
+
+    project = config.project
+    resolved = resolve_profile(
+        project_root=config.root,
+        dbt_project_dir=config.dbt_project_dir,
+        project_dbt_profiles_dir=project.dbt_profiles_dir if project else None,
+        project_dbt_profile=project.dbt_profile if project else None,
+        project_dbt_target=project.dbt_target if project else None,
+    )
+    if resolved is not None:
+        cmd += ["--profiles-dir", str(resolved.profiles_yml.parent)]
+        cmd += ["--profile", resolved.profile, "--target", resolved.target]
+    else:
+        cmd += ["--profiles-dir", str(config.dbt_project_dir)]
 
     try:
         await subprocess_manager.start_run(run_id, cmd)
