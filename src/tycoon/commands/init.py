@@ -300,7 +300,7 @@ def _prompt_rill(
 # names here so any external importer (and the existing test suite) keeps
 # working.
 from tycoon.dbt_profiles import (  # noqa: E402
-    DbtWarehouseTarget,
+    DbtWarehouseTarget as DbtWarehouseTarget,  # re-exported for tests + register.py
     extract_dbt_warehouse_target as _extract_dbt_warehouse_target,
 )
 

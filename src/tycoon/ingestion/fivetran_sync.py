@@ -15,7 +15,7 @@ from pathlib import Path
 
 import duckdb
 
-from tycoon.ingestion.fivetran_client import Connector, FivetranClient
+from tycoon.ingestion.fivetran_client import FivetranClient
 from tycoon.observability import ensure_schema
 
 
