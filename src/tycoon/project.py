@@ -51,9 +51,33 @@ class TransformationTool(str, Enum):
     none = "none"
 
 
+class FivetranIngestionMetadata(BaseModel):
+    """Credentials + group_id for the Fivetran Metadata API.
+
+    Fivetran auth is HTTP Basic with ``api_key:api_secret``. The
+    ``group_id`` scopes which connector group tycoon reads from — get
+    yours from ``GET /v1/groups`` on the Fivetran API or from the
+    Fivetran web UI under Settings → Account.
+    """
+
+    api_key: str = Field(description="Fivetran API key (Basic Auth username).")
+    api_secret: str = Field(description="Fivetran API secret (Basic Auth password).")
+    group_id: str = Field(description="Fivetran group identifier.")
+
+
 class StackConfig(BaseModel):
     ingestion: IngestionTool = IngestionTool.dlt
     ingestion_managed: bool = True
+    ingestion_metadata: FivetranIngestionMetadata | None = Field(
+        default=None,
+        description=(
+            "Vendor-specific metadata-API credentials. Used when "
+            "``ingestion=fivetran`` to pull connector + sync state into "
+            "tycoon's observability surfaces. Other ingestion vendors "
+            "(Airbyte Cloud / Stitch) get their own typed sub-config when "
+            "support is added."
+        ),
+    )
     warehouse: WarehouseType = WarehouseType.duckdb
     transformation: TransformationTool = TransformationTool.dbt
     transformation_managed: bool = True

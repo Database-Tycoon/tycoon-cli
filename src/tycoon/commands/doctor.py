@@ -127,6 +127,8 @@ def _check_stack_config() -> None:
 
     if stack.ingestion == IngestionTool.none:
         info("Ingestion: skipped by choice (stack.ingestion = none).")
+    elif stack.ingestion == IngestionTool.fivetran:
+        _check_fivetran_credentials(stack)
     elif not stack.ingestion_managed:
         info(f"Ingestion is managed externally by {stack.ingestion.value}. Skipping ingestion checks.")
     elif stack.ingestion == IngestionTool.dlt:
@@ -163,6 +165,44 @@ def _check_stack_config() -> None:
             success(f"External dbt project found at {project.dbt_project_dir}.")
         else:
             error(f"External dbt project not found at {project.dbt_project_dir}.")
+
+
+def _check_fivetran_credentials(stack) -> None:
+    """Validate Fivetran API creds + group_id can reach the API.
+
+    Fires only when ``stack.ingestion = fivetran``. Doesn't pull
+    connectors — just probes the group endpoint so we don't spam the
+    API on every doctor run.
+    """
+    meta = stack.ingestion_metadata
+    if meta is None:
+        error(
+            "stack.ingestion is fivetran but stack.ingestion_metadata is "
+            "missing. Add api_key, api_secret, group_id."
+        )
+        return
+
+    if not (meta.api_key and meta.api_secret and meta.group_id):
+        error("Fivetran credentials incomplete: need api_key, api_secret, group_id.")
+        return
+
+    try:
+        from tycoon.ingestion.fivetran_client import build_client_from_config
+    except ImportError as exc:  # pragma: no cover — defensive
+        warn(f"Fivetran client not importable: {exc}")
+        return
+
+    try:
+        client = build_client_from_config(meta)
+        if client.verify_credentials():
+            success(f"Fivetran auth OK (group_id={meta.group_id}).")
+        else:
+            error(
+                f"Fivetran auth failed for group_id={meta.group_id}. "
+                "Check api_key/api_secret and that the group exists."
+            )
+    except Exception as exc:
+        warn(f"Fivetran probe raised unexpectedly: {exc}")
 
 
 def _check_dbt_profile() -> None:

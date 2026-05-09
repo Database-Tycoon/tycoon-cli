@@ -164,6 +164,21 @@ CREATE TABLE IF NOT EXISTS dbt_schema_changes (
     captured_at         TIMESTAMP,
     PRIMARY KEY (invocation_id, change_type, unique_id, column_name)
 );
+
+CREATE TABLE IF NOT EXISTS fivetran_connectors (
+    connector_id   VARCHAR NOT NULL,
+    name           VARCHAR,
+    service        VARCHAR,
+    schema_name    VARCHAR,
+    paused         BOOLEAN,
+    sync_state     VARCHAR,
+    setup_state    VARCHAR,
+    update_state   VARCHAR,
+    succeeded_at   TIMESTAMP,
+    failed_at      TIMESTAMP,
+    captured_at    TIMESTAMP NOT NULL,
+    PRIMARY KEY (connector_id, captured_at)
+);
 """
 
 
