@@ -21,18 +21,25 @@ Attach an existing dbt project. Local path or GitHub URL.
 ### Synopsis
 
 ```
-tycoon register dbt [OPTIONS] SOURCE
+tycoon register dbt [OPTIONS] [SOURCE]
 
 Arguments:
-  SOURCE  Local path or GitHub URL of the dbt project to register
+  [SOURCE]  Local path or GitHub URL of an existing dbt project.
+            Required unless --create is set (in which case it overrides
+            the default sibling path).
 
 Options:
+  --create               Bootstrap a new dbt project at ../<project>-dbt
+                         (or [SOURCE] if given), wired to the active tycoon
+                         warehouse, then register it
   --profiles-dir PATH    Directory containing profiles.yml (default:
                          <SOURCE>/profiles.yml, then ~/.dbt/profiles.yml)
   --profile NAME         Profile name within profiles.yml (default:
                          dbt_project.yml's `profile:` field)
   --target NAME          Target within the profile (default: profile's
                          `target:` field, then 'dev')
+  --no-attach-metadata   Skip wiring `.tycoon/metadata.duckdb` into the
+                         registered profile as `tycoon_meta`
   -h, --help             Show this message and exit
 ```
 
@@ -45,12 +52,43 @@ tycoon register dbt ../my-existing-dbt-project
 # Register from GitHub (clones into a sibling dir)
 tycoon register dbt https://github.com/me/my-dbt-project
 
+# Bootstrap a new dbt project (recovery path if you skipped dbt during
+# `tycoon init` — sibling repo at ../<project>-dbt, profile points at
+# whatever DuckDB/MotherDuck the tycoon project already uses)
+tycoon register dbt --create
+
+# Same, with an explicit location
+tycoon register dbt --create ./dbt_project
+
 # With non-default profile resolution
 tycoon register dbt ../my-dbt \
   --profiles-dir ~/.config/dbt \
   --profile production_profile \
   --target prod
 ```
+
+### `--create`: bootstrap a new dbt project
+
+If you picked **Skip** on the dbt prompt during `tycoon init`, `--create`
+is the recovery path. It writes a fresh `dbt_project.yml` + `profiles.yml`
+(plus the standard `models/`, `analyses/`, etc. layout) at the target
+location, then runs the same registration flow as if you'd handed it an
+existing project.
+
+The generated profile points at the same warehouse paths recorded in
+`tycoon.yml`'s `database` block, so `tycoon data transform run` works
+immediately without further configuration.
+
+**Limitations:**
+
+- DuckDB and MotherDuck warehouses only. For Snowflake/BigQuery, hand-author
+  `dbt_project.yml` + `profiles.yml` and use plain `tycoon register dbt <path>` —
+  the warehouse-alignment step picks up the cloud adapter from there.
+- Refuses to overwrite an existing `dbt_project.yml`. If the target directory
+  already has one, register it directly (drop the `--create` flag).
+- Marks `stack.transformation_managed: true` (tycoon owns the project,
+  same as the init wizard's "Create new" option). Plain
+  `tycoon register dbt <path>` keeps `transformation_managed: false`.
 
 ### Profile resolution
 

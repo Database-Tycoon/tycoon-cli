@@ -52,6 +52,68 @@ def _resolve_path_or_url(source: str, default_clone_dest: Path) -> Path | None:
     return path
 
 
+def _create_new_dbt_project(
+    raw: dict,
+    source: str | None,
+    default_target: Path,
+) -> Path | None:
+    """Bootstrap a fresh dbt project wired to the active tycoon warehouse.
+
+    Reuses :func:`tycoon.scaffolding.templates._scaffold_dbt_project` —
+    same code path that ``tycoon init`` runs when the user picks "Create
+    new dbt project" in the wizard. Returns the resolved target path on
+    success, or ``None`` after printing a user-facing error.
+
+    Limitation: the underlying scaffolder only knows DuckDB and MotherDuck
+    profiles today. For Snowflake/BigQuery warehouses, this command bails
+    early so users hand-author the profile and use plain
+    ``tycoon register dbt <path>``.
+    """
+    from tycoon.scaffolding.templates import _scaffold_dbt_project
+
+    target = (
+        Path(source).expanduser().resolve() if source else default_target.resolve()
+    )
+
+    if (target / "dbt_project.yml").exists():
+        error(
+            f"{target} already contains a dbt_project.yml. "
+            f"Use `tycoon register dbt {target}` to register it instead."
+        )
+        return None
+
+    stack_raw = raw.get("stack") or {}
+    warehouse_value = stack_raw.get("warehouse", WarehouseType.duckdb.value)
+    try:
+        warehouse_type = WarehouseType(warehouse_value)
+    except ValueError:
+        warehouse_type = WarehouseType.duckdb
+
+    if warehouse_type not in (WarehouseType.duckdb, WarehouseType.motherduck):
+        error(
+            f"--create only supports DuckDB and MotherDuck warehouses today "
+            f"(active warehouse: {warehouse_type.value}). For Snowflake / "
+            "BigQuery, hand-author dbt_project.yml + profiles.yml and use "
+            "`tycoon register dbt <path>`."
+        )
+        return None
+
+    db = raw.get("database") or {}
+    raw_db_path = db.get("raw", "data/raw.duckdb")
+    warehouse_db_path = db.get("warehouse", "data/warehouse.duckdb")
+
+    name = raw.get("name", config.root.name)
+    _scaffold_dbt_project(
+        dbt_dir=target,
+        name=name,
+        warehouse=warehouse_type,
+        warehouse_db_path=warehouse_db_path,
+        raw_db_path=raw_db_path,
+        target=config.root,
+    )
+    return target
+
+
 def _require_tycoon_yml() -> Path:
     """Resolve the tycoon.yml path, or bail if no project."""
     if not config.has_project_file:
@@ -79,9 +141,28 @@ def _write_raw_tycoon_yml(path: Path, data: dict) -> None:
 @app.command(name="dbt")
 def register_dbt(
     source: Annotated[
-        str,
-        typer.Argument(help="Local path or GitHub URL of the dbt project to register."),
-    ],
+        Optional[str],
+        typer.Argument(
+            help=(
+                "Local path or GitHub URL of an existing dbt project. "
+                "Required unless --create is set (in which case it overrides "
+                "the default sibling path)."
+            ),
+        ),
+    ] = None,
+    create: Annotated[
+        bool,
+        typer.Option(
+            "--create",
+            help=(
+                "Bootstrap a new dbt project (sibling repo at "
+                "../<project>-dbt by default) wired to the active tycoon "
+                "warehouse, then register it. Pass SOURCE to override the "
+                "location. Refuses if a dbt_project.yml already exists at "
+                "the target — use plain `register dbt <path>` for that case."
+            ),
+        ),
+    ] = False,
     profiles_dir: Annotated[
         Optional[Path],
         typer.Option(
@@ -118,7 +199,7 @@ def register_dbt(
         ),
     ] = False,
 ) -> None:
-    """Attach an existing dbt project to the current tycoon.yml.
+    """Attach an existing dbt project — or bootstrap a new one with ``--create``.
 
     The three profile-related flags mirror dbt's own CLI options. Any value
     you pass is also persisted in tycoon.yml under ``dbt_profiles_dir`` /
@@ -137,13 +218,28 @@ def register_dbt(
             info("Aborted; no changes made.")
             raise typer.Exit(0)
 
+    if not create and source is None:
+        error(
+            "SOURCE is required unless --create is set. "
+            "Pass a path/URL to register an existing dbt project, "
+            "or use --create to bootstrap a new one."
+        )
+        raise typer.Exit(1)
+
     default_clone = config.root.parent / f"{raw.get('name', config.root.name)}-dbt"
-    resolved = _resolve_path_or_url(source, default_clone)
-    if resolved is None:
-        raise typer.Exit(1)
-    if not (resolved / "dbt_project.yml").exists():
-        error(f"{resolved} does not contain a dbt_project.yml")
-        raise typer.Exit(1)
+
+    if create:
+        resolved = _create_new_dbt_project(raw, source, default_clone)
+        if resolved is None:
+            raise typer.Exit(1)
+    else:
+        assert source is not None  # narrowed by the check above
+        resolved = _resolve_path_or_url(source, default_clone)
+        if resolved is None:
+            raise typer.Exit(1)
+        if not (resolved / "dbt_project.yml").exists():
+            error(f"{resolved} does not contain a dbt_project.yml")
+            raise typer.Exit(1)
 
     # Resolve profiles_dir to an absolute path so the warehouse-alignment
     # extractor and the persisted tycoon.yml entry agree.
@@ -177,10 +273,11 @@ def register_dbt(
     elif "dbt_target" in raw:
         del raw["dbt_target"]
 
-    # Update stack to reflect "external dbt"
+    # Update stack — `--create` means tycoon owns the project (managed),
+    # otherwise it's user-authored / external.
     stack = raw.setdefault("stack", {})
     stack["transformation"] = TransformationTool.dbt.value
-    stack["transformation_managed"] = False
+    stack["transformation_managed"] = bool(create)
 
     # Warehouse alignment offer — pass the explicit profile/target through
     # so alignment reads the right adapter config.

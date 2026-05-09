@@ -12,6 +12,7 @@ _In-flight cycle. Four tracks: dependency hygiene (shipped — this section), fi
 - **`--profile` / `--profiles-dir` / `--target` flags** on every dbt-touching command — `tycoon data transform run/test/build/docs`. Flag names match dbt's CLI exactly. Resolution order: CLI flag → `tycoon.yml` → `<dbt_project_dir>/profiles.yml` → `$DBT_PROFILES_DIR` → `~/.dbt/profiles.yml`.
 - **`tycoon doctor` now includes a non-fatal "dbt profile" check** that validates the resolved profile's adapter matches `stack.warehouse`, catching duckdb-vs-snowflake mismatches before a `dbt build` does.
 - **`docs/recipes/existing-dbt-profile.md`** — recipe for using an existing `profiles.yml` from anywhere on disk (under `~/.dbt`, in a shared config repo, alongside an existing dbt project).
+- **`tycoon register dbt --create`** ([#34][]). Recovery path for users who picked **Skip** on the dbt prompt during `tycoon init` — bootstraps a fresh dbt project at `../<project>-dbt` (or any path you pass) wired to the active tycoon warehouse, then registers it. Same scaffolder the init wizard uses (`_scaffold_dbt_project`) — produces a runnable `dbt_project.yml` + `profiles.yml` so `tycoon data transform run` works immediately. DuckDB and MotherDuck warehouses only; refuses to overwrite an existing `dbt_project.yml`. Marks `stack.transformation_managed: true` since tycoon owns the project.
 
 ### Changed
 
@@ -31,6 +32,7 @@ _In-flight cycle. Four tracks: dependency hygiene (shipped — this section), fi
 [#27]: https://github.com/Database-Tycoon/tycoon-cli/issues/27
 [#28]: https://github.com/Database-Tycoon/tycoon-cli/issues/28
 [#32]: https://github.com/Database-Tycoon/tycoon-cli/issues/32
+[#34]: https://github.com/Database-Tycoon/tycoon-cli/issues/34
 
 ## [0.1.5] - 2026-05-03
 
