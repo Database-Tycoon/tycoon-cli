@@ -25,9 +25,12 @@ _In-flight cycle. Four tracks: dependency hygiene (shipped — this section), fi
 
 ### Fixed
 
+- **rest_api ingestion was completely broken** ([#32][]). `tycoon data sources run pokeapi` (and any other rest_api source) failed with `Path '.': missing required fields {'client'}` because the runner cast tycoon's flat config shape directly to dlt's `RESTAPIConfig`, which expects `base_url` wrapped under `client` and `resources` as a list (not a comma-separated string). The fastest-path quickstart from the README was non-functional. Fixed by normalizing the flat shape into dlt's wrapped shape inside `_build_rest_api_source`, with a regression test that exercises the actual `rest_api_source` build (not just the schema).
+
 [#26]: https://github.com/Database-Tycoon/tycoon-cli/issues/26
 [#27]: https://github.com/Database-Tycoon/tycoon-cli/issues/27
 [#28]: https://github.com/Database-Tycoon/tycoon-cli/issues/28
+[#32]: https://github.com/Database-Tycoon/tycoon-cli/issues/32
 
 ## [0.1.5] - 2026-05-03
 

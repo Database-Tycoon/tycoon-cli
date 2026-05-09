@@ -86,6 +86,76 @@ class TestMTABusSpeedsPipeline:
         assert "2025" in datasets
 
 
+class TestBuildRestApiSource:
+    """Regression tests for issue #32: rest_api source build broke because
+    `tycoon data sources add rest_api` writes a flat config to tycoon.yml,
+    but dlt's `rest_api_source` requires the wrapped RESTAPIConfig shape."""
+
+    def test_normalize_wraps_flat_base_url_under_client(self):
+        from tycoon.ingestion.runner import _normalize_rest_api_config
+
+        out = _normalize_rest_api_config(
+            {
+                "base_url": "https://pokeapi.co/api/v2/",
+                "resources": "pokemon,berry,type",
+            }
+        )
+        assert out["client"] == {"base_url": "https://pokeapi.co/api/v2/"}
+        assert "base_url" not in out
+        assert out["resources"] == ["pokemon", "berry", "type"]
+
+    def test_normalize_passes_through_already_wrapped_config(self):
+        """Hand-authored / pre-wrapped shapes shouldn't be re-wrapped."""
+        from tycoon.ingestion.runner import _normalize_rest_api_config
+
+        already_wrapped = {
+            "client": {"base_url": "https://api.example.com", "auth": {"token": "x"}},
+            "resources": [{"name": "users", "endpoint": "users"}],
+        }
+        out = _normalize_rest_api_config(already_wrapped)
+        assert out["client"]["base_url"] == "https://api.example.com"
+        assert out["client"]["auth"] == {"token": "x"}
+        # resources list passed through unchanged
+        assert out["resources"] == [{"name": "users", "endpoint": "users"}]
+
+    def test_normalize_handles_list_resources(self):
+        """Resources arriving as a list (hand-authored) stay a list."""
+        from tycoon.ingestion.runner import _normalize_rest_api_config
+
+        out = _normalize_rest_api_config(
+            {"base_url": "https://x", "resources": ["a", "b"]}
+        )
+        assert out["resources"] == ["a", "b"]
+
+    def test_normalize_drops_empty_resource_entries(self):
+        """`resources: 'a,,b, ,'` shouldn't produce empty strings."""
+        from tycoon.ingestion.runner import _normalize_rest_api_config
+
+        out = _normalize_rest_api_config(
+            {"base_url": "https://x", "resources": "a,,b, ,"}
+        )
+        assert out["resources"] == ["a", "b"]
+
+    def test_build_rest_api_source_constructs_dlt_source(self):
+        """End-to-end: the flat config that tycoon.yml stores produces a
+        valid dlt source. Before the fix, dlt's validator raised
+        `Path '.': missing required fields {'client'}`."""
+        from tycoon.ingestion.runner import _build_rest_api_source
+        from tycoon.project import SourceConfig
+
+        sc = SourceConfig(
+            type="rest_api",
+            schema="raw_pokeapi",
+            config={
+                "base_url": "https://pokeapi.co/api/v2/",
+                "resources": "pokemon,berry,type",
+            },
+        )
+        source = _build_rest_api_source(sc)
+        resource_names = {r.name for r in source.resources.values()}
+        assert {"pokemon", "berry", "type"}.issubset(resource_names)
+
+
 class TestBuildFilesystemSource:
     """Unit tests for _build_filesystem_source glob-based dispatch."""
 
