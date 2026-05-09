@@ -187,6 +187,22 @@ def _check_dbt_profile() -> None:
         warn(f"dbt profile check raised unexpectedly: {exc}")
 
 
+def _check_osi() -> None:
+    """Validate generated OSI YAML if present. Skips silently when absent."""
+    project = config.project
+    if project is None:
+        return
+    if project.stack.transformation == TransformationTool.none:
+        return
+
+    from tycoon.commands.semantics import run_osi_check
+
+    try:
+        run_osi_check()
+    except Exception as exc:
+        warn(f"OSI check raised unexpectedly: {exc}")
+
+
 def _check_observability() -> None:
     """Report whether run-history capture has fired at least once.
 
@@ -259,6 +275,9 @@ def doctor_cmd() -> None:
 
             console.print(Panel("Checking dbt profile...", expand=False))
             _check_dbt_profile()
+
+            console.print(Panel("Checking OSI semantic layer...", expand=False))
+            _check_osi()
 
             console.print(Panel("Checking observability...", expand=False))
             _check_observability()

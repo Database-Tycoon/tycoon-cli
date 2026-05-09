@@ -254,6 +254,19 @@ tycoon profiles doctor    # verify resolution + adapter matches stack.warehouse
 `tycoon doctor` includes the `profiles doctor` check too, so you'll
 catch a duckdb-vs-snowflake adapter mismatch before a `dbt build` does.
 
+## `transform`
+
+```yaml
+transform:
+  auto_scaffold: true             # default
+  auto_osi_scaffold: false        # default — opt in once you're happy with OSI scaffolds
+```
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `auto_scaffold` | bool | `true` | After `tycoon data sources run <name>`, automatically run `tycoon data analyze` if no staging models exist for that source yet. |
+| `auto_osi_scaffold` | bool | `false` | After a successful `tycoon data transform run/build`, auto-emit `dbt_project/semantic/osi.yaml` via `tycoon semantics scaffold`. Best-effort — never breaks the underlying transform on failure. See [the `tycoon semantics` docs](../commands/semantics.md). |
+
 ## Things that aren't in `tycoon.yml`
 
 - **Secrets** — keep them in `.env` or your shell environment, then

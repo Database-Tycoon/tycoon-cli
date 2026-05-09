@@ -85,6 +85,7 @@ nav:
       - "tycoon init": commands/init.md
       - "tycoon register": commands/register.md
       - "tycoon profiles": commands/profiles.md
+      - "tycoon semantics": commands/semantics.md
       - "tycoon doctor": commands/doctor.md
       - "tycoon docs": commands/docs.md
     - Data pipeline:
@@ -115,6 +116,7 @@ nav:
     - recipes/lm-studio-local-llm.md
     - recipes/existing-dbt-project.md
     - recipes/existing-dbt-profile.md
+    - recipes/osi-export.md
   - Releases:
     - "v0.1.6 (in flight)": releases/v0.1.6.md
     - "v0.1.5": releases/v0.1.5.md

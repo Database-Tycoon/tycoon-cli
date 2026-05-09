@@ -192,6 +192,16 @@ class TransformConfig(BaseModel):
             "one-shot opt-out."
         ),
     )
+    auto_osi_scaffold: bool = Field(
+        default=False,
+        description=(
+            "When True, `tycoon data transform run` and `tycoon data analyze` "
+            "auto-invoke `tycoon semantics scaffold` after a successful build. "
+            "Default False in v0.1.6 — opt in once you've validated the "
+            "Conservative scaffold matches your project conventions. "
+            "Best-effort: never breaks the underlying transform on OSI failure."
+        ),
+    )
 
 
 class TycoonProject(BaseModel):

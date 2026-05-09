@@ -74,6 +74,29 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
         pass
 
 
+def _auto_osi_scaffold_safe() -> None:
+    """Re-emit dbt_project/semantic/osi.yaml after a successful dbt run.
+
+    Opt-in via ``transform.auto_osi_scaffold: true`` in tycoon.yml. Never
+    raises into the dbt command's own success path — OSI failures are
+    informational only.
+    """
+    project = config.project
+    if project is None or not project.transform.auto_osi_scaffold:
+        return
+    try:
+        from tycoon.scaffolding.osi_generator import scaffold_osi
+
+        out_path = config.dbt_project_dir / "semantic" / "osi.yaml"
+        scaffold_osi(
+            warehouse_db=config.local_db,
+            out_path=out_path,
+            project_name=project.name,
+        )
+    except Exception:
+        pass
+
+
 def _resolve_for_run(
     profile: Optional[str],
     profiles_dir: Optional[Path],
@@ -151,6 +174,8 @@ def _run_dbt(
 
     result = subprocess.run(cmd, cwd=project_dir)
     _capture_dbt_and_refresh_safe(dbt_cmd)
+    if result.returncode == 0 and dbt_cmd in {"run", "build"}:
+        _auto_osi_scaffold_safe()
     return result.returncode
 
 
