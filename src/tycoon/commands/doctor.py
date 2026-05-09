@@ -193,14 +193,14 @@ def _check_fivetran_credentials(stack) -> None:
         return
 
     try:
-        client = build_client_from_config(meta)
-        if client.verify_credentials():
-            success(f"Fivetran auth OK (group_id={meta.group_id}).")
-        else:
-            error(
-                f"Fivetran auth failed for group_id={meta.group_id}. "
-                "Check api_key/api_secret and that the group exists."
-            )
+        with build_client_from_config(meta) as client:
+            if client.verify_credentials():
+                success(f"Fivetran auth OK (group_id={meta.group_id}).")
+            else:
+                error(
+                    f"Fivetran auth failed for group_id={meta.group_id}. "
+                    "Check api_key/api_secret and that the group exists."
+                )
     except Exception as exc:
         warn(f"Fivetran probe raised unexpectedly: {exc}")
 

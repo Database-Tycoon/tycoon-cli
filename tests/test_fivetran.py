@@ -32,7 +32,7 @@ from tycoon.ingestion.fivetran_sync import (
 # --------------------------------------------------------------------------
 
 
-def _connector_payload(
+def _connector_body(
     cid: str,
     *,
     schema: str = "raw_orders",
@@ -44,25 +44,39 @@ def _connector_payload(
     setup_state: str = "connected",
     update_state: str = "on_schedule",
 ) -> dict:
+    """Inline connector representation as it appears in list + detail responses."""
     return {
-        "data": {
-            "id": cid,
-            "service": service,
-            "schema": schema,
-            "paused": paused,
-            "succeeded_at": succeeded_at,
-            "failed_at": failed_at,
-            "status": {
-                "sync_state": sync_state,
-                "setup_state": setup_state,
-                "update_state": update_state,
-            },
-        }
+        "id": cid,
+        "service": service,
+        "schema": schema,
+        "paused": paused,
+        "succeeded_at": succeeded_at,
+        "failed_at": failed_at,
+        "status": {
+            "sync_state": sync_state,
+            "setup_state": setup_state,
+            "update_state": update_state,
+        },
     }
 
 
-def _list_payload(connector_ids: list[str], next_cursor: str | None = None) -> dict:
-    body: dict = {"data": {"items": [{"id": cid} for cid in connector_ids]}}
+def _connector_payload(cid: str, **kwargs) -> dict:
+    """Single-connector detail response — wraps the body in a `data` envelope."""
+    return {"data": _connector_body(cid, **kwargs)}
+
+
+def _list_payload(
+    connectors: list[dict] | list[str],
+    next_cursor: str | None = None,
+) -> dict:
+    """Group-connector list response. Accepts full bodies (preferred) or bare
+    ids as a backwards-compatible shorthand for tests that only care about
+    pagination shape."""
+    items: list[dict] = [
+        c if isinstance(c, dict) else _connector_body(c)
+        for c in connectors
+    ]
+    body: dict = {"data": {"items": items}}
     if next_cursor:
         body["data"]["next_cursor"] = next_cursor
     return body
@@ -109,10 +123,11 @@ class TestFivetranClient:
     def test_list_connectors_returns_typed_objects(self):
         client = _make_client(
             {
-                "/v1/groups/g1/connectors": _list_payload(["c1", "c2"]),
-                "/v1/connectors/c1": _connector_payload("c1", schema="raw_a"),
-                "/v1/connectors/c2": _connector_payload(
-                    "c2", schema="raw_b", service="shopify"
+                "/v1/groups/g1/connectors": _list_payload(
+                    [
+                        _connector_body("c1", schema="raw_a"),
+                        _connector_body("c2", schema="raw_b", service="shopify"),
+                    ]
                 ),
             }
         )
@@ -122,15 +137,35 @@ class TestFivetranClient:
         names = sorted(c.schema_name for c in out)
         assert names == ["raw_a", "raw_b"]
 
+    def test_list_connectors_makes_one_call_no_per_id_fanout(self):
+        """Regression test for the N+1 we just removed. Counts list-endpoint
+        hits to prove we didn't sneak in a per-connector round-trip."""
+        calls: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(request.url.path)
+            return httpx.Response(
+                200,
+                json=_list_payload(
+                    [_connector_body("c1"), _connector_body("c2")]
+                ),
+            )
+
+        http = httpx.Client(transport=httpx.MockTransport(handler))
+        client = FivetranClient("k", "s", "g1", http_client=http)
+        client.list_connectors()
+        # Exactly one round-trip — the list endpoint, period.
+        assert calls == ["/v1/groups/g1/connectors"]
+
     def test_pagination_follows_next_cursor(self):
         client = _make_client(
             {
                 "/v1/groups/g1/connectors": [
-                    _list_payload(["c1"], next_cursor="abc"),
-                    _list_payload(["c2"]),  # no next_cursor → terminates
+                    _list_payload(
+                        [_connector_body("c1")], next_cursor="abc"
+                    ),
+                    _list_payload([_connector_body("c2")]),  # no cursor → done
                 ],
-                "/v1/connectors/c1": _connector_payload("c1"),
-                "/v1/connectors/c2": _connector_payload("c2"),
             }
         )
         out = client.list_connectors()
@@ -139,9 +174,8 @@ class TestFivetranClient:
     def test_iso_timestamps_parsed_as_utc_aware(self):
         client = _make_client(
             {
-                "/v1/groups/g1/connectors": _list_payload(["c1"]),
-                "/v1/connectors/c1": _connector_payload(
-                    "c1", succeeded_at="2026-05-08T08:30:00Z"
+                "/v1/groups/g1/connectors": _list_payload(
+                    [_connector_body("c1", succeeded_at="2026-05-08T08:30:00Z")]
                 ),
             }
         )
@@ -155,14 +189,31 @@ class TestFivetranClient:
     def test_invalid_timestamp_becomes_none(self):
         client = _make_client(
             {
-                "/v1/groups/g1/connectors": _list_payload(["c1"]),
-                "/v1/connectors/c1": _connector_payload(
-                    "c1", succeeded_at="not-a-date"
+                "/v1/groups/g1/connectors": _list_payload(
+                    [_connector_body("c1", succeeded_at="not-a-date")]
                 ),
             }
         )
         c = client.list_connectors()[0]
         assert c.succeeded_at is None
+
+    def test_context_manager_closes_owned_client(self):
+        """When the client creates its own httpx.Client, exiting the `with`
+        block must close it. Reuses a real client + asserts via is_closed."""
+        client = FivetranClient("k", "s", "g1")
+        underlying = client._http  # noqa: SLF001 — explicit white-box check
+        with client:
+            assert not underlying.is_closed
+        assert underlying.is_closed
+
+    def test_context_manager_does_not_close_caller_provided_client(self):
+        """If the caller passed in their own httpx.Client, we don't close
+        it — that's the caller's contract."""
+        http = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"data": {}})))
+        with FivetranClient("k", "s", "g1", http_client=http):
+            pass
+        assert not http.is_closed
+        http.close()
 
     def test_4xx_response_raises_api_error(self):
         def handler(request: httpx.Request) -> httpx.Response:
@@ -195,11 +246,16 @@ class TestFivetranSync:
     def test_sync_writes_one_row_per_connector(self, tmp_path: Path):
         client = _make_client(
             {
-                "/v1/groups/g1/connectors": _list_payload(["c1", "c2"]),
-                "/v1/connectors/c1": _connector_payload("c1", schema="a"),
-                "/v1/connectors/c2": _connector_payload(
-                    "c2", schema="b", failed_at="2026-05-08T09:00:00Z",
-                    succeeded_at=None,
+                "/v1/groups/g1/connectors": _list_payload(
+                    [
+                        _connector_body("c1", schema="a"),
+                        _connector_body(
+                            "c2",
+                            schema="b",
+                            failed_at="2026-05-08T09:00:00Z",
+                            succeeded_at=None,
+                        ),
+                    ]
                 ),
             }
         )
@@ -223,8 +279,9 @@ class TestFivetranSync:
         """Multiple syncs produce multiple snapshots per connector."""
         client = _make_client(
             {
-                "/v1/groups/g1/connectors": _list_payload(["c1"]),
-                "/v1/connectors/c1": _connector_payload("c1"),
+                "/v1/groups/g1/connectors": _list_payload(
+                    [_connector_body("c1")]
+                ),
             }
         )
         meta_db = tmp_path / "metadata.duckdb"
@@ -251,8 +308,9 @@ class TestFivetranSync:
         meta_db = tmp_path / "metadata.duckdb"
         client = _make_client(
             {
-                "/v1/groups/g1/connectors": _list_payload(["c1"]),
-                "/v1/connectors/c1": _connector_payload("c1"),
+                "/v1/groups/g1/connectors": _list_payload(
+                    [_connector_body("c1")]
+                ),
             }
         )
         sync_fivetran_metadata(client, meta_db)

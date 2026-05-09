@@ -65,10 +65,9 @@ def sync() -> None:
     project = config.project
     assert project is not None and project.stack.ingestion_metadata is not None
 
-    client = build_client_from_config(project.stack.ingestion_metadata)
-
     try:
-        result = sync_fivetran_metadata(client, metadata_db_path(config.root))
+        with build_client_from_config(project.stack.ingestion_metadata) as client:
+            result = sync_fivetran_metadata(client, metadata_db_path(config.root))
     except FivetranAPIError as exc:
         error(f"Fivetran sync failed: {exc}")
         raise typer.Exit(1) from exc

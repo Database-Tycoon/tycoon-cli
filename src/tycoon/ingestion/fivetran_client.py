@@ -86,6 +86,19 @@ class FivetranClient:
         # on this call to install the credentials.)
         if http_client is not None and http_client.auth is None:
             self._http.auth = httpx.BasicAuth(api_key, api_secret)
+        # Track ownership so the context manager only closes a client we made.
+        self._owns_http = http_client is None
+
+    def __enter__(self) -> FivetranClient:
+        return self
+
+    def __exit__(self, *_args: Any) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Close the underlying HTTP client if we created it ourselves."""
+        if self._owns_http:
+            self._http.close()
 
     # ----- low-level HTTP -----------------------------------------------
 
@@ -116,9 +129,30 @@ class FivetranClient:
     # ----- public API ---------------------------------------------------
 
     def list_connectors(self) -> list[Connector]:
-        """Return every connector under the configured group."""
-        ids = self._list_connector_ids_in_group()
-        return [self._get_connector(cid) for cid in ids]
+        """Return every connector under the configured group.
+
+        Uses a single paginated pass over ``GET /v1/groups/<id>/connectors``
+        — that endpoint already returns full connector bodies (schema,
+        service, status, succeeded_at, failed_at), so we don't need to
+        round-trip ``GET /v1/connectors/<id>`` per item. Catches the
+        N+1 footgun on groups with hundreds of connectors.
+        """
+        out: list[Connector] = []
+        cursor: str | None = None
+        while True:
+            params: dict[str, Any] = {"limit": 100}
+            if cursor:
+                params["cursor"] = cursor
+            payload = self._get(f"/groups/{self._group_id}/connectors", **params)
+            data = payload.get("data") or {}
+            for item in data.get("items") or []:
+                if not isinstance(item, dict):
+                    continue
+                out.append(self._parse_connector_body(item))
+            cursor = data.get("next_cursor")
+            if not cursor:
+                break
+        return out
 
     def verify_credentials(self) -> bool:
         """Lightweight probe — fetch the group's name. Returns False on auth fail.
@@ -134,30 +168,27 @@ class FivetranClient:
 
     # ----- internals ----------------------------------------------------
 
-    def _list_connector_ids_in_group(self) -> list[str]:
-        out: list[str] = []
-        cursor: str | None = None
-        while True:
-            params: dict[str, Any] = {"limit": 100}
-            if cursor:
-                params["cursor"] = cursor
-            payload = self._get(f"/groups/{self._group_id}/connectors", **params)
-            data = payload.get("data") or {}
-            for item in data.get("items") or []:
-                cid = item.get("id")
-                if cid:
-                    out.append(str(cid))
-            cursor = data.get("next_cursor")
-            if not cursor:
-                break
-        return out
-
     def _get_connector(self, connector_id: str) -> Connector:
+        """Fetch one connector by id. Reserved for future use — list_connectors
+        no longer hits this endpoint after the N+1 cleanup."""
         payload = self._get(f"/connectors/{connector_id}")
-        body = payload.get("data") or {}
+        return self._parse_connector_body(
+            payload.get("data") or {}, fallback_id=connector_id
+        )
+
+    def _parse_connector_body(
+        self,
+        body: dict[str, Any],
+        fallback_id: str | None = None,
+    ) -> Connector:
+        """Map a Fivetran connector body to our typed Connector record.
+
+        Shared between list (one call, full bodies) and the single-fetch
+        path so the two flows can't drift apart.
+        """
         status = body.get("status") or {}
         return Connector(
-            connector_id=str(body.get("id") or connector_id),
+            connector_id=str(body.get("id") or fallback_id or ""),
             name=str(body.get("schema") or body.get("name") or ""),
             service=str(body.get("service") or ""),
             schema_name=str(body.get("schema") or ""),
