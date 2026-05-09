@@ -29,6 +29,16 @@ tycoon never overwrites them on re-run (sentinel pattern, see below).
 Mart selection is prefix-based: `mart_*`, `fct_*`, `dim_*`, `obt_*`. Anything
 else (staging, intermediate, ephemeral models) is skipped.
 
+> **v0.1.6 stopgap.** Prefix matching works for projects that follow
+> the dbt-community naming convention but breaks for projects with
+> custom prefixes (e.g. `published_*` instead of `mart_*`). v0.1.7
+> swaps this for a layer-aware lookup driven by the dbt manifest +
+> a `tycoon.yml` override block — see [#30][issue-30] for the
+> design discussion. The `tycoon semantics` CLI shape doesn't change;
+> only the internal mart-discovery path does.
+
+[issue-30]: https://github.com/Database-Tycoon/tycoon-cli/issues/30
+
 ## `scaffold`
 
 ```bash
