@@ -376,7 +376,7 @@ def _require_nao() -> None:
     try:
         import nao_core  # noqa: F401
     except ImportError:
-        error("Nao is not installed. Run: [bold]pip install 'database-tycoon[ask]'[/bold]")
+        error(r"Nao is not installed. Run: [bold]pip install 'database-tycoon\[ask]'[/bold]")
         raise typer.Exit(1)
 
 
@@ -398,7 +398,7 @@ def _nao_executable() -> str:
         return str(venv_nao)
     nao = shutil.which("nao")
     if not nao:
-        error("`nao` not found. Reinstall: [bold]pip install 'database-tycoon[ask]'[/bold]")
+        error(r"`nao` not found. Reinstall: [bold]pip install 'database-tycoon\[ask]'[/bold]")
         raise typer.Exit(1)
     return nao
 

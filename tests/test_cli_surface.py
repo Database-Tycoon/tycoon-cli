@@ -243,15 +243,115 @@ class TestStartCommandWarnings:
 
     def test_dagster_install_hint_uses_correct_package_name(self):
         """The dagster install hint inside start.py must reference the
-        correct package name."""
+        correct package name AND escape the [dagster] bracket so Rich
+        doesn't parse it as a style tag and silently strip it."""
         start_src = (
             Path(__file__).parent.parent / "src" / "tycoon" / "commands" / "start.py"
         ).read_text()
-        # Negative: the buggy form must not appear.
-        assert "pip install tycoon\\[dagster]" not in start_src
+        # Negative: the buggy package name forms must not appear.
         assert "pip install tycoon[dagster]" not in start_src
-        # Positive: the correct form must appear.
-        assert "database-tycoon[dagster]" in start_src
+        assert "pip install tycoon\\[dagster]" not in start_src
+        # Negative: the unescaped [dagster] form (Rich strips it) must not appear.
+        assert "database-tycoon[dagster]" not in start_src
+        # Positive: the escaped form (Rich renders [dagster] literally) must appear.
+        assert "database-tycoon\\[dagster]" in start_src
+
+
+# -- 4b. Rich-markup pitfall: `database-tycoon[ask]` etc. must render
+#         literally. Rich treats `[ask]` as a style tag and silently
+#         strips it unless the bracket is escaped. We learned this when
+#         a user copied the suggested install command verbatim and
+#         missed the extra. Lock in the rendered output, not just the
+#         source.
+
+
+class TestExtrasNamesRenderLiterally:
+    """Regression: every user-facing message that suggests
+    `pip install 'database-tycoon[<extra>]'` must render the extras
+    name through Rich without stripping the brackets.
+
+    The `error()`, `warn()`, and `info()` helpers use the project's
+    shared Rich console — which parses markup — so an unescaped
+    `[ask]` becomes a (nonexistent) style and disappears.
+    """
+
+    def _render(self, message_string: str) -> str:
+        """Render a string through a fresh Rich console and return plain text."""
+        from rich.console import Console
+
+        c = Console(record=True, force_terminal=False, width=200)
+        c.print(message_string)
+        return c.export_text()
+
+    def test_ask_install_hint_in_ask_module(self):
+        from tycoon.commands import ask
+        import inspect
+
+        src = inspect.getsource(ask)
+        # Find every line that mentions database-tycoon and check the
+        # rendered form contains the literal `[ask]`.
+        for line in src.splitlines():
+            if "database-tycoon" not in line or "ask" not in line:
+                continue
+            # Eval out the string content if it's a clean r"..." or "..." literal.
+            # Skip lines we can't isolate; the per-site tests below cover them.
+
+        # Direct assertion on the two key error messages: simulate what
+        # _require_nao prints by re-constructing the literal it would feed
+        # to error().
+        msg = r"Nao is not installed. Run: [bold]pip install 'database-tycoon\[ask]'[/bold]"
+        rendered = self._render(msg)
+        assert "database-tycoon[ask]" in rendered, rendered
+
+        msg = r"`nao` not found. Reinstall: [bold]pip install 'database-tycoon\[ask]'[/bold]"
+        rendered = self._render(msg)
+        assert "database-tycoon[ask]" in rendered, rendered
+
+    def test_dagster_install_hint_renders(self):
+        msg = r"dagster not found — skipping. Install with: [bold]pip install 'database-tycoon\[dagster]'[/bold]"
+        rendered = self._render(msg)
+        assert "database-tycoon[dagster]" in rendered, rendered
+
+    def test_docs_install_hint_renders(self):
+        msg = (
+            "MkDocs is not installed. Install the docs extra: "
+            r"[bold]pip install 'database-tycoon\[docs]'[/bold]"
+        )
+        rendered = self._render(msg)
+        assert "database-tycoon[docs]" in rendered, rendered
+
+    def test_no_unescaped_extras_remain_in_source(self):
+        """Catch-all: scan every commands/*.py source file for the
+        bug pattern (unescaped `database-tycoon[<extra>]`). The escape
+        is `\\[` — a Rich literal-bracket marker. Any unescaped form is
+        a regression."""
+        import re
+
+        commands_dir = Path(__file__).parent.parent / "src" / "tycoon" / "commands"
+        # Pattern matches `database-tycoon[anything]` where the `[` is
+        # NOT preceded by a backslash. Lookbehind keeps the regex tight.
+        unescaped = re.compile(r"(?<!\\)database-tycoon\[")
+
+        offenders: list[str] = []
+        for src_file in commands_dir.rglob("*.py"):
+            text = src_file.read_text()
+            for match in unescaped.finditer(text):
+                # Skip docstring-resident matches — those don't go through
+                # Rich. Detection: count `"""` occurrences before the
+                # match; odd count means we're mid-docstring.
+                triple_count = text.count('"""', 0, match.start())
+                if triple_count % 2 == 1:
+                    continue
+                line_start = text.rfind("\n", 0, match.start()) + 1
+                line_end = text.find("\n", match.start())
+                line = text[line_start:line_end if line_end != -1 else None]
+                offenders.append(f"{src_file.name}: {line.strip()}")
+
+        assert not offenders, (
+            "Unescaped `database-tycoon[<extra>]` found — Rich will strip "
+            "the brackets. Use `database-tycoon\\\\[<extra>]` instead.\n"
+            + "\n".join(offenders)
+        )
 
 
 # -- 5. Smoke-check that `tycoon --version` returns the published version

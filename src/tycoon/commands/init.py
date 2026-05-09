@@ -715,9 +715,9 @@ def init_cmd(
             except ImportError:
                 info(
                     "AI agent setup skipped — `nao_core` not installed.\n"
-                    "Install the [ask] extra and register the provider to "
+                    r"Install the \[ask] extra and register the provider to "
                     "finish wiring up `tycoon ask chat`:\n"
-                    "  [bold]pip install 'database-tycoon[ask]'[/bold]\n"
+                    r"  [bold]pip install 'database-tycoon\[ask]'[/bold]" "\n"
                     f"  [bold]tycoon register llm {result.llm_provider}[/bold]"
                 )
             else:

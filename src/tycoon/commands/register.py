@@ -712,8 +712,8 @@ def register_llm(
         import nao_core  # noqa: F401
     except ImportError:
         error(
-            "The AI agent requires the [ask] extra. Install with:\n"
-            "  [bold]pip install 'database-tycoon[ask]'[/bold]"
+            r"The AI agent requires the \[ask] extra. Install with:" "\n"
+            r"  [bold]pip install 'database-tycoon\[ask]'[/bold]"
         )
         raise typer.Exit(1)
 

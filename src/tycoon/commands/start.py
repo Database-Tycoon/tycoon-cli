@@ -116,7 +116,7 @@ def _preflight_checks(targets: list[str]) -> None:
     if "dagster" in targets:
         import shutil
         if not shutil.which("dagster"):
-            warn("dagster not found — skipping. Install with: [bold]pip install 'database-tycoon[dagster]'[/bold]")
+            warn(r"dagster not found — skipping. Install with: [bold]pip install 'database-tycoon\[dagster]'[/bold]")
             targets.remove("dagster")
 
 
