@@ -28,6 +28,7 @@ _In-flight cycle. Four tracks: dependency hygiene (shipped — this section), fi
 
 ### Fixed
 
+- **`register dbt --create` produced a project that failed `transform run` standalone.** Surfaced by a new e2e test ([#39][] follow-up). The scaffolded `profiles.yml` ATTACHes `data/raw.duckdb` read-only, but if the user runs `tycoon data transform run` before any `tycoon data sources run` (no ingestion yet → no raw.duckdb on disk), dbt fails with `Cannot open database in read-only mode: database does not exist`. Real demo arc usually masks this because users ingest before transforming, but the recovery path from #34 hits it. Fix: `_scaffold_dbt_project` now pre-creates an empty DuckDB file at the raw path if missing (same pattern as the metadata DB it already pre-creates). Locked in with a new offline e2e test (`test_register_dbt_create_e2e`) that runs `register dbt --create` → `transform run` against an empty project and asserts exit 0 — would catch any future regression of this pair.
 - **Install hints stripped the `[extra]` name from output.** Every `error()` / `warn()` / `info()` message that suggested `pip install 'database-tycoon[ask]'` (and similar for `[docs]` / `[dagster]`) rendered as `pip install 'database-tycoon'` — Rich was parsing `[ask]` as a style tag, finding no such style, and silently stripping the brackets. Users hitting these errors copied the broken command verbatim and missed the extra. Fixed by escaping the bracket (`\[ask]`) in all 7 user-facing strings; locked in with a regex-based regression test in `tests/test_cli_surface.py` that scans every `commands/*.py` for unescaped extras names. Bug was visible in `tycoon ask chat`, `tycoon register llm`, `tycoon init`, `tycoon start --only dagster`, and `tycoon docs serve/build` when the relevant extra wasn't installed.
 - **rest_api ingestion was completely broken** ([#32][]). `tycoon data sources run pokeapi` (and any other rest_api source) failed with `Path '.': missing required fields {'client'}` because the runner cast tycoon's flat config shape directly to dlt's `RESTAPIConfig`, which expects `base_url` wrapped under `client` and `resources` as a list (not a comma-separated string). The fastest-path quickstart from the README was non-functional. Fixed by normalizing the flat shape into dlt's wrapped shape inside `_build_rest_api_source`, with a regression test that exercises the actual `rest_api_source` build (not just the schema).
 
@@ -38,6 +39,7 @@ _In-flight cycle. Four tracks: dependency hygiene (shipped — this section), fi
 [#34]: https://github.com/Database-Tycoon/tycoon-cli/issues/34
 [#37]: https://github.com/Database-Tycoon/tycoon-cli/issues/37
 [#38]: https://github.com/Database-Tycoon/tycoon-cli/issues/38
+[#39]: https://github.com/Database-Tycoon/tycoon-cli/issues/39
 
 ## [0.1.5] - 2026-05-03
 

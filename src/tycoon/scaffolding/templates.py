@@ -311,6 +311,21 @@ def _scaffold_dbt_project(
         raw_abs = (target / raw_db_path).resolve()
         warehouse_rel = os.path.relpath(warehouse_abs, start=dbt_dir)
         raw_rel = os.path.relpath(raw_abs, start=dbt_dir)
+
+        # The profile ATTACHes raw_abs read-only, which fails if the
+        # file doesn't exist yet (i.e. user ran `register dbt --create`
+        # before any `data sources run`). Pre-create an empty DuckDB
+        # file so the first `tycoon data transform run` succeeds even
+        # without ingestion. Same pattern as the metadata DB above.
+        if not raw_abs.exists():
+            raw_abs.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                import duckdb
+                duckdb.connect(str(raw_abs)).close()
+            except Exception:
+                # Best-effort — if it fails the user gets the clearer
+                # error from dbt's ATTACH on first transform run.
+                pass
         profiles_data = {
             profile_name: {
                 "target": "dev",
