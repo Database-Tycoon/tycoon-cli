@@ -83,14 +83,45 @@ _LEGACY_PIPELINES: dict[str, str] = {
 
 
 def _build_rest_api_source(source_config: SourceConfig) -> Any:
-    """Build a dlt source for a generic REST API."""
+    """Build a dlt source for a generic REST API.
+
+    Translates tycoon's flat config shape (as written by ``tycoon data
+    sources add rest_api``) into the wrapped ``RESTAPIConfig`` shape
+    that dlt's ``rest_api_source`` expects. Specifically:
+
+    - ``base_url`` at the top level moves under ``client.base_url``.
+    - A comma-separated ``resources`` string becomes a list. Existing
+      lists pass through unchanged.
+    - Already-wrapped ``client: {...}`` blocks are left alone — users
+      who hand-author the full dlt shape don't get re-wrapped.
+
+    See issue #32 for the bug this fixes.
+    """
     from typing import cast
 
     from dlt.sources.rest_api import rest_api_source
     from dlt.sources.rest_api.typing import RESTAPIConfig
 
-    cfg = cast(RESTAPIConfig, source_config.config)
-    return rest_api_source(cfg)
+    cfg = _normalize_rest_api_config(source_config.config)
+    return rest_api_source(cast(RESTAPIConfig, cfg))
+
+
+def _normalize_rest_api_config(raw: dict[str, Any]) -> dict[str, Any]:
+    """Transform tycoon's flat config into dlt's RESTAPIConfig shape.
+
+    Pure function — no I/O, no dlt imports — so the unit test can
+    exercise it without spinning up a real source.
+    """
+    cfg: dict[str, Any] = {**raw}
+
+    if "client" not in cfg:
+        if "base_url" in cfg:
+            cfg["client"] = {"base_url": cfg.pop("base_url")}
+
+    resources = cfg.get("resources")
+    if isinstance(resources, str):
+        cfg["resources"] = [r.strip() for r in resources.split(",") if r.strip()]
+    return cfg
 
 
 def _build_sql_database_source(source_config: SourceConfig) -> Any:

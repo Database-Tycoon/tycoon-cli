@@ -459,3 +459,99 @@ def test_nyc_transit_e2e(cli_runner, tmp_path, monkeypatch):
         )
     finally:
         con.close()
+
+
+@pytest.mark.offline_e2e
+def test_register_dbt_create_e2e(cli_runner, tmp_path, monkeypatch):
+    """End-to-end coverage for `tycoon register dbt --create` (#34).
+
+    The unit tests in `test_register.py::TestRegisterDbtCreate` prove
+    register --create writes the right files. This test proves the
+    *result* — a freshly bootstrapped dbt project can actually run
+    ``tycoon data transform run`` to completion. That's the gate the
+    unit tests can't give us: unit-level write-correctness != end-to-end
+    runnability.
+
+    Mirrors the user journey that motivated #34: a tycoon project
+    where dbt was Skipped during init, recovered via a single CLI
+    command.
+    """
+    import yaml
+
+    project = tmp_path / "no-dbt-recovery"
+    project.mkdir()
+    (project / "data").mkdir()
+    monkeypatch.chdir(project)
+
+    # Hand-write the tycoon.yml that the wizard would produce when the
+    # user picks "Skip" on the dbt prompt — no dbt_project_dir, stack
+    # marks transformation as none.
+    (project / "tycoon.yml").write_text(
+        yaml.dump(
+            {
+                "name": "no-dbt-recovery",
+                "version": "0.1.0",
+                "database": {
+                    "raw": "data/raw.duckdb",
+                    "warehouse": "data/warehouse.duckdb",
+                },
+                "sources": {},
+                "stack": {
+                    "warehouse": "duckdb",
+                    "transformation": "none",
+                    "transformation_managed": False,
+                },
+            }
+        )
+    )
+
+    _rebind_config(monkeypatch, project)
+    # register.py also imports config at module scope — rebind that too.
+    from tycoon.commands import register as register_mod
+    from tycoon.config import TycoonConfig
+    monkeypatch.setattr(register_mod, "config", TycoonConfig(project_root=project))
+
+    # The marquee v0.1.6 command — bootstrap dbt from scratch.
+    result = cli_runner.invoke(app, ["register", "dbt", "--create"])
+    assert result.exit_code == 0, (
+        f"register dbt --create failed:\n--- stdout ---\n{result.stdout}\n"
+        f"--- exception ---\n{result.exception!r}"
+    )
+
+    # Sibling dbt project landed at the default path.
+    sibling = tmp_path / "no-dbt-recovery-dbt"
+    assert (sibling / "dbt_project.yml").exists(), "dbt_project.yml missing"
+    assert (sibling / "profiles.yml").exists(), "profiles.yml missing"
+
+    # tycoon.yml got the wiring.
+    yml = yaml.safe_load((project / "tycoon.yml").read_text())
+    assert yml["dbt_project_dir"], "dbt_project_dir not written to tycoon.yml"
+    assert yml["stack"]["transformation"] == "dbt"
+    assert yml["stack"]["transformation_managed"] is True, (
+        "--create should mark project as tycoon-managed"
+    )
+
+    # In real CLI use each command is a fresh process and re-reads
+    # tycoon.yml. In-process tests share the singleton, so we rebind
+    # after register wrote the new dbt_project_dir.
+    _rebind_config(monkeypatch, project)
+
+    # The actual gate: the freshly bootstrapped project must be runnable
+    # by `tycoon data transform run`. This is what the unit tests can't
+    # cover. If the profile is malformed, the metadata DB ATTACH is
+    # broken, or the scaffolded `_tycoon/` models are stale, transform
+    # run blows up here.
+    result = cli_runner.invoke(app, ["data", "transform", "run"])
+    stderr = result.stderr if result.stderr_bytes else ""
+    traceback = repr(result.exception) if result.exception else ""
+    assert result.exit_code == 0, (
+        f"transform run against freshly created dbt project failed "
+        f"(exit {result.exit_code}):\n"
+        f"--- stdout ---\n{result.stdout}\n"
+        f"--- stderr ---\n{stderr}\n"
+        f"--- exception ---\n{traceback}"
+    )
+
+    # Warehouse DB should exist now.
+    warehouse_db = project / "data" / "warehouse.duckdb"
+    assert warehouse_db.exists(), "warehouse db was not created"

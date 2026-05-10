@@ -127,6 +127,8 @@ def _check_stack_config() -> None:
 
     if stack.ingestion == IngestionTool.none:
         info("Ingestion: skipped by choice (stack.ingestion = none).")
+    elif stack.ingestion == IngestionTool.fivetran:
+        _check_fivetran_credentials(stack)
     elif not stack.ingestion_managed:
         info(f"Ingestion is managed externally by {stack.ingestion.value}. Skipping ingestion checks.")
     elif stack.ingestion == IngestionTool.dlt:
@@ -163,6 +165,82 @@ def _check_stack_config() -> None:
             success(f"External dbt project found at {project.dbt_project_dir}.")
         else:
             error(f"External dbt project not found at {project.dbt_project_dir}.")
+
+
+def _check_fivetran_credentials(stack) -> None:
+    """Validate Fivetran API creds + group_id can reach the API.
+
+    Fires only when ``stack.ingestion = fivetran``. Doesn't pull
+    connectors — just probes the group endpoint so we don't spam the
+    API on every doctor run.
+    """
+    meta = stack.ingestion_metadata
+    if meta is None:
+        error(
+            "stack.ingestion is fivetran but stack.ingestion_metadata is "
+            "missing. Add api_key, api_secret, group_id."
+        )
+        return
+
+    if not (meta.api_key and meta.api_secret and meta.group_id):
+        error("Fivetran credentials incomplete: need api_key, api_secret, group_id.")
+        return
+
+    try:
+        from tycoon.ingestion.fivetran_client import build_client_from_config
+    except ImportError as exc:  # pragma: no cover — defensive
+        warn(f"Fivetran client not importable: {exc}")
+        return
+
+    try:
+        with build_client_from_config(meta) as client:
+            if client.verify_credentials():
+                success(f"Fivetran auth OK (group_id={meta.group_id}).")
+            else:
+                error(
+                    f"Fivetran auth failed for group_id={meta.group_id}. "
+                    "Check api_key/api_secret and that the group exists."
+                )
+    except Exception as exc:
+        warn(f"Fivetran probe raised unexpectedly: {exc}")
+
+
+def _check_dbt_profile() -> None:
+    """Resolve + validate the active dbt profile, non-fatal."""
+    project = config.project
+    if project is None:
+        return
+    if project.stack.transformation == TransformationTool.none:
+        info("dbt profile: skipped (stack.transformation = none).")
+        return
+    if not config.dbt_project_dir.exists():
+        info("dbt profile: skipped (dbt project directory missing).")
+        return
+
+    from tycoon.commands.profiles import run_profile_checks
+
+    # run_profile_checks returns 0/1 but emits its own success/warn/error
+    # rows — we don't bubble the rc since doctor stays non-fatal overall.
+    try:
+        run_profile_checks()
+    except Exception as exc:  # defensive: bad YAML shouldn't kill doctor
+        warn(f"dbt profile check raised unexpectedly: {exc}")
+
+
+def _check_osi() -> None:
+    """Validate generated OSI YAML if present. Skips silently when absent."""
+    project = config.project
+    if project is None:
+        return
+    if project.stack.transformation == TransformationTool.none:
+        return
+
+    from tycoon.commands.semantics import run_osi_check
+
+    try:
+        run_osi_check()
+    except Exception as exc:
+        warn(f"OSI check raised unexpectedly: {exc}")
 
 
 def _check_observability() -> None:
@@ -234,6 +312,12 @@ def doctor_cmd() -> None:
         if config.has_project_file:
             console.print(Panel("Checking stack configuration...", expand=False))
             _check_stack_config()
+
+            console.print(Panel("Checking dbt profile...", expand=False))
+            _check_dbt_profile()
+
+            console.print(Panel("Checking OSI semantic layer...", expand=False))
+            _check_osi()
 
             console.print(Panel("Checking observability...", expand=False))
             _check_observability()

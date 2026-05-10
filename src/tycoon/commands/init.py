@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
-import yaml
 
 from tycoon.project import (
     BITool,
@@ -295,210 +294,15 @@ def _prompt_rill(
     return BITool.none, False, None
 
 
-@dataclass(frozen=True)
-class DbtWarehouseTarget:
-    """Structured view of a dbt profile's active output target.
-
-    ``adapter_type`` is the raw dbt adapter type (``duckdb``, ``snowflake``,
-    ``bigquery``, ``redshift``, ``postgres``, ...). ``identifier`` is the
-    best single-field locator for the warehouse:
-
-    * duckdb (local)  → absolute filesystem path
-    * duckdb (md:*)   → the full ``md:<name>`` string
-    * snowflake       → ``<account>`` (dbt's ``account`` field)
-    * bigquery        → ``<project>``
-    * redshift        → ``<host>``
-    * anything else   → whatever looks distinctive (may be empty)
-
-    ``display`` is a human-friendly string for prompts / warnings. For
-    DuckDB and MotherDuck this equals ``identifier``; for Snowflake it's
-    ``snowflake://<account>[/<database>]`` so users can see *which*
-    Snowflake they're pointed at.
-    """
-
-    adapter_type: str
-    identifier: str
-    display: str
-    details: dict[str, str]
-
-    @property
-    def tycoon_warehouse_type(self) -> str | None:
-        """Map adapter_type → tycoon's WarehouseType string, or None if unknown.
-
-        MotherDuck is a DuckDB adapter with an ``md:*`` path — the caller
-        should pass ``identifier`` in when resolving ambiguity.
-        """
-        if self.adapter_type == "duckdb":
-            return "motherduck" if self.identifier.startswith("md:") else "duckdb"
-        if self.adapter_type in {"snowflake", "bigquery", "redshift"}:
-            return self.adapter_type
-        return None
-
-
-def _profiles_yml_search_paths(
-    dbt_project_dir: Path,
-    profiles_dir: Path | None,
-) -> list[Path]:
-    """Build the ordered list of ``profiles.yml`` candidates.
-
-    When ``profiles_dir`` is supplied, it wins outright (matches dbt's
-    own ``--profiles-dir`` semantics). Otherwise we walk dbt's default
-    lookup order: co-located ``profiles.yml`` if present, then
-    ``~/.dbt/profiles.yml``.
-    """
-    if profiles_dir is not None:
-        return [profiles_dir / "profiles.yml"]
-    return [
-        dbt_project_dir / "profiles.yml",
-        Path.home() / ".dbt" / "profiles.yml",
-    ]
-
-
-def _read_dbt_target(
-    dbt_project_dir: Path,
-    profiles_dir: Path | None = None,
-    profile_name: str | None = None,
-    target_name: str | None = None,
-) -> dict | None:
-    """Return the active dbt target dict, or None if it can't be resolved.
-
-    Resolution rules — each defaultable field lets the caller override
-    so ``tycoon register dbt --profiles-dir / --profile / --target`` (and
-    its persisted ``tycoon.yml`` equivalents) work the way dbt's own CLI
-    flags do:
-
-    - ``profiles_dir`` (CLI override) → ``<dbt_project_dir>/profiles.yml``
-      → ``~/.dbt/profiles.yml``.
-    - ``profile_name`` (CLI override) → ``profile:`` field in
-      ``dbt_project.yml``.
-    - ``target_name`` (CLI override) → profile's ``target:`` field →
-      ``"dev"``.
-    """
-    if profile_name is None:
-        try:
-            project_yml = yaml.safe_load((dbt_project_dir / "dbt_project.yml").read_text())
-        except (OSError, yaml.YAMLError):
-            return None
-        if not isinstance(project_yml, dict):
-            return None
-        profile_name = project_yml.get("profile")
-        if not profile_name:
-            return None
-
-    for candidate in _profiles_yml_search_paths(dbt_project_dir, profiles_dir):
-        if not candidate.exists():
-            continue
-        try:
-            profiles = yaml.safe_load(candidate.read_text())
-        except (OSError, yaml.YAMLError):
-            continue
-        if not isinstance(profiles, dict):
-            continue
-        profile = profiles.get(profile_name)
-        if not isinstance(profile, dict):
-            continue
-        chosen_target = target_name or profile.get("target", "dev")
-        target = profile.get("outputs", {}).get(chosen_target, {})
-        if isinstance(target, dict):
-            return target
-    return None
-
-
-def _extract_dbt_warehouse_target(
-    dbt_project_dir: Path,
-    profiles_dir: Path | None = None,
-    profile_name: str | None = None,
-    target_name: str | None = None,
-) -> DbtWarehouseTarget | None:
-    """Extract a structured warehouse target from a dbt project's active profile.
-
-    Returns ``None`` if the profile can't be read. For DuckDB / MotherDuck
-    targets ``identifier`` is the filesystem path (or ``md:<name>``); for
-    Snowflake it's the ``account``; for BigQuery it's the ``project``. The
-    ``details`` map keeps per-adapter extras (database / dataset / host)
-    so callers can render richer warnings without re-parsing profiles.
-    """
-    target = _read_dbt_target(
-        dbt_project_dir,
-        profiles_dir=profiles_dir,
-        profile_name=profile_name,
-        target_name=target_name,
-    )
-    if target is None:
-        return None
-    adapter_type = target.get("type") or ""
-
-    if adapter_type == "duckdb":
-        path = target.get("path")
-        if not path:
-            return None
-        if str(path).startswith("md:"):
-            return DbtWarehouseTarget(
-                adapter_type="duckdb",
-                identifier=str(path),
-                display=str(path),
-                details={},
-            )
-        abs_path = Path(path)
-        if not abs_path.is_absolute():
-            abs_path = (dbt_project_dir / abs_path).resolve()
-        return DbtWarehouseTarget(
-            adapter_type="duckdb",
-            identifier=str(abs_path),
-            display=str(abs_path),
-            details={},
-        )
-
-    if adapter_type == "snowflake":
-        account = str(target.get("account") or "")
-        database = str(target.get("database") or "")
-        display = f"snowflake://{account}" + (f"/{database}" if database else "")
-        return DbtWarehouseTarget(
-            adapter_type="snowflake",
-            identifier=account,
-            display=display,
-            details={
-                "database": database,
-                "schema": str(target.get("schema") or ""),
-                "warehouse": str(target.get("warehouse") or ""),
-                "role": str(target.get("role") or ""),
-            },
-        )
-
-    if adapter_type == "bigquery":
-        project = str(target.get("project") or "")
-        dataset = str(target.get("dataset") or target.get("schema") or "")
-        display = f"bigquery://{project}" + (f"/{dataset}" if dataset else "")
-        return DbtWarehouseTarget(
-            adapter_type="bigquery",
-            identifier=project,
-            display=display,
-            details={
-                "dataset": dataset,
-                "method": str(target.get("method") or ""),
-                "location": str(target.get("location") or ""),
-            },
-        )
-
-    if adapter_type == "redshift":
-        host = str(target.get("host") or "")
-        database = str(target.get("dbname") or target.get("database") or "")
-        display = f"redshift://{host}" + (f"/{database}" if database else "")
-        return DbtWarehouseTarget(
-            adapter_type="redshift",
-            identifier=host,
-            display=display,
-            details={"database": database, "schema": str(target.get("schema") or "")},
-        )
-
-    # Unknown / unmapped adapter — surface the raw type so callers can
-    # still warn about a mismatch against tycoon's configured warehouse.
-    return DbtWarehouseTarget(
-        adapter_type=adapter_type,
-        identifier="",
-        display=adapter_type,
-        details={},
-    )
+# DbtWarehouseTarget and the profile-extraction helpers moved to
+# tycoon.dbt_profiles in v0.1.6 so they can be reused by the CLI's data
+# commands and the new `tycoon profiles` namespace. We re-export the old
+# names here so any external importer (and the existing test suite) keeps
+# working.
+from tycoon.dbt_profiles import (  # noqa: E402
+    DbtWarehouseTarget as DbtWarehouseTarget,  # re-exported for tests + register.py
+    extract_dbt_warehouse_target as _extract_dbt_warehouse_target,
+)
 
 
 def _extract_dbt_duckdb_path(dbt_project_dir: Path) -> str | None:
@@ -911,9 +715,9 @@ def init_cmd(
             except ImportError:
                 info(
                     "AI agent setup skipped — `nao_core` not installed.\n"
-                    "Install the [ask] extra and register the provider to "
+                    r"Install the \[ask] extra and register the provider to "
                     "finish wiring up `tycoon ask chat`:\n"
-                    "  [bold]pip install 'database-tycoon[ask]'[/bold]\n"
+                    r"  [bold]pip install 'database-tycoon\[ask]'[/bold]" "\n"
                     f"  [bold]tycoon register llm {result.llm_provider}[/bold]"
                 )
             else:

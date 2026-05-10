@@ -25,8 +25,7 @@ The base install (`pip install database-tycoon`) is enough for the full data pip
 | Package | Pinned | Used for |
 |---|---|---|
 | `fastapi` | `0.136.1` | The local web UI served by `tycoon start`. Defines REST routes + the WebSocket log streamer. |
-| `uvicorn[standard]` | `0.46.0` | ASGI server that hosts the FastAPI app. The `[standard]` extra pulls in the C-accelerated event loop and the websockets implementation that backs `WebSocket` in fastapi. |
-| `websockets` | `16.0` | Listed for an explicit version pin, but redundant — `uvicorn[standard]` already brings websockets. Candidate for removal in a future cleanup release. |
+| `uvicorn[standard]` | `0.46.0` | ASGI server that hosts the FastAPI app. The `[standard]` extra pulls in the C-accelerated event loop and the websockets implementation that backs `WebSocket` in fastapi (so we don't pin `websockets` ourselves — it arrives transitively). |
 
 ## `[dagster]` — optional orchestration
 
@@ -45,8 +44,7 @@ The base install (`pip install database-tycoon`) is enough for the full data pip
 
 | Package | Pinned | Used for |
 |---|---|---|
-| `nao-core` | `0.1.8` | The chat-with-your-data agent. Powers `tycoon ask chat / sync / context / skills / mcp`. |
-| `ibis-framework[duckdb]` | `12.0.0` | Pinned for version control, but tycoon never imports `ibis` directly. `nao-core` lists `ibis-framework` as a transitive dep, so this pin only constrains the resolver. Candidate for removal (or move to a dev-only constraints file) in a future cleanup release. |
+| `nao-core` | `0.1.11` | The chat-with-your-data agent. Powers `tycoon ask chat / sync / context / skills / mcp`. Pulls `ibis-framework[duckdb]`, `fastapi`, `uvicorn`, `pydantic`, `pandas`, and a handful of other deps transitively — we don't re-pin any of them. |
 
 ## `[docs]` — optional MkDocs site
 
@@ -71,9 +69,9 @@ The base install (`pip install database-tycoon`) is enough for the full data pip
 | Install line | Direct top-level packages |
 |---|---|
 | `pip install database-tycoon` | 9 |
-| `+ [server]` | +3 (1 redundant) |
+| `+ [server]` | +2 |
 | `+ [dagster]` | +4 |
-| `+ [ask]` | +2 (1 transitively pulled by `nao-core`) |
+| `+ [ask]` | +1 |
 | `+ [docs]` | +2 |
 | `+ dev` | +2 |
 

@@ -110,12 +110,58 @@ class TestResourceFactories:
         r = get_dlt_resource()
         assert r is not None
 
-    def test_dbt_resource_factory_returns_cli_resource(self):
-        from dagster_dbt import DbtCliResource
-
+    def test_dbt_resource_factory_returns_none_without_project(self):
+        """v0.1.6 stopped hardcoding paths to the dev tree; with no
+        tycoon.yml available (the CI source repo has none), the factory
+        correctly returns None instead of a DbtCliResource pointing at a
+        nonexistent profile dir."""
         from tycoon.orchestration.resources import get_dbt_resource
 
-        r = get_dbt_resource()
+        # The repo root has no tycoon.yml, so this should be None.
+        assert get_dbt_resource() is None
+
+    def test_dbt_resource_factory_returns_cli_resource_with_project(
+        self, tmp_path, monkeypatch
+    ):
+        """When a tycoon.yml is present, the factory builds a real
+        DbtCliResource whose profiles_dir resolves via the central
+        :func:`tycoon.dbt_profiles.resolve_profile`."""
+        import yaml
+        from dagster_dbt import DbtCliResource
+
+        # Minimal tycoon.yml + dbt project + profiles.yml.
+        dbt_dir = tmp_path / "dbt_project"
+        dbt_dir.mkdir()
+        (dbt_dir / "dbt_project.yml").write_text(
+            yaml.dump({"name": "p", "profile": "p", "version": "1"})
+        )
+        (dbt_dir / "profiles.yml").write_text(
+            yaml.dump(
+                {
+                    "p": {
+                        "target": "dev",
+                        "outputs": {
+                            "dev": {"type": "duckdb", "path": "warehouse.duckdb"}
+                        },
+                    }
+                }
+            )
+        )
+        (tmp_path / "tycoon.yml").write_text(
+            yaml.dump({"name": "p", "dbt_project_dir": "dbt_project"})
+        )
+
+        # config is loaded from cwd. chdir + replace the singleton everywhere
+        # it's been imported so factories see the new project.
+        monkeypatch.chdir(tmp_path)
+        from tycoon import config as config_module
+        from tycoon.orchestration import resources as resources_module
+
+        fresh = config_module.TycoonConfig()
+        monkeypatch.setattr(config_module, "config", fresh)
+        monkeypatch.setattr(resources_module, "config", fresh)
+
+        r = resources_module.get_dbt_resource()
         assert isinstance(r, DbtCliResource)
 
 

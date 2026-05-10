@@ -305,6 +305,118 @@ class TestRegisterDbt:
         assert data["stack"]["warehouse"] == "motherduck"
 
 
+class TestRegisterDbtCreate:
+    """Tests for `tycoon register dbt --create` — bootstrap + register
+    in one shot, the recovery path for users who picked Skip on the dbt
+    prompt during `tycoon init`."""
+
+    def test_create_bootstraps_at_default_sibling_path(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(app, ["register", "dbt", "--create"])
+        assert result.exit_code == 0, result.stdout
+
+        # Default sibling path: ../<project_name>-dbt
+        sibling = tmp_path / "proj-dbt"
+        assert (sibling / "dbt_project.yml").exists()
+        assert (sibling / "profiles.yml").exists()
+
+        data = yaml.safe_load(yml.read_text())
+        assert "dbt_project_dir" in data
+        assert data["stack"]["transformation"] == "dbt"
+        # --create marks the project as tycoon-managed (we own it)
+        assert data["stack"]["transformation_managed"] is True
+
+    def test_create_with_explicit_path_overrides_default(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+        custom = tmp_path / "custom-dbt-location"
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(
+            app, ["register", "dbt", "--create", str(custom)]
+        )
+        assert result.exit_code == 0, result.stdout
+        assert (custom / "dbt_project.yml").exists()
+        assert not (tmp_path / "proj-dbt").exists()
+
+    def test_create_refuses_when_dbt_project_yml_already_exists(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+        existing = tmp_path / "proj-dbt"
+        _make_dbt_project(existing, "proj", str(project / "data" / "warehouse.duckdb"))
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(app, ["register", "dbt", "--create"])
+
+        assert result.exit_code != 0
+        # Existing project survived — sentinel: dbt_project_dir not registered
+        assert "dbt_project_dir" not in yaml.safe_load(
+            (project / "tycoon.yml").read_text()
+        )
+
+    def test_create_motherduck_warehouse_writes_md_profile(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+        # Flip the warehouse type to motherduck before registering.
+        yml_data = yaml.safe_load((project / "tycoon.yml").read_text())
+        yml_data["stack"] = {"warehouse": "motherduck"}
+        yml_data["database"]["warehouse"] = "md:proj"
+        yml_data["database"]["raw"] = "md:proj_raw"
+        (project / "tycoon.yml").write_text(yaml.dump(yml_data))
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(app, ["register", "dbt", "--create"])
+        assert result.exit_code == 0, result.stdout
+
+        sibling = tmp_path / "proj-dbt"
+        profiles = yaml.safe_load((sibling / "profiles.yml").read_text())
+        # First (and only) profile in the file
+        profile_block = next(iter(profiles.values()))
+        dev = profile_block["outputs"]["dev"]
+        assert dev["path"] == "md:proj"
+
+    def test_create_bails_on_unsupported_warehouse(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+        yml_data = yaml.safe_load((project / "tycoon.yml").read_text())
+        yml_data["stack"] = {"warehouse": "snowflake"}
+        (project / "tycoon.yml").write_text(yaml.dump(yml_data))
+
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(app, ["register", "dbt", "--create"])
+        assert result.exit_code != 0
+        # No sibling dbt project should have been written
+        assert not (tmp_path / "proj-dbt").exists()
+
+    def test_register_without_create_or_source_errors(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        project = tmp_path / "proj"
+        _scaffold_tycoon_project(project, "proj")
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        result = cli_runner.invoke(app, ["register", "dbt"])
+        assert result.exit_code != 0
+
+
 class TestRegisterDbtExternalE2E:
     """End-to-end: scaffold a standalone dbt project, register it with
     custom profile/target flags, then run a real `tycoon data transform

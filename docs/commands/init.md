@@ -101,6 +101,17 @@ rm -rf my-project && mkdir my-project && cd my-project
 tycoon init --template csv-import
 ```
 
+### Adding components you skipped
+
+If you picked "Skip" on the dbt or Rill prompts during the wizard, you can add them later non-destructively without re-running `init`:
+
+```bash
+tycoon register dbt --create     # bootstrap a sibling dbt project
+tycoon register rill ./rill      # or register an existing one
+```
+
+See [`tycoon register`](register.md#-create-bootstrap-a-new-dbt-project) for the full `--create` behavior.
+
 ## Related
 
 - [Reference: tycoon.yml](../reference/tycoon-yml.md) — full schema of what `init` writes

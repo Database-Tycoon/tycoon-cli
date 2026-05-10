@@ -93,18 +93,71 @@ def _freshness_label(last_sync: Optional[datetime.datetime]) -> tuple[str, str]:
     return f"{int(hours / 24)}d ago", "red"
 
 
+def _render_fivetran_panel() -> None:
+    """Append a Fivetran connectors table to `data status` when configured.
+
+    Reads from `.tycoon/metadata.duckdb`'s ``fivetran_connectors`` table —
+    populated by ``tycoon data fivetran sync``. No-ops if the table is
+    empty or the snapshot hasn't been pulled yet.
+    """
+    from tycoon.ingestion.fivetran_sync import (
+        freshness_label as fv_freshness_label,
+        latest_connector_snapshot,
+    )
+
+    rows = latest_connector_snapshot(metadata_db_path(config.root))
+    if not rows:
+        info(
+            "Fivetran: no metadata captured yet. Run "
+            "[bold]tycoon data fivetran sync[/bold] to populate."
+        )
+        return
+
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Fivetran connector")
+    table.add_column("Service", style="dim")
+    table.add_column("Schema")
+    table.add_column("Sync state")
+    table.add_column("Last activity")
+    for r in rows:
+        label, style = fv_freshness_label(
+            succeeded_at=r["succeeded_at"],
+            failed_at=r["failed_at"],
+            paused=bool(r["paused"]),
+        )
+        table.add_row(
+            r["name"] or r["connector_id"],
+            r.get("service") or "—",
+            r.get("schema_name") or "—",
+            r.get("sync_state") or "—",
+            f"[{style}]{label}[/{style}]",
+        )
+    console.print()
+    console.print(table)
+
+
 def status_cmd() -> None:
     """Show freshness, last sync time, and row counts for each registered source."""
     if not config.has_project_file:
         error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
         raise typer.Exit(1)
 
+    project = config.project
+    fivetran_managed = (
+        project is not None
+        and project.stack.ingestion.value == "fivetran"
+    )
+
     sources = config.sources
-    if not sources:
+    if not sources and not fivetran_managed:
         info("No sources registered. Run [bold]tycoon data sources add[/bold] first.")
         return
 
     header("Data Status")
+
+    if fivetran_managed and not sources:
+        _render_fivetran_panel()
+        return
 
     raw_db = config.raw_db
     db_exists = raw_db.exists()
@@ -150,3 +203,6 @@ def status_cmd() -> None:
     if run_counts:
         console.print()
         info("Drill in with [bold]tycoon data history[/bold] for per-run detail.")
+
+    if fivetran_managed:
+        _render_fivetran_panel()

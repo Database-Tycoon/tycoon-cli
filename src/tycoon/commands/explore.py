@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -208,24 +207,27 @@ def analyze_cmd(
         f"Explore scaffolding complete — "
         f"{len(all_generated)} file(s) generated for source '{source_name}'"
     )
-    # 7. Optionally run dbt build
+    # 7. Optionally run dbt build — route through transform's _run_dbt so
+    # profile resolution honors tycoon.yml + $DBT_PROFILES_DIR + ~/.dbt
+    # exactly like a standalone `tycoon data transform build`.
     if build:
         if no_dbt:
             warn("--build has no effect when --no-dbt is set.")
         else:
-            from tycoon.commands.transform import _dbt_executable
+            from tycoon.commands.transform import _run_dbt
 
             info("Running dbt build --select staging...")
-            dbt_dir = config.dbt_project_dir
-            result = subprocess.run(
-                [_dbt_executable(), "build", "--select", "staging",
-                 "--profiles-dir", str(dbt_dir)],
-                cwd=str(dbt_dir),
-                check=False,
+            rc = _run_dbt(
+                "build",
+                profile=None,
+                profiles_dir=None,
+                target=None,
+                select="staging",
+                full_refresh=False,
             )
-            if result.returncode != 0:
+            if rc != 0:
                 error("dbt build failed. Check the dbt logs above for details.")
-                raise typer.Exit(result.returncode)
+                raise typer.Exit(rc)
             success("dbt build completed successfully.")
 
     ai_hint(f"improve the staging models for {source_name}")

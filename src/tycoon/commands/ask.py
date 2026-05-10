@@ -376,7 +376,7 @@ def _require_nao() -> None:
     try:
         import nao_core  # noqa: F401
     except ImportError:
-        error("Nao is not installed. Run: [bold]pip install 'database-tycoon[ask]'[/bold]")
+        error(r"Nao is not installed. Run: [bold]pip install 'database-tycoon\[ask]'[/bold]")
         raise typer.Exit(1)
 
 
@@ -398,7 +398,7 @@ def _nao_executable() -> str:
         return str(venv_nao)
     nao = shutil.which("nao")
     if not nao:
-        error("`nao` not found. Reinstall: [bold]pip install 'database-tycoon[ask]'[/bold]")
+        error(r"`nao` not found. Reinstall: [bold]pip install 'database-tycoon\[ask]'[/bold]")
         raise typer.Exit(1)
     return nao
 
@@ -470,6 +470,25 @@ def _refresh_agents_md(cfg=None) -> None:
         )
 
 
+def _init_nao_project(cfg, *, refresh_agents_md: bool = True) -> None:
+    """Write ``nao_config.yaml`` from the active tycoon.yml's ``ask.llm``
+    block and (optionally) refresh ``AGENTS.md``.
+
+    Shared body used by `setup_ask_stack` (post-`register llm` chain),
+    `tycoon init` (post-wizard chain), and `tycoon ask init` (the
+    standalone surface for projects whose tycoon.yml is already wired
+    but whose nao_config.yaml is missing or stale).
+
+    Caller is responsible for ensuring ``nao_core`` is importable.
+    """
+    from tycoon.nao import write_nao_project
+
+    write_nao_project(cfg)
+    if refresh_agents_md:
+        _refresh_agents_md(cfg)
+    success(f"Nao config written to [bold]{cfg.nao_dir}[/bold]")
+
+
 def setup_ask_stack(cfg=None) -> None:
     """Run the post-LLM-config setup: seed exclude_schemas, write
     nao_config.yaml, refresh AGENTS.md, and offer a model install if a
@@ -488,7 +507,6 @@ def setup_ask_stack(cfg=None) -> None:
     or do an ImportError-safe import) — this function uses
     ``write_nao_project`` which depends on it.
     """
-    from tycoon.nao import write_nao_project
     from tycoon.project import AskConfig, save_project
 
     if cfg is None:
@@ -516,9 +534,7 @@ def setup_ask_stack(cfg=None) -> None:
             save_project(project, cfg.root)
             cfg.reload()
 
-    write_nao_project(cfg)
-    _refresh_agents_md(cfg)
-    success(f"Nao config written to [bold]{cfg.nao_dir}[/bold]")
+    _init_nao_project(cfg)
 
     # Local-runtime probe + install offer. Best-effort.
     project = cfg.project  # re-read after the seed branch may have saved
@@ -529,6 +545,69 @@ def setup_ask_stack(cfg=None) -> None:
     )
     if final_provider in ("lm-studio", "ollama"):
         _offer_model_install(final_provider)
+
+
+@app.command("init")
+def ask_init(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help=(
+            "Overwrite an existing nao_config.yaml. By default tycoon "
+            "skips the write when one is already present."
+        ),
+    ),
+    refresh_agents_md: bool = typer.Option(
+        True,
+        "--refresh-agents-md/--no-refresh-agents-md",
+        help=(
+            "Also refresh AGENTS.md alongside nao_config.yaml. Default "
+            "on — opt out if you've hand-edited AGENTS.md and want it "
+            "left alone."
+        ),
+    ),
+) -> None:
+    """Initialize Nao for this project from the active tycoon.yml.
+
+    Writes ``.tycoon/nao/nao_config.yaml`` from ``ask.llm`` in
+    ``tycoon.yml`` and refreshes ``AGENTS.md``. Use this when:
+
+    - You hand-edited ``ask.llm`` in tycoon.yml and need Nao re-synced.
+    - You cloned a teammate's tycoon project and need to bootstrap Nao
+      locally (``.tycoon/nao/`` is typically gitignored).
+    - ``tycoon register llm`` succeeded but the chained Nao init didn't
+      complete for some reason.
+
+    Idempotent — re-runs are safe; pass ``--force`` to overwrite a
+    hand-edited ``nao_config.yaml``. Does NOT prompt for any LLM
+    details — that's ``tycoon register llm``'s job. This command takes
+    whatever's in tycoon.yml as gospel.
+    """
+    _require_project()
+    _require_nao()
+
+    project = config.project
+    if project is None or project.ask is None or project.ask.llm is None:
+        error(
+            "No [bold]ask.llm[/bold] block in tycoon.yml — run "
+            "[bold]tycoon register llm <provider>[/bold] first."
+        )
+        raise typer.Exit(1)
+
+    nao_config = config.nao_dir / "nao_config.yaml"
+    if nao_config.exists() and not force:
+        info(
+            f"[dim]nao_config.yaml already exists at {nao_config}. "
+            "Pass [bold]--force[/bold] to overwrite.[/dim]"
+        )
+        return
+
+    _init_nao_project(config, refresh_agents_md=refresh_agents_md)
+    next_steps(
+        ("tycoon ask sync", "build the Nao context DB from your warehouse"),
+        ("tycoon ask chat", "start querying your data in natural language"),
+    )
 
 
 @app.command("sync")
@@ -781,13 +860,35 @@ def ask_doctor() -> None:
     nao_dir = config.nao_dir
     rows: list[tuple[str, str, str]] = []
 
+    # The fix-command for nao-side breakage differs by state (#38):
+    #   - cold:      no ask.llm in tycoon.yml → user never configured an
+    #                LLM. Run `register llm`.
+    #   - half-init: ask.llm IS in tycoon.yml but Nao isn't bootstrapped
+    #                → register llm half-succeeded (or user hand-edited
+    #                yaml). Run `ask init` (no re-prompting).
+    project = config.project
+    has_ask_llm = (
+        project is not None
+        and project.ask is not None
+        and project.ask.llm is not None
+    )
+    fix_cmd = "tycoon ask init" if has_ask_llm else "tycoon register llm"
+
     # 1. nao_config.yaml present?
     cfg_path = nao_dir / "nao_config.yaml"
     if cfg_path.exists():
         rows.append(("nao_config.yaml", "OK", str(cfg_path)))
+    elif has_ask_llm:
+        rows.append(
+            (
+                "nao_config.yaml",
+                "FAIL",
+                f"tycoon.yml has ask.llm but nao_config.yaml is missing — run `{fix_cmd}`",
+            )
+        )
     else:
         rows.append(
-            ("nao_config.yaml", "FAIL", "missing — run `tycoon register llm`")
+            ("nao_config.yaml", "FAIL", f"missing — run `{fix_cmd}`")
         )
 
     # 2. Required directories present?
@@ -799,7 +900,7 @@ def ask_doctor() -> None:
             (
                 "nao directories",
                 "FAIL",
-                f"missing: {', '.join(missing)} — run `tycoon register llm`",
+                f"missing: {', '.join(missing)} — run `{fix_cmd}`",
             )
         )
 

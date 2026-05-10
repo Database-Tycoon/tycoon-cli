@@ -25,6 +25,9 @@ Anything not declared falls back to the defaults below.
 | `database` | block | see below | Where data lives |
 | `sources` | map[name → source] | `{}` | Registered ingestion sources |
 | `dbt_project_dir` | string | `dbt_project` | Path to dbt project root |
+| `dbt_profiles_dir` | string | unset | Override the `profiles.yml` directory. See [dbt profiles](#dbt-profiles) below. |
+| `dbt_profile` | string | unset | Profile name within `profiles.yml`. Defaults to the `profile:` field in `dbt_project.yml`. |
+| `dbt_target` | string | unset | Target within the profile (`dev` / `prod` / ...). Defaults to the profile's own `target:`, then `dev`. |
 | `rill_dir` | string | `rill` | Path to Rill project dir |
 | `ask` | block | unset | AI agent (Nao) configuration |
 | `sync` | block | unset | `tycoon data sync` defaults |
@@ -219,6 +222,50 @@ Tycoon expands these at config-load time. Unexpanded `${VAR}` in any
 field that gets passed to dlt produces a clear warning before the API
 call ("Config key 'access_token' contains an unexpanded env var:
 ${GITHUB_TOKEN}").
+
+## dbt profiles
+
+Tycoon resolves a dbt profile every time it shells out to `dbt build` /
+`dbt test` / `dbt docs` / `dbt run`. Resolution order matches dbt's own
+CLI so anything that works for `dbt --profiles-dir foo` works for
+`tycoon ... --profiles-dir foo`:
+
+1. CLI flag — `--profiles-dir`, `--profile`, `--target` on
+   `tycoon data transform run/test/build/docs` and `tycoon profiles
+   list/show/doctor`.
+2. `tycoon.yml` — `dbt_profiles_dir`, `dbt_profile`, `dbt_target`.
+3. `<dbt_project_dir>/profiles.yml` (dbt 1.5+ co-located file).
+4. `$DBT_PROFILES_DIR` env var.
+5. `~/.dbt/profiles.yml` (dbt's default).
+
+You generally don't need to touch any of the `tycoon.yml` fields —
+co-located + `~/.dbt` covers most setups. Set `dbt_profiles_dir` only
+when your profile lives somewhere unusual (e.g. you keep it under
+version control in a separate `config/` directory).
+
+Inspect what tycoon will use:
+
+```bash
+tycoon profiles list      # every profile + targets + adapters; flags the active one
+tycoon profiles show      # pretty-print the active profile, secrets redacted
+tycoon profiles doctor    # verify resolution + adapter matches stack.warehouse
+```
+
+`tycoon doctor` includes the `profiles doctor` check too, so you'll
+catch a duckdb-vs-snowflake adapter mismatch before a `dbt build` does.
+
+## `transform`
+
+```yaml
+transform:
+  auto_scaffold: true             # default
+  auto_osi_scaffold: false        # default — opt in once you're happy with OSI scaffolds
+```
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `auto_scaffold` | bool | `true` | After `tycoon data sources run <name>`, automatically run `tycoon data analyze` if no staging models exist for that source yet. |
+| `auto_osi_scaffold` | bool | `false` | After a successful `tycoon data transform run/build`, auto-emit `dbt_project/semantic/osi.yaml` via `tycoon semantics scaffold`. Best-effort — never breaks the underlying transform on failure. See [the `tycoon semantics` docs](../commands/semantics.md). |
 
 ## Things that aren't in `tycoon.yml`
 

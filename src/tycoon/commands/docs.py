@@ -74,7 +74,7 @@ def docs_serve(
     if mkdocs is None:
         error(
             "MkDocs is not installed. Install the docs extra: "
-            "[bold]pip install 'database-tycoon[docs]'[/bold]"
+            r"[bold]pip install 'database-tycoon\[docs]'[/bold]"
         )
         raise typer.Exit(1)
 
@@ -116,7 +116,7 @@ def docs_build(
     if mkdocs is None:
         error(
             "MkDocs is not installed. Install the docs extra: "
-            "[bold]pip install 'database-tycoon[docs]'[/bold]"
+            r"[bold]pip install 'database-tycoon\[docs]'[/bold]"
         )
         raise typer.Exit(1)
 
