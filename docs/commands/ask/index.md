@@ -18,6 +18,7 @@ with `register dbt` and `register warehouse`).
 
 | Command | What it does |
 |---|---|
+| `tycoon ask init` | Write `nao_config.yaml` from the active tycoon.yml's `ask.llm` block (project-bootstrap / recovery) |
 | `tycoon ask sync` | Run `nao sync` — refresh DB schema + dbt context |
 | `tycoon ask chat` | Open the Nao web UI on `:5005` |
 | `tycoon ask context [...]` | Cat synced context to stdout (for piping into other agents) |
@@ -88,6 +89,39 @@ faster.
 
 After `sync`, `tycoon ask` also refreshes `AGENTS.md` so coding agents
 that opened the project before the sync see updated paths.
+
+## `ask init` — bootstrap Nao without re-prompting
+
+Writes `.tycoon/nao/nao_config.yaml` from the active `tycoon.yml`'s
+`ask.llm` block. Idempotent. **Doesn't prompt for any LLM details** —
+that's [`tycoon register llm`](../register.md#tycoon-register-llm)'s job.
+
+Use when:
+
+- You hand-edited `ask.llm` in `tycoon.yml` (e.g. switched from
+  `lm-studio` to `ollama`) and need Nao re-synced.
+- You cloned a teammate's tycoon project — `tycoon.yml` ships with the
+  team's LLM choice but `.tycoon/nao/` is gitignored, so locally
+  there's no Nao config until you bootstrap it.
+- A previous `tycoon register llm` succeeded at writing `tycoon.yml`
+  but the chained Nao init didn't complete (transient FS error, etc).
+
+```bash
+tycoon ask init
+# Writes nao_config.yaml + AGENTS.md from current tycoon.yml.
+
+tycoon ask init --force
+# Overwrite an existing nao_config.yaml (default skips the write).
+
+tycoon ask init --no-refresh-agents-md
+# Skip the AGENTS.md regen — useful if you've hand-edited it.
+```
+
+Bails with a clear error when `ask.llm` is absent from `tycoon.yml`:
+
+```
+ERROR No ask.llm block in tycoon.yml — run tycoon register llm <provider> first.
+```
 
 ## `ask chat` — the web UI
 

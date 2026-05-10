@@ -845,3 +845,108 @@ class TestOfferModelInstall:
         assert calls == []
 
 
+
+
+# ---------------------------------------------------------------------------
+# tycoon ask init — standalone Nao-config writer (#37)
+# ---------------------------------------------------------------------------
+
+
+class TestAskInit:
+    """`tycoon ask init` writes nao_config.yaml from the active
+    tycoon.yml's ask.llm block. Idempotent. Refuses when no ask.llm is
+    configured. --force overwrites existing nao_config.yaml.
+    """
+
+    @pytest.fixture
+    def project_with_llm(self, tmp_path, monkeypatch):
+        """tycoon.yml with a configured ask.llm block (LM Studio default
+        used by the wizard's auto-detect)."""
+        (tmp_path / "tycoon.yml").write_text(
+            "name: test\n"
+            "version: 0.1.0\n"
+            "database:\n"
+            "  raw: data/raw.duckdb\n"
+            "  warehouse: data/warehouse.duckdb\n"
+            "sources: {}\n"
+            "ask:\n"
+            "  llm:\n"
+            "    provider: lm-studio\n"
+            "    base_url: http://localhost:1234/v1\n"
+        )
+        from tycoon.commands import ask as ask_mod
+        from tycoon.config import TycoonConfig
+
+        cfg = TycoonConfig(project_root=tmp_path)
+        monkeypatch.setattr(ask_mod, "config", cfg)
+        monkeypatch.chdir(tmp_path)
+
+        # Stub _require_nao so tests don't depend on nao-core being
+        # installed in the test environment.
+        monkeypatch.setattr(ask_mod, "_require_nao", lambda: None)
+
+        # Stub the heavy writer + agents refresh so tests don't depend
+        # on nao_core's internals. Each writes a sentinel file we can
+        # assert on.
+        def fake_write_nao_project(c):
+            (c.nao_dir).mkdir(parents=True, exist_ok=True)
+            (c.nao_dir / "nao_config.yaml").write_text("# stub\n")
+
+        def fake_refresh_agents_md(c=None):
+            (tmp_path / "AGENTS.md").write_text("stub\n")
+
+        monkeypatch.setattr("tycoon.nao.write_nao_project", fake_write_nao_project)
+        monkeypatch.setattr(ask_mod, "_refresh_agents_md", fake_refresh_agents_md)
+
+        return tmp_path
+
+    def test_init_errors_when_no_ask_llm(self, project, cli_runner, monkeypatch):
+        # `project` fixture has tycoon.yml WITHOUT ask.llm — should bail.
+        from tycoon.commands import ask as ask_mod
+        monkeypatch.setattr(ask_mod, "_require_nao", lambda: None)
+        result = cli_runner.invoke(app, ["ask", "init"])
+        assert result.exit_code != 0
+        # Sentinel: nothing got written
+        assert not (project / ".tycoon" / "nao" / "nao_config.yaml").exists()
+
+    def test_init_writes_nao_config_on_happy_path(
+        self, project_with_llm, cli_runner
+    ):
+        result = cli_runner.invoke(app, ["ask", "init"])
+        assert result.exit_code == 0, result.stdout
+        assert (project_with_llm / ".tycoon" / "nao" / "nao_config.yaml").exists()
+        assert (project_with_llm / "AGENTS.md").exists()
+
+    def test_init_skips_existing_without_force(
+        self, project_with_llm, cli_runner
+    ):
+        # First run writes the file with the stub sentinel.
+        cli_runner.invoke(app, ["ask", "init"])
+        cfg_path = project_with_llm / ".tycoon" / "nao" / "nao_config.yaml"
+        cfg_path.write_text("HAND-EDITED\n")
+
+        # Second run without --force must NOT clobber the hand-edit.
+        result = cli_runner.invoke(app, ["ask", "init"])
+        assert result.exit_code == 0
+        assert cfg_path.read_text() == "HAND-EDITED\n"
+
+    def test_init_force_overwrites(self, project_with_llm, cli_runner):
+        cli_runner.invoke(app, ["ask", "init"])
+        cfg_path = project_with_llm / ".tycoon" / "nao" / "nao_config.yaml"
+        cfg_path.write_text("HAND-EDITED\n")
+
+        result = cli_runner.invoke(app, ["ask", "init", "--force"])
+        assert result.exit_code == 0
+        # The fake_write_nao_project sentinel replaced the hand-edit.
+        assert cfg_path.read_text() == "# stub\n"
+
+    def test_init_no_refresh_agents_md_skips_agents(
+        self, project_with_llm, cli_runner
+    ):
+        result = cli_runner.invoke(
+            app, ["ask", "init", "--no-refresh-agents-md"]
+        )
+        assert result.exit_code == 0
+        assert (project_with_llm / ".tycoon" / "nao" / "nao_config.yaml").exists()
+        # AGENTS.md must NOT have been written by this run.
+        assert not (project_with_llm / "AGENTS.md").exists()

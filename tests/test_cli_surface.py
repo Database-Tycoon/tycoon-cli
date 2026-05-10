@@ -33,8 +33,12 @@ from tycoon.cli import app
 # addition then guards against regressions across the entire codebase.
 
 _STALE_SUBSTRINGS: tuple[tuple[str, str], ...] = (
-    ("tycoon ask init",
-        "removed in v0.1.5 — use `tycoon register llm` instead"),
+    # Note: `tycoon ask init` was removed in v0.1.5 (it had been a
+    # confusing alias for `register llm`) and re-introduced in v0.1.6
+    # with a different contract: idempotent project-bootstrap that
+    # writes nao_config.yaml from the existing tycoon.yml, no prompts.
+    # That's why this list no longer flags "tycoon ask init" — the
+    # current command is genuine, not a regression to the old one.
     ("ask install-model",
         "removed in v0.1.5 — folded into `tycoon register llm`"),
     ("pip install tycoon[",
@@ -168,12 +172,20 @@ class TestRemovedCommands:
     unknown subcommand) — not silently dispatch to something else.
     """
 
-    def test_ask_init_no_longer_registered(self, cli_runner):
+    def test_ask_init_re_registered_with_new_contract(self, cli_runner):
+        """Note: `tycoon ask init` was removed in v0.1.5 (it had been a
+        confusing alias for `register llm`) and re-introduced in v0.1.6
+        with a different contract: idempotent project-bootstrap that
+        writes nao_config.yaml from the existing tycoon.yml — no
+        prompts, no LLM args. This test guards the re-introduction.
+        """
         result = cli_runner.invoke(app, ["ask", "init", "--help"])
-        # Non-zero exit means typer didn't find the subcommand.
-        assert result.exit_code != 0, (
-            f"`tycoon ask init` should be removed but exited 0:\n{result.stdout}"
-        )
+        assert result.exit_code == 0, result.stdout
+        # Sanity: the help text reflects the new contract, not the old.
+        assert "--force" in result.stdout
+        # The old removed alias prompted for provider; the new one
+        # explicitly does NOT take an LLM provider arg.
+        assert "PROVIDER" not in result.stdout.upper()
 
     def test_ask_install_model_no_longer_registered(self, cli_runner):
         result = cli_runner.invoke(app, ["ask", "install-model", "--help"])

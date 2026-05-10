@@ -13,6 +13,7 @@ _In-flight cycle. Four tracks: dependency hygiene (shipped — this section), fi
 - **`tycoon doctor` now includes a non-fatal "dbt profile" check** that validates the resolved profile's adapter matches `stack.warehouse`, catching duckdb-vs-snowflake mismatches before a `dbt build` does.
 - **`docs/recipes/existing-dbt-profile.md`** — recipe for using an existing `profiles.yml` from anywhere on disk (under `~/.dbt`, in a shared config repo, alongside an existing dbt project).
 - **`tycoon register dbt --create`** ([#34][]). Recovery path for users who picked **Skip** on the dbt prompt during `tycoon init` — bootstraps a fresh dbt project at `../<project>-dbt` (or any path you pass) wired to the active tycoon warehouse, then registers it. Same scaffolder the init wizard uses (`_scaffold_dbt_project`) — produces a runnable `dbt_project.yml` + `profiles.yml` so `tycoon data transform run` works immediately. DuckDB and MotherDuck warehouses only; refuses to overwrite an existing `dbt_project.yml`. Marks `stack.transformation_managed: true` since tycoon owns the project.
+- **`tycoon ask init`** ([#37][]). Standalone idempotent project-bootstrap that writes `.tycoon/nao/nao_config.yaml` and `AGENTS.md` from the active `tycoon.yml`'s `ask.llm` block. Doesn't prompt for any LLM details — that's `tycoon register llm`'s job. Use when you hand-edited `ask.llm` in `tycoon.yml`, cloned a teammate's project (where `.tycoon/nao/` is gitignored), or `register llm` half-succeeded. `--force` overwrites an existing `nao_config.yaml`; `--no-refresh-agents-md` skips the `AGENTS.md` regen. Re-introduction of a removed-in-v0.1.5 surface with a different (cleaner) contract — the old version was a confusing alias for `register llm`; this one is purely the post-config write step. Refactor: `setup_ask_stack()` now delegates to a new `_init_nao_project()` helper, which all three init paths (`tycoon init`, `register llm`, and the new `ask init`) share — no body duplication.
 
 ### Changed
 
@@ -34,6 +35,7 @@ _In-flight cycle. Four tracks: dependency hygiene (shipped — this section), fi
 [#28]: https://github.com/Database-Tycoon/tycoon-cli/issues/28
 [#32]: https://github.com/Database-Tycoon/tycoon-cli/issues/32
 [#34]: https://github.com/Database-Tycoon/tycoon-cli/issues/34
+[#37]: https://github.com/Database-Tycoon/tycoon-cli/issues/37
 
 ## [0.1.5] - 2026-05-03
 
