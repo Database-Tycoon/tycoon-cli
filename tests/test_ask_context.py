@@ -190,6 +190,45 @@ class TestAskDoctor:
         assert "nao_config.yaml" in result.stdout
         assert "FAIL" in result.stdout
 
+    def test_cold_state_suggests_register_llm(self, project, cli_runner):
+        """No ask.llm + no nao_config.yaml → suggest `register llm`
+        (#38 cold-start branch). The `project` fixture writes a
+        tycoon.yml without any ask.llm block."""
+        result = cli_runner.invoke(app, ["ask", "doctor"])
+        assert "tycoon register llm" in result.stdout
+        # Half-init message must NOT appear in the cold case.
+        assert "tycoon ask init" not in result.stdout
+
+    def test_half_init_state_suggests_ask_init(
+        self, tmp_path, monkeypatch, cli_runner
+    ):
+        """ask.llm IS present in tycoon.yml but nao_config.yaml is
+        missing (e.g. register llm half-succeeded) → suggest
+        `tycoon ask init` (#38 half-init branch)."""
+        (tmp_path / "tycoon.yml").write_text(
+            "name: test\n"
+            "version: 0.1.0\n"
+            "database:\n"
+            "  raw: data/raw.duckdb\n"
+            "  warehouse: data/warehouse.duckdb\n"
+            "sources: {}\n"
+            "ask:\n"
+            "  llm:\n"
+            "    provider: lm-studio\n"
+        )
+        from tycoon.commands import ask as ask_mod
+        from tycoon.config import TycoonConfig
+
+        cfg = TycoonConfig(project_root=tmp_path)
+        monkeypatch.setattr(ask_mod, "config", cfg)
+        monkeypatch.chdir(tmp_path)
+
+        result = cli_runner.invoke(app, ["ask", "doctor"])
+        assert result.exit_code == 1
+        assert "tycoon ask init" in result.stdout, result.stdout
+        # Cold-state register-llm suggestion must NOT appear.
+        assert "tycoon register llm" not in result.stdout
+
     def test_passes_when_init_was_run(self, project, cli_runner):
         # Simulate the post-register state by writing nao project files
         from tycoon.config import TycoonConfig

@@ -860,13 +860,35 @@ def ask_doctor() -> None:
     nao_dir = config.nao_dir
     rows: list[tuple[str, str, str]] = []
 
+    # The fix-command for nao-side breakage differs by state (#38):
+    #   - cold:      no ask.llm in tycoon.yml → user never configured an
+    #                LLM. Run `register llm`.
+    #   - half-init: ask.llm IS in tycoon.yml but Nao isn't bootstrapped
+    #                → register llm half-succeeded (or user hand-edited
+    #                yaml). Run `ask init` (no re-prompting).
+    project = config.project
+    has_ask_llm = (
+        project is not None
+        and project.ask is not None
+        and project.ask.llm is not None
+    )
+    fix_cmd = "tycoon ask init" if has_ask_llm else "tycoon register llm"
+
     # 1. nao_config.yaml present?
     cfg_path = nao_dir / "nao_config.yaml"
     if cfg_path.exists():
         rows.append(("nao_config.yaml", "OK", str(cfg_path)))
+    elif has_ask_llm:
+        rows.append(
+            (
+                "nao_config.yaml",
+                "FAIL",
+                f"tycoon.yml has ask.llm but nao_config.yaml is missing — run `{fix_cmd}`",
+            )
+        )
     else:
         rows.append(
-            ("nao_config.yaml", "FAIL", "missing — run `tycoon register llm`")
+            ("nao_config.yaml", "FAIL", f"missing — run `{fix_cmd}`")
         )
 
     # 2. Required directories present?
@@ -878,7 +900,7 @@ def ask_doctor() -> None:
             (
                 "nao directories",
                 "FAIL",
-                f"missing: {', '.join(missing)} — run `tycoon register llm`",
+                f"missing: {', '.join(missing)} — run `{fix_cmd}`",
             )
         )
 
