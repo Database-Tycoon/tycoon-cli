@@ -6,6 +6,19 @@ import pytest
 from pathlib import Path
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--run-online",
+        action="store_true",
+        default=False,
+        help=(
+            "Run recipe doctest blocks marked `mode=online` "
+            "(`tests/test_recipe_doctests.py`). Hits real upstream APIs; "
+            "intended for the nightly-e2e workflow, not per-PR CI."
+        ),
+    )
+
+
 @pytest.fixture
 def tmp_config(tmp_path: Path):
     """Create a TycoonConfig pointing at a temp directory."""

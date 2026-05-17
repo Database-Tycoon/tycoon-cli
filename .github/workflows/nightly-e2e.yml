@@ -43,6 +43,17 @@ jobs:
             tests/test_templates_e2e.py::test_nyc_transit_e2e \
             2>&1 | tee /tmp/e2e.log
 
+      - name: Run online recipe doctests (real upstream APIs)
+        # Recipe doctests in README + docs/recipes marked `mode=online`
+        # only run when --run-online is passed. Catches contract drift
+        # against upstream APIs (PokéAPI, NOAA, etc.) that the marked
+        # blocks reference. No-op while no online markers are present;
+        # adding one in any markdown file picks it up automatically.
+        id: recipe_doctests
+        run: |
+          uv run pytest tests/test_recipe_doctests.py --run-online -v \
+            2>&1 | tee -a /tmp/e2e.log
+
       - name: Open issue on failure
         # The pytest step exits non-zero on any failure; this step
         # only runs in that case. Body links the failed run for

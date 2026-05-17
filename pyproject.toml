@@ -74,6 +74,8 @@ prerelease = "if-necessary-or-explicit"
 markers = [
     "e2e: end-to-end tests that require network or external services (opt-in: `pytest -m e2e`). Skipped by default.",
     "offline_e2e: full-pipeline tests that run entirely offline (init + ingest + transform). Included in the default run so CI gates on real integration, not just unit tests.",
+    "recipe: marker for recipe doctest blocks parsed from README / docs/recipes (`tests/test_recipe_doctests.py`). `mode=offline` blocks run by default; `mode=online` blocks gate on `--run-online`.",
+    "subprocess_e2e: subprocess-driven end-to-end tests that shell out to the installed `tycoon` binary (catches PATH / Rich rendering / packaging bugs that in-process tests can't see). Included in the default run.",
 ]
 addopts = "-m 'not e2e'"
 
