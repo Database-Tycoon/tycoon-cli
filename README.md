@@ -27,23 +27,28 @@ pip install "database-tycoon[ask]"       # AI natural language queries (Ollama s
 
 ## Quickstart
 
-The fastest path to a working dashboard uses the PokéAPI — no credentials, no signup.
+### Offline (no signup, runs in CI on every PR)
+
+The csv-import template ships with a sample CSV and a working dbt project, so the full ingest → transform pipeline runs without any external network call. This is the block our CI gate runs against every commit — if it ever breaks, the release is blocked.
+
+<!-- tycoon-test: mode=offline -->
+```bash
+tycoon init --template csv-import --name analytics-demo
+tycoon data sources run files
+tycoon data analyze files
+tycoon data transform run
+```
+
+### Live API (uses the PokéAPI)
+
+A live walkthrough that hits a real public API — no credentials, no signup. The first command is interactive: press Enter twice to take the PokéAPI defaults.
 
 ```bash
-# 1. Create a project
 mkdir my-project && cd my-project
 tycoon init --template csv-import
-
-# 2. Add the PokéAPI as a source (press Enter twice for defaults)
-tycoon data sources add rest_api
-
-# 3. Ingest into DuckDB
+tycoon data sources add rest_api    # press Enter twice for the PokéAPI defaults
 tycoon data sources run pokeapi
-
-# 4. Scaffold dbt models and generate Rill dashboards
 tycoon data analyze pokeapi --rill
-
-# 5. Open Rill
 tycoon start --only rill
 ```
 

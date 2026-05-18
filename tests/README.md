@@ -10,6 +10,26 @@ pytest test suite for the tycoon package.
 uv run pytest
 ```
 
+### Recipe doctests (markdown blocks executed as subprocesses)
+
+`tests/test_recipe_doctests.py` walks `README.md` and `docs/recipes/*.md` for marked code blocks and executes each via `bash -e -o pipefail`. The marker convention:
+
+```markdown
+<!-- tycoon-test: mode=offline -->
+```bash
+tycoon init --template csv-import --name demo
+tycoon data sources run files
+```
+
+- `mode=offline` (default): runs on every PR via `ci.yml`. Must work without network or credentials.
+- `mode=online`: runs only via `nightly-e2e.yml` (or `uv run pytest --run-online`). Real upstream APIs allowed.
+
+Each block runs in a fresh `tmp_path` with `HOME` rebound, so caches don't leak into the dev environment. The block's commands run literally — there's no substitution layer.
+
+Why subprocess? In-process Typer tests can't see PATH resolution, Rich rendering (the v0.1.6 `[extra]` bracket strip bug), stdout/stderr framing, or console-script wiring. The recipe harness + `test_e2e_demo_arc.py` close that gap.
+
+
+
 Run a specific file:
 
 ```bash
