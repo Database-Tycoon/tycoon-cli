@@ -1,6 +1,6 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.6] - UNRELEASED
+## [0.1.6] - 2026-05-18
 
 _The dbt-shop polish release. Headline is OSI semantic-layer scaffolding ([#28][]); the supporting work makes the dbt side of tycoon behave the way an experienced dbt user expects. Adds first-class profile handling ([#27][]), Fivetran metadata read-out ([#26][], pulled forward from v0.2.x), in-CLI recovery paths for `init` skip-prompts ([#34][] / [#37][]), and a new subprocess-driven CI gate ([#40][]) that catches the class of bugs ([#32][] + Rich bracket strip) that escaped to PyPI in v0.1.5. See [`docs/releases/v0.1.6.md`](docs/releases/v0.1.6.md) for the full narrative._
 
