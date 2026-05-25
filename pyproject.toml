@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "database-tycoon"
-version = "0.1.6"
+version = "0.1.7"
 description = "Database Tycoon — local-first analytics CLI that adapts to your existing data stack"
 readme = "README.md"
 license = {text = "MIT"}
@@ -59,6 +59,7 @@ Issues = "https://github.com/Database-Tycoon/tycoon-cli/issues"
 dev = [
     "pytest==9.0.3",
     "pytest-cov>=7.1.0",
+    "syrupy==5.2.0",
 ]
 
 [project.scripts]

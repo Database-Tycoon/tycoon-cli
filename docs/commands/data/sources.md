@@ -60,6 +60,46 @@ Then type-specific config:
 
 The new source is written to `tycoon.yml`'s `sources:` map. For non-native types, `add` also offers to install the dlt source files (one-time `dlt init <type>` to `~/.tycoon/sources/`).
 
+### Non-interactive mode (`--no-prompt`)
+
+For CI, scripted bootstrap, or online recipe doctests, pass `--no-prompt` and the required type-specific flags. The command skips every prompt and fails fast if a required value is missing.
+
+```bash
+# rest_api — base URL is required, --resources optional
+tycoon data sources add rest_api \
+  --base-url https://api.example.com/v1/ \
+  --resources widgets,gadgets \
+  --no-prompt
+
+# sql_database — name is required (no auto-naming rule)
+tycoon data sources add sql_database \
+  --name warehouse-pg \
+  --schema raw_pg \
+  --connection-string '${DATABASE_URL}' \
+  --no-prompt
+
+# filesystem
+tycoon data sources add filesystem \
+  --path ./data/inbox/*.csv \
+  --no-prompt
+```
+
+Flag reference:
+
+| Flag | Purpose |
+|---|---|
+| `--no-prompt` | Skip every prompt; required values come from flags |
+| `--name <id>` | Source name (auto-derived for `rest_api` / `filesystem` from the URL/path) |
+| `--schema <id>` | Raw schema name (auto-derived if omitted) |
+| `--base-url <url>` | Required for `rest_api` under `--no-prompt` |
+| `--resources <csv>` | Comma-separated resource list for `rest_api` |
+| `--connection-string <s>` | Required for `sql_database` under `--no-prompt`. Use `${ENV_VAR}` for secrets |
+| `--path <p>` | Required for `filesystem` under `--no-prompt` |
+| `--config key=value` | Extra config pairs. Repeatable. Overrides type-specific flags |
+| `--force` | Overwrite an existing source with the same name without confirming |
+
+Catalog credentials default to `${ENV_VAR}` references in both modes — set the env var separately. Catalog-source files (`dlt init`-style downloads) are not auto-installed under `--no-prompt`; run `tycoon data sources catalog install <type>` separately if you need them.
+
 ## `list` — list registered sources
 
 ```bash

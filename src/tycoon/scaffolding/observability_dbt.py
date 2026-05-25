@@ -51,7 +51,7 @@ _METADATA_TABLES = [
 ]
 
 _DIM_RUNS_SQL = """\
-{{ config(materialized='view') }}
+{{ config(materialized='view', tags=['tycoon']) }}
 
 -- Unified timeline of dlt + dbt runs.
 -- Useful for "show me everything that's run today" / "what was the last
@@ -104,7 +104,7 @@ def _staging_sql(table_name: str) -> str:
 -- Source: tycoon's observability metadata DB (`.tycoon/metadata.duckdb`),
 -- attached as `tycoon_meta` in this project's profiles.yml.
 
-{{{{ config(materialized='view') }}}}
+{{{{ config(materialized='view', tags=['tycoon']) }}}}
 
 SELECT *
 FROM tycoon_meta.main.{table_name}

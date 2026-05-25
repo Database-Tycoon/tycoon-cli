@@ -1,0 +1,72 @@
+# serializer version: 1
+# name: TestCommonErrorPaths.test_no_dbt_manifest_message
+  '''
+  ERROR No dbt manifest found. Run `tycoon data transform run` (or `dbt compile`) 
+  before filtering history by layer.
+  
+  '''
+# ---
+# name: TestCommonErrorPaths.test_no_nao_installed_message
+  '''
+  ERROR Nao is not installed. Run: pip install 'database-tycoon[ask]'
+  
+  '''
+# ---
+# name: TestCommonErrorPaths.test_no_tycoon_yml_message
+  '''
+  ERROR No tycoon.yml found. Run tycoon init first, or cd into an existing tycoon 
+  project.
+  
+  '''
+# ---
+# name: TestDoctorRowRendering.test_cold_start_suggests_register_llm
+  '''
+  WARN nao_config.yaml missing — run tycoon register llm to set up the AI stack.
+  
+  '''
+# ---
+# name: TestDoctorRowRendering.test_half_init_suggests_ask_init
+  '''
+  WARN nao_config.yaml missing — run tycoon ask init to bootstrap from the 
+  existing ask.llm config in tycoon.yml.
+  
+  '''
+# ---
+# name: TestDoctorRowRendering.test_healthy_layer_coverage
+  '''
+  OK Layer coverage: every source (3) has at least one staging model.
+  
+  '''
+# ---
+# name: TestDoctorRowRendering.test_uncovered_source_warning
+  '''
+  WARN Layer coverage: no staging model found for source(s): orphan, ghost. 
+  Scaffold with `tycoon data analyze <source>` or write models under 
+  `<dbt_project>/models/staging/`.
+  
+  '''
+# ---
+# name: TestInstallHintRendering.test_ask_extra_hint
+  '''
+  Run: pip install 'database-tycoon[ask]'
+  
+  '''
+# ---
+# name: TestInstallHintRendering.test_combined_extras_hint
+  '''
+  Run: pip install 'database-tycoon[ask,server,dagster]'
+  
+  '''
+# ---
+# name: TestInstallHintRendering.test_dagster_extra_hint
+  '''
+  Run: pip install 'database-tycoon[dagster]'
+  
+  '''
+# ---
+# name: TestInstallHintRendering.test_server_extra_hint
+  '''
+  Run: pip install 'database-tycoon[server]'
+  
+  '''
+# ---

@@ -28,6 +28,19 @@ Each block runs in a fresh `tmp_path` with `HOME` rebound, so caches don't leak 
 
 Why subprocess? In-process Typer tests can't see PATH resolution, Rich rendering (the v0.1.6 `[extra]` bracket strip bug), stdout/stderr framing, or console-script wiring. The recipe harness + `test_e2e_demo_arc.py` close that gap.
 
+### Snapshot tests for Rich CLI output
+
+`tests/test_snapshots.py` uses [syrupy](https://github.com/syrupy-project/syrupy) to pin the exact rendered string of user-facing Rich output — install hints, doctor rows, common error paths. Golden files live in `tests/__snapshots__/test_snapshots.ambr`.
+
+When a maintainer intentionally changes a user-facing string, regenerate the snapshot:
+
+```bash
+uv run pytest --snapshot-update tests/test_snapshots.py
+git diff tests/__snapshots__/        # review the diff
+```
+
+A regression (someone re-introduces the `[extra]` bracket strip; someone changes a doctor row text without updating snapshots) fails the snapshot assertion with a clear diff. Reviewers see the change in PRs as a plain-text diff — much better signal than "a test broke and the maintainer rewrote the assertion."
+
 
 
 Run a specific file:

@@ -233,3 +233,175 @@ class TestEdgeCases:
 
         schema = json.loads(osi_schema_path().read_text())
         assert schema["properties"]["version"]["const"] == OSI_VERSION
+
+
+# -- Layer-aware mart discovery (v0.1.7) ----------------------------------------
+
+
+def _write_manifest(dbt_project_dir: Path, nodes: dict) -> None:
+    """Drop a minimal target/manifest.json under ``dbt_project_dir``."""
+    import json
+
+    target = dbt_project_dir / "target"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "manifest.json").write_text(json.dumps({"nodes": nodes}))
+
+
+class TestLayerAwareDiscovery:
+    """As of v0.1.7, mart discovery prefers dbt manifest classification."""
+
+    @pytest.fixture
+    def warehouse_with_oddly_named_marts(self, tmp_path: Path) -> Path:
+        """A warehouse where marts use unconventional names (no fct_/dim_/etc).
+
+        These tables would be invisible to the v0.1.6 prefix matcher but
+        visible to the v0.1.7 layer classifier because they live in
+        ``models/marts/`` per the manifest.
+        """
+        db = tmp_path / "wh.duckdb"
+        con = duckdb.connect(str(db))
+        con.execute(
+            "CREATE TABLE orders_summary ("
+            "  id INTEGER, "
+            "  total DECIMAL(18, 2), "
+            "  order_date DATE"
+            ")"
+        )
+        con.execute("CREATE TABLE customer_book (id INTEGER, name VARCHAR)")
+        # Should still NOT appear — manifest classifies as staging.
+        con.execute("CREATE TABLE stg_raw_orders (id INTEGER)")
+        con.close()
+        return db
+
+    def test_manifest_picks_up_unconventionally_named_marts(
+        self, warehouse_with_oddly_named_marts, tmp_path: Path
+    ) -> None:
+        dbt_dir = tmp_path / "dbt"
+        _write_manifest(
+            dbt_dir,
+            {
+                "model.p.orders_summary": {
+                    "resource_type": "model",
+                    "name": "orders_summary",
+                    "schema": "main",
+                    "original_file_path": "models/marts/orders_summary.sql",
+                    "config": {"meta": {}},
+                },
+                "model.p.customer_book": {
+                    "resource_type": "model",
+                    "name": "customer_book",
+                    "schema": "main",
+                    "original_file_path": "models/marts/customer_book.sql",
+                    "config": {"meta": {}},
+                },
+                "model.p.stg_raw_orders": {
+                    "resource_type": "model",
+                    "name": "stg_raw_orders",
+                    "schema": "main",
+                    "original_file_path": "models/staging/stg_raw_orders.sql",
+                    "config": {"meta": {}},
+                },
+            },
+        )
+        out = tmp_path / "osi.yaml"
+        result = scaffold_osi(
+            warehouse_db=warehouse_with_oddly_named_marts,
+            out_path=out,
+            project_name="demo",
+            dbt_project_dir=dbt_dir,
+        )
+        assert sorted(result.datasets_emitted) == ["customer_book", "orders_summary"]
+
+    def test_meta_override_promotes_table_to_mart(
+        self, tmp_path: Path
+    ) -> None:
+        """A table in models/scratch/ tagged ``meta.tycoon_layer: mart`` is included."""
+        db = tmp_path / "wh.duckdb"
+        con = duckdb.connect(str(db))
+        con.execute("CREATE TABLE oddball (id INTEGER, value DECIMAL(18, 2))")
+        con.close()
+
+        dbt_dir = tmp_path / "dbt"
+        _write_manifest(
+            dbt_dir,
+            {
+                "model.p.oddball": {
+                    "resource_type": "model",
+                    "name": "oddball",
+                    "schema": "main",
+                    "original_file_path": "models/scratch/oddball.sql",
+                    "config": {"meta": {"tycoon_layer": "mart"}},
+                },
+            },
+        )
+        out = tmp_path / "osi.yaml"
+        result = scaffold_osi(
+            warehouse_db=db,
+            out_path=out,
+            project_name="demo",
+            dbt_project_dir=dbt_dir,
+        )
+        assert result.datasets_emitted == ["oddball"]
+
+    def test_missing_manifest_falls_back_to_prefix(
+        self, warehouse, tmp_path: Path
+    ) -> None:
+        """No manifest at the given path → warn + fall back to prefix matching."""
+        dbt_dir = tmp_path / "dbt"  # no manifest written
+        out = tmp_path / "osi.yaml"
+        result = scaffold_osi(
+            warehouse_db=warehouse,
+            out_path=out,
+            project_name="demo",
+            dbt_project_dir=dbt_dir,
+        )
+        # Fixture's mart_orders + dim_customer get picked up via prefix.
+        assert sorted(result.datasets_emitted) == ["dim_customer", "mart_orders"]
+        assert any("No dbt manifest" in w for w in result.warnings)
+
+    def test_no_dbt_project_dir_uses_prefix(
+        self, warehouse, tmp_path: Path
+    ) -> None:
+        """Caller passes None → existing v0.1.6 behaviour exactly."""
+        out = tmp_path / "osi.yaml"
+        result = scaffold_osi(
+            warehouse_db=warehouse,
+            out_path=out,
+            project_name="demo",
+            dbt_project_dir=None,
+        )
+        assert sorted(result.datasets_emitted) == ["dim_customer", "mart_orders"]
+        # No manifest-related warnings when None is passed explicitly.
+        assert not any("manifest" in w.lower() for w in result.warnings)
+
+    def test_manifest_excludes_staging_even_with_mart_prefix(
+        self, tmp_path: Path
+    ) -> None:
+        """A table named ``fct_x`` living in ``models/staging/`` is NOT a mart."""
+        db = tmp_path / "wh.duckdb"
+        con = duckdb.connect(str(db))
+        con.execute("CREATE TABLE fct_legacy (id INTEGER)")
+        con.close()
+
+        dbt_dir = tmp_path / "dbt"
+        _write_manifest(
+            dbt_dir,
+            {
+                "model.p.fct_legacy": {
+                    "resource_type": "model",
+                    "name": "fct_legacy",
+                    "schema": "main",
+                    "original_file_path": "models/staging/fct_legacy.sql",
+                    "config": {"meta": {}},
+                },
+            },
+        )
+        out = tmp_path / "osi.yaml"
+        result = scaffold_osi(
+            warehouse_db=db,
+            out_path=out,
+            project_name="demo",
+            dbt_project_dir=dbt_dir,
+        )
+        # Empty datasets — fct_legacy is staging per the manifest.
+        assert result.datasets_emitted == []

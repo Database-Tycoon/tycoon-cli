@@ -1,5 +1,35 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-05-25
+
+_The layered-architecture release. Tycoon learns the sources → staging → intermediate → marts mental model and surfaces it across `data status`, `doctor`, `semantics scaffold`, and `data history`. Plus the test-resilience second wave ([#39][], [#41][]) and non-interactive `data sources add` ([#44][]) to unblock online recipe doctests. See [`docs/releases/v0.1.7.md`](docs/releases/v0.1.7.md) for the full narrative._
+
+### Added
+
+- **Layer-aware data model** ([#30][]). New `tycoon.layers` module classifies every table tycoon governs into one of `source` / `staging` / `intermediate` / `mart` / `snapshot` / `seed` / `unclassified`. dbt-side classification flows from the manifest using folder convention (`models/staging/`, `models/intermediate/`, `models/marts/`, plus the `core/` and `published/` aliases) with per-model `meta.tycoon_layer` and per-folder `+meta.tycoon_layer` overrides. Source-side classification reads dlt's `sources:` block in `tycoon.yml` and Fivetran connector snapshots. No new `tycoon.yml` block — classification authority lives in the tools that own the objects.
+- **`tycoon data status` becomes layer-organized** ([#30][]). The dlt and Fivetran panels collapse into a unified **Sources** panel (vendor column distinguishes the rows) joined by **Staging**, **Intermediate**, and **Marts** panels. Projects without dbt still see all four panels with empty-state hints pointing at `tycoon register dbt`.
+- **`tycoon doctor` layer-coverage check** ([#30][]). New non-fatal row reports any registered source that has no staging model. Skips silently when `transformation: none` or the dbt manifest hasn't been compiled yet.
+- **`tycoon data history --layer`** ([#30][]). New flag filters dbt invocations to those that touched at least one model in the named layer (staging / intermediate / mart / snapshot / seed). Mutually exclusive with `--source`. Requires a compiled dbt manifest.
+- **`tycoon` dbt tag on auto-scaffolded observability models** ([#30][]). Every model produced by `tycoon data observability scaffold` (the `stg_tycoon__*` views + `dim_runs`) now carries `tags=['tycoon']` so you can run `dbt run --exclude tag:tycoon` (or `tycoon data transform run --exclude tag:tycoon`) when iterating on business logic without rebuilding tycoon's bookkeeping models.
+- **`docs/recipes/layered-architecture.md`** — full mental-model recipe covering the four layers, classification rules, override mechanisms via `meta.tycoon_layer`, and a migration guide for projects with a flat `models/` directory.
+- **Non-interactive `tycoon data sources add`** ([#44][]). New flags: `--name`, `--schema`, `--base-url`, `--resources`, `--connection-string`, `--path`, repeatable `--config key=value`, `--no-prompt`, and `--force` for scripted overwrite. Interactive mode is untouched — passing the new flags simply skips the corresponding prompts. Catalog credentials default to `${ENV_VAR}` references in both modes. Designed for CI / scripted bootstrap / online recipe doctests.
+- **README PokéAPI quickstart re-enabled as an online recipe doctest** ([#44][]). The live-API arc is now marked `<!-- tycoon-test: mode=online -->` and runs under `nightly-e2e.yml`'s `--run-online` step. Surfaces upstream-API contract drift within 24 hours. The arc uses the new `--no-prompt` flag and scopes `dbt run` to `stg_pokeapi__*` so it cohabits cleanly with the csv-import template's own models.
+- **Snapshot harness for rendered Rich CLI output** ([#41][]). New `tests/test_snapshots.py` (syrupy-backed) pins the exact string form of install hints, doctor rows, and common error paths. Golden files live in `tests/__snapshots__/`. Catches the class of bug (`[extra]` bracket strip, doctor row text drift, stale package names) that today's "some error appears" assertions miss. Update workflow: `uv run pytest --snapshot-update tests/test_snapshots.py` regenerates the goldens; the diff lands in the PR as plain-text changes a reviewer can read at a glance. v1 covers 11 anchored renders; full-screen panels with time-dependent fields deferred to v2 with a redactor pass.
+
+### Changed
+
+- **`tycoon semantics scaffold` switches mart discovery from prefix matching to layer classification** ([#30][]). Previously globbed for `mart_*` / `fct_*` / `dim_*` / `obt_*`; now reads the dbt manifest and respects per-model overrides. Falls back to the old prefix matcher (with a clear warning) when no manifest is available, so behaviour is preserved for unmigrated projects.
+
+### Fixed
+
+- _TBD._
+
+[#30]: https://github.com/Database-Tycoon/tycoon-cli/issues/30
+[#39]: https://github.com/Database-Tycoon/tycoon-cli/issues/39
+[#40]: https://github.com/Database-Tycoon/tycoon-cli/issues/40
+[#41]: https://github.com/Database-Tycoon/tycoon-cli/issues/41
+[#44]: https://github.com/Database-Tycoon/tycoon-cli/issues/44
+
 ## [0.1.6] - 2026-05-18
 
 _The dbt-shop polish release. Headline is OSI semantic-layer scaffolding ([#28][]); the supporting work makes the dbt side of tycoon behave the way an experienced dbt user expects. Adds first-class profile handling ([#27][]), Fivetran metadata read-out ([#26][], pulled forward from v0.2.x), in-CLI recovery paths for `init` skip-prompts ([#34][] / [#37][]), and a new subprocess-driven CI gate ([#40][]) that catches the class of bugs ([#32][] + Rich bracket strip) that escaped to PyPI in v0.1.5. See [`docs/releases/v0.1.6.md`](docs/releases/v0.1.6.md) for the full narrative._

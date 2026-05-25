@@ -21,6 +21,7 @@ from typing import Optional
 import typer
 
 from tycoon.config import config
+from tycoon.project import TransformationTool
 from tycoon.scaffolding.osi_generator import (
     scaffold_osi,
     validate_osi_yaml,
@@ -45,6 +46,13 @@ def _require_project() -> None:
 def _default_out_path() -> Path:
     """Project-level OSI file location (Q2 decision — issue #28)."""
     return config.dbt_project_dir / "semantic" / "osi.yaml"
+
+
+def _has_dbt_transformation(project) -> bool:
+    """True when ``stack.transformation`` is dbt (manifest worth reading)."""
+    if project is None:
+        return False
+    return project.stack.transformation == TransformationTool.dbt
 
 
 @app.command()
@@ -87,6 +95,7 @@ def scaffold(
         out_path=out_path,
         project_name=project_name,
         force=force,
+        dbt_project_dir=config.dbt_project_dir if _has_dbt_transformation(project) else None,
     )
 
     if result.skipped_due_to_sentinel:
