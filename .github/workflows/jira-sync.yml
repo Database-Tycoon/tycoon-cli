@@ -1,0 +1,165 @@
+name: jira-sync
+
+# One-way GitHub -> Jira lifecycle sync.
+#
+# On issues.opened     -> if no PTC-NN reference yet, post an unobtrusive
+#                         reminder so the maintainer can decide to mirror.
+# On issues.closed     -> find every PTC-NN referenced in the body or
+#                         comments and transition the Jira issue to Done.
+# On issues.reopened   -> transition matching Jira issues back to To Do.
+#
+# Secrets required (Repo settings -> Secrets and variables -> Actions):
+#   JIRA_EMAIL      Atlassian account email (databasetycoon.atlassian.net)
+#   JIRA_API_TOKEN  API token from https://id.atlassian.com/manage-profile/security/api-tokens
+#
+# Project key and base URL are hardcoded — this workflow is repo-specific.
+
+on:
+  issues:
+    types: [opened, closed, reopened]
+
+permissions:
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      JIRA_BASE_URL: https://databasetycoon.atlassian.net
+      JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      ISSUE_ACTION: ${{ github.event.action }}
+    steps:
+      - name: Bail out if secrets are missing
+        run: |
+          if [ -z "${JIRA_EMAIL}" ] || [ -z "${JIRA_API_TOKEN}" ]; then
+            echo "::warning::JIRA_EMAIL or JIRA_API_TOKEN secret not set; skipping sync."
+            exit 0
+          fi
+
+      - name: Sync issue lifecycle to Jira
+        if: env.JIRA_EMAIL != '' && env.JIRA_API_TOKEN != ''
+        run: |
+          python <<'PYEOF'
+          import base64
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          import urllib.error as ue
+          import urllib.request as ur
+
+          base = os.environ["JIRA_BASE_URL"].rstrip("/")
+          email = os.environ["JIRA_EMAIL"]
+          token = os.environ["JIRA_API_TOKEN"]
+          gh_repo = os.environ["GH_REPO"]
+          issue_num = os.environ["ISSUE_NUMBER"]
+          action = os.environ["ISSUE_ACTION"]
+
+          auth = base64.b64encode(f"{email}:{token}".encode()).decode()
+          jira_headers = {
+              "Authorization": f"Basic {auth}",
+              "Accept": "application/json",
+              "Content-Type": "application/json",
+          }
+
+          def jira_req(method, path, payload=None):
+              url = f"{base}{path}"
+              data = json.dumps(payload).encode() if payload else None
+              req = ur.Request(url, data=data, headers=jira_headers, method=method)
+              try:
+                  with ur.urlopen(req) as resp:
+                      raw = resp.read().decode()
+                      return resp.status, (json.loads(raw) if raw else {})
+              except ue.HTTPError as e:
+                  body = e.read().decode() or "{}"
+                  try:
+                      return e.code, json.loads(body)
+                  except json.JSONDecodeError:
+                      return e.code, {"raw": body}
+
+          def gh_capture(args):
+              return subprocess.check_output(["gh", *args]).decode()
+
+          # Pull fresh body + comments so we don't depend on YAML interpolation
+          # of multi-line content from github.event.issue.body.
+          issue = json.loads(gh_capture(["api", f"repos/{gh_repo}/issues/{issue_num}"]))
+          body = issue.get("body") or ""
+          comments = gh_capture(
+              ["api", f"repos/{gh_repo}/issues/{issue_num}/comments",
+               "--paginate", "-q", ".[].body"]
+          )
+          haystack = body + "\n" + comments
+          keys = sorted(set(re.findall(r"PTC-\d+", haystack)))
+
+          print(f"event={action} issue=#{issue_num} found={keys or '[]'}", flush=True)
+
+          REMINDER_MARKER = "<!-- jira-sync-reminder -->"
+
+          if action == "opened":
+              if keys:
+                  print("PTC reference already present; no reminder needed.")
+                  sys.exit(0)
+              if REMINDER_MARKER in comments:
+                  print("Reminder already posted; skipping.")
+                  sys.exit(0)
+              reminder = (
+                  f"{REMINDER_MARKER}\n"
+                  "Roadmap reminder: if this issue belongs on the "
+                  "[PTC roadmap](https://databasetycoon.atlassian.net/jira/software/projects/PTC/boards/), "
+                  "create a mirror Story and post the `PTC-NN` key in this thread. "
+                  "Closure will then auto-transition the Jira issue to Done."
+              )
+              subprocess.run(
+                  ["gh", "issue", "comment", issue_num, "-R", gh_repo, "--body", reminder],
+                  check=True,
+              )
+              print("Posted reminder.")
+              sys.exit(0)
+
+          if not keys:
+              print("No PTC reference found; nothing to transition.")
+              sys.exit(0)
+
+          target = "Done" if action == "closed" else "To Do"
+
+          for key in keys:
+              code, data = jira_req("GET", f"/rest/api/3/issue/{key}?fields=status")
+              if code != 200:
+                  print(f"!! {key}: status GET failed {code}: {data}")
+                  continue
+              current = data["fields"]["status"]["name"]
+              if current == target:
+                  print(f"== {key}: already {current}; skip")
+                  continue
+
+              code, tx = jira_req("GET", f"/rest/api/3/issue/{key}/transitions")
+              if code != 200:
+                  print(f"!! {key}: transitions GET failed {code}: {tx}")
+                  continue
+              candidates = tx.get("transitions", [])
+              picked = next(
+                  (t for t in candidates if t["to"]["name"].lower() == target.lower()),
+                  None,
+              )
+              if not picked:
+                  print(
+                      f"!! {key}: no transition to {target!r}; "
+                      f"available={[t['to']['name'] for t in candidates]}"
+                  )
+                  continue
+
+              code, resp = jira_req(
+                  "POST",
+                  f"/rest/api/3/issue/{key}/transitions",
+                  {"transition": {"id": picked["id"]}},
+              )
+              if code in (200, 204):
+                  print(f"->  {key}: {current} -> {target}")
+              else:
+                  print(f"!! {key}: transition POST failed {code}: {resp}")
+          PYEOF
