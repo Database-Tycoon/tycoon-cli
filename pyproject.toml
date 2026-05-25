@@ -59,6 +59,7 @@ Issues = "https://github.com/Database-Tycoon/tycoon-cli/issues"
 dev = [
     "pytest==9.0.3",
     "pytest-cov>=7.1.0",
+    "syrupy==5.2.0",
 ]
 
 [project.scripts]
