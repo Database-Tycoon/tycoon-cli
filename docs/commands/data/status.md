@@ -1,6 +1,6 @@
 # `tycoon data status`
 
-Per-source freshness, row counts, and capture history. The "is the pipeline alive?" view.
+The layered view of the project: **sources → staging → intermediate → marts**. The "is the pipeline alive?" view, organized by the canonical analytics-warehouse architecture.
 
 ## Synopsis
 
@@ -8,53 +8,76 @@ Per-source freshness, row counts, and capture history. The "is the pipeline aliv
 tycoon data status [OPTIONS]
 ```
 
-No flags. Reads from `data/raw.duckdb` + `.tycoon/metadata.duckdb` and prints a per-source status table.
+No flags. Reads from `data/raw.duckdb`, `.tycoon/metadata.duckdb`, and the dbt manifest at `<dbt_project_dir>/target/manifest.json`.
 
 ## Output
 
 ```
-                            Sources
-┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━┓
-┃ Name           ┃ Type       ┃ Last loaded  ┃ Runs   ┃
-┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━┩
-│ nyc-dot        │ rest_api   │ 2h 14m ago   │  12    │
-│ mta-gtfs       │ filesystem │ 1d 3h ago    │   3    │
-│ mta-bus-speeds │ rest_api   │ —            │   0    │
-└────────────────┴────────────┴──────────────┴────────┘
+╭─────────────────────────────────────────────────────────────╮
+│ Data Status                                                 │
+╰─────────────────────────────────────────────────────────────╯
 
-Drill in with tycoon data history
+╭─────────╮
+│ Sources │
+╰─────────╯
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━┳━━━━━━━━┳━━━━━━━━┓
+┃ Source         ┃ Vendor   ┃ Schema       ┃ Last Sync    ┃ Freshness ┃ Runs ┃ Tables ┃   Rows ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━╇━━━━━━━━╇━━━━━━━━┩
+│ pokeapi        │ dlt      │ raw_pokeapi  │ 2026-05-25.. │ 12m ago   │   3  │   3    │ 1,432  │
+│ orders_pg      │ fivetran │ raw_pg       │ —            │ —         │   —  │   —    │   —    │
+└────────────────┴──────────┴──────────────┴──────────────┴───────────┴──────┴────────┴────────┘
+
+Drill in with tycoon data history for per-run detail.
+
+╭─────────╮
+│ Staging │
+╰─────────╯
+┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┓
+┃ Model                  ┃ Schema ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━┩
+│ stg_pokeapi__pokemon   │ main   │
+│ stg_pokeapi__berry     │ main   │
+│ stg_pokeapi__type      │ main   │
+└────────────────────────┴────────┘
+3 model(s) — last build 8m ago
+
+╭──────────────╮
+│ Intermediate │
+╰──────────────╯
+> No intermediate models. Optional layer — typically used to combine staging models before marts.
+
+╭───────╮
+│ Marts │
+╰───────╯
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━┓
+┃ Model          ┃ Schema ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━┩
+│ fct_pokemon    │ main   │
+└────────────────┴────────┘
+1 model(s) — last build 8m ago
 ```
 
-Columns:
+## What each panel shows
 
-| Column | What it shows |
+**Sources** — dlt sources from `tycoon.yml` and Fivetran connectors from the metadata API, unified into one table. The `Vendor` column distinguishes them. Per-source freshness (Last Sync, Freshness, Runs, Tables, Rows) is populated for dlt sources from `data/raw.duckdb` + `.tycoon/metadata.duckdb`; Fivetran rows surface via a follow-up service / sync-state detail table when `stack.ingestion = fivetran`.
+
+**Staging / Intermediate / Marts** — dbt models classified via the manifest (see [`docs/recipes/layered-architecture.md`](../../recipes/layered-architecture.md) for the classification rules). Each panel lists the models in that layer and reports the last-build timestamp computed by joining `dbt_runs` against `dbt_nodes` in the metadata DB.
+
+## Empty states
+
+| State | Panel behaviour |
 |---|---|
-| **Name** | Source name from `tycoon.yml` |
-| **Type** | dlt source type |
-| **Last loaded** | Time since the most recent successful ingest. `—` if never run. |
-| **Runs** | Total dlt loads captured in `metadata.duckdb`. `—` if observability hasn't fired. |
+| No sources registered | Sources panel shows a hint to run `tycoon data sources add` |
+| No `data/raw.duckdb` yet | Sources rows render with `—` in freshness columns |
+| No `.tycoon/metadata.duckdb` yet | Runs column shows `—`; staging/intermediate/marts last-build shows `never` |
+| `transformation: none` in `tycoon.yml` | The three dbt panels collapse to a single hint pointing at `tycoon register dbt` |
+| No `target/manifest.json` (dbt never compiled) | The three dbt panels collapse to a single hint pointing at `tycoon data transform run` |
 
-## When the metadata DB doesn't exist
-
-```
-                  Sources
-┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━┓
-┃ Name           ┃ Type       ┃     ┃
-┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━┩
-│ nyc-dot        │ rest_api   │ —   │
-└────────────────┴────────────┴─────┘
-```
-
-The Last-loaded and Runs columns degrade gracefully when `.tycoon/metadata.duckdb` is missing. This is expected on a fresh project — the metadata DB only appears after the first ingest.
-
-## How "Last loaded" is computed
-
-The latest `inserted_at` for the source's load IDs in `dlt_runs`. Reformatted as a coarse delta (`Nh Nm ago`, `Nd Nh ago`, etc.) so it's scannable across many sources.
-
-For sources with `write_disposition: replace`, this is the moment of the most recent overwrite. For `append` it's the moment of the most recent batch. For `merge` it's the moment of the most recent upsert.
+Tycoon stays opinionated about the layered architecture even when it's not in place yet — the panels always appear, with hints describing what's missing.
 
 ## Related
 
-- [`tycoon data history`](history.md) — drill into individual runs
-- [`tycoon doctor`](../doctor.md) — broader environment health check
+- [`tycoon data history`](history.md) — drill into individual runs (now supports `--layer`)
+- [`tycoon doctor`](../doctor.md) — broader environment health check, including the v0.1.7 layer-coverage row
+- [Layered architecture recipe](../../recipes/layered-architecture.md) — the mental model behind the panels
 - [Concepts → Observability is a side-effect of running](../../getting-started/concepts.md#3-observability-is-a-side-effect-of-running)

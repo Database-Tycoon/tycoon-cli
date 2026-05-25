@@ -43,7 +43,18 @@ Reports `OK token (env)`, `OK OAuth (cached session)`, or `ERROR not configured`
 
 For Snowflake / BigQuery / Redshift: warehouse auth lives in dbt's `profiles.yml` and isn't tycoon's concern. `doctor` skips these.
 
-### 6. Observability
+### 6. Layer coverage (v0.1.7)
+
+When `stack.transformation = dbt` and a compiled dbt manifest exists, doctor verifies that every registered source in `tycoon.yml` has at least one staging model:
+
+- `OK Layer coverage: every source (N) has at least one staging model.` — every dlt source has a `stg_*<source>*` model in the manifest.
+- `WARN Layer coverage: no staging model found for source(s): X, Y. Scaffold with tycoon data analyze <source>...` — at least one source is uncovered.
+
+Silently skipped when `transformation: none` or when the manifest hasn't been compiled yet (the dbt-project and observability rows already nudge the user to compile).
+
+See [layered architecture](../recipes/layered-architecture.md) for the underlying classification rules.
+
+### 7. Observability
 
 Reports the state of `.tycoon/metadata.duckdb`:
 

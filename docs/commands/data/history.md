@@ -9,18 +9,26 @@ tycoon data history [OPTIONS]
 tycoon data history show <id> [OPTIONS]
 
 Options (history):
-  --tool TEXT      Filter to dlt or dbt (default: both)
-  --limit INTEGER  Number of recent runs to show (default: 10)
-  -h, --help       Show this message and exit
+  -t, --tool TEXT    Filter to dlt or dbt (default: all)
+  -n, --limit INTEGER  Number of recent runs to show (default: 20)
+  -s, --source TEXT  Filter dlt runs to one source (config name or schema literal)
+  -l, --layer TEXT   Filter dbt invocations to those touching the named layer
+  -h, --help         Show this message and exit
 ```
 
 ## `history` — recent runs
 
 ```bash
-tycoon data history                  # last 10 across dlt + dbt
+tycoon data history                       # last 20 across dlt + dbt
 tycoon data history --tool dlt --limit 25
 tycoon data history --tool dbt
+tycoon data history --source pokeapi      # only dlt runs for this source
+tycoon data history --layer mart          # only dbt invocations that touched marts
 ```
+
+`--source` and `--layer` are mutually exclusive (you can't ask for a layer of dlt runs — dlt loads aren't classified into layers). `--layer` requires a compiled dbt manifest; without one, the command exits with a hint pointing at `tycoon data transform run`.
+
+Valid layer names: `source`, `staging`, `intermediate`, `mart`, `snapshot`, `seed`, `unclassified`. See the [layered architecture recipe](../../recipes/layered-architecture.md) for what each layer means and how tycoon classifies your models into them.
 
 Output:
 
