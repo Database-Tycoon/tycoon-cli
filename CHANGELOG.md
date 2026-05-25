@@ -1,6 +1,6 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.7] - UNRELEASED
+## [0.1.7] - 2026-05-25
 
 _The layered-architecture release. Tycoon learns the sources → staging → intermediate → marts mental model and surfaces it across `data status`, `doctor`, `semantics scaffold`, and `data history`. Plus the test-resilience second wave ([#39][], [#41][]) and non-interactive `data sources add` ([#44][]) to unblock online recipe doctests. See [`docs/releases/v0.1.7.md`](docs/releases/v0.1.7.md) for the full narrative._
 
