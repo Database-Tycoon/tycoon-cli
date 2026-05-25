@@ -61,6 +61,29 @@ dbt snapshots (`snapshots/snap_*.sql`) and seeds (`seeds/*.csv`) get
 their own layer values (`snapshot` / `seed`) regardless of where they
 live on disk.
 
+### Tycoon's own observability models
+
+If you've run `tycoon data observability scaffold` (or accepted the
+auto-scaffold prompt during `tycoon init`), tycoon writes a handful of
+models under `models/_tycoon/` that surface its metadata DB through
+dbt: `stg_tycoon__dlt_runs`, `stg_tycoon__dbt_runs`,
+`stg_tycoon__fivetran_connectors`, `dim_runs`, and a few siblings.
+
+Every one of those models carries the `tycoon` dbt tag, so you can
+exclude them from a fast iteration cycle:
+
+```bash
+# Iterate on business models, skip tycoon's observability:
+dbt run --exclude tag:tycoon
+
+# Or via tycoon:
+tycoon data transform run --exclude tag:tycoon
+```
+
+They still show up in `tycoon data status` (under whichever layer the
+folder convention places them — staging for the `stg_tycoon__*` ones,
+marts for `dim_runs`).
+
 ## When tycoon's classifier shows up
 
 | Surface | What changes |

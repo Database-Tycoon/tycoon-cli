@@ -6,11 +6,16 @@ _The layered-architecture release. Tycoon learns the sources → staging → int
 
 ### Added
 
-- _TBD — populated as work lands on the v0.1.7 branch._
+- **Layer-aware data model** ([#30][]). New `tycoon.layers` module classifies every table tycoon governs into one of `source` / `staging` / `intermediate` / `mart` / `snapshot` / `seed` / `unclassified`. dbt-side classification flows from the manifest using folder convention (`models/staging/`, `models/intermediate/`, `models/marts/`, plus the `core/` and `published/` aliases) with per-model `meta.tycoon_layer` and per-folder `+meta.tycoon_layer` overrides. Source-side classification reads dlt's `sources:` block in `tycoon.yml` and Fivetran connector snapshots. No new `tycoon.yml` block — classification authority lives in the tools that own the objects.
+- **`tycoon data status` becomes layer-organized** ([#30][]). The dlt and Fivetran panels collapse into a unified **Sources** panel (vendor column distinguishes the rows) joined by **Staging**, **Intermediate**, and **Marts** panels. Projects without dbt still see all four panels with empty-state hints pointing at `tycoon register dbt`.
+- **`tycoon doctor` layer-coverage check** ([#30][]). New non-fatal row reports any registered source that has no staging model. Skips silently when `transformation: none` or the dbt manifest hasn't been compiled yet.
+- **`tycoon data history --layer`** ([#30][]). New flag filters dbt invocations to those that touched at least one model in the named layer (staging / intermediate / mart / snapshot / seed). Mutually exclusive with `--source`. Requires a compiled dbt manifest.
+- **`tycoon` dbt tag on auto-scaffolded observability models** ([#30][]). Every model produced by `tycoon data observability scaffold` (the `stg_tycoon__*` views + `dim_runs`) now carries `tags=['tycoon']` so you can run `dbt run --exclude tag:tycoon` (or `tycoon data transform run --exclude tag:tycoon`) when iterating on business logic without rebuilding tycoon's bookkeeping models.
+- **`docs/recipes/layered-architecture.md`** — full mental-model recipe covering the four layers, classification rules, override mechanisms via `meta.tycoon_layer`, and a migration guide for projects with a flat `models/` directory.
 
 ### Changed
 
-- _TBD._
+- **`tycoon semantics scaffold` switches mart discovery from prefix matching to layer classification** ([#30][]). Previously globbed for `mart_*` / `fct_*` / `dim_*` / `obt_*`; now reads the dbt manifest and respects per-model overrides. Falls back to the old prefix matcher (with a clear warning) when no manifest is available, so behaviour is preserved for unmigrated projects.
 
 ### Fixed
 
