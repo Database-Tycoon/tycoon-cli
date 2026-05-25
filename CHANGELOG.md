@@ -1,5 +1,26 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - UNRELEASED
+
+_The layered-architecture release. Tycoon learns the sources → staging → intermediate → marts mental model and surfaces it across `data status`, `doctor`, `semantics scaffold`, and `data history`. Plus the test-resilience second wave ([#39][], [#41][]) and non-interactive `data sources add` ([#44][]) to unblock online recipe doctests. See [`docs/releases/v0.1.7.md`](docs/releases/v0.1.7.md) for the full narrative._
+
+### Added
+
+- _TBD — populated as work lands on the v0.1.7 branch._
+
+### Changed
+
+- _TBD._
+
+### Fixed
+
+- _TBD._
+
+[#30]: https://github.com/Database-Tycoon/tycoon-cli/issues/30
+[#39]: https://github.com/Database-Tycoon/tycoon-cli/issues/39
+[#41]: https://github.com/Database-Tycoon/tycoon-cli/issues/41
+[#44]: https://github.com/Database-Tycoon/tycoon-cli/issues/44
+
 ## [0.1.6] - 2026-05-18
 
 _The dbt-shop polish release. Headline is OSI semantic-layer scaffolding ([#28][]); the supporting work makes the dbt side of tycoon behave the way an experienced dbt user expects. Adds first-class profile handling ([#27][]), Fivetran metadata read-out ([#26][], pulled forward from v0.2.x), in-CLI recovery paths for `init` skip-prompts ([#34][] / [#37][]), and a new subprocess-driven CI gate ([#40][]) that catches the class of bugs ([#32][] + Rich bracket strip) that escaped to PyPI in v0.1.5. See [`docs/releases/v0.1.6.md`](docs/releases/v0.1.6.md) for the full narrative._
