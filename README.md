@@ -41,18 +41,21 @@ tycoon data transform run
 
 ### Live API (uses the PokéAPI)
 
-A live walkthrough that hits a real public API — no credentials, no signup. The first command is interactive: press Enter twice to take the PokéAPI defaults.
+A live walkthrough that hits a real public API — no credentials, no signup. Uses the non-interactive `--no-prompt` flag so the whole arc is scriptable; drop the flag and the equivalent `--base-url` / `--resources` flags if you'd rather walk through the interactive prompts.
 
+<!-- tycoon-test: mode=online -->
 ```bash
-mkdir my-project && cd my-project
-tycoon init --template csv-import
-tycoon data sources add rest_api    # press Enter twice for the PokéAPI defaults
+tycoon init --template csv-import --name pokeapi-demo
+tycoon data sources add rest_api \
+  --base-url https://pokeapi.co/api/v2/ \
+  --resources pokemon,berry,type \
+  --no-prompt
 tycoon data sources run pokeapi
-tycoon data analyze pokeapi --rill
-tycoon start --only rill
+tycoon data analyze pokeapi
+tycoon data transform run --select 'stg_pokeapi__*'
 ```
 
-Rill opens at `http://localhost:9009` with `pokemon`, `berry`, and `type` tables ready to explore.
+The `--rill` switch on `data analyze` (and `tycoon start --only rill`) opens a Rill dashboard at `http://localhost:9009` with `pokemon`, `berry`, and `type` tables ready to explore.
 
 Already have a pipeline? `tycoon init` will ask about your ingestion tool, warehouse, dbt project, BI tool, and orchestrator — and configure itself around what you already have.
 

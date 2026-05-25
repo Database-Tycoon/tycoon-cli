@@ -12,6 +12,8 @@ _The layered-architecture release. Tycoon learns the sources → staging → int
 - **`tycoon data history --layer`** ([#30][]). New flag filters dbt invocations to those that touched at least one model in the named layer (staging / intermediate / mart / snapshot / seed). Mutually exclusive with `--source`. Requires a compiled dbt manifest.
 - **`tycoon` dbt tag on auto-scaffolded observability models** ([#30][]). Every model produced by `tycoon data observability scaffold` (the `stg_tycoon__*` views + `dim_runs`) now carries `tags=['tycoon']` so you can run `dbt run --exclude tag:tycoon` (or `tycoon data transform run --exclude tag:tycoon`) when iterating on business logic without rebuilding tycoon's bookkeeping models.
 - **`docs/recipes/layered-architecture.md`** — full mental-model recipe covering the four layers, classification rules, override mechanisms via `meta.tycoon_layer`, and a migration guide for projects with a flat `models/` directory.
+- **Non-interactive `tycoon data sources add`** ([#44][]). New flags: `--name`, `--schema`, `--base-url`, `--resources`, `--connection-string`, `--path`, repeatable `--config key=value`, `--no-prompt`, and `--force` for scripted overwrite. Interactive mode is untouched — passing the new flags simply skips the corresponding prompts. Catalog credentials default to `${ENV_VAR}` references in both modes. Designed for CI / scripted bootstrap / online recipe doctests.
+- **README PokéAPI quickstart re-enabled as an online recipe doctest** ([#44][]). The live-API arc is now marked `<!-- tycoon-test: mode=online -->` and runs under `nightly-e2e.yml`'s `--run-online` step. Surfaces upstream-API contract drift within 24 hours. The arc uses the new `--no-prompt` flag and scopes `dbt run` to `stg_pokeapi__*` so it cohabits cleanly with the csv-import template's own models.
 
 ### Changed
 
@@ -23,6 +25,7 @@ _The layered-architecture release. Tycoon learns the sources → staging → int
 
 [#30]: https://github.com/Database-Tycoon/tycoon-cli/issues/30
 [#39]: https://github.com/Database-Tycoon/tycoon-cli/issues/39
+[#40]: https://github.com/Database-Tycoon/tycoon-cli/issues/40
 [#41]: https://github.com/Database-Tycoon/tycoon-cli/issues/41
 [#44]: https://github.com/Database-Tycoon/tycoon-cli/issues/44
 

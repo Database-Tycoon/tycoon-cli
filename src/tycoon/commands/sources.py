@@ -249,14 +249,152 @@ def _derive_source_identity(source_type: str, cfg: dict) -> tuple[str, str]:
 _AUTO_NAMED_SOURCES: set[str] = {"rest_api", "filesystem"}
 
 
+def _parse_config_pairs(pairs: list[str]) -> dict[str, Any]:
+    """Parse repeated ``--config key=value`` flags into a dict."""
+    out: dict[str, Any] = {}
+    for pair in pairs:
+        if "=" not in pair:
+            error(f"Invalid --config '{pair}' — expected key=value.")
+            raise typer.Exit(1)
+        key, value = pair.split("=", 1)
+        out[key.strip()] = value.strip()
+    return out
+
+
+def _build_source_config_from_flags(
+    source_type: str,
+    *,
+    base_url: Optional[str],
+    resources: Optional[str],
+    connection_string: Optional[str],
+    path: Optional[str],
+    config_pairs: list[str],
+    catalog_entry: Optional[CatalogEntry],
+) -> dict[str, Any]:
+    """Assemble a source's ``config:`` dict from non-interactive flags.
+
+    Catalog credentials default to ``${ENV_VAR}`` references (matching
+    the interactive path's default), so catalog-backed sources work
+    without --config flags when the user has the right env vars set.
+    """
+    cfg: dict[str, Any] = {}
+
+    if catalog_entry and catalog_entry.credentials:
+        for cred in catalog_entry.credentials:
+            cfg[cred.key] = f"${{{cred.env_var}}}"
+
+    if source_type == "rest_api":
+        if base_url is None:
+            error(
+                "--base-url is required for `rest_api` sources with --no-prompt. "
+                "Pass --base-url https://api.example.com (and optionally "
+                "--resources foo,bar)."
+            )
+            raise typer.Exit(1)
+        cfg["base_url"] = base_url
+        if resources:
+            cfg["resources"] = ",".join(r.strip() for r in resources.split(",") if r.strip())
+    elif source_type == "sql_database":
+        if connection_string is None:
+            error(
+                "--connection-string is required for `sql_database` sources "
+                "with --no-prompt. Use ${ENV_VAR} for secrets."
+            )
+            raise typer.Exit(1)
+        cfg["connection_string"] = connection_string
+    elif source_type == "filesystem":
+        if path is None:
+            error(
+                "--path is required for `filesystem` sources with --no-prompt."
+            )
+            raise typer.Exit(1)
+        cfg["path"] = path
+
+    # --config key=value pairs override everything else (advanced/escape hatch).
+    cfg.update(_parse_config_pairs(config_pairs))
+    return cfg
+
+
 @app.command("add")
 def add_source(
-    source_type: Optional[str] = typer.Argument(None, help="Source type — run 'tycoon data sources catalog' to see all options"),
+    source_type: Optional[str] = typer.Argument(
+        None,
+        help="Source type — run `tycoon data sources catalog` to see all options.",
+    ),
+    name: Optional[str] = typer.Option(
+        None,
+        "--name",
+        help=(
+            "Source name (key in tycoon.yml's `sources:` map). Auto-derived "
+            "from the config when omitted on rest_api / filesystem; required "
+            "for other types under --no-prompt."
+        ),
+    ),
+    schema: Optional[str] = typer.Option(
+        None,
+        "--schema",
+        help="Raw schema name in DuckDB. Auto-derived when omitted.",
+    ),
+    base_url: Optional[str] = typer.Option(
+        None,
+        "--base-url",
+        help="Base URL for `rest_api` sources (e.g. `https://api.example.com`).",
+    ),
+    resources: Optional[str] = typer.Option(
+        None,
+        "--resources",
+        help="Comma-separated resource list for `rest_api` (e.g. `pokemon,berry,type`).",
+    ),
+    connection_string: Optional[str] = typer.Option(
+        None,
+        "--connection-string",
+        help="Connection string for `sql_database`. Use ${ENV_VAR} for secrets.",
+    ),
+    path: Optional[str] = typer.Option(
+        None,
+        "--path",
+        help="File path or URL for `filesystem` sources.",
+    ),
+    config_pairs: list[str] = typer.Option(
+        [],
+        "--config",
+        help=(
+            "Extra `key=value` pairs to merge into the source config. "
+            "Repeatable. Overrides type-specific flags."
+        ),
+    ),
+    no_prompt: bool = typer.Option(
+        False,
+        "--no-prompt",
+        help=(
+            "Skip every prompt. Required flags must be passed up front. "
+            "Designed for CI / scripted bootstrap / online recipe doctests."
+        ),
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Overwrite an existing source with the same name without confirming.",
+    ),
 ) -> None:
-    """Interactively register a new data source."""
+    """Register a new data source — interactively, or non-interactively via flags.
+
+    Interactive mode (the default) prompts for each field. Pass
+    ``--no-prompt`` to skip every prompt; required fields then come
+    from flags (``--base-url`` for ``rest_api``, ``--connection-string``
+    for ``sql_database``, ``--path`` for ``filesystem``). Catalog
+    credentials default to ``${ENV_VAR}`` references in both modes —
+    set the env var separately.
+    """
     _require_project()
 
     if not source_type:
+        if no_prompt:
+            error(
+                "--no-prompt requires a source type argument. Pass it "
+                "positionally (e.g. `tycoon data sources add rest_api --no-prompt ...`)."
+            )
+            raise typer.Exit(1)
         _show_catalog()
         source_type = typer.prompt("Enter a source type from the catalog")
 
@@ -269,16 +407,55 @@ def add_source(
     else:
         header(f"Add source: {source_type}")
 
-    if catalog_entry and source_type in _AUTO_NAMED_SOURCES:
+    if no_prompt:
+        source_config = _build_source_config_from_flags(
+            source_type,
+            base_url=base_url,
+            resources=resources,
+            connection_string=connection_string,
+            path=path,
+            config_pairs=config_pairs,
+            catalog_entry=catalog_entry,
+        )
+        if source_type in _AUTO_NAMED_SOURCES and not name:
+            source_name, derived_schema = _derive_source_identity(
+                source_type, source_config
+            )
+        elif name:
+            source_name = name
+            derived_schema = f"raw_{source_name.replace('-', '_')}"
+        else:
+            error(
+                f"--name is required under --no-prompt for `{source_type}` "
+                "(no auto-naming rule). Pass --name <id>."
+            )
+            raise typer.Exit(1)
+        schema_name = schema or derived_schema
+    elif catalog_entry and source_type in _AUTO_NAMED_SOURCES:
         source_config = _prompt_catalog_config(catalog_entry)
         source_name, schema_name = _derive_source_identity(source_type, source_config)
+        if name:
+            source_name = name
+        if schema:
+            schema_name = schema
         info(f"Source name: [bold]{source_name}[/bold]")
         info(f"Schema:      [bold]{schema_name}[/bold]")
     else:
-        default_name = f"my-{source_type}" if catalog_entry else source_type
-        source_name = typer.prompt("Source name", default=default_name)
-        default_schema = catalog_entry.default_schema if catalog_entry else f"raw_{source_name.replace('-', '_')}"
-        schema_name = typer.prompt("Schema name", default=default_schema)
+        default_name = name or (f"my-{source_type}" if catalog_entry else source_type)
+        source_name = (
+            name
+            if name
+            else typer.prompt("Source name", default=default_name)
+        )
+        default_schema = (
+            schema
+            or (catalog_entry.default_schema if catalog_entry else f"raw_{source_name.replace('-', '_')}")
+        )
+        schema_name = (
+            schema
+            if schema
+            else typer.prompt("Schema name", default=default_schema)
+        )
         if catalog_entry:
             source_config = _prompt_catalog_config(catalog_entry)
         else:
@@ -295,12 +472,20 @@ def add_source(
     assert project is not None  # guarded by _require_project
 
     if source_name in project.sources:
-        overwrite = typer.confirm(
-            f"Source '{source_name}' already exists. Overwrite?", default=False
-        )
-        if not overwrite:
-            info("Cancelled.")
-            raise typer.Exit(0)
+        if force or no_prompt:
+            if not force:
+                error(
+                    f"Source '{source_name}' already exists. Pass --force to "
+                    "overwrite under --no-prompt."
+                )
+                raise typer.Exit(1)
+        else:
+            overwrite = typer.confirm(
+                f"Source '{source_name}' already exists. Overwrite?", default=False
+            )
+            if not overwrite:
+                info("Cancelled.")
+                raise typer.Exit(0)
 
     project.sources[source_name] = new_source
     save_project(project, config.root)
@@ -308,10 +493,11 @@ def add_source(
 
     success(f"Source [bold]{source_name}[/bold] added to tycoon.yml")
 
-    if catalog_entry:
-        _maybe_install_catalog_source(source_type)
-    else:
-        _maybe_install_dlt_extra(source_type)
+    if not no_prompt:
+        if catalog_entry:
+            _maybe_install_catalog_source(source_type)
+        else:
+            _maybe_install_dlt_extra(source_type)
 
     next_steps(
         (f"tycoon data sources run {source_name}", "load data into DuckDB"),

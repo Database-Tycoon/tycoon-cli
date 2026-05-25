@@ -383,3 +383,198 @@ class TestAutoScaffold:
         _maybe_auto_scaffold("nyc-dot", sc, scaffold=True)
 
         assert not (tmp_path / "dbt_project" / "models" / "staging" / "nyc-dot").exists()
+
+
+# ---------------------------------------------------------------------------
+# tycoon data sources add — non-interactive (v0.1.7, #44)
+# ---------------------------------------------------------------------------
+
+
+class TestSourcesAddNoPrompt:
+    """`--no-prompt` mode for scripted / CI / online-doctest bootstrap.
+
+    These tests run the command end-to-end via CliRunner without ever
+    feeding stdin. A regression where any prompt sneaks back in shows
+    up as a hang or an EOF error.
+    """
+
+    def _bind(self, tmp_path: Path, monkeypatch):
+        """Set up an empty project + bind config to tmp_path."""
+        body = (
+            "name: test\n"
+            "version: 0.1.0\n"
+            "database:\n"
+            "  raw: data/raw.duckdb\n"
+            "  warehouse: data/warehouse.duckdb\n"
+            "sources: {}\n"
+        )
+        (tmp_path / "tycoon.yml").write_text(body)
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        from tycoon.commands import sources as sources_mod
+        from tycoon.config import TycoonConfig
+
+        cfg = TycoonConfig(project_root=tmp_path)
+        monkeypatch.setattr(sources_mod, "config", cfg)
+        return cfg
+
+    def test_rest_api_with_base_url_auto_derives_name_and_schema(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        self._bind(tmp_path, monkeypatch)
+        result = cli_runner.invoke(
+            app,
+            [
+                "data", "sources", "add", "rest_api",
+                "--base-url", "https://pokeapi.co/api/v2/",
+                "--resources", "pokemon,berry,type",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        project = load_project(tmp_path)
+        # Auto-derived name from the URL host (pokeapi.co -> pokeapi).
+        assert "pokeapi" in project.sources
+        src = project.sources["pokeapi"]
+        assert src.type == "rest_api"
+        assert src.schema_name == "raw_pokeapi"
+        assert src.config["base_url"] == "https://pokeapi.co/api/v2/"
+        assert src.config["resources"] == "pokemon,berry,type"
+
+    def test_rest_api_missing_base_url_errors(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        self._bind(tmp_path, monkeypatch)
+        result = cli_runner.invoke(
+            app, ["data", "sources", "add", "rest_api", "--no-prompt"]
+        )
+        assert result.exit_code == 1
+        # error() writes to stderr
+        assert "--base-url is required" in (result.stderr or result.output)
+
+    def test_sql_database_with_connection_string(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        self._bind(tmp_path, monkeypatch)
+        result = cli_runner.invoke(
+            app,
+            [
+                "data", "sources", "add", "sql_database",
+                "--name", "warehouse-pg",
+                "--schema", "raw_pg",
+                "--connection-string", "${DATABASE_URL}",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        project = load_project(tmp_path)
+        assert "warehouse-pg" in project.sources
+        assert project.sources["warehouse-pg"].config["connection_string"] == "${DATABASE_URL}"
+
+    def test_sql_database_requires_name_when_no_prompt(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        """sql_database has no auto-naming rule — --name is required."""
+        self._bind(tmp_path, monkeypatch)
+        result = cli_runner.invoke(
+            app,
+            [
+                "data", "sources", "add", "sql_database",
+                "--connection-string", "postgres://x",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "--name is required" in (result.stderr or result.output)
+
+    def test_no_prompt_without_source_type_errors(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        self._bind(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "sources", "add", "--no-prompt"])
+        assert result.exit_code == 1
+        assert "requires a source type" in (result.stderr or result.output)
+
+    def test_duplicate_without_force_errors(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        self._bind(tmp_path, monkeypatch)
+        cli_runner.invoke(
+            app,
+            [
+                "data", "sources", "add", "rest_api",
+                "--base-url", "https://api.x.com/",
+                "--no-prompt",
+            ],
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "data", "sources", "add", "rest_api",
+                "--base-url", "https://api.x.com/",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "--force" in (result.stderr or result.output)
+
+    def test_force_overwrites_existing(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        self._bind(tmp_path, monkeypatch)
+        cli_runner.invoke(
+            app,
+            [
+                "data", "sources", "add", "rest_api",
+                "--base-url", "https://api.x.com/v1/",
+                "--no-prompt",
+            ],
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "data", "sources", "add", "rest_api",
+                "--base-url", "https://api.x.com/v2/",
+                "--no-prompt", "--force",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        project = load_project(tmp_path)
+        # Newer base_url wins.
+        assert project.sources["x"].config["base_url"] == "https://api.x.com/v2/"
+
+    def test_config_pairs_merge_into_source_config(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        self._bind(tmp_path, monkeypatch)
+        result = cli_runner.invoke(
+            app,
+            [
+                "data", "sources", "add", "rest_api",
+                "--base-url", "https://api.x.com/",
+                "--config", "headers={'Accept':'application/json'}",
+                "--config", "timeout=30",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        project = load_project(tmp_path)
+        src = project.sources["x"]
+        assert src.config["timeout"] == "30"
+        assert "headers" in src.config
+
+    def test_invalid_config_pair_errors(
+        self, cli_runner, tmp_path, monkeypatch
+    ):
+        self._bind(tmp_path, monkeypatch)
+        result = cli_runner.invoke(
+            app,
+            [
+                "data", "sources", "add", "rest_api",
+                "--base-url", "https://api.x.com/",
+                "--config", "missing_equals_sign",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Invalid --config" in (result.stderr or result.output)
