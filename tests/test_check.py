@@ -145,3 +145,118 @@ class TestDoctorObservabilityCheck:
         # Terminal wrapping may split the command hint across lines
         normalized = " ".join(out.split())
         assert "tycoon data history" in normalized
+
+
+class TestDoctorLayerCoverage:
+    """`_check_layer_coverage` reports source -> staging-model coverage."""
+
+    def _patch_config(self, monkeypatch, tmp_path, *, sources_yaml: str, transformation: str = "dbt"):
+        import yaml
+
+        from tycoon.commands import doctor
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        body = {
+            "name": "test",
+            "stack": {"transformation": transformation},
+            "sources": yaml.safe_load(sources_yaml) or {},
+        }
+        (tmp_path / "tycoon.yml").write_text(yaml.dump(body))
+        cfg = TycoonConfig(project_root=tmp_path)
+        monkeypatch.setattr(doctor, "config", cfg)
+        return cfg
+
+    def _write_manifest(self, dbt_dir, nodes):
+        import json
+
+        target = dbt_dir / "target"
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "manifest.json").write_text(json.dumps({"nodes": nodes}))
+
+    def test_silent_when_transformation_none(self, monkeypatch, tmp_path, capsys):
+        from tycoon.commands import doctor
+
+        self._patch_config(
+            monkeypatch,
+            tmp_path,
+            sources_yaml="pokeapi:\n  type: rest_api\n  schema: raw_pokeapi\n  config: {}\n",
+            transformation="none",
+        )
+        doctor._check_layer_coverage()
+        out = capsys.readouterr().out
+        assert out == ""  # nothing should be emitted
+
+    def test_silent_when_no_sources(self, monkeypatch, tmp_path, capsys):
+        from tycoon.commands import doctor
+
+        self._patch_config(monkeypatch, tmp_path, sources_yaml="{}")
+        doctor._check_layer_coverage()
+        assert capsys.readouterr().out == ""
+
+    def test_silent_when_no_manifest(self, monkeypatch, tmp_path, capsys):
+        """Don't double-report — other rows already nudge toward dbt compile."""
+        from tycoon.commands import doctor
+
+        self._patch_config(
+            monkeypatch,
+            tmp_path,
+            sources_yaml="pokeapi:\n  type: rest_api\n  schema: raw_pokeapi\n  config: {}\n",
+        )
+        doctor._check_layer_coverage()
+        assert capsys.readouterr().out == ""
+
+    def test_reports_success_when_every_source_has_staging(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        from tycoon.commands import doctor
+
+        cfg = self._patch_config(
+            monkeypatch,
+            tmp_path,
+            sources_yaml="pokeapi:\n  type: rest_api\n  schema: raw_pokeapi\n  config: {}\n",
+        )
+        self._write_manifest(
+            cfg.dbt_project_dir,
+            {
+                "model.p.stg_pokeapi__pokemon": {
+                    "resource_type": "model",
+                    "name": "stg_pokeapi__pokemon",
+                    "schema": "main",
+                    "original_file_path": "models/staging/stg_pokeapi__pokemon.sql",
+                    "config": {"meta": {}},
+                }
+            },
+        )
+        doctor._check_layer_coverage()
+        out = capsys.readouterr().out
+        assert "every source" in out
+        assert "1" in out
+
+    def test_warns_when_source_has_no_staging(self, monkeypatch, tmp_path, capsys):
+        from tycoon.commands import doctor
+
+        cfg = self._patch_config(
+            monkeypatch,
+            tmp_path,
+            sources_yaml=(
+                "pokeapi:\n  type: rest_api\n  schema: raw_pokeapi\n  config: {}\n"
+                "orphan:\n  type: rest_api\n  schema: raw_orphan\n  config: {}\n"
+            ),
+        )
+        self._write_manifest(
+            cfg.dbt_project_dir,
+            {
+                "model.p.stg_pokeapi__pokemon": {
+                    "resource_type": "model",
+                    "name": "stg_pokeapi__pokemon",
+                    "schema": "main",
+                    "original_file_path": "models/staging/stg_pokeapi__pokemon.sql",
+                    "config": {"meta": {}},
+                }
+            },
+        )
+        doctor._check_layer_coverage()
+        out = capsys.readouterr().out
+        assert "orphan" in out
+        assert "pokeapi" not in out.replace("stg_pokeapi", "")  # only the unsourced one

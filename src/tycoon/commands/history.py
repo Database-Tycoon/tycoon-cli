@@ -144,25 +144,60 @@ def _load_dlt_rows(
     return out
 
 
-def _load_dbt_rows(con: duckdb.DuckDBPyConnection, limit: int) -> list[tuple]:
-    rows = con.execute(
-        """
-        SELECT
-            started_at,
-            command,
-            invocation_id,
-            success,
-            elapsed_s,
-            models_ok,
-            models_error,
-            tests_passed,
-            tests_failed
-        FROM dbt_runs
-        ORDER BY started_at DESC NULLS LAST
-        LIMIT ?
-        """,
-        [limit],
-    ).fetchall()
+def _load_dbt_rows(
+    con: duckdb.DuckDBPyConnection,
+    limit: int,
+    *,
+    model_names: list[str] | None = None,
+) -> list[tuple]:
+    """Load dbt runs.
+
+    When ``model_names`` is provided, restrict to invocations that touched
+    at least one of those models (used by ``--layer`` filtering).
+    """
+    if model_names:
+        rows = con.execute(
+            """
+            SELECT
+                r.started_at,
+                r.command,
+                r.invocation_id,
+                r.success,
+                r.elapsed_s,
+                r.models_ok,
+                r.models_error,
+                r.tests_passed,
+                r.tests_failed
+            FROM dbt_runs r
+            WHERE EXISTS (
+                SELECT 1 FROM dbt_nodes n
+                WHERE n.invocation_id = r.invocation_id
+                  AND list_contains(?, n.node_name)
+            )
+            ORDER BY r.started_at DESC NULLS LAST
+            LIMIT ?
+            """,
+            [model_names, limit],
+        ).fetchall()
+    else:
+        rows = con.execute(
+            """
+            SELECT
+                started_at,
+                command,
+                invocation_id,
+                success,
+                elapsed_s,
+                models_ok,
+                models_error,
+                tests_passed,
+                tests_failed
+            FROM dbt_runs
+            ORDER BY started_at DESC NULLS LAST
+            LIMIT ?
+            """,
+            [limit],
+        ).fetchall()
 
     out: list[tuple] = []
     for (
@@ -220,7 +255,47 @@ def _resolve_source_schema(source: str) -> str:
     return source
 
 
-def _list_history(tool: str, limit: int, source: str | None = None) -> None:
+def _resolve_layer_models(layer: str) -> list[str]:
+    """Translate ``--layer staging`` into the list of model names in that layer.
+
+    Raises ``typer.Exit(1)`` on an unknown layer or when no dbt manifest is
+    available. Returns the (possibly empty) list of model names otherwise.
+    """
+    from tycoon.layers import (
+        Layer,
+        classify_dbt_models,
+        filter_by_layer,
+        load_manifest,
+    )
+
+    try:
+        layer_enum = Layer(layer.lower())
+    except ValueError:
+        valid = ", ".join(layer_value.value for layer_value in Layer)
+        error(f"Invalid --layer '{layer}'. Use one of: {valid}.")
+        raise typer.Exit(1)
+
+    manifest = load_manifest(config.dbt_project_dir)
+    if manifest is None:
+        error(
+            "No dbt manifest found. Run `tycoon data transform run` "
+            "(or `dbt compile`) before filtering history by layer."
+        )
+        raise typer.Exit(1)
+
+    return [m.name for m in filter_by_layer(classify_dbt_models(manifest), layer_enum)]
+
+
+def _list_history(
+    tool: str,
+    limit: int,
+    source: str | None = None,
+    layer: str | None = None,
+) -> None:
+    # Resolve --layer BEFORE checking for the metadata DB so a typo in the
+    # layer name surfaces with a clean exit(1) regardless of project state.
+    layer_models = _resolve_layer_models(layer) if layer else None
+
     meta = _metadata_or_exit()
 
     source_schema = _resolve_source_schema(source) if source else None
@@ -228,18 +303,25 @@ def _list_history(tool: str, limit: int, source: str | None = None) -> None:
     con = duckdb.connect(str(meta), read_only=True)
     try:
         combined: list[tuple] = []
-        if tool in ("all", "dlt"):
+        # ``--layer`` only filters dbt invocations -- dlt loads aren't
+        # classifiable into staging/intermediate/mart.
+        if tool in ("all", "dlt") and layer_models is None:
             combined.extend(_load_dlt_rows(con, limit, source_schema=source_schema))
         # dbt runs aren't source-scoped (a build touches all models), so when
         # the user asks for a specific source we hide dbt entirely rather
         # than polluting the view with unfiltered invocations.
         if tool in ("all", "dbt") and source_schema is None:
-            combined.extend(_load_dbt_rows(con, limit))
+            combined.extend(_load_dbt_rows(con, limit, model_names=layer_models))
     finally:
         con.close()
 
     if not combined:
-        if source_schema:
+        if layer_models is not None:
+            info(
+                f"No dbt invocations captured that touched the [bold]{layer}[/bold] "
+                "layer yet."
+            )
+        elif source_schema:
             info(
                 f"No dlt runs captured for source schema [bold]{source_schema}[/bold]."
             )
@@ -256,6 +338,8 @@ def _list_history(tool: str, limit: int, source: str | None = None) -> None:
     title = "Run History"
     if source_schema:
         title += f" — {source_schema}"
+    elif layer_models is not None:
+        title += f" — {layer} layer"
     header(title)
     console.print(_render_history_table(combined))
     console.print()
@@ -562,6 +646,17 @@ def history_default(
             "when this flag is set since they aren't source-scoped."
         ),
     ),
+    layer: str = typer.Option(
+        None,
+        "--layer",
+        "-l",
+        help=(
+            "Filter dbt invocations to those that touched at least one "
+            "model in the given layer: staging / intermediate / mart / "
+            "snapshot / seed. Suppresses dlt rows since they aren't "
+            "layer-classified. Requires a compiled dbt manifest."
+        ),
+    ),
 ) -> None:
     """List the most recent dlt + dbt runs captured in the metadata DB."""
     if ctx.invoked_subcommand is not None:
@@ -569,7 +664,10 @@ def history_default(
     if tool not in ("all", "dlt", "dbt"):
         error(f"Invalid --tool '{tool}'. Use: all, dlt, dbt.")
         raise typer.Exit(1)
-    _list_history(tool, limit, source=source)
+    if source and layer:
+        error("Pass either --source or --layer, not both.")
+        raise typer.Exit(1)
+    _list_history(tool, limit, source=source, layer=layer)
 
 
 @app.command("show")

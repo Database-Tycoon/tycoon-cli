@@ -549,3 +549,160 @@ class TestStatusRunsColumn:
         assert "3" in result.stdout
         # Drill-in hint should be shown when runs > 0
         assert "tycoon data history" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# history --layer (v0.1.7)
+# ---------------------------------------------------------------------------
+
+
+def _write_manifest(dbt_dir: Path, nodes: dict) -> None:
+    """Drop a minimal target/manifest.json under ``dbt_dir``."""
+    import json
+
+    target = dbt_dir / "target"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "manifest.json").write_text(json.dumps({"nodes": nodes}))
+
+
+class TestHistoryLayerFilter:
+    """`--layer` restricts dbt invocations to those touching that layer."""
+
+    def _setup(self, history_project: Path, monkeypatch):
+        """Wire tycoon.yml + a project-level manifest with three layers."""
+        _write_tycoon_yml(history_project, with_sources=False)
+        from tycoon.commands import history as history_mod
+        from tycoon.commands import status as status_mod
+        from tycoon.config import TycoonConfig
+
+        cfg = TycoonConfig(project_root=history_project)
+        monkeypatch.setattr(history_mod, "config", cfg)
+        monkeypatch.setattr(status_mod, "config", cfg)
+
+        _write_manifest(
+            cfg.dbt_project_dir,
+            {
+                "model.p.stg_orders": {
+                    "resource_type": "model",
+                    "name": "stg_orders",
+                    "schema": "main",
+                    "original_file_path": "models/staging/stg_orders.sql",
+                    "config": {"meta": {}},
+                },
+                "model.p.fct_orders": {
+                    "resource_type": "model",
+                    "name": "fct_orders",
+                    "schema": "main",
+                    "original_file_path": "models/marts/fct_orders.sql",
+                    "config": {"meta": {}},
+                },
+            },
+        )
+        return cfg
+
+    def test_layer_filter_restricts_to_invocations_touching_layer(
+        self, history_project, cli_runner, monkeypatch
+    ):
+        self._setup(history_project, monkeypatch)
+        # Two invocations: one only built staging, one built marts.
+        _seed_metadata(
+            history_project,
+            dbt_runs=[
+                (
+                    "inv-staging",
+                    "run",
+                    datetime(2026, 5, 1, 10, 0),
+                    1.0,
+                    True,
+                    1,
+                    0,
+                    0,
+                    0,
+                    "1.9.0",
+                    "dev",
+                ),
+                (
+                    "inv-marts",
+                    "build",
+                    datetime(2026, 5, 1, 11, 0),
+                    2.0,
+                    True,
+                    1,
+                    0,
+                    0,
+                    0,
+                    "1.9.0",
+                    "dev",
+                ),
+            ],
+            dbt_nodes=[
+                ("inv-staging", "stg_orders", "model", "success", 0.5, 100, 0.1, ""),
+                ("inv-marts", "fct_orders", "model", "success", 0.7, 50, 0.1, ""),
+            ],
+        )
+
+        # --layer mart should only surface the marts invocation
+        result = cli_runner.invoke(app, ["data", "history", "--layer", "mart"])
+        assert result.exit_code == 0
+        assert "build" in result.stdout  # the marts invocation's command
+        assert "inv-staging"[:8] not in result.stdout
+
+    def test_layer_filter_with_no_manifest_errors_out(
+        self, history_project, cli_runner, monkeypatch
+    ):
+        # No manifest written
+        _write_tycoon_yml(history_project, with_sources=False)
+        from tycoon.commands import history as history_mod
+        from tycoon.config import TycoonConfig
+
+        cfg = TycoonConfig(project_root=history_project)
+        monkeypatch.setattr(history_mod, "config", cfg)
+        _seed_metadata(
+            history_project,
+            dbt_runs=[
+                (
+                    "inv-1",
+                    "run",
+                    datetime.now(tz=timezone.utc),
+                    1.0,
+                    True,
+                    1,
+                    0,
+                    0,
+                    0,
+                    "1.9.0",
+                    "dev",
+                ),
+            ],
+        )
+
+        result = cli_runner.invoke(app, ["data", "history", "--layer", "mart"])
+        assert result.exit_code == 1
+        # error() writes to stderr
+        assert "No dbt manifest" in (result.stderr or result.output)
+
+    def test_invalid_layer_errors_out(
+        self, history_project, cli_runner, monkeypatch
+    ):
+        self._setup(history_project, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "history", "--layer", "nonsense"])
+        assert result.exit_code == 1
+        assert "Invalid --layer" in (result.stderr or result.output)
+
+    def test_layer_and_source_are_mutually_exclusive(
+        self, history_project, cli_runner, monkeypatch
+    ):
+        self._setup(history_project, monkeypatch)
+        result = cli_runner.invoke(
+            app,
+            [
+                "data",
+                "history",
+                "--layer",
+                "mart",
+                "--source",
+                "pokeapi",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "either --source or --layer" in (result.stderr or result.output)

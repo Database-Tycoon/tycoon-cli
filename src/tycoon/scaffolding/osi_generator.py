@@ -22,8 +22,18 @@ dates, foreign-key-shaped columns, and booleans get ``dimension: {}``
 
 ## What gets included
 
-- Tables matching ``mart_*`` / ``fct_*`` / ``dim_*`` / ``obt_*``.
-- Tables in any non-system schema of the warehouse DuckDB.
+Mart discovery is **layer-aware** as of v0.1.7. When a dbt
+``manifest.json`` is available, marts come from
+:func:`tycoon.layers.classify_dbt_models` filtered to ``Layer.MART``.
+This respects per-model ``meta.tycoon_layer`` overrides and per-folder
+``+meta`` from ``dbt_project.yml`` so projects using
+``models/published/`` (instead of ``models/marts/``) are picked up
+correctly.
+
+When the manifest is missing (dbt never compiled, or no dbt project)
+we fall back to the v0.1.6 behaviour: any table whose name starts
+with ``mart_`` / ``fct_`` / ``dim_`` / ``obt_``. The fallback is
+flagged in ``warnings`` so the CLI can nudge the user to compile dbt.
 
 ## Source format
 
@@ -42,6 +52,13 @@ from typing import Any
 
 import duckdb
 import yaml
+
+from tycoon.layers import (
+    Layer,
+    classify_dbt_models,
+    filter_by_layer,
+    load_manifest,
+)
 
 # OSI v0.1.1 schema treats the version field as a `const` — it MUST be
 # this string verbatim or the schema validator rejects the file.
@@ -72,12 +89,21 @@ def scaffold_osi(
     project_name: str,
     *,
     force: bool = False,
+    dbt_project_dir: Path | None = None,
 ) -> ScaffoldResult:
     """Read marts from ``warehouse_db`` and write an OSI YAML to ``out_path``.
 
     If ``out_path`` exists and the user removed the sentinel line, the
     file is preserved (return ``skipped_due_to_sentinel=True``) unless
     ``force`` is set.
+
+    Parameters
+    ----------
+    dbt_project_dir
+        When provided, marts are discovered via the dbt manifest's
+        layer classification (respects ``meta.tycoon_layer`` overrides).
+        When omitted or when the manifest is missing, we fall back to
+        prefix matching on the warehouse tables themselves.
     """
     if out_path.exists() and not _has_sentinel(out_path) and not force:
         return ScaffoldResult(
@@ -94,15 +120,24 @@ def scaffold_osi(
             ],
         )
 
-    datasets, ds_warnings = _build_datasets(warehouse_db)
-    warnings = list(ds_warnings)
+    mart_set, discovery_warnings = _resolve_marts_from_manifest(dbt_project_dir)
+    datasets, ds_warnings = _build_datasets(warehouse_db, mart_set=mart_set)
+    warnings = list(discovery_warnings) + list(ds_warnings)
 
     if not datasets:
-        warnings.append(
-            "No marts found. Looked for tables prefixed "
-            + ", ".join(MART_PREFIXES)
-            + f" in {warehouse_db}."
-        )
+        if mart_set is not None:
+            warnings.append(
+                "No marts found via dbt manifest classification. "
+                "Check that your marts live in `models/marts/` (or are "
+                "tagged with `meta.tycoon_layer: mart`) and have been "
+                "materialised via `tycoon data transform run`."
+            )
+        else:
+            warnings.append(
+                "No marts found. Looked for tables prefixed "
+                + ", ".join(MART_PREFIXES)
+                + f" in {warehouse_db}."
+            )
 
     doc = _build_osi_document(project_name=project_name, datasets=datasets)
     yaml_body = yaml.dump(doc, default_flow_style=False, sort_keys=False)
@@ -136,14 +171,48 @@ def _has_sentinel(path: Path) -> bool:
     return False
 
 
+def _resolve_marts_from_manifest(
+    dbt_project_dir: Path | None,
+) -> tuple[set[tuple[str, str]] | None, list[str]]:
+    """Build the ``(schema, name)`` mart set from a dbt manifest, if available.
+
+    Returns ``(None, [])`` when no ``dbt_project_dir`` is given (caller
+    then falls back to prefix matching). Returns ``(set, warnings)``
+    otherwise — the set may be empty when no marts are classified.
+    """
+    if dbt_project_dir is None:
+        return None, []
+
+    manifest = load_manifest(dbt_project_dir)
+    if manifest is None:
+        return None, [
+            f"No dbt manifest at {dbt_project_dir}/target/manifest.json — "
+            "run `tycoon data transform run` (or `dbt compile`) first "
+            "to enable layer-aware mart discovery. Falling back to "
+            "prefix matching for this run."
+        ]
+
+    marts = filter_by_layer(classify_dbt_models(manifest), Layer.MART)
+    return {(m.schema or "main", m.name) for m in marts}, []
+
+
 def _build_datasets(
     warehouse_db: Path,
+    *,
+    mart_set: set[tuple[str, str]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Introspect DuckDB and return (datasets, warnings).
 
-    Connects read-only. Iterates schemas, finds tables matching the mart
-    prefixes, pulls column names + types, classifies each column as
-    measure-eligible / dimension / time-dimension.
+    Connects read-only. Iterates schemas, finds mart tables, pulls
+    column names + types, classifies each column as measure-eligible /
+    dimension / time-dimension.
+
+    Parameters
+    ----------
+    mart_set
+        When provided, only ``(schema, table)`` pairs in this set are
+        treated as marts. When ``None`` (no dbt manifest available),
+        fall back to prefix matching on the table name.
     """
     warnings: list[str] = []
     out: list[dict[str, Any]] = []
@@ -164,7 +233,10 @@ def _build_datasets(
         ).fetchall()
 
         for schema, table in rows:
-            if not any(table.startswith(p) for p in MART_PREFIXES):
+            if mart_set is not None:
+                if (schema, table) not in mart_set:
+                    continue
+            elif not any(table.startswith(p) for p in MART_PREFIXES):
                 continue
             cols = con.execute(
                 "SELECT column_name, data_type "

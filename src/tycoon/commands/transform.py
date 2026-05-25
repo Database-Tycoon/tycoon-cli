@@ -92,6 +92,7 @@ def _auto_osi_scaffold_safe() -> None:
             warehouse_db=config.local_db,
             out_path=out_path,
             project_name=project.name,
+            dbt_project_dir=config.dbt_project_dir,
         )
     except Exception:
         pass

@@ -1,18 +1,49 @@
-"""tycoon data status — show health of each registered data source."""
+"""tycoon data status — layer-organized health view.
+
+As of v0.1.7, ``data status`` is the **layered** view of the project:
+
+    Sources -> Staging -> Intermediate -> Marts
+
+dlt sources and Fivetran connectors collapse into a unified **Sources**
+panel (the ``Vendor`` column distinguishes them). The remaining panels
+read from the dbt manifest via :mod:`tycoon.layers`. Projects with
+``transformation: none`` still see the staging / intermediate / marts
+panels — populated with empty-state hints pointing at
+``tycoon register dbt``.
+
+Per-mart freshness comes from the observability metadata DB (the
+``dbt_runs`` / ``dbt_nodes`` tables). The Sources panel keeps the
+existing per-source freshness + row-count detail.
+"""
 
 from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 import duckdb
 import typer
+from rich.panel import Panel
 from rich.table import Table
 
 from tycoon.config import config
+from tycoon.layers import (
+    Layer,
+    LayerClassification,
+    Vendor,
+    classify_dbt_models,
+    classify_dlt_sources,
+    classify_fivetran_sources,
+    filter_by_layer,
+    load_manifest,
+)
 from tycoon.observability import metadata_db_path
+from tycoon.project import TransformationTool
 from tycoon.utils.console import console, error, header, info
+
+
+# -- Freshness helpers (preserved from v0.1.6) ----------------------------------
 
 
 def _query_last_sync(raw_db: Path, schema: str) -> Optional[datetime.datetime]:
@@ -53,10 +84,7 @@ def _query_row_counts(raw_db: Path, schema: str) -> dict[str, int]:
 
 
 def _query_run_counts(metadata_db: Path) -> dict[str, int]:
-    """Return {source_schema: run_count} from the observability metadata DB.
-
-    Returns an empty dict if the metadata DB doesn't exist yet.
-    """
+    """Return {source_schema: run_count} from the observability metadata DB."""
     if not metadata_db.exists():
         return {}
     try:
@@ -75,7 +103,6 @@ def _freshness_label(last_sync: Optional[datetime.datetime]) -> tuple[str, str]:
     if last_sync is None:
         return "never", "red"
 
-    # Make both timezone-naive for comparison
     now = datetime.datetime.now(tz=datetime.timezone.utc)
     if last_sync.tzinfo is None:
         last_sync = last_sync.replace(tzinfo=datetime.timezone.utc)
@@ -93,13 +120,97 @@ def _freshness_label(last_sync: Optional[datetime.datetime]) -> tuple[str, str]:
     return f"{int(hours / 24)}d ago", "red"
 
 
-def _render_fivetran_panel() -> None:
-    """Append a Fivetran connectors table to `data status` when configured.
+# -- Layer-build freshness ------------------------------------------------------
 
-    Reads from `.tycoon/metadata.duckdb`'s ``fivetran_connectors`` table —
-    populated by ``tycoon data fivetran sync``. No-ops if the table is
-    empty or the snapshot hasn't been pulled yet.
-    """
+
+def _query_layer_last_build(
+    metadata_db: Path, model_names: list[str]
+) -> Optional[datetime.datetime]:
+    """Latest successful build start time across ``model_names``."""
+    if not model_names or not metadata_db.exists():
+        return None
+    try:
+        con = duckdb.connect(str(metadata_db), read_only=True)
+        # IN clause via parameterised list — DuckDB supports list params.
+        row = con.execute(
+            "SELECT MAX(r.started_at) "
+            "FROM dbt_runs r "
+            "JOIN dbt_nodes n ON n.invocation_id = r.invocation_id "
+            "WHERE n.status = 'success' AND list_contains(?, n.node_name)",
+            [model_names],
+        ).fetchone()
+        con.close()
+        return row[0] if row and row[0] else None
+    except Exception:
+        return None
+
+
+# -- Panel renderers -----------------------------------------------------------
+
+
+def _render_sources_panel(
+    sources: list[LayerClassification], *, raw_db: Path, run_counts: dict[str, int]
+) -> None:
+    """The unified Sources panel: dlt + Fivetran rows side by side."""
+    console.print()
+    console.print(Panel("[bold]Sources[/bold]", expand=False))
+
+    if not sources:
+        info(
+            "No sources registered. Run [bold]tycoon data sources add[/bold] "
+            "or wire up Fivetran via `stack.ingestion: fivetran`."
+        )
+        return
+
+    db_exists = raw_db.exists()
+
+    table = Table(show_lines=False)
+    table.add_column("Source", style="bold cyan")
+    table.add_column("Vendor", style="dim")
+    table.add_column("Schema")
+    table.add_column("Last Sync")
+    table.add_column("Freshness")
+    table.add_column("Runs", justify="right")
+    table.add_column("Tables", justify="right")
+    table.add_column("Rows", justify="right")
+
+    for src in sources:
+        schema = src.schema or "—"
+
+        if src.vendor is Vendor.DLT and db_exists and src.schema:
+            last_sync = _query_last_sync(raw_db, src.schema)
+            row_counts = _query_row_counts(raw_db, src.schema)
+            runs = run_counts.get(src.schema, 0)
+            sync_str = last_sync.strftime("%Y-%m-%d %H:%M") if last_sync else "—"
+            fresh_label, fresh_style = _freshness_label(last_sync)
+            runs_str = f"{runs:,}" if runs else "—"
+            tables_str = str(len(row_counts)) if row_counts else "—"
+            total_rows = f"{sum(row_counts.values()):,}" if row_counts else "—"
+        else:
+            # Fivetran rows + un-materialised dlt rows: detail comes from the
+            # Fivetran snapshot view below (or the source hasn't run yet).
+            sync_str = "—"
+            fresh_label, fresh_style = ("—", "dim")
+            runs_str = "—"
+            tables_str = "—"
+            total_rows = "—"
+
+        table.add_row(
+            src.name,
+            src.vendor.value,
+            schema,
+            sync_str,
+            f"[{fresh_style}]{fresh_label}[/{fresh_style}]",
+            runs_str,
+            tables_str,
+            total_rows,
+        )
+
+    console.print(table)
+
+
+def _render_fivetran_detail() -> None:
+    """Service / sync-state detail on top of the unified Sources panel."""
     from tycoon.ingestion.fivetran_sync import (
         freshness_label as fv_freshness_label,
         latest_connector_snapshot,
@@ -108,15 +219,14 @@ def _render_fivetran_panel() -> None:
     rows = latest_connector_snapshot(metadata_db_path(config.root))
     if not rows:
         info(
-            "Fivetran: no metadata captured yet. Run "
+            "Fivetran detail: no metadata captured yet. Run "
             "[bold]tycoon data fivetran sync[/bold] to populate."
         )
         return
 
     table = Table(show_header=True, header_style="bold cyan")
-    table.add_column("Fivetran connector")
+    table.add_column("Connector")
     table.add_column("Service", style="dim")
-    table.add_column("Schema")
     table.add_column("Sync state")
     table.add_column("Last activity")
     for r in rows:
@@ -128,7 +238,6 @@ def _render_fivetran_panel() -> None:
         table.add_row(
             r["name"] or r["connector_id"],
             r.get("service") or "—",
-            r.get("schema_name") or "—",
             r.get("sync_state") or "—",
             f"[{style}]{label}[/{style}]",
         )
@@ -136,73 +245,125 @@ def _render_fivetran_panel() -> None:
     console.print(table)
 
 
+def _render_layer_panel(
+    title: str,
+    models: Iterable[LayerClassification],
+    metadata_db: Path,
+    *,
+    empty_hint: str,
+) -> None:
+    """One staging / intermediate / mart panel."""
+    console.print()
+    console.print(Panel(f"[bold]{title}[/bold]", expand=False))
+
+    listed = list(models)
+    if not listed:
+        info(empty_hint)
+        return
+
+    last_build = _query_layer_last_build(metadata_db, [m.name for m in listed])
+    fresh_label, fresh_style = _freshness_label(last_build)
+
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Model", style="bold")
+    table.add_column("Schema", style="dim")
+
+    for m in listed:
+        table.add_row(m.name, m.schema or "—")
+
+    summary = (
+        f"{len(listed)} model(s) — last build "
+        f"[{fresh_style}]{fresh_label}[/{fresh_style}]"
+    )
+    console.print(table)
+    console.print(summary)
+
+
+# -- Top-level command ---------------------------------------------------------
+
+
 def status_cmd() -> None:
-    """Show freshness, last sync time, and row counts for each registered source."""
+    """Show the layered architecture: sources -> staging -> intermediate -> marts."""
     if not config.has_project_file:
         error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
         raise typer.Exit(1)
 
     project = config.project
-    fivetran_managed = (
-        project is not None
-        and project.stack.ingestion.value == "fivetran"
-    )
-
-    sources = config.sources
-    if not sources and not fivetran_managed:
-        info("No sources registered. Run [bold]tycoon data sources add[/bold] first.")
-        return
+    assert project is not None  # narrowed by has_project_file
 
     header("Data Status")
 
-    if fivetran_managed and not sources:
-        _render_fivetran_panel()
-        return
+    # ---- Sources panel (dlt + Fivetran unified) ----
+    dlt_sources = classify_dlt_sources(project.sources)
+    fivetran_sources: list[LayerClassification] = []
+    fivetran_managed = project.stack.ingestion.value == "fivetran"
+    if fivetran_managed:
+        from tycoon.ingestion.fivetran_sync import latest_connector_snapshot
 
-    raw_db = config.raw_db
-    db_exists = raw_db.exists()
-    run_counts = _query_run_counts(metadata_db_path(config.root))
-
-    table = Table(show_lines=True)
-    table.add_column("Source", style="bold cyan")
-    table.add_column("Type", style="dim")
-    table.add_column("Last Sync")
-    table.add_column("Freshness")
-    table.add_column("Runs", justify="right")
-    table.add_column("Tables")
-    table.add_column("Rows", justify="right")
-
-    for name, src in sources.items():
-        schema = src.schema_name
-
-        if not db_exists:
-            table.add_row(name, src.type, "—", "[red]never[/red]", "—", "—", "—")
-            continue
-
-        last_sync = _query_last_sync(raw_db, schema)
-        row_counts = _query_row_counts(raw_db, schema)
-        runs = run_counts.get(schema, 0)
-
-        sync_str = last_sync.strftime("%Y-%m-%d %H:%M") if last_sync else "—"
-        fresh_label, fresh_style = _freshness_label(last_sync)
-        runs_str = f"{runs:,}" if runs else "—"
-        tables_str = str(len(row_counts)) if row_counts else "—"
-        total_rows = f"{sum(row_counts.values()):,}" if row_counts else "—"
-
-        table.add_row(
-            name,
-            src.type,
-            sync_str,
-            f"[{fresh_style}]{fresh_label}[/{fresh_style}]",
-            runs_str,
-            tables_str,
-            total_rows,
+        fivetran_sources = classify_fivetran_sources(
+            latest_connector_snapshot(metadata_db_path(config.root))
         )
 
-    console.print(table)
+    all_sources = [*dlt_sources, *fivetran_sources]
+    run_counts = _query_run_counts(metadata_db_path(config.root))
+    _render_sources_panel(
+        all_sources, raw_db=config.raw_db, run_counts=run_counts
+    )
+    if fivetran_managed:
+        _render_fivetran_detail()
+
     if run_counts:
         console.print()
         info("Drill in with [bold]tycoon data history[/bold] for per-run detail.")
 
-    if fivetran_managed:
-        _render_fivetran_panel()
+    # ---- dbt-side layers ----
+    if project.stack.transformation == TransformationTool.none:
+        console.print()
+        info(
+            "No dbt project — set up via [bold]tycoon register dbt[/bold] "
+            "or [bold]tycoon register dbt --create[/bold] to surface the "
+            "staging / intermediate / marts layers."
+        )
+        return
+
+    manifest = load_manifest(config.dbt_project_dir)
+    if manifest is None:
+        console.print()
+        info(
+            "No dbt manifest yet — run [bold]tycoon data transform run[/bold] "
+            "(or [bold]dbt compile[/bold]) to surface staging / intermediate / "
+            "marts panels."
+        )
+        return
+
+    models = classify_dbt_models(manifest)
+    metadata_db = metadata_db_path(config.root)
+
+    _render_layer_panel(
+        "Staging",
+        filter_by_layer(models, Layer.STAGING),
+        metadata_db,
+        empty_hint=(
+            "No staging models. Scaffold one with "
+            "[bold]tycoon data analyze <source>[/bold]."
+        ),
+    )
+    _render_layer_panel(
+        "Intermediate",
+        filter_by_layer(models, Layer.INTERMEDIATE),
+        metadata_db,
+        empty_hint=(
+            "No intermediate models. Optional layer — typically used to "
+            "combine staging models before marts."
+        ),
+    )
+    _render_layer_panel(
+        "Marts",
+        filter_by_layer(models, Layer.MART),
+        metadata_db,
+        empty_hint=(
+            "No mart models. Write `fct_*` / `dim_*` / `obt_*` models under "
+            "`models/marts/` (or override per-folder with "
+            "`+meta.tycoon_layer: mart`)."
+        ),
+    )

@@ -243,6 +243,63 @@ def _check_osi() -> None:
         warn(f"OSI check raised unexpectedly: {exc}")
 
 
+def _check_layer_coverage() -> None:
+    """Every registered source should have at least one staging model.
+
+    Non-fatal: emits ``info`` for healthy projects and ``warn`` listing
+    any uncovered sources. Skips silently when ``transformation: none``
+    or when the dbt manifest hasn't been compiled yet (the user gets a
+    clearer signal from the dbt-project / observability checks).
+    """
+    project = config.project
+    if project is None:
+        return
+    if project.stack.transformation == TransformationTool.none:
+        return
+    if not project.sources:
+        return
+
+    from tycoon.layers import (
+        Layer,
+        classify_dbt_models,
+        classify_dlt_sources,
+        filter_by_layer,
+        load_manifest,
+    )
+
+    manifest = load_manifest(config.dbt_project_dir)
+    if manifest is None:
+        # Don't double-report — the dbt-project / observability rows
+        # already nudge the user toward `tycoon data transform run`.
+        return
+
+    sources = classify_dlt_sources(project.sources)
+    staging_models = filter_by_layer(classify_dbt_models(manifest), Layer.STAGING)
+    staging_names = {m.name.lower() for m in staging_models}
+
+    uncovered: list[str] = []
+    for src in sources:
+        # The convention is one or more `stg_<source>__<table>` models per
+        # registered source. Treat any `stg_*<source>*` match as coverage.
+        token = src.name.lower()
+        if not any(token in name for name in staging_names):
+            uncovered.append(src.name)
+
+    if not uncovered:
+        success(
+            f"Layer coverage: every source ({len(sources)}) has at least "
+            f"one staging model."
+        )
+        return
+
+    warn(
+        "Layer coverage: no staging model found for source(s): "
+        + ", ".join(uncovered)
+        + ". Scaffold with `tycoon data analyze <source>` or write "
+        "models under `<dbt_project>/models/staging/`."
+    )
+
+
 def _check_observability() -> None:
     """Report whether run-history capture has fired at least once.
 
@@ -318,6 +375,9 @@ def doctor_cmd() -> None:
 
             console.print(Panel("Checking OSI semantic layer...", expand=False))
             _check_osi()
+
+            console.print(Panel("Checking layer coverage...", expand=False))
+            _check_layer_coverage()
 
             console.print(Panel("Checking observability...", expand=False))
             _check_observability()
