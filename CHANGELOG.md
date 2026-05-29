@@ -1,5 +1,20 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-05-30
+
+_A small, focused release: live Fivetran status in `tycoon data status` ([#50][]) plus a Python-version guardrail ([#55][]) so dbt-incompatible interpreters (3.14) aren't silently selected. The Quack headline and the backup / operate-in-prod tracks planned in [`docs/proposals/v0.1.8-scope.md`](docs/proposals/v0.1.8-scope.md) continue toward a later cut. See [`docs/releases/v0.1.8.md`](docs/releases/v0.1.8.md) for the full narrative._
+
+### Changed
+
+- **`tycoon data status` reads Fivetran live, with write-through cache** ([#50][]). The Sources panel and Fivetran detail no longer render only the last `tycoon data fivetran sync` snapshot — `data status` now makes a live `list_connectors()` call on every run and writes the result through to `.tycoon/metadata.duckdb`, so the panel is fresh by default. On incomplete credentials, auth failure, or network error it warns and falls back to the last cached snapshot (non-fatal). Closes the v0.1.7 design Q3 deviation where freshness was bounded by the last manual sync. `tycoon data fivetran sync` stays as the cron-friendly bulk-populate command.
+
+### Fixed
+
+- **Cap `requires-python` at `<3.14`** ([#55][]). The floor was `>=3.12` with no ceiling, so on a machine whose default interpreter is Python 3.14 the environment resolved to 3.14 — where dbt-core 1.11.8 / dbt-duckdb 1.10.1 have no support yet, breaking `tycoon data transform run`. Now `>=3.12,<3.14` with a re-locked `uv.lock`, so a too-new interpreter is no longer selected (uv picks or fetches a compatible 3.12/3.13). Lift the ceiling once dbt ships 3.14 wheels.
+
+[#50]: https://github.com/Database-Tycoon/tycoon-cli/issues/50
+[#55]: https://github.com/Database-Tycoon/tycoon-cli/issues/55
+
 ## [0.1.7] - 2026-05-25
 
 _The layered-architecture release. Tycoon learns the sources → staging → intermediate → marts mental model and surfaces it across `data status`, `doctor`, `semantics scaffold`, and `data history`. Plus the test-resilience second wave ([#39][], [#41][]) and non-interactive `data sources add` ([#44][]) to unblock online recipe doctests. See [`docs/releases/v0.1.7.md`](docs/releases/v0.1.7.md) for the full narrative._

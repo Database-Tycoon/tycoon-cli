@@ -328,6 +328,79 @@ class TestFivetranSync:
 # --------------------------------------------------------------------------
 
 
+class TestStatusLiveRead:
+    """`tycoon data status` live read + write-through cache (#50 / PTC-21).
+
+    Exercises ``_live_refresh_fivetran`` — the seam that turns a live
+    ``list_connectors()`` into a cache write — across the three paths
+    from the issue body: live OK, live-fail-cache-hit, live-fail-no-cache.
+    """
+
+    def test_live_ok_writes_through_to_cache(self, tmp_path: Path):
+        from tycoon.commands.status import _live_refresh_fivetran
+
+        meta_db = tmp_path / "metadata.duckdb"
+        client = _make_client(
+            {
+                "/v1/groups/g1/connectors": _list_payload(
+                    [_connector_body("c1", schema="raw_live")]
+                ),
+            }
+        )
+        refreshed, warning = _live_refresh_fivetran(client, meta_db)
+
+        assert refreshed is True
+        assert warning is None
+        rows = latest_connector_snapshot(meta_db)
+        assert [r["connector_id"] for r in rows] == ["c1"]
+        assert rows[0]["schema_name"] == "raw_live"
+
+    def test_live_fail_falls_back_to_existing_cache(self, tmp_path: Path):
+        meta_db = tmp_path / "metadata.duckdb"
+        # Seed a prior snapshot so there's a cache to fall back to.
+        seed = _make_client(
+            {
+                "/v1/groups/g1/connectors": _list_payload(
+                    [_connector_body("c1", schema="raw_cached")]
+                ),
+            }
+        )
+        sync_fivetran_metadata(seed, meta_db)
+
+        from tycoon.commands.status import _live_refresh_fivetran
+
+        def boom(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(500, json={"error": "down"})
+
+        http = httpx.Client(transport=httpx.MockTransport(boom))
+        failing = FivetranClient("k", "s", "g1", http_client=http)
+
+        refreshed, warning = _live_refresh_fivetran(failing, meta_db)
+
+        assert refreshed is False
+        assert warning is not None and "Fivetran API unreachable" in warning
+        # Cache untouched — the prior snapshot still renders.
+        rows = latest_connector_snapshot(meta_db)
+        assert [r["schema_name"] for r in rows] == ["raw_cached"]
+
+    def test_live_fail_with_no_cache_yields_empty(self, tmp_path: Path):
+        from tycoon.commands.status import _live_refresh_fivetran
+
+        meta_db = tmp_path / "metadata.duckdb"
+
+        def boom(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(401, json={"error": "unauthorized"})
+
+        http = httpx.Client(transport=httpx.MockTransport(boom))
+        failing = FivetranClient("k", "s", "g1", http_client=http)
+
+        refreshed, warning = _live_refresh_fivetran(failing, meta_db)
+
+        assert refreshed is False
+        assert warning is not None
+        assert latest_connector_snapshot(meta_db) == []
+
+
 class TestFreshnessLabel:
     def test_paused_connector_labelled_paused(self):
         label, _ = freshness_label(

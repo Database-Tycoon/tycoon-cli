@@ -40,7 +40,7 @@ from tycoon.layers import (
 )
 from tycoon.observability import metadata_db_path
 from tycoon.project import TransformationTool
-from tycoon.utils.console import console, error, header, info
+from tycoon.utils.console import console, error, header, info, warn
 
 
 # -- Freshness helpers (preserved from v0.1.6) ----------------------------------
@@ -209,6 +209,56 @@ def _render_sources_panel(
     console.print(table)
 
 
+def _live_refresh_fivetran(client, metadata_db: Path) -> tuple[bool, Optional[str]]:
+    """Pull connectors live and write them through to the metadata cache.
+
+    Returns ``(refreshed, warning)``. ``refreshed`` is True when the live
+    ``list_connectors()`` call succeeded and the snapshot table was
+    updated. On any API/network failure we return ``(False, <warning>)``
+    and leave the cache untouched, so the caller falls back to the last
+    good snapshot. Never raises — ``data status`` stays non-fatal.
+    """
+    from tycoon.ingestion.fivetran_client import FivetranAPIError
+    from tycoon.ingestion.fivetran_sync import sync_fivetran_metadata
+
+    try:
+        sync_fivetran_metadata(client, metadata_db)
+        return True, None
+    except FivetranAPIError as exc:
+        return False, f"Fivetran API unreachable ({exc})"
+    except Exception as exc:  # network down / unexpected — stay non-fatal
+        return False, f"Fivetran live read failed ({exc})"
+
+
+def _refresh_fivetran_cache(project) -> None:
+    """Live-read Fivetran on every ``data status`` and write through to cache.
+
+    The Sources panel and Fivetran detail both render from the cached
+    snapshot; refreshing it here makes the panel live-by-default (closes
+    the v0.1.7 design Q3 deviation, where freshness was bounded by the
+    last ``tycoon data fivetran sync``). Incomplete creds / API / network
+    failures warn and leave the existing snapshot in place.
+    """
+    meta = project.stack.ingestion_metadata
+    if meta is None or not (meta.api_key and meta.api_secret and meta.group_id):
+        warn(
+            "Fivetran credentials incomplete — showing last cached snapshot. "
+            "Add api_key, api_secret, group_id to refresh live."
+        )
+        return
+
+    from tycoon.ingestion.fivetran_client import build_client_from_config
+
+    metadata_db = metadata_db_path(config.root)
+    try:
+        with build_client_from_config(meta) as client:
+            _refreshed, warning = _live_refresh_fivetran(client, metadata_db)
+    except Exception as exc:  # client construction failure — stay non-fatal
+        warning = f"Fivetran client error ({exc})"
+    if warning:
+        warn(f"{warning} — showing last cached snapshot.")
+
+
 def _render_fivetran_detail() -> None:
     """Service / sync-state detail on top of the unified Sources panel."""
     from tycoon.ingestion.fivetran_sync import (
@@ -300,6 +350,9 @@ def status_cmd() -> None:
     if fivetran_managed:
         from tycoon.ingestion.fivetran_sync import latest_connector_snapshot
 
+        # Live API read with write-through to the cache; falls back to the
+        # last snapshot (with a warning) on auth/network failure.
+        _refresh_fivetran_cache(project)
         fivetran_sources = classify_fivetran_sources(
             latest_connector_snapshot(metadata_db_path(config.root))
         )
