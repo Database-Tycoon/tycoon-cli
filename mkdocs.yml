@@ -120,6 +120,7 @@ nav:
     - recipes/fivetran-metadata.md
     - recipes/layered-architecture.md
   - Releases:
+    - "v0.1.9 (in flight)": releases/v0.1.9.md
     - "v0.1.8": releases/v0.1.8.md
     - "v0.1.7": releases/v0.1.7.md
     - "v0.1.6": releases/v0.1.6.md
@@ -138,3 +139,4 @@ not_in_nav: |
   /install_rill.sh
   /proposals/v0.1.6-and-v0.1.7-open-questions.md
   /proposals/v0.1.8-scope.md
+  /proposals/v0.1.9-scope.md

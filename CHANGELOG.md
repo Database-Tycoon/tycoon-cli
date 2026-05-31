@@ -1,5 +1,13 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - Unreleased
+
+_Planned. Headline: Google Sheets source ([#52][]). Plus managed project-local `.venv` onboarding ([#57][]), then Quack ([#42][]) and the carried backup/notify/schedule work. Cycle plan in [`docs/proposals/v0.1.9-scope.md`](docs/proposals/v0.1.9-scope.md)._
+
+[#42]: https://github.com/Database-Tycoon/tycoon-cli/issues/42
+[#52]: https://github.com/Database-Tycoon/tycoon-cli/issues/52
+[#57]: https://github.com/Database-Tycoon/tycoon-cli/issues/57
+
 ## [0.1.8] - 2026-05-30
 
 _A small, focused release: live Fivetran status in `tycoon data status` ([#50][]) plus a Python-version guardrail ([#55][]) so dbt-incompatible interpreters (3.14) aren't silently selected. The Quack headline and the backup / operate-in-prod tracks planned in [`docs/proposals/v0.1.8-scope.md`](docs/proposals/v0.1.8-scope.md) continue toward a later cut. See [`docs/releases/v0.1.8.md`](docs/releases/v0.1.8.md) for the full narrative._
