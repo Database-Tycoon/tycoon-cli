@@ -12,8 +12,11 @@ import typer
 from tycoon.config import config
 from tycoon.utils.console import console, error, header, info, success, warn
 
-# The servers that run continuously and are not Dagster assets.
-_SERVER_NAMES = ["tycoon", "rill", "dagster", "nao"]
+# The servers that run continuously and are not Dagster assets. `quack` serves
+# the warehouse over DuckDB's multi-client RPC protocol so local clients share
+# the live DB instead of fighting the single-writer file lock; it's skipped
+# automatically when the (core_nightly) extension isn't available.
+_SERVER_NAMES = ["tycoon", "rill", "dagster", "nao", "quack"]
 
 _PID_FILE = Path(".tycoon") / "run" / "pids.json"
 
@@ -119,6 +122,16 @@ def _preflight_checks(targets: list[str]) -> None:
             warn(r"dagster not found — skipping. Install with: [bold]pip install 'database-tycoon\[dagster]'[/bold]")
             targets.remove("dagster")
 
+    if "quack" in targets:
+        from tycoon import quack
+        if not quack.extension_available():
+            info("Quack extension unavailable (needs duckdb core_nightly) — serving the warehouse in file mode.")
+            targets.remove("quack")
+        else:
+            # Generate + persist the token before ServiceManager reads the
+            # definitions, so the served command carries it.
+            quack.ensure_token(config.root)
+
 
 def _print_urls(targets: list[str]) -> None:
     from tycoon.constants import PORTS
@@ -127,6 +140,7 @@ def _print_urls(targets: list[str]) -> None:
         "rill":    ("Rill dashboards",  f"http://localhost:{PORTS['rill']}"),
         "dagster": ("Dagster UI",       f"http://localhost:{PORTS['dagster']}"),
         "nao":     ("Nao AI queries",   f"http://localhost:{PORTS['nao']}"),
+        "quack":   ("Quack warehouse",  f"quack:localhost:{PORTS['quack']}"),
     }
     for name in targets:
         if name in lines:

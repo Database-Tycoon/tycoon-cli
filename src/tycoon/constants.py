@@ -13,6 +13,7 @@ PORTS = {
     "tycoon": 8888,
     "dagster": 3000,
     "nao": 5005,
+    "quack": 9494,
 }
 
 # Socrata API pagination (used by rest_api sources targeting Socrata)

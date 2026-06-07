@@ -42,6 +42,10 @@ tycoon data query --db .tycoon/metadata.duckdb \
 tycoon data query --db ./snap.duckdb "SHOW ALL TABLES"
 ```
 
+### Live warehouse via Quack (v0.1.9)
+
+When a [Quack](../start.md#quack-the-live-multi-client-warehouse-v019) server is holding the warehouse — i.e. `tycoon start` is running — a plain warehouse query (no `--db` / `--source` / `--raw`) **attaches over Quack** instead of opening the file. You'll see the result labelled `warehouse (Quack)`. This is what lets you query the live warehouse while the rest of the stack is up, rather than hitting DuckDB's single-writer file lock. When no server is running, the command opens the file directly as before. It's automatic — there's no flag.
+
 `--source` is a convenience for the common case of "show me the raw landed data". It walks tycoon's path resolution:
 
 1. `config.raw_db` if it contains the `raw_<name>` schema (single-DB mode — current default)

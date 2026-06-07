@@ -88,6 +88,24 @@ def get_service_definitions() -> list[ServiceDef]:
         ),
     ]
 
+    # Quack — serve the warehouse over DuckDB's multi-client RPC protocol so
+    # `tycoon data query` (and any other local client) can share the *live*
+    # warehouse instead of fighting the single-writer file lock. Mirrors the
+    # duckdb_ui pattern: a `duckdb` CLI session that CALLs quack_serve and idles
+    # in its REPL to stay alive. Only meaningful when a token exists (ensured by
+    # `tycoon start` preflight); core_nightly-gated there too.
+    from tycoon import quack
+
+    quack_token = quack.load_token(config.root)
+    if quack_token:
+        defs.append(
+            ServiceDef(
+                name="quack",
+                port=PORTS["quack"],
+                command=quack.serve_command(config.local_db, quack_token),
+            )
+        )
+
     # Recce is optional — only available when target-base/ exists.
     target_base = config.dbt_project_dir / "target-base"
     if target_base.exists():
