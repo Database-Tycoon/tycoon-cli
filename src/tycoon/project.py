@@ -228,6 +228,26 @@ class TransformConfig(BaseModel):
     )
 
 
+class NotifyConfig(BaseModel):
+    """Optional ``notify:`` block — non-secret notification prefs (#46).
+
+    The webhook URL itself comes from ``$TYCOON_NOTIFY_WEBHOOK_URL`` and never
+    lives here. This block only holds preferences safe to commit.
+    """
+
+    severities: list[str] = Field(
+        default_factory=lambda: ["success", "error"],
+        description=(
+            "Which severities `--notify` emits on a pipeline run. Defaults to "
+            "success + error (info is for manual `tycoon notify` calls)."
+        ),
+    )
+    label: str | None = Field(
+        default=None,
+        description="Optional source label included in the payload (e.g. project or channel name).",
+    )
+
+
 class TycoonProject(BaseModel):
     """Top-level tycoon.yml schema."""
 
@@ -266,6 +286,10 @@ class TycoonProject(BaseModel):
         description="Defaults for transform-side commands (`data analyze`, `data sources run`).",
     )
     stack: StackConfig = Field(default_factory=StackConfig)
+    notify: NotifyConfig = Field(
+        default_factory=lambda: NotifyConfig(),
+        description="Notification preferences for `--notify` runs and `tycoon notify`.",
+    )
 
 
 PROJECT_FILENAME = "tycoon.yml"

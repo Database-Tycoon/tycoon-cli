@@ -66,8 +66,19 @@ tycoon data run-all --skip-dbt
 
 Every source ingest and the final `dbt build` are captured into `.tycoon/metadata.duckdb` exactly as if you'd run them individually. `tycoon data history` will show one entry per source plus one for the dbt build.
 
+## Notifications (`--notify`)
+
+For unattended runs, `--notify` posts a webhook notification on completion: `success` when the run finishes, `error` (with the failing stage and a message tail) if ingestion or `dbt build` fails. Set `$TYCOON_NOTIFY_WEBHOOK_URL` first; which severities fire is governed by the `notify.severities` block in `tycoon.yml`. The webhook is best-effort — a notification failure warns but never fails the run. See [`tycoon notify`](../notify.md) for setup and payload shapes.
+
+```bash
+export TYCOON_NOTIFY_WEBHOOK_URL="https://hooks.slack.com/services/..."
+tycoon data run-all --notify
+```
+
 ## Related
 
 - [`tycoon data sources run`](sources.md#run-ingest) — single-source ingest
 - [`tycoon data transform build`](transform.md#build-run-test-together) — dbt build alone
 - [`tycoon data history`](history.md) — review what `run-all` did
+- [`tycoon notify`](../notify.md) — the notification surface `--notify` uses
+- [`tycoon schedule`](../schedule.md) — run `run-all --notify` on a timer

@@ -104,6 +104,7 @@ nav:
       - "tycoon start / stop": commands/start.md
     - Tools:
       - "tycoon run": commands/run.md
+      - "tycoon notify": commands/notify.md
   - Reference:
     - reference/tycoon-yml.md
     - reference/templates.md

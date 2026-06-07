@@ -34,6 +34,16 @@ def run_all_cmd(
         str,
         typer.Option("--target", "-t", help="dbt target profile."),
     ] = "dev",
+    notify: Annotated[
+        bool,
+        typer.Option(
+            "--notify",
+            help=(
+                "Send a webhook notification on completion (success/failure). "
+                "Requires $TYCOON_NOTIFY_WEBHOOK_URL; see `tycoon notify`."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Ingest all registered sources then run dbt build."""
     if not config.has_project_file:
@@ -42,6 +52,24 @@ def run_all_cmd(
 
     start = time.time()
     header("Run All")
+
+    def _emit(severity: str, message: str, **fields: str) -> None:
+        """Best-effort webhook notification, gated by --notify and notify.severities."""
+        if not notify:
+            return
+        from tycoon import notify as notify_mod
+
+        project = config.project
+        prefs = project.notify if project is not None else None
+        allowed = prefs.severities if prefs is not None else ["success", "error"]
+        if severity not in allowed:
+            return
+        label = prefs.label if prefs is not None else None
+        if notify_mod.webhook_url() is None:
+            warn(f"--notify set but ${notify_mod.WEBHOOK_ENV_VAR} is not configured — skipping notification.")
+            return
+        if not notify_mod.send(severity, message, fields or None, label=label):
+            warn("Notification failed to send (continuing).")
 
     # 1. Ingest
     if not skip_ingest:
@@ -70,6 +98,7 @@ def run_all_cmd(
                 success(f"{name}: {load_info}")
             except Exception as exc:
                 error(f"{name} failed: {exc}")
+                _emit("error", f"run-all failed during ingest of '{name}'", stage="ingest", error=str(exc)[:300])
                 ai_hint(f"help me debug the {name} ingestion")
                 raise typer.Exit(1) from exc
     else:
@@ -80,6 +109,7 @@ def run_all_cmd(
         dbt = shutil.which("dbt")
         if not dbt:
             error("`dbt` not found on PATH. Is your virtual environment active?")
+            _emit("error", "run-all failed: dbt not found on PATH", stage="transform")
             raise typer.Exit(1)
 
         project_dir = config.dbt_project_dir
@@ -93,6 +123,7 @@ def run_all_cmd(
             result = subprocess.run(cmd, cwd=project_dir)
             if result.returncode != 0:
                 error(f"dbt build failed (exit {result.returncode}).")
+                _emit("error", "run-all failed during dbt build", stage="transform", exit_code=str(result.returncode))
                 raise typer.Exit(result.returncode)
             success("dbt build complete.")
     else:
@@ -101,6 +132,7 @@ def run_all_cmd(
     elapsed = time.time() - start
     console.rule("[bold green]Done")
     success(f"Finished in {elapsed:.1f}s")
+    _emit("success", "run-all complete", elapsed=f"{elapsed:.1f}s", sources=str(len(config.sources)))
     next_steps(
         ("tycoon data status", "check source freshness and row counts"),
         ("tycoon start --only rill", "explore results in Rill"),
