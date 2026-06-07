@@ -6,9 +6,15 @@ Health check for the tycoon environment — `tycoon.yml` validity, dbt / Rill / 
 
 ```
 tycoon doctor [OPTIONS]
+
+Options:
+  --fix       Attempt to repair fixable problems. Currently: when the Python
+              interpreter is out of range, build a project-local `.venv` on a
+              supported interpreter (via uv) for you to activate.
+  -h, --help  Show this message and exit.
 ```
 
-No flags. Just runs a series of checks and prints one panel per check.
+Runs a series of checks and prints one panel per check. With `--fix`, doctor also attempts to repair the problems it knows how to fix (see [below](#fixing-problems-fix)).
 
 ## What it checks
 
@@ -19,10 +25,10 @@ The output is a sequence of `Checking ...` panels:
 Confirms the interpreter running tycoon is within the supported range, **`>=3.12,<3.14`** (mirrors `requires-python` in `pyproject.toml`).
 
 - `OK Python 3.13 is in the supported range (>=3.12,<3.14).`
-- `ERROR Python 3.11 is too old. ... e.g. uv venv --python 3.12.`
-- `ERROR Python 3.14 is too new for tycoon's dbt stack (dbt-core / dbt-duckdb have no 3.14 wheels yet) ... uv venv --python 3.13.`
+- `ERROR Python 3.11 is too old. ... run tycoon setup (or uv venv --python 3.12).`
+- `ERROR Python 3.14 is too new for tycoon's dbt stack (dbt-core / dbt-duckdb have no 3.14 wheels yet) ... run tycoon setup (or uv venv --python 3.13).`
 
-This is the first check because tycoon runs dbt out of the *same* interpreter it lives in (it resolves dbt at `Path(sys.executable).parent / "dbt"`). A too-new interpreter — notably 3.14, which has no dbt wheels — otherwise fails far from its cause, at `tycoon data transform run`, which is exactly how [#55](https://github.com/Database-Tycoon/tycoon-cli/issues/55) stayed invisible. Surfacing the mismatch here makes it the first thing you see. Environment-level, so it runs even without a `tycoon.yml`.
+This is the first check because tycoon runs dbt out of the *same* interpreter it lives in (it resolves dbt at `Path(sys.executable).parent / "dbt"`). A too-new interpreter — notably 3.14, which has no dbt wheels — otherwise fails far from its cause, at `tycoon data transform run`, which is exactly how [#55](https://github.com/Database-Tycoon/tycoon-cli/issues/55) stayed invisible. Surfacing the mismatch here makes it the first thing you see. Environment-level, so it runs even without a `tycoon.yml`. When this check fails, [`tycoon doctor --fix`](#fixing-problems-fix) (or [`tycoon setup`](setup.md)) builds a corrected `.venv`.
 
 ### 2. `tycoon.yml`
 
@@ -73,6 +79,16 @@ Reports the state of `.tycoon/metadata.duckdb`:
 - Populated → `N dlt load(s), M dbt run(s) captured`
 
 Useful when "my dashboards are empty" — usually it means observability hasn't fired yet.
+
+## Fixing problems (`--fix`)
+
+`tycoon doctor --fix` runs all the checks, then attempts to repair the ones it knows how to fix. Today that's the **Python interpreter** check:
+
+- The running interpreter can't be swapped under tycoon's own feet, so the repair is to build a project-local `.venv` on a supported interpreter (via `uv venv --python 3.13`) and pin it with `.python-version` — the same flow as [`tycoon setup`](setup.md). You then `source .venv/bin/activate` and re-run.
+- If `uv` isn't installed, `--fix` can't proceed and prints the one-line installer instead of running it.
+- When the interpreter is already in range, `--fix` is a no-op.
+
+`--fix` never lowers the bar: an unfixable check still reports its error.
 
 ## Exit codes
 

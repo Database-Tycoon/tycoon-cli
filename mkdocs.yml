@@ -83,6 +83,7 @@ nav:
     - Overview: commands/index.md
     - Project:
       - "tycoon init": commands/init.md
+      - "tycoon setup": commands/setup.md
       - "tycoon register": commands/register.md
       - "tycoon profiles": commands/profiles.md
       - "tycoon semantics": commands/semantics.md
