@@ -2,10 +2,15 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [0.1.9] - Unreleased
 
-_Planned. Headline: Google Sheets source ([#52][]). Plus managed project-local `.venv` onboarding ([#57][]), then Quack ([#42][]) and the carried backup/notify/schedule work. Cycle plan in [`docs/proposals/v0.1.9-scope.md`](docs/proposals/v0.1.9-scope.md)._
+_In progress. Headline: Google Sheets source ([#52][]). Plus managed project-local `.venv` onboarding ([#57][]), then Quack ([#42][]) and the carried backup/notify/schedule work. Cycle plan in [`docs/proposals/v0.1.9-scope.md`](docs/proposals/v0.1.9-scope.md)._
+
+### Added
+
+- **`tycoon doctor` checks the Python interpreter version** ([#57][]). A new first check verifies the running interpreter is within tycoon's supported range (`>=3.12,<3.14`) and fails with an actionable hint otherwise — calling out that 3.14 has no dbt wheels yet and pointing at `uv venv --python 3.13`. tycoon runs dbt out of the same interpreter it lives in, so an out-of-range interpreter previously failed far from its cause at `data transform run` (this is how [#55][] stayed invisible). First sub-piece of the managed-`.venv` onboarding work; runs even without a `tycoon.yml`.
 
 [#42]: https://github.com/Database-Tycoon/tycoon-cli/issues/42
 [#52]: https://github.com/Database-Tycoon/tycoon-cli/issues/52
+[#55]: https://github.com/Database-Tycoon/tycoon-cli/issues/55
 [#57]: https://github.com/Database-Tycoon/tycoon-cli/issues/57
 
 ## [0.1.8] - 2026-05-30

@@ -14,23 +14,33 @@ No flags. Just runs a series of checks and prints one panel per check.
 
 The output is a sequence of `Checking ...` panels:
 
-### 1. `tycoon.yml`
+### 1. Python interpreter (v0.1.9)
+
+Confirms the interpreter running tycoon is within the supported range, **`>=3.12,<3.14`** (mirrors `requires-python` in `pyproject.toml`).
+
+- `OK Python 3.13 is in the supported range (>=3.12,<3.14).`
+- `ERROR Python 3.11 is too old. ... e.g. uv venv --python 3.12.`
+- `ERROR Python 3.14 is too new for tycoon's dbt stack (dbt-core / dbt-duckdb have no 3.14 wheels yet) ... uv venv --python 3.13.`
+
+This is the first check because tycoon runs dbt out of the *same* interpreter it lives in (it resolves dbt at `Path(sys.executable).parent / "dbt"`). A too-new interpreter — notably 3.14, which has no dbt wheels — otherwise fails far from its cause, at `tycoon data transform run`, which is exactly how [#55](https://github.com/Database-Tycoon/tycoon-cli/issues/55) stayed invisible. Surfacing the mismatch here makes it the first thing you see. Environment-level, so it runs even without a `tycoon.yml`.
+
+### 2. `tycoon.yml`
 
 Confirms `tycoon.yml` exists in the current directory or a parent. Errors if not — with a hint to run `tycoon init`.
 
-### 2. dbt project
+### 3. dbt project
 
 If `stack.transformation = dbt`: confirms `dbt_project_dir` exists and contains `dbt_project.yml`. Reports a clean skip ("dbt: skipped by choice (stack.transformation = none)") if the user opted out of dbt.
 
-### 3. Rill project
+### 4. Rill project
 
 If `stack.bi = rill`: confirms `rill_dir` exists. Reports a skip if `bi: none` or a different BI tool is configured.
 
-### 4. Dagster
+### 5. Dagster
 
 If the `[dagster]` extra is installed: confirms the `dagster` binary is on `$PATH`. The orchestrator is optional — most projects don't need it.
 
-### 5. Warehouse auth
+### 6. Warehouse auth
 
 For DuckDB warehouses: nothing to check (no auth).
 
@@ -43,7 +53,7 @@ Reports `OK token (env)`, `OK OAuth (cached session)`, or `ERROR not configured`
 
 For Snowflake / BigQuery / Redshift: warehouse auth lives in dbt's `profiles.yml` and isn't tycoon's concern. `doctor` skips these.
 
-### 6. Layer coverage (v0.1.7)
+### 7. Layer coverage (v0.1.7)
 
 When `stack.transformation = dbt` and a compiled dbt manifest exists, doctor verifies that every registered source in `tycoon.yml` has at least one staging model:
 
@@ -54,7 +64,7 @@ Silently skipped when `transformation: none` or when the manifest hasn't been co
 
 See [layered architecture](../recipes/layered-architecture.md) for the underlying classification rules.
 
-### 7. Observability
+### 8. Observability
 
 Reports the state of `.tycoon/metadata.duckdb`:
 

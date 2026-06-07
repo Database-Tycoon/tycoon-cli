@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 
 from rich.console import Console
@@ -14,6 +15,54 @@ from tycoon.project import BITool, IngestionTool, OrchestratorTool, Transformati
 from tycoon.utils.console import error, header, info, success, warn
 
 console = Console()
+
+# Supported interpreter range. Mirrors `requires-python = ">=3.12,<3.14"` in
+# pyproject.toml: dbt-core / dbt-duckdb ship no wheels for 3.14 yet, and tycoon
+# runs dbt out of the same interpreter it lives in (it resolves dbt at
+# `Path(sys.executable).parent / "dbt"`). Lift the ceiling once dbt supports 3.14.
+_MIN_PYTHON: tuple[int, int] = (3, 12)
+_MAX_PYTHON_EXCLUSIVE: tuple[int, int] = (3, 14)
+
+
+def _fmt_ver(ver: tuple[int, int]) -> str:
+    return f"{ver[0]}.{ver[1]}"
+
+
+def _check_python_version(version_info: tuple[int, int] | None = None) -> None:
+    """Verify the running interpreter is within tycoon's supported range.
+
+    tycoon imports ``dlt``/``duckdb`` in-process and shells out to the ``dbt``
+    that sits next to ``sys.executable``, so the interpreter running tycoon is
+    *also* the one running dbt. An out-of-range interpreter (notably 3.14, which
+    has no dbt wheels) fails far from its cause — at ``transform run`` — which is
+    why #55 stayed invisible. Surfacing it here, at the top of doctor, makes the
+    Python mismatch the first thing a user sees.
+    """
+    current = version_info if version_info is not None else sys.version_info[:2]
+    cur = (current[0], current[1])
+    label = _fmt_ver(cur)
+
+    if cur < _MIN_PYTHON:
+        error(
+            f"Python {label} is too old. tycoon needs "
+            f">={_fmt_ver(_MIN_PYTHON)},<{_fmt_ver(_MAX_PYTHON_EXCLUSIVE)}. "
+            f"Recreate the environment on a supported interpreter, e.g. "
+            f"`uv venv --python {_fmt_ver(_MIN_PYTHON)}`."
+        )
+        return
+
+    if cur >= _MAX_PYTHON_EXCLUSIVE:
+        error(
+            f"Python {label} is too new for tycoon's dbt stack "
+            f"(dbt-core / dbt-duckdb have no {label} wheels yet). "
+            f"Supported range is >={_fmt_ver(_MIN_PYTHON)},<{_fmt_ver(_MAX_PYTHON_EXCLUSIVE)}. "
+            f"Recreate the environment on 3.13, e.g. `uv venv --python 3.13` "
+            f"(uv will fetch it if it isn't installed)."
+        )
+        return
+
+    success(f"Python {label} is in the supported range "
+            f"(>={_fmt_ver(_MIN_PYTHON)},<{_fmt_ver(_MAX_PYTHON_EXCLUSIVE)}).")
 
 
 def _check_tycoon_yml():
@@ -357,6 +406,9 @@ def doctor_cmd() -> None:
     header("Tycoon Doctor")
 
     with console.status("[bold green]Running checks...[/bold green]"):
+        console.print(Panel("Checking Python interpreter...", expand=False))
+        _check_python_version()
+
         console.print(Panel("Checking for tycoon.yml...", expand=False))
         _check_tycoon_yml()
 
