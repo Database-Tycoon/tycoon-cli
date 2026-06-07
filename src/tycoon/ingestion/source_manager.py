@@ -128,6 +128,42 @@ def run_pipeline(name, source_config, raw_db_path, max_records=None):
     )
     return pipeline, pipeline.run(source)
 """,
+    "google_sheets": """\
+from __future__ import annotations
+import json
+from pathlib import Path
+from typing import Any
+import dlt
+from google_sheets import google_spreadsheet
+
+def run_pipeline(name, source_config, raw_db_path, max_records=None):
+    cfg = source_config.config
+    spreadsheet = cfg.get("spreadsheet_url_or_id", "")
+    raw_ranges = cfg.get("range_names", "")
+    range_names = [r.strip() for r in raw_ranges.split(",") if r.strip()] or None
+
+    # Service-account key: read the JSON and hand dlt the parsed dict, which it
+    # coerces into GcpServiceAccountCredentials. If the path is empty/missing we
+    # pass nothing, letting dlt fall back to its own resolution (env / secrets).
+    kwargs: dict[str, Any] = {"spreadsheet_url_or_id": spreadsheet}
+    if range_names:
+        kwargs["range_names"] = range_names
+    creds_path = cfg.get("credentials_path", "")
+    if creds_path:
+        key_file = Path(creds_path).expanduser()
+        if key_file.is_file():
+            kwargs["credentials"] = json.loads(key_file.read_text())
+
+    source = google_spreadsheet(**kwargs)
+    if max_records:
+        source = source.add_limit(max_records)
+    pipeline = dlt.pipeline(
+        pipeline_name=name,
+        destination=dlt.destinations.duckdb(str(raw_db_path)),
+        dataset_name=source_config.schema_name,
+    )
+    return pipeline, pipeline.run(source)
+""",
     "rest_api": """\
 from __future__ import annotations
 from typing import Any
@@ -198,6 +234,7 @@ _DLT_INIT_NAME: dict[str, str] = {
     "stripe": "stripe_analytics",
     "hubspot": "hubspot",
     "notion": "notion",
+    "google_sheets": "google_sheets",
 }
 
 

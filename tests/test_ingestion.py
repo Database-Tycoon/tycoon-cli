@@ -324,3 +324,114 @@ class TestWriteDispositionContract:
         )
         # id=1 carries from batch 1; id=2 wins from batch 2; id=3 added.
         assert rows == [(1, "a"), (2, "B-updated"), (3, "c")], rows
+
+
+class TestGoogleSheetsShim:
+    """The Google Sheets ``_run.py`` shim (#52) is downloaded on demand, so it
+    can't be imported normally. We exec the exact shim string that ships in
+    ``_SHIMS`` against a mocked ``dlt`` + ``google_sheets`` to verify it
+    translates tycoon's flat config into ``google_spreadsheet`` kwargs.
+    """
+
+    def _exec_shim(self, monkeypatch, *, config, max_records=None, creds_file=None):
+        """Run the shim with fake ``dlt``/``google_sheets`` modules injected.
+
+        Returns the kwargs the shim passed to ``google_spreadsheet`` plus the
+        fake source object (so callers can assert ``add_limit`` behaviour).
+        """
+        import sys
+        import types
+
+        captured: dict = {}
+
+        class _FakeSource:
+            def __init__(self):
+                self.limit = None
+
+            def add_limit(self, n):
+                self.limit = n
+                return self
+
+        fake_source = _FakeSource()
+
+        def google_spreadsheet(**kwargs):
+            captured["kwargs"] = kwargs
+            return fake_source
+
+        fake_gs = types.ModuleType("google_sheets")
+        fake_gs.google_spreadsheet = google_spreadsheet
+
+        class _FakePipeline:
+            def run(self, source):
+                captured["ran"] = source
+                return "LOAD_INFO"
+
+        fake_dlt = types.ModuleType("dlt")
+        fake_dlt.pipeline = lambda **kw: _FakePipeline()
+        fake_dlt.destinations = types.SimpleNamespace(
+            duckdb=lambda path: ("duckdb", path)
+        )
+
+        monkeypatch.setitem(sys.modules, "google_sheets", fake_gs)
+        monkeypatch.setitem(sys.modules, "dlt", fake_dlt)
+
+        from tycoon.ingestion.source_manager import _SHIMS
+
+        ns: dict = {}
+        exec(_SHIMS["google_sheets"], ns)
+
+        source_config = types.SimpleNamespace(config=config, schema_name="raw_google_sheets")
+        pipeline, load_info = ns["run_pipeline"](
+            "my-sheet", source_config, "/tmp/raw.duckdb", max_records=max_records
+        )
+        return captured, fake_source, load_info
+
+    def test_passes_spreadsheet_and_range_subset(self, monkeypatch):
+        captured, _src, _ = self._exec_shim(
+            monkeypatch,
+            config={
+                "spreadsheet_url_or_id": "https://docs.google.com/spreadsheets/d/ABC/edit",
+                "range_names": "Sheet1, Q1 2026!A1:F",
+            },
+        )
+        kwargs = captured["kwargs"]
+        assert kwargs["spreadsheet_url_or_id"].endswith("/d/ABC/edit")
+        # Comma-split, trimmed.
+        assert kwargs["range_names"] == ["Sheet1", "Q1 2026!A1:F"]
+
+    def test_blank_range_omits_range_names(self, monkeypatch):
+        """Empty range → load all sheets: omit the kwarg, let dlt default."""
+        captured, _src, _ = self._exec_shim(
+            monkeypatch,
+            config={"spreadsheet_url_or_id": "ABC", "range_names": ""},
+        )
+        assert "range_names" not in captured["kwargs"]
+
+    def test_service_account_json_loaded_as_dict(self, monkeypatch, tmp_path):
+        key_file = tmp_path / "sa.json"
+        key_file.write_text('{"type": "service_account", "project_id": "demo"}')
+        captured, _src, _ = self._exec_shim(
+            monkeypatch,
+            config={"spreadsheet_url_or_id": "ABC", "credentials_path": str(key_file)},
+        )
+        assert captured["kwargs"]["credentials"] == {
+            "type": "service_account",
+            "project_id": "demo",
+        }
+
+    def test_missing_creds_path_falls_back_to_dlt(self, monkeypatch):
+        """A blank/absent key path passes no ``credentials`` — dlt then resolves
+        from env / secrets.toml (the ADC / OAuth path)."""
+        captured, _src, _ = self._exec_shim(
+            monkeypatch,
+            config={"spreadsheet_url_or_id": "ABC", "credentials_path": ""},
+        )
+        assert "credentials" not in captured["kwargs"]
+
+    def test_max_records_applies_limit(self, monkeypatch):
+        _captured, source, _ = self._exec_shim(
+            monkeypatch,
+            config={"spreadsheet_url_or_id": "ABC"},
+            max_records=50,
+        )
+        assert source.limit == 50

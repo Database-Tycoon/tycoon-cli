@@ -148,6 +148,44 @@ CATALOG: dict[str, CatalogEntry] = {
         default_schema="raw_notion",
         docs_url="https://dlthub.com/docs/dlt-ecosystem/verified-sources/notion",
     ),
+    "google_sheets": CatalogEntry(
+        id="google_sheets",
+        display_name="Google Sheets",
+        category="Spreadsheets",
+        description="Tabs/ranges from a Google spreadsheet (header row → typed columns)",
+        resources=["sheets"],
+        credentials=[
+            CredentialField(
+                key="credentials_path",
+                label="Service-account JSON key path",
+                hint=(
+                    "Path to a Google service-account .json key. Create one at "
+                    "https://console.cloud.google.com/iam-admin/serviceaccounts, enable the "
+                    "Google Sheets API, and share the spreadsheet with the service-account email. "
+                    "Leave the ${GOOGLE_APPLICATION_CREDENTIALS} default to read it from that env var."
+                ),
+                env_var="GOOGLE_APPLICATION_CREDENTIALS",
+                secret=False,
+            ),
+        ],
+        config_fields=[
+            ConfigField(
+                key="spreadsheet_url_or_id",
+                label="Spreadsheet URL or ID",
+                hint='Full share URL or just the ID from docs.google.com/spreadsheets/d/<ID>/edit',
+                required=True,
+            ),
+            ConfigField(
+                key="range_names",
+                label="Tab/range names (comma-separated, blank for all sheets)",
+                hint='e.g. "Sheet1,Q1 2026!A1:F" — blank loads every sheet in the spreadsheet',
+                required=False,
+                default="",
+            ),
+        ],
+        default_schema="raw_google_sheets",
+        docs_url="https://dlthub.com/docs/dlt-ecosystem/verified-sources/google_sheets",
+    ),
     "rest_api": CatalogEntry(
         id="rest_api",
         display_name="REST API",

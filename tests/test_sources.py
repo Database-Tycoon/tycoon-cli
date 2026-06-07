@@ -578,3 +578,56 @@ class TestSourcesAddNoPrompt:
         )
         assert result.exit_code == 1
         assert "Invalid --config" in (result.stderr or result.output)
+
+
+class TestGoogleSheetsCatalog:
+    """Google Sheets (#52) catalog wiring + non-interactive registration."""
+
+    def test_catalog_entry_shape(self):
+        from tycoon.ingestion.catalog import CATALOG
+
+        entry = CATALOG["google_sheets"]
+        assert entry.display_name == "Google Sheets"
+        assert entry.default_schema == "raw_google_sheets"
+        # Service-account key (headless/cron-friendly), defaulting to the
+        # standard GCP env var.
+        cred = entry.credentials[0]
+        assert cred.key == "credentials_path"
+        assert cred.env_var == "GOOGLE_APPLICATION_CREDENTIALS"
+        # A path, not a secret value — should echo when prompted.
+        assert cred.secret is False
+        cfg_keys = {f.key for f in entry.config_fields}
+        assert {"spreadsheet_url_or_id", "range_names"} <= cfg_keys
+
+    def test_shim_and_dlt_init_mapping(self):
+        from tycoon.ingestion.source_manager import (
+            _DLT_INIT_NAME,
+            _SHIMS,
+            get_run_module_path,
+        )
+
+        assert _DLT_INIT_NAME["google_sheets"] == "google_sheets"
+        assert "from google_sheets import google_spreadsheet" in _SHIMS["google_sheets"]
+        assert get_run_module_path("google_sheets") == "google_sheets._run"
+
+    def test_no_prompt_add_registers_source(self, cli_runner, tmp_path, monkeypatch):
+        TestSourcesAddNoPrompt()._bind(tmp_path, monkeypatch)
+        result = cli_runner.invoke(
+            app,
+            [
+                "data", "sources", "add", "google_sheets",
+                "--name", "marketing-sheet",
+                "--config", "spreadsheet_url_or_id=https://docs.google.com/spreadsheets/d/ABC/edit",
+                "--config", "range_names=Sheet1",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        project = load_project(tmp_path)
+        src = project.sources["marketing-sheet"]
+        assert src.type == "google_sheets"
+        assert src.schema_name == "raw_marketing_sheet"
+        assert src.config["spreadsheet_url_or_id"].endswith("/d/ABC/edit")
+        assert src.config["range_names"] == "Sheet1"
+        # Credential defaults to the env-var reference (set GOOGLE_APPLICATION_CREDENTIALS).
+        assert src.config["credentials_path"] == "${GOOGLE_APPLICATION_CREDENTIALS}"
