@@ -7,7 +7,7 @@ from typer.core import TyperGroup
 
 import tycoon
 
-_COMMAND_ORDER = ["init", "setup", "register", "profiles", "semantics", "ask", "data", "start", "stop", "run", "notify", "doctor", "docs"]
+_COMMAND_ORDER = ["init", "setup", "register", "profiles", "semantics", "ask", "data", "start", "stop", "run", "notify", "schedule", "doctor", "docs"]
 
 _SECTIONS = {
     "init":  "Project",
@@ -21,6 +21,7 @@ _SECTIONS = {
     "stop":  "Services",
     "run":   "Tools",
     "notify": "Utilities",
+    "schedule": "Utilities",
     "doctor": "Utilities",
     "docs":  "Utilities",
 }
@@ -84,6 +85,7 @@ from tycoon.commands.doctor import doctor_cmd
 from tycoon.commands.init import init_cmd
 from tycoon.commands.notify import notify_cmd
 from tycoon.commands.run import run_cmd
+from tycoon.commands.schedule import app as schedule_app
 from tycoon.commands.setup import setup_cmd
 from tycoon.commands.start import start_cmd
 from tycoon.commands.stop import stop_cmd
@@ -103,4 +105,5 @@ app.command(
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )(run_cmd)
 app.command(name="notify")(notify_cmd)
+app.add_typer(schedule_app, name="schedule")
 app.command(name="doctor")(doctor_cmd)

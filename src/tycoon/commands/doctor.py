@@ -427,6 +427,24 @@ def _check_observability() -> None:
     )
 
 
+def _check_schedules() -> None:
+    """Report installed tycoon schedules (#48). Environment-level, per-user."""
+    from tycoon import schedule as sched
+
+    try:
+        names = sched.list_schedules()
+    except Exception:
+        info("Schedules: could not enumerate (unsupported platform).")
+        return
+    if not names:
+        info("Schedules: none installed.")
+        return
+    success(
+        f"Schedules: {len(names)} installed ({', '.join(names)}). "
+        f"Inspect a run with `tycoon schedule status <name>`."
+    )
+
+
 def doctor_cmd(
     fix: bool = typer.Option(
         False,
@@ -444,6 +462,9 @@ def doctor_cmd(
     with console.status("[bold green]Running checks...[/bold green]"):
         console.print(Panel("Checking Python interpreter...", expand=False))
         python_ok = _check_python_version()
+
+        console.print(Panel("Checking scheduled runs...", expand=False))
+        _check_schedules()
 
         console.print(Panel("Checking for tycoon.yml...", expand=False))
         _check_tycoon_yml()
