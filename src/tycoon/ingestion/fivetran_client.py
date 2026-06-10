@@ -222,8 +222,8 @@ def build_client_from_config(
 ) -> FivetranClient:
     """Construct a client from a ``tycoon.yml`` ingestion-metadata block."""
     return FivetranClient(
-        api_key=cfg.api_key,
-        api_secret=cfg.api_secret,
+        api_key=cfg.api_key.get_secret_value(),
+        api_secret=cfg.api_secret.get_secret_value(),
         group_id=cfg.group_id,
         http_client=http_client,
     )

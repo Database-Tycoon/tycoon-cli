@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 
 class IngestionTool(str, Enum):
@@ -58,10 +58,26 @@ class FivetranIngestionMetadata(BaseModel):
     ``group_id`` scopes which connector group tycoon reads from — get
     yours from ``GET /v1/groups`` on the Fivetran API or from the
     Fivetran web UI under Settings → Account.
+
+    ``api_key``/``api_secret`` are :class:`~pydantic.SecretStr` so they
+    never leak into a ``repr``/traceback. Prefer env-var indirection —
+    write ``api_secret: ${FIVETRAN_API_SECRET}`` in ``tycoon.yml`` (the
+    loader expands ``${VAR}`` before validation) so the literal secret
+    stays out of the committed config file.
     """
 
-    api_key: str = Field(description="Fivetran API key (Basic Auth username).")
-    api_secret: str = Field(description="Fivetran API secret (Basic Auth password).")
+    api_key: SecretStr = Field(
+        description=(
+            "Fivetran API key (Basic Auth username). Recommended: "
+            "${FIVETRAN_API_KEY} rather than a literal value."
+        )
+    )
+    api_secret: SecretStr = Field(
+        description=(
+            "Fivetran API secret (Basic Auth password). Recommended: "
+            "${FIVETRAN_API_SECRET} rather than a literal value."
+        )
+    )
     group_id: str = Field(description="Fivetran group identifier.")
 
 
@@ -308,7 +324,22 @@ def load_project(project_root: Path) -> TycoonProject | None:
 
 
 def save_project(project: TycoonProject, project_root: Path) -> None:
-    """Write tycoon.yml to disk."""
+    """Write tycoon.yml to disk.
+
+    Preserves the hand-authored ``stack.ingestion_metadata`` block from
+    the existing file verbatim. Those credentials are ``SecretStr`` (a
+    plain dump would mask them to ``**********``) and may be written as
+    ``${ENV}`` references that ``load_project`` has already expanded —
+    re-dumping the in-memory value would either corrupt the config or
+    flatten an env-ref into its literal secret. tycoon never edits that
+    block, so round-tripping the on-disk form is always correct.
+    """
     path = project_root / PROJECT_FILENAME
     data = project.model_dump(by_alias=True, exclude_none=True, mode="json")
+    if path.exists():
+        existing = yaml.safe_load(path.read_text())
+        if isinstance(existing, dict):
+            existing_meta = (existing.get("stack") or {}).get("ingestion_metadata")
+            if existing_meta is not None and isinstance(data.get("stack"), dict):
+                data["stack"]["ingestion_metadata"] = existing_meta
     path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))

@@ -7,13 +7,26 @@ from pathlib import Path
 import duckdb
 
 
+def quote_identifier(identifier: str) -> str:
+    """Double-quote a SQL identifier and escape any embedded quotes.
+
+    Use for any schema/table/column name that originates from config
+    (``tycoon.yml``) or from introspecting an untrusted database file,
+    before interpolating it into a SQL string — prevents identifier
+    break-out / SQL injection.
+    """
+    return '"' + identifier.replace('"', '""') + '"'
+
+
 def get_row_count(db_path: Path, schema: str, table: str) -> int | None:
     """Return row count for a table, or None if it doesn't exist."""
     if not db_path.exists():
         return None
     try:
         con = duckdb.connect(str(db_path), read_only=True)
-        result = con.execute(f"SELECT count(*) FROM {schema}.{table}").fetchone()
+        result = con.execute(
+            f"SELECT count(*) FROM {quote_identifier(schema)}.{quote_identifier(table)}"
+        ).fetchone()
         con.close()
         return result[0] if result else None
     except duckdb.Error:

@@ -1,8 +1,8 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.9] - 2026-06-07
+## [0.1.9] - 2026-06-10
 
-_Headline: Google Sheets source ([#52][]). Plus managed project-local `.venv` + `doctor --fix` ([#57][]), DuckDB Quack live warehouse ([#42][]), pipeline notifications ([#46][]), and scheduled runs ([#48][]). Layer-granular backup ([#31][]) is deferred — no backup track exists yet to make layer-aware (it depended on the deferred DuckLake path). Cycle plan in [`docs/proposals/v0.1.9-scope.md`](docs/proposals/v0.1.9-scope.md)._
+_Headline: Google Sheets source ([#52][]). Plus managed project-local `.venv` + `doctor --fix` ([#57][]), DuckDB Quack live warehouse ([#42][]), pipeline notifications ([#46][]), and scheduled runs ([#48][]). Layer-granular backup ([#31][]) is deferred — no backup track exists yet to make layer-aware (it depended on the deferred DuckLake path). Also closes two High-severity findings from a security review ([#60][], [#61][]). Cycle plan in [`docs/proposals/v0.1.9-scope.md`](docs/proposals/v0.1.9-scope.md)._
 
 ### Added
 
@@ -13,6 +13,11 @@ _Headline: Google Sheets source ([#52][]). Plus managed project-local `.venv` + 
 - **Google Sheets data source** ([#52][]). `tycoon data sources add google_sheets` registers a spreadsheet as a first-class source — pulling tabs/ranges into DuckDB with the header row becoming typed columns. Auth is a Google service-account JSON key (headless/cron-friendly), defaulting to the standard `${GOOGLE_APPLICATION_CREDENTIALS}` env var; leaving the key blank falls back to dlt's own resolution (the OAuth / ADC path). Config is `spreadsheet_url_or_id` (required) and an optional comma-separated `range_names` (blank loads every sheet). Works under `--no-prompt` for scripted bootstrap. Per project convention the dlt `google_sheets` verified source isn't bundled — it's pulled on demand via `dlt init`. First cut is full-refresh replace per run (Sheets has no native incremental key).
 - **`tycoon doctor` checks the Python interpreter version** ([#57][]). A new first check verifies the running interpreter is within tycoon's supported range (`>=3.12,<3.14`) and fails with an actionable hint otherwise — calling out that 3.14 has no dbt wheels yet and pointing at `uv venv --python 3.13`. tycoon runs dbt out of the same interpreter it lives in, so an out-of-range interpreter previously failed far from its cause at `data transform run` (this is how [#55][] stayed invisible). First sub-piece of the managed-`.venv` onboarding work; runs even without a `tycoon.yml`.
 
+### Security
+
+- **Fivetran credentials can no longer leak into a committed `tycoon.yml`** ([#60][]). `stack.ingestion_metadata.api_key` / `api_secret` are now `pydantic.SecretStr`, so they mask to `**********` in any `repr`/traceback, and their field docs steer you to `${FIVETRAN_API_SECRET}`-style env-var indirection (the loader already expands `${VAR}` before validation, keeping the literal secret out of the file). `save_project` now preserves the hand-authored `ingestion_metadata` block verbatim on round-trip — previously a `sources add` / `register` write would re-dump the *expanded* secret straight back into `tycoon.yml`. The scaffolded `.gitignore` also now excludes `.env`, `.dlt/secrets.toml`, and `**/profiles.yml` (the files that actually hold credentials); `tycoon.yml` stays committable as the shareable stack template.
+- **SQL identifier injection in Rill export and `data schema` is closed** ([#61][]). Schema/table/column names sourced from `tycoon.yml` or introspected from a DuckDB file are now quoted via a shared `quote_identifier` helper before interpolation into SQL. Previously an attacker-crafted `schema:` value in a shared project could break out of the `COPY … TO` statement that `tycoon data analyze --rill` runs — and DuckDB's `COPY`/`INSTALL` can write files and load extensions, so this was a path to arbitrary file write, not just data disclosure. The export's destination-path literal is escaped too. (The broader `tycoon.yml` identifier/path validation layer is tracked in [#65][].)
+
 [#31]: https://github.com/Database-Tycoon/tycoon-cli/issues/31
 [#42]: https://github.com/Database-Tycoon/tycoon-cli/issues/42
 [#46]: https://github.com/Database-Tycoon/tycoon-cli/issues/46
@@ -20,6 +25,9 @@ _Headline: Google Sheets source ([#52][]). Plus managed project-local `.venv` + 
 [#52]: https://github.com/Database-Tycoon/tycoon-cli/issues/52
 [#55]: https://github.com/Database-Tycoon/tycoon-cli/issues/55
 [#57]: https://github.com/Database-Tycoon/tycoon-cli/issues/57
+[#60]: https://github.com/Database-Tycoon/tycoon-cli/issues/60
+[#61]: https://github.com/Database-Tycoon/tycoon-cli/issues/61
+[#65]: https://github.com/Database-Tycoon/tycoon-cli/issues/65
 
 ## [0.1.8] - 2026-05-30
 
