@@ -141,7 +141,11 @@ def extension_available() -> bool:
         )
         if loaded.returncode == 0:
             return True
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired:
+        # A timeout on a plain LOAD means duckdb is hanging — don't cascade
+        # into the 60s INSTALL and hang again. Quack is opt-in; fail fast.
+        return False
+    except OSError:
         pass
     try:
         result = subprocess.run(

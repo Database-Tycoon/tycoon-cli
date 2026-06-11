@@ -298,6 +298,21 @@ class TestAddCommandPrefixStrip:
         assert result.exit_code == 0, result.output
         assert captured["args"] == ["data", "run-all"]
 
+    def test_empty_command_after_strip_exits_2(self, cli_runner, tmp_path):
+        # "--command tycoon" strips to [] — must be rejected, not scheduled as
+        # a bare `tycoon` that just prints help on a timer.
+        with patch("tycoon.commands.schedule.config") as cfg, \
+             patch("tycoon.commands.schedule.sched.list_schedules", return_value=[]), \
+             patch("tycoon.commands.schedule.sched.add") as add:
+            cfg.has_project_file = True
+            cfg.root = tmp_path
+            result = cli_runner.invoke(
+                app, ["schedule", "add", "daily-refresh", "--command", "tycoon"]
+            )
+        assert result.exit_code == 2, result.output
+        assert "cannot be empty" in (result.stderr or result.output)
+        add.assert_not_called()
+
     def test_keeps_command_without_tycoon_prefix(self, cli_runner, tmp_path):
         captured = {}
 

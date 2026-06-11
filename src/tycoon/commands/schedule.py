@@ -64,6 +64,9 @@ def add_schedule(
     # run `tycoon tycoon data run-all` and fail.
     if args and args[0] == "tycoon":
         args = args[1:]
+    if not args:
+        error("--command cannot be empty.")
+        raise typer.Exit(2)
     if notify and "--notify" not in args:
         args.append("--notify")
 
