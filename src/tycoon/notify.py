@@ -111,6 +111,11 @@ def send(
     )
     try:
         response = httpx.post(resolved, json=payload, timeout=timeout)
-    except httpx.HTTPError:
+    except (httpx.HTTPError, httpx.InvalidURL):
+        # Best-effort by contract: catch every failure httpx.post can raise —
+        # connect/timeout/protocol errors (all HTTPError) plus InvalidURL from
+        # a malformed webhook — so a notification problem can't crash the
+        # pipeline. Deliberately NOT a blanket `except Exception`, which would
+        # mask genuine bugs (NameError/TypeError) in this path.
         return False
     return response.is_success

@@ -16,7 +16,11 @@ def _parse_fields(pairs: list[str]) -> dict[str, str]:
             error(f"Invalid --field '{pair}' — expected key=value.")
             raise typer.Exit(2)
         key, value = pair.split("=", 1)
-        out[key.strip()] = value.strip()
+        key = key.strip()
+        if not key:
+            error(f"Invalid --field '{pair}' — key cannot be empty.")
+            raise typer.Exit(2)
+        out[key] = value.strip()
     return out
 
 

@@ -59,6 +59,14 @@ def add_schedule(
         raise typer.Exit(1)
 
     args = shlex.split(command)
+    # Tolerate a redundant leading "tycoon" (e.g. --command "tycoon data run-all")
+    # — the wrapper already invokes the tycoon program, so a kept prefix would
+    # run `tycoon tycoon data run-all` and fail.
+    if args and args[0] == "tycoon":
+        args = args[1:]
+    if not args:
+        error("--command cannot be empty.")
+        raise typer.Exit(2)
     if notify and "--notify" not in args:
         args.append("--notify")
 
