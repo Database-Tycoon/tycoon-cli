@@ -129,6 +129,20 @@ def extension_available() -> bool:
 
     if shutil.which("duckdb") is None:
         return False
+    # Try a plain LOAD first: if the extension is already cached locally this
+    # succeeds offline and skips the network round-trip that INSTALL ... FROM
+    # core_nightly always makes.
+    try:
+        loaded = subprocess.run(
+            ["duckdb", "-c", "LOAD quack;"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if loaded.returncode == 0:
+            return True
+    except (subprocess.TimeoutExpired, OSError):
+        pass
     try:
         result = subprocess.run(
             ["duckdb", "-c", _LOAD_QUACK],

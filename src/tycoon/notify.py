@@ -111,6 +111,9 @@ def send(
     )
     try:
         response = httpx.post(resolved, json=payload, timeout=timeout)
-    except httpx.HTTPError:
+    except Exception:
+        # Best-effort by contract — swallow anything (httpx.HTTPError, plus
+        # InvalidURL / ValueError from a malformed webhook) so a notification
+        # problem can never crash the calling pipeline.
         return False
     return response.is_success

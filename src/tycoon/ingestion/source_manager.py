@@ -152,7 +152,7 @@ def run_pipeline(name, source_config, raw_db_path, max_records=None):
     if creds_path:
         key_file = Path(creds_path).expanduser()
         if key_file.is_file():
-            kwargs["credentials"] = json.loads(key_file.read_text())
+            kwargs["credentials"] = json.loads(key_file.read_text(encoding="utf-8"))
 
     source = google_spreadsheet(**kwargs)
     if max_records:

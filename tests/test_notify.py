@@ -82,6 +82,12 @@ class TestSend:
         with patch("tycoon.notify.httpx.post", return_value=resp):
             assert notify.send("info", "x", url="https://example.com/h") is False
 
+    def test_returns_false_on_non_httperror_exception(self):
+        # A malformed webhook can make httpx raise ValueError / InvalidURL, not
+        # an HTTPError — send() must still swallow it (never raises by contract).
+        with patch("tycoon.notify.httpx.post", side_effect=ValueError("bad url")):
+            assert notify.send("info", "x", url="https://example.com/h") is False
+
 
 # ---------------------------------------------------------------------------
 # `tycoon notify` command
@@ -106,6 +112,12 @@ class TestNotifyCommand:
         result = cli_runner.invoke(app, ["notify", "info", "hello", "--field", "noequals"])
         assert result.exit_code == 2
         assert "Invalid --field" in (result.stderr or result.output)
+
+    def test_empty_field_key_exits_2(self, cli_runner, monkeypatch):
+        monkeypatch.setenv(notify.WEBHOOK_ENV_VAR, "https://example.com/h")
+        result = cli_runner.invoke(app, ["notify", "info", "hello", "--field", "=value"])
+        assert result.exit_code == 2
+        assert "key cannot be empty" in (result.stderr or result.output)
 
     def test_success_path_sends(self, cli_runner, monkeypatch):
         monkeypatch.setenv(notify.WEBHOOK_ENV_VAR, "https://example.com/h")

@@ -274,3 +274,45 @@ class TestDoctorSchedulesRow:
             doctor._check_schedules()
         out = capsys.readouterr().out
         assert "none installed" in out
+
+
+class TestAddCommandPrefixStrip:
+    """The `add` CLI command should tolerate a redundant leading `tycoon`."""
+
+    def test_strips_leading_tycoon_from_command(self, cli_runner, tmp_path):
+        captured = {}
+
+        def fake_add(spec, **_kwargs):
+            captured["args"] = spec.args
+            return "installed"
+
+        with patch("tycoon.commands.schedule.config") as cfg, \
+             patch("tycoon.commands.schedule.sched.list_schedules", return_value=[]), \
+             patch("tycoon.commands.schedule.sched.add", side_effect=fake_add):
+            cfg.has_project_file = True
+            cfg.root = tmp_path
+            result = cli_runner.invoke(
+                app, ["schedule", "add", "daily-refresh", "--command", "tycoon data run-all"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert captured["args"] == ["data", "run-all"]
+
+    def test_keeps_command_without_tycoon_prefix(self, cli_runner, tmp_path):
+        captured = {}
+
+        def fake_add(spec, **_kwargs):
+            captured["args"] = spec.args
+            return "installed"
+
+        with patch("tycoon.commands.schedule.config") as cfg, \
+             patch("tycoon.commands.schedule.sched.list_schedules", return_value=[]), \
+             patch("tycoon.commands.schedule.sched.add", side_effect=fake_add):
+            cfg.has_project_file = True
+            cfg.root = tmp_path
+            result = cli_runner.invoke(
+                app, ["schedule", "add", "daily-refresh", "--command", "data run-all"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert captured["args"] == ["data", "run-all"]

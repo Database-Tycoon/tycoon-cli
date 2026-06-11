@@ -18,6 +18,10 @@ _Headline: Google Sheets source ([#52][]). Plus managed project-local `.venv` + 
 - **Fivetran credentials can no longer leak into a committed `tycoon.yml`** ([#60][]). `stack.ingestion_metadata.api_key` / `api_secret` are now `pydantic.SecretStr`, so they mask to `**********` in any `repr`/traceback, and their field docs steer you to `${FIVETRAN_API_SECRET}`-style env-var indirection (the loader already expands `${VAR}` before validation, keeping the literal secret out of the file). `save_project` now preserves the hand-authored `ingestion_metadata` block verbatim on round-trip — previously a `sources add` / `register` write would re-dump the *expanded* secret straight back into `tycoon.yml`. The scaffolded `.gitignore` also now excludes `.env`, `.dlt/secrets.toml`, and `**/profiles.yml` (the files that actually hold credentials); `tycoon.yml` stays committable as the shareable stack template.
 - **SQL identifier injection in Rill export and `data schema` is closed** ([#61][]). Schema/table/column names sourced from `tycoon.yml` or introspected from a DuckDB file are now quoted via a shared `quote_identifier` helper before interpolation into SQL. Previously an attacker-crafted `schema:` value in a shared project could break out of the `COPY … TO` statement that `tycoon data analyze --rill` runs — and DuckDB's `COPY`/`INSTALL` can write files and load extensions, so this was a path to arbitrary file write, not just data disclosure. The export's destination-path literal is escaped too. (The broader `tycoon.yml` identifier/path validation layer is tracked in [#65][].)
 
+### Fixed
+
+- **Robustness polish from PR review** (PR [#59][]). `tycoon schedule add --command` now tolerates a redundant leading `tycoon` (so `"tycoon data run-all"` doesn't become `tycoon tycoon …`); Quack detection tries a plain `LOAD quack;` before the network `INSTALL … FROM core_nightly` for offline/cached use; `tycoon notify` swallows *any* webhook exception (not just `httpx.HTTPError`) so a malformed URL can't crash a pipeline; the Google Sheets service-account key is read as UTF-8 (Windows safety); and `tycoon notify --field` rejects an empty key.
+
 [#31]: https://github.com/Database-Tycoon/tycoon-cli/issues/31
 [#42]: https://github.com/Database-Tycoon/tycoon-cli/issues/42
 [#46]: https://github.com/Database-Tycoon/tycoon-cli/issues/46
@@ -25,6 +29,7 @@ _Headline: Google Sheets source ([#52][]). Plus managed project-local `.venv` + 
 [#52]: https://github.com/Database-Tycoon/tycoon-cli/issues/52
 [#55]: https://github.com/Database-Tycoon/tycoon-cli/issues/55
 [#57]: https://github.com/Database-Tycoon/tycoon-cli/issues/57
+[#59]: https://github.com/Database-Tycoon/tycoon-cli/pull/59
 [#60]: https://github.com/Database-Tycoon/tycoon-cli/issues/60
 [#61]: https://github.com/Database-Tycoon/tycoon-cli/issues/61
 [#65]: https://github.com/Database-Tycoon/tycoon-cli/issues/65
