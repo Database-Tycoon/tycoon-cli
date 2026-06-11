@@ -20,7 +20,7 @@ _Headline: Google Sheets source ([#52][]). Plus managed project-local `.venv` + 
 
 ### Fixed
 
-- **Robustness polish from PR review** (PRs [#59][], [#69][]). `tycoon schedule add --command` now tolerates a redundant leading `tycoon` (so `"tycoon data run-all"` doesn't become `tycoon tycoon …`) and rejects an empty command after stripping; Quack detection tries a plain `LOAD quack;` before the network `INSTALL … FROM core_nightly` for offline/cached use, and fast-fails rather than cascading into the 60s install if that probe hangs; `tycoon notify` swallows *any* webhook exception (not just `httpx.HTTPError`) so a malformed URL can't crash a pipeline; the Google Sheets service-account key is read as UTF-8 (Windows safety); and `tycoon notify --field` rejects an empty key.
+- **Robustness polish from PR review** (PRs [#59][], [#69][]). `tycoon schedule add --command` now tolerates a redundant leading `tycoon` (so `"tycoon data run-all"` doesn't become `tycoon tycoon …`) and rejects an empty command after stripping; Quack detection tries a plain `LOAD quack;` before the network `INSTALL … FROM core_nightly` for offline/cached use, and fast-fails rather than cascading into the 60s install if that probe hangs; `tycoon notify` catches every failure `httpx.post` can raise (`httpx.HTTPError` plus `httpx.InvalidURL`) so a malformed URL can't crash a pipeline, without a blanket `except` that would hide real bugs; the Google Sheets service-account key is read as UTF-8 (Windows safety); and `tycoon notify --field` rejects an empty key.
 
 [#31]: https://github.com/Database-Tycoon/tycoon-cli/issues/31
 [#42]: https://github.com/Database-Tycoon/tycoon-cli/issues/42

@@ -82,10 +82,13 @@ class TestSend:
         with patch("tycoon.notify.httpx.post", return_value=resp):
             assert notify.send("info", "x", url="https://example.com/h") is False
 
-    def test_returns_false_on_non_httperror_exception(self):
-        # A malformed webhook can make httpx raise ValueError / InvalidURL, not
-        # an HTTPError — send() must still swallow it (never raises by contract).
-        with patch("tycoon.notify.httpx.post", side_effect=ValueError("bad url")):
+    def test_returns_false_on_invalid_url(self):
+        # A malformed webhook makes httpx raise InvalidURL, which is NOT an
+        # HTTPError subclass — send() must still swallow it (never raises by
+        # contract) without resorting to a blanket `except Exception`.
+        import httpx
+
+        with patch("tycoon.notify.httpx.post", side_effect=httpx.InvalidURL("bad")):
             assert notify.send("info", "x", url="https://example.com/h") is False
 
 
