@@ -30,6 +30,7 @@ _Headline: Google Sheets source ([#52][]). Plus managed project-local `.venv` + 
 [#55]: https://github.com/Database-Tycoon/tycoon-cli/issues/55
 [#57]: https://github.com/Database-Tycoon/tycoon-cli/issues/57
 [#59]: https://github.com/Database-Tycoon/tycoon-cli/pull/59
+[#69]: https://github.com/Database-Tycoon/tycoon-cli/pull/69
 [#60]: https://github.com/Database-Tycoon/tycoon-cli/issues/60
 [#61]: https://github.com/Database-Tycoon/tycoon-cli/issues/61
 [#65]: https://github.com/Database-Tycoon/tycoon-cli/issues/65
