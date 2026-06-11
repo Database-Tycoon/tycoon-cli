@@ -31,19 +31,29 @@ name: {name}
 description: "Describe when this skill should trigger"
 ---
 
-## Requirements
-- Table: analytics.your_table
+## Domain Context
+# Provide business context here. What is the "truth" we are verifying?
+# e.g., "A successful order must have a matching stripe record."
 
-## SQL
+## Trigger Logic
+# Define when this skill should be invoked.
+# e.g., "When the user asks about 'discrepancies' or 'revenue leaks'."
+
+## Reasoning Framework
+# This is the "thought leadership" part. Explain the steps an analyst 
+# would take to solve this problem.
+# 1. Check X
+# 2. Join Y to Z
+# 3. Verify the delta is within 1%
+
+## Reference SQL (Gold Standard)
 ```sql
 SELECT ...
-FROM analytics.your_table
-LIMIT 10
 ```
 
-## Output Format
-| column | description |
-|--------|-------------|
+## Output Expectations
+# Describe what the final answer should look like.
+# e.g., "Present a summary table and suggest a next step."
 """
 
 
@@ -1009,9 +1019,55 @@ def skills_list() -> None:
 
     console.print(table)
 
+@skills_app.command("validate")
+def skills_validate():
+    """Validate that all skills follow the Logic-First structure."""
+    skills_dir = _skills_dir()
+    if not skills_dir.exists():
+        error(f"Skills directory does not exist: {skills_dir}")
+        return
+
+    required_headers = [
+        "## Domain Context",
+        "## Trigger Logic",
+        "## Reasoning Framework",
+        "## Reference SQL",
+        "## Output Expectations"
+    ]
+    
+    skill_files = list(skills_dir.glob("*.md"))
+    if not skill_files:
+        info("No skill files found to validate.")
+        return
+
+    table = Table(title="Skill Validation Results", show_header=True, header_style="bold cyan")
+    table.add_column("File", style="dim")
+    table.add_column("Status", justify="center")
+    table.add_column("Details")
+
+    valid_count = 0
+    for skill_file in skill_files:
+        content = skill_file.read_text()
+        missing = []
+        for header in required_headers:
+            if header not in content:
+                missing.append(header.replace("## ", ""))
+        
+        if not missing:
+            table.add_row(skill_file.name, "[green]VALID[/green]", "Matches Logic-First structure")
+            valid_count += 1
+        else:
+            table.add_row(skill_file.name, "[red]INVALID[/red]", f"Missing: {', '.join(missing)}")
+
+    console.print(table)
+    if valid_count == len(skill_files):
+        success("All skills follow the Logic-First structure.")
+    else:
+        warn(f"{len(skill_files) - valid_count} skill(s) need updating to the new format.")
 
 @skills_app.command("new")
 def skills_new(
+
     name: str = typer.Argument(..., help="Skill name (used as filename and frontmatter name)."),
 ) -> None:
     """Scaffold a new skill file."""

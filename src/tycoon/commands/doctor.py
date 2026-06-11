@@ -4,16 +4,91 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 
+import typer
 from rich.console import Console
 from rich.panel import Panel
 
 from tycoon.config import config
+from tycoon.constants import MAX_PYTHON_EXCLUSIVE as _MAX_PYTHON_EXCLUSIVE
+from tycoon.constants import MIN_PYTHON as _MIN_PYTHON
 from tycoon.project import BITool, IngestionTool, OrchestratorTool, TransformationTool, WarehouseType
 from tycoon.utils.console import error, header, info, success, warn
 
 console = Console()
+
+
+def _fmt_ver(ver: tuple[int, int]) -> str:
+    return f"{ver[0]}.{ver[1]}"
+
+
+def _check_python_version(version_info: tuple[int, int] | None = None) -> bool:
+    """Verify the running interpreter is within tycoon's supported range.
+
+    tycoon imports ``dlt``/``duckdb`` in-process and shells out to the ``dbt``
+    that sits next to ``sys.executable``, so the interpreter running tycoon is
+    *also* the one running dbt. An out-of-range interpreter (notably 3.14, which
+    has no dbt wheels) fails far from its cause — at ``transform run`` — which is
+    why #55 stayed invisible. Surfacing it here, at the top of doctor, makes the
+    Python mismatch the first thing a user sees.
+
+    Returns True if the interpreter is in range — ``doctor --fix`` keys off this
+    to decide whether to offer to build a corrected ``.venv``.
+    """
+    current = version_info if version_info is not None else sys.version_info[:2]
+    cur = (current[0], current[1])
+    label = _fmt_ver(cur)
+
+    if cur < _MIN_PYTHON:
+        error(
+            f"Python {label} is too old. tycoon needs "
+            f">={_fmt_ver(_MIN_PYTHON)},<{_fmt_ver(_MAX_PYTHON_EXCLUSIVE)}. "
+            f"Recreate the environment on a supported interpreter, e.g. "
+            f"`tycoon setup` (or `uv venv --python {_fmt_ver(_MIN_PYTHON)}`)."
+        )
+        return False
+
+    if cur >= _MAX_PYTHON_EXCLUSIVE:
+        error(
+            f"Python {label} is too new for tycoon's dbt stack "
+            f"(dbt-core / dbt-duckdb have no {label} wheels yet). "
+            f"Supported range is >={_fmt_ver(_MIN_PYTHON)},<{_fmt_ver(_MAX_PYTHON_EXCLUSIVE)}. "
+            f"Recreate the environment on 3.13 — run `tycoon setup` "
+            f"(or `uv venv --python 3.13`; uv will fetch it if needed)."
+        )
+        return False
+
+    success(f"Python {label} is in the supported range "
+            f"(>={_fmt_ver(_MIN_PYTHON)},<{_fmt_ver(_MAX_PYTHON_EXCLUSIVE)}).")
+    return True
+
+
+def _fix_python_env() -> None:
+    """Build a project-local ``.venv`` on a supported interpreter (``--fix``).
+
+    The running interpreter can't be swapped under our own feet, so the repair
+    is to create the correct environment beside ``tycoon.yml`` and tell the user
+    to activate it. Delegates to the same core as ``tycoon setup``.
+    """
+    from tycoon.constants import DEFAULT_SETUP_PYTHON
+    from tycoon.venv import create_venv, find_uv
+
+    if find_uv() is None:
+        warn(
+            "Can't auto-fix: uv isn't installed. Install it with "
+            "`curl -LsSf https://astral.sh/uv/install.sh | sh`, then re-run."
+        )
+        return
+
+    info(f"--fix: building a project-local .venv on Python {DEFAULT_SETUP_PYTHON} via uv...")
+    result = create_venv(config.root, DEFAULT_SETUP_PYTHON)
+    if result.ok:
+        success(result.message)
+        info("Activate it with `source .venv/bin/activate`, then re-run `tycoon doctor`.")
+    else:
+        error(result.message)
 
 
 def _check_tycoon_yml():
@@ -352,11 +427,45 @@ def _check_observability() -> None:
     )
 
 
-def doctor_cmd() -> None:
+def _check_schedules() -> None:
+    """Report installed tycoon schedules (#48). Environment-level, per-user."""
+    from tycoon import schedule as sched
+
+    try:
+        names = sched.list_schedules()
+    except Exception:
+        info("Schedules: could not enumerate (unsupported platform).")
+        return
+    if not names:
+        info("Schedules: none installed.")
+        return
+    success(
+        f"Schedules: {len(names)} installed ({', '.join(names)}). "
+        f"Inspect a run with `tycoon schedule status <name>`."
+    )
+
+
+def doctor_cmd(
+    fix: bool = typer.Option(
+        False,
+        "--fix",
+        help=(
+            "Attempt to repair fixable problems. Currently: when the Python "
+            "interpreter is out of range, build a project-local `.venv` on a "
+            "supported interpreter (via uv) for you to activate."
+        ),
+    ),
+) -> None:
     """Check the environment for potential issues."""
     header("Tycoon Doctor")
 
     with console.status("[bold green]Running checks...[/bold green]"):
+        console.print(Panel("Checking Python interpreter...", expand=False))
+        python_ok = _check_python_version()
+
+        console.print(Panel("Checking scheduled runs...", expand=False))
+        _check_schedules()
+
         console.print(Panel("Checking for tycoon.yml...", expand=False))
         _check_tycoon_yml()
 
@@ -383,3 +492,6 @@ def doctor_cmd() -> None:
             _check_observability()
 
     info("All checks complete.")
+
+    if fix and not python_ok:
+        _fix_python_env()

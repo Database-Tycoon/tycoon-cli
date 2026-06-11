@@ -8,7 +8,7 @@ Start and stop background services — Rill dashboards, Dagster orchestrator, Na
 tycoon start [OPTIONS]
 
 Options:
-  --only TEXT       Start only the named service (rill / dagster / nao / web)
+  --only TEXT       Start only the named service (rill / dagster / nao / web / quack)
   --no-open         Don't open a browser
   -h, --help        Show this message and exit
 ```
@@ -21,8 +21,21 @@ By default, `tycoon start` boots every service that's relevant to the project (b
 | Dagster | 3000 | `stack.orchestrator = dagster` AND `tycoon[dagster]` extra installed |
 | Nao | 5005 | `stack.transformation` set AND `tycoon[ask]` extra installed AND `.tycoon/nao/nao_config.yaml` exists |
 | Web UI | 8080 | `tycoon[server]` extra installed |
+| Quack | 9494 | the DuckDB **Quack** extension is available (`core_nightly`) |
 
 Each service runs as a managed subprocess. PIDs are tracked under `.tycoon/run/` so `tycoon stop` finds them.
+
+### Quack — the live, multi-client warehouse (v0.1.9)
+
+When the [DuckDB Quack](https://duckdb.org/quack/) extension is available, `tycoon start` also serves your warehouse over Quack's local RPC protocol on `:9494`. This turns the single-writer DuckDB file into a multi-client server: while the stack is up, `tycoon data query` (and any other local Quack client) reads the **live** warehouse instead of failing on the file lock. It's all on `localhost` — no cloud, no copies.
+
+There's nothing new to learn — it folds into the commands you already run:
+
+- A per-project access token is generated once into `.tycoon/secrets.yml` (gitignored).
+- [`tycoon data query`](data/query.md) attaches over Quack automatically when the server is up, and falls back to opening the file directly when it isn't.
+- It's skipped silently on machines where the extension can't load (it currently ships only in DuckDB's `core_nightly`).
+
+> **Note:** Quack holds the warehouse file while it's serving. Running a separate writer against the same file — e.g. a standalone `tycoon data transform run` (dbt) in another terminal — will conflict. Stop the stack (`tycoon stop`) before bulk dbt writes. Coordinating dbt automatically is a planned follow-up.
 
 ### Start one service
 

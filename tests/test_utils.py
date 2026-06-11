@@ -12,6 +12,7 @@ from tycoon.utils.duckdb_utils import (
     db_file_size_mb,
     get_tables,
     get_row_count,
+    quote_identifier,
     remove_wal,
 )
 from tycoon.utils.console import status_table, success, warn, error, info
@@ -65,6 +66,27 @@ class TestDuckDBUtils:
 
         count = get_row_count(db_path, "test_schema", "sample")
         assert count == 3
+
+    def test_quote_identifier_escapes_embedded_quotes(self):
+        assert quote_identifier("sample") == '"sample"'
+        assert quote_identifier('a"b') == '"a""b"'
+
+    def test_get_row_count_handles_quote_bearing_identifiers(self, tmp_path: Path):
+        """A schema/table name containing characters that would break out of
+        an unquoted identifier must be handled as a literal name, not injected
+        SQL (regression for #61)."""
+        db_path = tmp_path / "inj.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute('CREATE SCHEMA "weird ; schema"')
+        con.execute('CREATE TABLE "weird ; schema"."t-1" (id INTEGER)')
+        con.execute('INSERT INTO "weird ; schema"."t-1" VALUES (1), (2)')
+        con.close()
+
+        # Without quoting, "weird ; schema" / "t-1" would be a syntax error or
+        # worse; with quoting it resolves to the real table.
+        assert get_row_count(db_path, "weird ; schema", "t-1") == 2
+        # A malicious name simply doesn't resolve — it is never executed as SQL.
+        assert get_row_count(db_path, 'x"; DROP TABLE foo; --', "t") is None
 
     def test_get_tables_with_data(self, tmp_path: Path):
         db_path = tmp_path / "test.duckdb"

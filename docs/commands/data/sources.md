@@ -28,6 +28,7 @@ Output:
 │ github     │ Developer Tools │ Issues, PRs, commits     │ issues, ...        │
 │ slack      │ Communication   │ Channels, users, ...     │ channels, ...      │
 │ stripe     │ Payments        │ Customers, ...           │ customers, ...     │
+│ google_she…│ Spreadsheets    │ Tabs/ranges from a sheet │ sheets             │
 │ rest_api   │ Generic         │ Any REST API             │ pokemon, ...       │
 │ filesystem │ Generic         │ Local CSV / Parquet      │ files              │
 └────────────┴─────────────────┴──────────────────────────┴────────────────────┘
@@ -54,6 +55,7 @@ Then type-specific config:
 
 - **github** — repo owner + name, optional access token env var name
 - **slack** — workspace + bot token env var name
+- **google_sheets** — service-account key path, spreadsheet URL/ID, optional tab/range list
 - **rest_api** — base URL, dataset list, optional auth header
 - **filesystem** — directory path + glob pattern
 - **sql_database** — connection string + table list
@@ -99,6 +101,34 @@ Flag reference:
 | `--force` | Overwrite an existing source with the same name without confirming |
 
 Catalog credentials default to `${ENV_VAR}` references in both modes — set the env var separately. Catalog-source files (`dlt init`-style downloads) are not auto-installed under `--no-prompt`; run `tycoon data sources catalog install <type>` separately if you need them.
+
+### Google Sheets
+
+Google Sheets pulls one or more tabs/ranges from a spreadsheet into DuckDB. The header row becomes typed columns. First cut is **full-refresh replace** per run — Sheets has no native incremental key.
+
+**1. Get a service-account key (headless/cron-friendly).** Create a service account at [console.cloud.google.com/iam-admin/serviceaccounts](https://console.cloud.google.com/iam-admin/serviceaccounts), enable the **Google Sheets API** for the project, and download a JSON key. Then **share the spreadsheet** with the service-account's email (`...@....iam.gserviceaccount.com`) — read access is enough.
+
+**2. Point tycoon at the key.** The credential defaults to the standard `${GOOGLE_APPLICATION_CREDENTIALS}` env var:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=~/keys/sheets-sa.json
+```
+
+**3. Register the source.** Interactively (`tycoon data sources add google_sheets`) you'll be prompted for the key path, the spreadsheet URL/ID, and an optional tab/range list. Non-interactively:
+
+```bash
+tycoon data sources add google_sheets \
+  --name marketing-sheet \
+  --config 'spreadsheet_url_or_id=https://docs.google.com/spreadsheets/d/<ID>/edit' \
+  --config 'range_names=Sheet1,Q1 2026!A1:F' \
+  --no-prompt
+```
+
+- **`spreadsheet_url_or_id`** — the full share URL or just the ID. Required.
+- **`range_names`** — comma-separated tab names and/or A1 ranges. Leave blank to load **every** sheet in the spreadsheet.
+- **`credentials_path`** — defaults to `${GOOGLE_APPLICATION_CREDENTIALS}`. Leave it blank to fall back to dlt's own credential resolution (env / `secrets.toml`), which is where the **OAuth / Application Default Credentials** path lives if you'd rather not use a service account.
+
+**4. Ingest:** `tycoon data sources run marketing-sheet`. The first run downloads the dlt `google_sheets` verified source to `~/.tycoon/sources/` (or `tycoon data sources catalog install google_sheets` under `--no-prompt`), then loads into `raw_<name>` and auto-scaffolds a staging dbt model.
 
 ## `list` — list registered sources
 

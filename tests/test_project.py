@@ -79,6 +79,41 @@ class TestLoadSave:
         assert loaded is not None
         assert loaded.database.raw == "fallback/raw.duckdb"
 
+    def test_save_does_not_leak_fivetran_secret_or_flatten_env_ref(
+        self, tmp_path, monkeypatch
+    ):
+        """save_project must never write the expanded Fivetran secret back to
+        disk, nor mask it to ``**********`` — the hand-authored env-ref block
+        is preserved verbatim (regression for #60)."""
+        monkeypatch.setenv("FIVETRAN_API_SECRET", "super-secret-value")
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(
+            "name: ft\n"
+            "stack:\n"
+            "  ingestion: fivetran\n"
+            "  ingestion_metadata:\n"
+            "    api_key: ak_123\n"
+            "    api_secret: ${FIVETRAN_API_SECRET}\n"
+            "    group_id: grp_1\n"
+        )
+        loaded = load_project(tmp_path)
+        assert loaded is not None
+        assert loaded.stack.ingestion_metadata is not None
+        # In-memory the secret is expanded for use, but masked in any repr.
+        assert (
+            loaded.stack.ingestion_metadata.api_secret.get_secret_value()
+            == "super-secret-value"
+        )
+        assert "super-secret-value" not in repr(loaded.stack.ingestion_metadata)
+
+        # A subsequent save (e.g. triggered by `sources add`) must keep the
+        # on-disk block exactly as authored.
+        save_project(loaded, tmp_path)
+        on_disk = yml.read_text()
+        assert "${FIVETRAN_API_SECRET}" in on_disk
+        assert "super-secret-value" not in on_disk  # no expanded-secret leak
+        assert "**********" not in on_disk  # not corrupted by SecretStr masking
+
 
 class TestConfigIntegration:
 

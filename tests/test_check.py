@@ -76,6 +76,51 @@ class TestMotherDuckAuthProbe:
         assert "not configured" in (captured.out + captured.err)
 
 
+class TestPythonVersionCheck:
+    """`_check_python_version` enforces the supported interpreter range
+    (>=3.12,<3.14), the blind spot that hid #55 until `transform run` failed."""
+
+    def test_supported_version_passes(self, capsys):
+        from tycoon.commands import doctor
+
+        doctor._check_python_version((3, 13))
+        out = capsys.readouterr().out
+        assert "Python 3.13 is in the supported range" in out
+
+    def test_lower_bound_inclusive(self, capsys):
+        from tycoon.commands import doctor
+
+        doctor._check_python_version((3, 12))
+        out = capsys.readouterr().out
+        assert "supported range" in out
+
+    def test_too_old_errors(self, capsys):
+        from tycoon.commands import doctor
+
+        doctor._check_python_version((3, 11))
+        captured = capsys.readouterr()
+        assert "too old" in (captured.out + captured.err)
+
+    def test_too_new_errors_with_dbt_context(self, capsys):
+        from tycoon.commands import doctor
+
+        doctor._check_python_version((3, 14))
+        captured = capsys.readouterr()
+        combined = captured.out + captured.err
+        assert "too new" in combined
+        # The remediation points at the managed-venv direction (#57).
+        assert "uv venv --python 3.13" in " ".join(combined.split())
+
+    def test_defaults_to_running_interpreter(self, capsys):
+        """With no argument it inspects the live interpreter — and since the
+        test suite runs on a supported interpreter, it should pass."""
+        from tycoon.commands import doctor
+
+        doctor._check_python_version()
+        out = capsys.readouterr().out
+        assert "supported range" in out
+
+
 class TestDoctorObservabilityCheck:
     """`_check_observability` reports capture-hook health."""
 

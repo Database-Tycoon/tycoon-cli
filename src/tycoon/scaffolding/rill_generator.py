@@ -19,6 +19,8 @@ from pathlib import Path
 
 import duckdb
 
+from tycoon.utils.duckdb_utils import quote_identifier
+
 
 # ---------------------------------------------------------------------------
 # dlt internal columns / tables — excluded from all Rill output
@@ -298,11 +300,14 @@ def generate_rill_config(
         for table_name, columns in tables.items():
             parquet_path = parquet_dir / f"{table_name}.parquet"
             non_dlt_cols = [col for col, _ in columns]
-            col_list = ", ".join(f'"{c}"' for c in non_dlt_cols)
+            col_list = ", ".join(quote_identifier(c) for c in non_dlt_cols)
+            # Escape the single-quoted path literal too (table_name flows
+            # into it and could otherwise break out of the string).
+            path_literal = str(parquet_path).replace("'", "''")
             export_con.execute(
                 f"""
-                COPY (SELECT {col_list} FROM {schema_name}."{table_name}")
-                TO '{parquet_path}' (FORMAT PARQUET)
+                COPY (SELECT {col_list} FROM {quote_identifier(schema_name)}.{quote_identifier(table_name)})
+                TO '{path_literal}' (FORMAT PARQUET)
                 """
             )
             table_parquet_paths[table_name] = parquet_path

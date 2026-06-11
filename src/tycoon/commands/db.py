@@ -135,6 +135,7 @@ def query(
     ] = None,
 ) -> None:
     """Run a read-only SQL query against the warehouse, raw, or a source database."""
+    is_warehouse = False
     if db:
         db_path = db
         label = db_path.name
@@ -152,13 +153,26 @@ def query(
     else:
         db_path = config.local_db
         label = "warehouse"
+        is_warehouse = True
 
-    if not db_path.exists():
+    # When a Quack server is holding the warehouse (e.g. `tycoon start` is
+    # running), the file is exclusively locked — opening it in-process would
+    # fail. Attach over Quack instead so we read the *live* warehouse. Only the
+    # warehouse is served; --raw / --source / --db stay file-based.
+    from tycoon import quack
+
+    quack_token = quack.load_token(config.root) if is_warehouse else None
+    via_quack = bool(quack_token) and quack.is_server_running()
+
+    if not via_quack and not db_path.exists():
         error(f"Database not found at {db_path}")
         raise typer.Exit(1)
 
+    if via_quack:
+        label = f"{label} (Quack)"
+
     try:
-        con = duckdb.connect(str(db_path), read_only=True)
+        con = quack.connect(quack_token) if via_quack else duckdb.connect(str(db_path), read_only=True)
         result = con.execute(sql)
         columns = [desc[0] for desc in result.description]
         rows = result.fetchall()

@@ -83,6 +83,7 @@ nav:
     - Overview: commands/index.md
     - Project:
       - "tycoon init": commands/init.md
+      - "tycoon setup": commands/setup.md
       - "tycoon register": commands/register.md
       - "tycoon profiles": commands/profiles.md
       - "tycoon semantics": commands/semantics.md
@@ -103,6 +104,8 @@ nav:
       - "tycoon start / stop": commands/start.md
     - Tools:
       - "tycoon run": commands/run.md
+      - "tycoon notify": commands/notify.md
+      - "tycoon schedule": commands/schedule.md
   - Reference:
     - reference/tycoon-yml.md
     - reference/templates.md
@@ -120,6 +123,7 @@ nav:
     - recipes/fivetran-metadata.md
     - recipes/layered-architecture.md
   - Releases:
+    - "v0.1.9": releases/v0.1.9.md
     - "v0.1.8": releases/v0.1.8.md
     - "v0.1.7": releases/v0.1.7.md
     - "v0.1.6": releases/v0.1.6.md
@@ -138,3 +142,4 @@ not_in_nav: |
   /install_rill.sh
   /proposals/v0.1.6-and-v0.1.7-open-questions.md
   /proposals/v0.1.8-scope.md
+  /proposals/v0.1.9-scope.md

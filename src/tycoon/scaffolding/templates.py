@@ -86,6 +86,13 @@ olap_connector: duckdb
 """
 
 _GITIGNORE_CONTENT = """\
+# Secrets — never commit these. tycoon.yml itself is a committable,
+# shareable template; keep credentials OUT of it via ${ENV} refs and in
+# these files instead.
+.env
+.dlt/secrets.toml
+**/profiles.yml
+
 # Tycoon
 data/*.duckdb
 data/*.duckdb.wal
