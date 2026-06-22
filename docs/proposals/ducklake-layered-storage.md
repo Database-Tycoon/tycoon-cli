@@ -76,6 +76,8 @@ outputs:
 
 Models materialize with `{{ config(database='mart', schema='main') }}`; sources point at `database: raw`.
 
+> **Version floor — this is native in dbt-duckdb ≥ 1.10, not older.** The `is_ducklake` and `options` fields on `attach:` are declared on dbt-duckdb's `Attachment` model as of 1.10 and were exercised end-to-end on **1.10.1** in spike 4 (a real `dbt run` materialized into the mart catalog). On **older** dbt-duckdb the `Attachment` model rejects them (`extra fields not permitted`) and you'd need a custom `plugins:` adapter instead — so the implementation must **pin a dbt-duckdb floor**, not assume the syntax works everywhere.
+
 ### How it maps to the current code
 
 | Today | Becomes |
@@ -93,7 +95,7 @@ Models materialize with `{{ config(database='mart', schema='main') }}`; sources 
 
 ## Open questions / decisions needed
 
-1. **Default vs opt-in.** Is layered-DuckLake *the* warehouse model, or an opt-in "lakehouse mode"? Given no users yet ([no-legacy stance]) there's no compat tax either way. **Recommendation:** prototype it *behind* the existing `raw`/`warehouse` abstraction so the CLI surface is unchanged, validate it carries the conference demo, then commit.
+1. **Default vs opt-in.** Is layered-DuckLake *the* warehouse model, or an opt-in "lakehouse mode"? Given no users yet (the project's no-legacy stance) there's no compat tax either way. **Recommendation:** prototype it *behind* the existing `raw`/`warehouse` abstraction so the CLI surface is unchanged, validate it carries the conference demo, then commit.
 2. **Catalog backend default + graduation.** SQLite by default (local, multi-process). Document the swap to PostgreSQL / MotherDuck for multi-machine sharing — same Parquet, different metadata home. PostgreSQL catalog is explicitly **later**, not this work.
 3. **Schema naming.** In spike 4, dbt turned `schema: main` into `main_main` (default `generate_schema_name` concatenates target + custom). The implementation must override `generate_schema_name` or set layer schemas deliberately.
 4. **The one unproven leg: S3.** Every spike used a *local* `data_path`. `data_path: s3://…` is untested. MinIO would mean Docker (against local-first), so validate against a real bucket before claiming "S3-ready." **This is a prerequisite to the S3 phase.**
