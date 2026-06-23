@@ -76,6 +76,8 @@ outputs:
 
 Models materialize with `{{ config(database='mart', schema='main') }}`; sources point at `database: raw`.
 
+> **Why `raw` omits `data_path` but `mart` includes it.** A DuckLake catalog stores its `data_path` in metadata at **creation time**, so re-attaching an *existing* catalog doesn't need it. `raw` is pre-created by ingestion (dlt), so it re-attaches with just `read_only: true`; `mart` is created here, so it specifies `data_path`. Verified: re-attaching an existing `ducklake:sqlite:` catalog with no `data_path` resolves and reads correctly.
+
 > **Version floor — this is native in dbt-duckdb ≥ 1.10, not older.** The `is_ducklake` and `options` fields on `attach:` are declared on dbt-duckdb's `Attachment` model as of 1.10 and were exercised end-to-end on **1.10.1** in spike 4 (a real `dbt run` materialized into the mart catalog). On **older** dbt-duckdb the `Attachment` model rejects them (`extra fields not permitted`) and you'd need a custom `plugins:` adapter instead — so the implementation must **pin a dbt-duckdb floor**, not assume the syntax works everywhere.
 
 ### How it maps to the current code
