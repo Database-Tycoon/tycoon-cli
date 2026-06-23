@@ -61,6 +61,7 @@ outputs:
   dev:
     type: duckdb
     path: ":memory:"
+    schema: main
     extensions: [ducklake, sqlite, httpfs]
     attach:
       - path: "ducklake:sqlite:/abs/data/raw.sqlite"
