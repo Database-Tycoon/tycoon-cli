@@ -8,9 +8,9 @@
 
 ## TL;DR
 
-We are rewriting the ingestion layer of `tycoon-cli` against the abstractions in MANIFESTO.md and ARCHITECTURE.md. Two existing packages will coexist in this repo during the rewrite: `src/tycoon/` (current production code, entrypoint `tycoon`) and `src/_tycoon/` (the rewrite, entrypoint `tycli`). When the rewrite reaches feature parity for ingestion and passes the architectural acceptance test (Fivetran adapter slotted in with zero core changes), we cut over in a single PR: delete `src/tycoon/`, rename `src/_tycoon/` → `src/tycoon/`. The `tycli` entrypoint stays as either an alias or the primary command depending on what we've learned by then.
+We are rewriting the ingestion layer of `tycoon-cli` against the abstractions in MANIFESTO.md and ARCHITECTURE.md. The rewrite happens directly in `src/tycoon/` on a long-lived feature branch. When it reaches feature parity for ingestion and passes the architectural acceptance test (Fivetran adapter slotted in with zero core changes), the branch merges. No parallel package, no shadow entrypoint, no cutover rename.
 
-The decision to rewrite rather than refactor was made after a focused inventory pass (Appendix A). The current code is ~50% reshapeable, ~30% actively contradicts the new shape, and the load-bearing assumptions (source-type conflated with runtime, dispatch hardcoded to dlt, shims monolithic) are exactly the assumptions the new abstractions exist to remove. Refactoring in-place would force a months-long half-converted state. Rewriting in parallel keeps the production CLI working while the new shape is built deliberately.
+The decision to rewrite rather than refactor was made after a focused inventory pass (Appendix A). The current code is ~50% reshapeable, ~30% actively contradicts the new shape, and the load-bearing assumptions (source-type conflated with runtime, dispatch hardcoded to dlt, shims monolithic) are exactly the assumptions the new abstractions exist to remove. Refactoring in-place on main would force a months-long half-converted state. Rewriting on a dedicated branch keeps main stable while the new shape is built deliberately — and with ~17 PyPI downloads/day and no production users, there is no coexistence requirement that would justify the complexity of a parallel package.
 
 ---
 
@@ -18,26 +18,19 @@ The decision to rewrite rather than refactor was made after a focused inventory 
 
 These are settled. Each is recorded here so the rationale is durable.
 
-### D1 — Rewrite path: extract a new package, port the good parts
+### D1 — Rewrite path: rebuild in `src/tycoon/` on a feature branch
 
-Build a new package at `src/_tycoon/` from scratch against the manifesto and architecture. The old `src/tycoon/` remains untouched in the same repo as a working fallback. Four specific patterns from the old code will be ported deliberately (see §"Port list"). Everything else either gets rebuilt with the right shape or stays out.
+Rebuild the ingestion layer from scratch against the manifesto and architecture, directly in `src/tycoon/`, on a long-lived feature branch. Four specific patterns from the old code will be ported deliberately (see §"Port list"). Everything else either gets rebuilt with the right shape or stays out.
 
-**Why not refactor in place:** half-converted codebases die of contortion. Every PR becomes "rename this, gate that, add a flag." The load-bearing assumptions in the current code are exactly what the new abstractions remove — fighting them in-flight is slower than rebuilding cleanly.
+**Why rewrite, not refactor:** half-converted codebases die of contortion. Every PR becomes "rename this, gate that, add a flag." The load-bearing assumptions in the current code are exactly what the new abstractions exist to remove — fighting them in-flight is slower than rebuilding cleanly.
 
-**Why not pure greenfield in a separate repo:** we'd lose the four patterns worth porting, lose the git history, and create a coordination problem (two repos to track, two PyPI distributions to reconcile). Same-repo coexistence is cheaper.
+**Why in-place, not a parallel package:** the parallel-package approach (a separate `src/_tycoon/` with a shadow `tycli` entrypoint and a cutover PR) adds machinery nobody needs. With ~17 PyPI downloads/day and no production users, keeping the old CLI "working untouched" buys safety no one requires. A feature branch achieves the clean-room property without a second package name living in the tree.
 
-**Why the install-base does not constrain:** ~17 PyPI downloads/day, no known production users. The team is the entire user base. No coexistence-for-users requirement.
+**Why not a separate repo:** we'd lose the four patterns worth porting, lose the git history, and create a coordination problem. Same-repo feature branch is cheaper.
 
 ### D2 — Package and entrypoint naming
 
-| Surface | During rewrite window | At cutover |
-|---|---|---|
-| Import path | `_tycoon` | `tycoon` |
-| Filesystem | `src/_tycoon/` | `src/tycoon/` (old deleted) |
-| Entrypoint command | `tycli` | `tycli` (alias) and/or `tycoon` (decide at cutover) |
-| PyPI distribution | unchanged (`database-tycoon`) | unchanged unless we rename deliberately |
-
-The leading underscore is the explicit "in-progress, will-be-renamed" marker. It cannot be invoked by accident through `tycoon`. The entrypoint is decoupled from the import name from day one — that decoupling is permanent, not just a rewrite-window convenience. We never again confuse "what the package is called internally" with "what the user types."
+One name throughout: `tycoon`. CLI command, import path, filesystem path, PyPI distribution (`database-tycoon`) unchanged. No rewrite-window aliases, no cutover rename.
 
 ### D3 — CLI as a thin shell over a programmatic API
 
@@ -46,7 +39,7 @@ Every command returns a typed result. The CLI renderer formats it for humans; th
 **What this means concretely:**
 - No command function "prints a table." It returns a structured result object; a renderer prints the table.
 - `--json` works on every command by default, emitting the same model the CLI rendered.
-- `from _tycoon import sources; sources.add(...)` gives an experience equivalent to `tycli source add ...`.
+- `from tycoon import sources; sources.add(...)` gives an experience equivalent to `tycoon source add ...`.
 - This is the manifesto §5 (agent-latchability) commitment made concrete from day one. Retrofitting later is much harder than building toward it.
 
 ### D4 — Quality scaffolding from day one, proportionate
@@ -60,24 +53,26 @@ Every command returns a typed result. The CLI renderer formats it for humans; th
 | Type checking | mypy or pyright in strict mode on `core/`; looser on adapters where third-party stubs are weak |
 | CI | One GitHub Actions workflow: lint + type-check + test on PRs |
 | Pre-commit hooks | ruff format + ruff check + mypy on changed files |
-| `CLAUDE.md` | At `src/_tycoon/` root. Short (under 200 lines). Covers manifesto's load-bearing rules, layering constraints, "where new things go," test/lint expectations |
+| `CLAUDE.md` | At `src/tycoon/` root. Short (under 200 lines). Covers manifesto's load-bearing rules, layering constraints, "where new things go," test/lint expectations |
 
 Done first, before any business logic. Empty package, working CI, working pre-commit, empty `CLAUDE.md`. Sets the tone.
 
-### D5 — POC scope: ingestion only, two Runtimes, three modes
+### D5 — POC scope: ingestion + dbt Transformation, two Runtimes, three modes
 
-Per manifesto §8. The rewrite ships exactly two Runtime adapters in the POC:
+Per manifesto §8 and ARCHITECTURE.md Level 3. The rewrite ships exactly two Runtime adapters in the POC:
 
 - **dlt** — execution in-process (or in a controlled subprocess for `dlt-project`)
-- **Fivetran** — execution delegated; dbty observes and triggers via API
+- **Fivetran** — execution delegated; tycoon observes and triggers via API
 
 From those, three Source modes:
 
-1. **`dlt-native`** — dbty runs a dlt source or resource (own shim or user entrypoint)
-2. **`dlt-project`** — dbty wraps a user's existing dlt project
-3. **`fivetran`** — dbty observes and triggers a Fivetran connector via API
+1. **`dlt-native`** — tycoon runs a dlt source or resource (own shim or user entrypoint)
+2. **`dlt-project`** — tycoon wraps a user's existing dlt project
+3. **`fivetran`** — tycoon observes and triggers a Fivetran connector via API
 
-**Out of scope for this rewrite:** Transformation, Semantics, Presentation, additional Surfaces (MCP, TUI, web). The architecture has homes for these; they are built after Phase 2 lands.
+**dbt (Transformation) is also in POC scope.** ARCHITECTURE.md already lists `transformations/dbt.py` as a POC adapter. Including it is the right call: it exercises a second adapter shape (Transformation, not just Runtime), which is exactly the "is this abstraction real or coincidence" check the design rests on. A Runtime Protocol designed against one compartment type is a hypothesis; a second compartment implementing the same shape is evidence.
+
+**Out of scope for this rewrite:** Semantics, Presentation, additional Surfaces (MCP, TUI, web), additional Runtimes beyond dlt and Fivetran. The architecture has homes for these; they are built after Phase 2 lands.
 
 ---
 
@@ -90,18 +85,18 @@ Four steps, in order. Each has a concrete acceptance criterion. No step starts u
 **Goal:** Empty package with all quality scaffolding working. No business logic.
 
 **Concrete deliverables:**
-- `src/_tycoon/` directory with the layout from ARCHITECTURE.md §"Level 4 — Code" (`core/`, `runtimes/`, `destinations/`, `metadata_backends/`, `scaffolds/`, `surfaces/cli/`, `surfaces/json/`).
+- `src/tycoon/` directory with the layout from ARCHITECTURE.md §"Level 4 — Code" (`core/`, `runtimes/`, `destinations/`, `metadata_backends/`, `scaffolds/`, `surfaces/cli/`, `surfaces/json/`).
 - Every module is empty but has a docstring stating its purpose. The layering rules from ARCHITECTURE.md are enforceable by inspection.
-- `pyproject.toml` updated: new `[project.scripts]` entry `tycli = "_tycoon.cli:app"`, keeping existing `tycoon` entry untouched.
+- `pyproject.toml` updated: `[project.scripts]` entry `tycoon = "tycoon.cli:app"` (same entrypoint name, new target module).
 - `ruff`, `mypy`/`pyright`, pytest configured. Pre-commit hooks installed.
 - One GitHub Actions workflow that runs lint + type-check + test on PRs.
-- `src/_tycoon/CLAUDE.md` written: load-bearing rules, layering constraints, where new things go.
+- `src/tycoon/CLAUDE.md` written: load-bearing rules, layering constraints, where new things go.
 
 **Acceptance:**
 - `pip install -e .` succeeds.
-- `tycli --help` works and shows an empty Typer app (or a placeholder).
+- `tycoon --help` works and shows an empty Typer app (or a placeholder).
 - `pytest` runs, finds zero tests, exits 0.
-- `ruff check src/_tycoon/` is clean.
+- `ruff check src/tycoon/` is clean.
 - CI passes on PR.
 
 **Estimated effort:** half a day.
@@ -127,10 +122,10 @@ Four steps, in order. Each has a concrete acceptance criterion. No step starts u
 - One contract test for `Runtime`: same idea — a shared test suite every Runtime implementation passes.
 
 **Acceptance:**
-- `python -c "from _tycoon.runtimes.dlt_native import DltNativeRuntime; ..."` works.
+- `python -c "from tycoon.runtimes.dlt_native import DltNativeRuntime; ..."` works.
 - A test executes ingestion end-to-end without any CLI in the loop.
-- Metadata events are written to `.tycoon/metadata.duckdb` (or the new path we settle on) and queryable.
-- `mypy --strict src/_tycoon/core/` passes.
+- Metadata events are written to `.tycoon/metadata.duckdb` and queryable.
+- `mypy --strict src/tycoon/core/` passes.
 
 **Estimated effort:** ~1 week.
 
@@ -138,16 +133,17 @@ Four steps, in order. Each has a concrete acceptance criterion. No step starts u
 
 ### Step 3 — CLI surface, designed top-down
 
-**Goal:** Phase 1 vertical slice working end-to-end through `tycli`.
+**Goal:** Phase 1 vertical slice working end-to-end through `tycoon`.
 
 **Concrete deliverables (in this order):**
 - A separate short document — a command-tree sketch — reviewed before implementation. ASCII tree, each verb has a one-line purpose and a typed result shape. This is the deliberate CLI modeling exercise (D3).
 - `surfaces/cli/` implementations of: `attach`, `source add`, `source list`, `source show`, `source remove`, `run`, `status`.
+
 - Every command is a thin wrapper that parses intent, calls the core, returns a typed result.
 - `surfaces/json/` renderer that emits the typed result as JSON.
 - A CLI human-renderer that formats the same typed result as a table/tree/whatever fits.
 - `--json` flag on every command, emitting the JSON surface output unchanged.
-- One end-to-end test: `tycli attach` in an empty directory → `tycli source add <something>` → `tycli run <something>` → `tycli status`, verified via both the CLI and `--json`.
+- One end-to-end test: `tycoon attach` in an empty directory → `tycoon source add <something>` → `tycoon run <something>` → `tycoon status`, verified via both the CLI and `--json`.
 - `scaffolds/manifest.py` and `scaffolds/dlt_native.py` implementing the strict scaffolder charter from MANIFESTO.md §9.
 
 **Acceptance:**
@@ -187,7 +183,9 @@ Four steps, in order. Each has a concrete acceptance criterion. No step starts u
 
 After Step 4, the next milestone is adding the **Fivetran Runtime adapter** in `runtimes/fivetran.py`.
 
-**The acceptance test:** Fivetran is added with **zero changes to `src/_tycoon/core/`**. If a core change is needed, the Runtime Protocol is wrong and we fix the Protocol, not the Fivetran adapter. This is the architectural acceptance test from MANIFESTO.md §8 made concrete.
+**The acceptance test:** Fivetran is added with **zero changes to `src/tycoon/core/`**. If a core change is needed, the Runtime Protocol is wrong and we fix the Protocol, not the Fivetran adapter. This is the architectural acceptance test from MANIFESTO.md §8 made concrete.
+
+**The specific failure mode to watch for:** dlt emits a live event stream during a run; Fivetran can only poll. If that push-vs-pull difference leaks into `core/` as a Fivetran special-case — an `if fivetran: poll()` branch, a second event-ingestion path, anything that treats Fivetran differently at the protocol level — the abstraction quietly failed even though the code works. The Runtime Protocol must model the difference explicitly (e.g. `observe()` returns an iterator that either streams or polls under the hood, the caller never knows which), not paper over it with a conditional. If we cannot make that work without touching `core/`, stop and fix the Protocol.
 
 If we cannot add Fivetran without touching `core/`, the abstractions are wrong and we stop and fix them before any more adapters get written. This is the moment of truth for the design.
 
@@ -195,18 +193,16 @@ If we cannot add Fivetran without touching `core/`, the abstractions are wrong a
 
 ---
 
-## Cutover
+## Merge
 
 Triggered when Phase 2 passes — Fivetran adapter works, zero core changes were needed (or the Protocol was revised and both adapters now sit on the revised Protocol).
 
-**Cutover PR contents:**
-- Delete `src/tycoon/` (and tests, and Dagster/FastAPI/nao extras from `pyproject.toml`).
-- `git mv src/_tycoon src/tycoon`. Find-and-replace `_tycoon` → `tycoon` in imports.
-- `[project.scripts]`: remove old `tycoon` entry. Keep `tycli`. Optionally add `tycoon` as alias.
+**Merge PR contents:**
+- Remove Dagster/FastAPI/nao extras from `pyproject.toml` (per the don't-port list in §Step 4).
 - Update `README.md`, `CHANGELOG.md`, `MANIFESTO.md`, `ARCHITECTURE.md` to remove rewrite-window framing.
 - Bump major version.
 
-**Total estimated calendar effort, Step 1 through Cutover:** 4–6 weeks, depending on how clean Phase 2 lands.
+**Total estimated calendar effort, Step 1 through Merge:** 4–6 weeks, depending on how clean Phase 2 lands.
 
 ---
 
@@ -215,8 +211,8 @@ Triggered when Phase 2 passes — Fivetran adapter works, zero core changes were
 | Risk | Likelihood | Mitigation |
 |---|---|---|
 | The Runtime Protocol designed against dlt is wrong for Fivetran | Medium | Phase 2 is the deliberate test. We catch it before more adapters compound the mistake. |
+| Push-vs-pull difference leaks into `core/` as a Fivetran special-case | Medium | `observe()` must model streaming and polling uniformly — the caller never sees which. If a conditional appears in `core/`, treat it as a Protocol failure and fix the interface. |
 | Scope creep on the port — "let's also bring over X" | High | The port list is in writing. PRs that exceed it get rejected. |
-| Old `tycoon` package gets accidentally modified during rewrite | Low | Convention only — nobody assigns tickets against `src/tycoon/` during the rewrite window. Repo README will state this. |
 | CLI design decisions leak backward into `core/` | Medium | Step 2 builds and tests `core/` with no CLI in the loop. Step 3 is downstream of a finished Step 2. |
 | The four-pattern port list is incomplete — we discover a fifth pattern worth keeping | Medium | The port list can grow during Step 4 with a written justification, but each addition is reviewed against "does this actively shape the new code, or are we just sentimentally attached." |
 | Fivetran adapter requires core changes that retroactively break the dlt adapter | Low-Medium | Both adapters are exercised by their integration tests on every PR. A change that breaks one is rejected. |
@@ -227,12 +223,12 @@ Triggered when Phase 2 passes — Fivetran adapter works, zero core changes were
 
 These are intentionally unresolved here so they get decided in context rather than guessed in advance:
 
-1. **Metadata backing configuration surface.** What's the default file path for the DuckDB file backing (`.tycoon/metadata.duckdb` collides with old code; `.tycli/metadata.duckdb` is separate; something else)? More importantly, what's the project-manifest shape for choosing a non-default backing and configuring it? The Protocol must support file backing, Destination backing (post-POC), and an in-memory backing for tests from day one — but only the file backing needs to be *implemented* in Step 2. Settle the configuration shape so adding the Destination backing later is "one file in `metadata_backends/`, zero changes to the manifest schema."
+1. **Metadata backing configuration surface.** Default path is `.tycoon/metadata.duckdb`. More importantly, what's the project-manifest shape for choosing a non-default backing and configuring it? The Protocol must support file backing, Destination backing (post-POC), and an in-memory backing for tests from day one — but only the file backing needs to be *implemented* in Step 2. Settle the configuration shape so adding the Destination backing later is "one file in `metadata_backends/`, zero changes to the manifest schema."
 2. **Should `dlt-project` Runtime run in-process or in a subprocess?** Open question from ARCHITECTURE.md Level 3. Resolve when we wire the first user-supplied dlt project.
 3. **`commands/` vs `surfaces/cli/` as the folder for command implementations.** Decide in Step 3.
 4. **Static adapter registry vs. entry-point-based discovery.** Static is sufficient for the POC; defer entry-point discovery until a third party wants to ship an adapter.
 5. **Whether to introduce a common `Adapter` base Protocol** that Runtime / Transformation / Semantics / Presentation extend. Defer until at least one adapter exists in each folder (architecture open thread).
-6. **Cutover entrypoint:** keep `tycli` as primary, or rename to `tycoon` and demote `tycli` to alias. Decide at cutover based on what we've learned about usage.
+6. **Cutover entrypoint:** `tycoon` is the command. Resolved.
 
 ---
 

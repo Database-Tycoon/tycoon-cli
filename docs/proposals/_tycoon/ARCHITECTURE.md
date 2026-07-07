@@ -1,6 +1,6 @@
 # Tycoon CLI Architecture
 
-> **Naming note.** This document was drafted in conversation, during which the author used `dbty` / `dbty-cli` as personal shorthand for **Database Tycoon** — the company behind this project. The tool itself is the **Tycoon CLI** (the `tycoon-cli` repository, distributed on PyPI as `database-tycoon`). Any occurrence of `dbty` below refers to this same tool; it is **not** a separate product, not a fork of dbt, and not affiliated with dlt. The shorthand is preserved in places where rewriting would obscure the original framing.
+> **Naming note.** This document was originally drafted using `dbty` / `dbty-cli` as shorthand for **Database Tycoon** and the Tycoon CLI. Names are now reconciled: the tool is **tycoon** (CLI command), `src/tycoon/` (package), `tycoon.yml` (manifest), `.tycoon/` (metadata dir).
 
 > The structural counterpart to [MANIFESTO.md](./MANIFESTO.md). The manifesto says *why* and *what shape*. This document says *how it is built* — from the system boundary down to the source tree.
 >
@@ -16,14 +16,14 @@ These hold across every level. If a design choice violates one of these, it is w
 2. **The cockpit default principle holds in code too.** Every adapter point has a default backing that the beginner gets for free, and a pluggable seam where the user attaches their own. This is true for Runtime (default: dlt-native), for Destination (default: local DuckDB), for Metadata (default: local DuckDB file). The architecture must make the default path and the attached path indistinguishable from the caller's point of view.
 3. **The model is canonical, not the rendering.** No Surface owns truth. The CLI is one renderer of the underlying model. The metadata store *is* the model. Every command resolves to "read or write the model"; the rendering is a thin transform on top.
 4. **No private doors.** A future adapter (sling, Airbyte, dbt-cloud, MotherDuck-as-metadata-backing) must reach what it needs through the same interface the POC adapters use. Special cases are bugs.
-5. **Control-plane shape, always.** dbty addresses; it does not absorb. If a design choice has us *owning* something the user already has (their warehouse, their auth, their dbt project, their scheduler), it is platform-drift and we reject it. See manifesto §1.
+5. **Control-plane shape, always.** tycoon addresses; it does not absorb. If a design choice has us *owning* something the user already has (their warehouse, their auth, their dbt project, their scheduler), it is platform-drift and we reject it. See manifesto §1.
 6. **Scaffolding is silent, minimum, create-only, once.** When `attach` scaffolds, it writes the minimum, in the user's idiom, into empty space, exactly once. It never touches existing files. It is never exposed as its own verb. See manifesto §9.
 
 ---
 
 ## Level 1 — System Context
 
-> Who and what does dbty interact with? Where is the boundary?
+> Who and what does tycoon interact with? Where is the boundary?
 
 ### Actors and external systems
 
@@ -37,7 +37,7 @@ These hold across every level. If a design choice violates one of these, it is w
                                  ▼
                         ┌─────────────────────┐
                         │                     │      ┌─────────────────┐
-        ┌───────────────│        dbty         │◀────▶│ Analytics agent │
+        ┌───────────────│        tycoon         │◀────▶│ Analytics agent │
         │               │   (control plane)   │      │  (LLM client    │
         │               │                     │      │   via MCP/JSON) │
         │               └─────────────────────┘      └─────────────────┘
@@ -65,23 +65,23 @@ These hold across every level. If a design choice violates one of these, it is w
                                 └────────────────────┘
 ```
 
-### What dbty owns
+### What tycoon owns
 
 - The coordination and observation layer between actors above.
 - A small amount of bookkeeping (metadata events, source declarations, catalog snapshots, capability state).
 - The Surfaces: CLI today, JSON output, MCP / TUI / web later — all renderings of the same model.
 
-### What dbty does not own (BYOS boundary)
+### What tycoon does not own (BYOS boundary)
 
-- **The ingestion runtime.** dlt is a library dbty calls; Fivetran is a service dbty talks to.
-- **The user's dlt project or dbt project.** dbty wraps them via entrypoint; they remain authored, version-controlled, and owned by the user.
-- **The Destination.** dbty connects to it; it does not provision, host, or replatform it.
-- **Authentication for the user's stack.** OAuth tokens, API keys, warehouse credentials — held by the user (env vars, their secret manager, the runtime's own config), referenced by dbty.
-- **A long-lived daemon process.** No background dbty service. Every command is invocation-scoped. See Level 2.
+- **The ingestion runtime.** dlt is a library tycoon calls; Fivetran is a service tycoon talks to.
+- **The user's dlt project or dbt project.** tycoon wraps them via entrypoint; they remain authored, version-controlled, and owned by the user.
+- **The Destination.** tycoon connects to it; it does not provision, host, or replatform it.
+- **Authentication for the user's stack.** OAuth tokens, API keys, warehouse credentials — held by the user (env vars, their secret manager, the runtime's own config), referenced by tycoon.
+- **A long-lived daemon process.** No background tycoon service. Every command is invocation-scoped. See Level 2.
 
 ### The boundary in one sentence
 
-dbty is the smallest piece of software that can answer "what is in your stack, what state is it in, and what can I do with it?" — without owning any of the stack itself.
+tycoon is the smallest piece of software that can answer "what is in your stack, what state is it in, and what can I do with it?" — without owning any of the stack itself.
 
 ---
 
@@ -93,11 +93,11 @@ dbty is the smallest piece of software that can answer "what is in your stack, w
 
 The POC is one Python CLI process, invoked per command, terminated when the command returns. No daemon. No background scheduler. No long-lived server.
 
-This is a deliberate choice. A daemon is platform-shape: it implies dbty *runs the show*. An invocation-scoped CLI is control-plane-shape: dbty acts when asked, observes what's there, writes its bookkeeping, exits.
+This is a deliberate choice. A daemon is platform-shape: it implies tycoon *runs the show*. An invocation-scoped CLI is control-plane-shape: tycoon acts when asked, observes what's there, writes its bookkeeping, exits.
 
 ```
    ┌─────────────────────────────────────────────────────────────┐
-   │                  dbty CLI process (per invocation)          │
+   │                  tycoon CLI process (per invocation)          │
    │                                                             │
    │   ┌─────────────┐    ┌──────────────┐   ┌───────────────┐   │
    │   │  Command    │───▶│  Core model  │──▶│   Surface     │   │
@@ -127,14 +127,14 @@ Metadata is an **abstract substrate** with a pluggable backing. The Metadata API
 
 | Backing | Status | Notes |
 |---|---|---|
-| Local DuckDB file (`.dbty/metadata.duckdb`) | **Default, POC.** | Cockpit default. dbty's own bookkeeping; not the user's data. Lives in the project directory next to the dbty manifest. |
-| User's Destination (managed schema, e.g. `_dbty_metadata.*`) | Designed-for, post-POC. | The "graduate to your warehouse" path. Attached explicitly; the user opts in. Same API, different driver. |
+| Local DuckDB file (`.tycoon/metadata.duckdb`) | **Default, POC.** | Cockpit default. tycoon's own bookkeeping; not the user's data. Lives in the project directory next to the tycoon manifest. |
+| User's Destination (managed schema, e.g. `_tycoon_metadata.*`) | Designed-for, post-POC. | The "graduate to your warehouse" path. Attached explicitly; the user opts in. Same API, different driver. |
 
 The Metadata API is designed against the second case from day one and *implemented* against the first. This is the architectural commitment that prevents a future rewrite: the contract holds for both backings; the POC just ships one driver.
 
 #### Project manifest
 
-A small declarative file at the project root (working name `dbty.yml`) holding:
+A small declarative file at the project root (`tycoon.yml`) holding:
 
 - attached Runtimes
 - attached Destinations
@@ -142,16 +142,16 @@ A small declarative file at the project root (working name `dbty.yml`) holding:
 - environment profiles (Source→Runtime/Destination rebindings)
 - the metadata backing choice (defaults to local file)
 
-This is *configuration*, not *state*. State lives in the Metadata backend. The manifest is what the user (or `dbty attach`) edits; it is human-readable and agent-editable.
+This is *configuration*, not *state*. State lives in the Metadata backend. The manifest is what the user (or `tycoon attach`) edits; it is human-readable and agent-editable.
 
 #### Credentials
 
-Not owned by dbty. References live in the manifest as env-var interpolations (`${FIVETRAN_API_KEY}`), TOML paths (`.dlt/secrets.toml`), or runtime-native handles. dbty does not store secrets, and the architecture explicitly forbids a "dbty secret store" — that would be platform-shape (see manifesto §6).
+Not owned by tycoon. References live in the manifest as env-var interpolations (`${FIVETRAN_API_KEY}`), TOML paths (`.dlt/secrets.toml`), or runtime-native handles. tycoon does not store secrets, and the architecture explicitly forbids a "tycoon secret store" — that would be platform-shape (see manifesto §6).
 
 ### External systems, summarized
 
 - **dlt** — Python library imported in-process. Runs synchronously inside the CLI invocation.
-- **Fivetran** — REST API. dbty makes HTTP calls; nothing executes locally.
+- **Fivetran** — REST API. tycoon makes HTTP calls; nothing executes locally.
 - **User's dlt project** — invoked via entrypoint. May run in-process or in a subprocess for isolation (open question, deferred to Level 3).
 - **User's dbt project** — invoked as a subprocess (`dbt run ...`). Always out-of-process.
 - **User's Rill project** (POC Presentation adapter) — invoked as a subprocess (`rill build` / `rill refresh ...`). Reads from the same Destination dbt writes to.
@@ -330,9 +330,9 @@ If a future symmetric compartment (e.g. data-quality testing tools — Great Exp
 ### Proposed top-level layout
 
 ```
-src/dbty/
+src/tycoon/
   __init__.py
-  __main__.py                 # entrypoint: `python -m dbty`
+  __main__.py                 # entrypoint: `python -m tycoon`
   cli.py                      # Typer app, top-level command groups
 
   core/
@@ -378,18 +378,18 @@ src/dbty/
 
   metadata_backends/
     __init__.py               # adapter registry
-    duckdb_file.py            # POC default, .dbty/metadata.duckdb
+    duckdb_file.py            # POC default, .tycoon/metadata.duckdb
     destination.py            # writes into the user's Destination (designed-for, not POC)
 
   surfaces/
     __init__.py
     cli/
       __init__.py
-      source.py               # `dbty source ...`
-      runtime.py              # `dbty runtime ...` (advanced only, hidden from beginner)
-      catalog.py              # `dbty catalog ...`
-      attach.py               # `dbty attach ...`
-      run.py                  # `dbty run ...`
+      source.py               # `tycoon source ...`
+      runtime.py              # `tycoon runtime ...` (advanced only, hidden from beginner)
+      catalog.py              # `tycoon catalog ...`
+      attach.py               # `tycoon attach ...`
+      run.py                  # `tycoon run ...`
       status.py
     json/
       __init__.py
@@ -400,14 +400,14 @@ src/dbty/
 
   scaffolds/
     __init__.py               # scaffolder registry
-    manifest.py               # writes the greenfield dbty.yml + .dbty/ directory
+    manifest.py               # writes the greenfield tycoon.yml + .tycoon/ directory
     dlt_native.py             # writes a minimal starter dlt source skeleton
     dbt.py                    # writes a minimal dbt_project.yml + dirs (POC)
     rill.py                   # writes a minimal Rill project (POC)
     # All scaffolders: create-only, idiom-native, never mutate existing files.
 
   templates/
-    dbty.yml.jinja            # consumed by scaffolds/manifest.py
+    tycoon.yml.jinja          # consumed by scaffolds/manifest.py
     # Per-adapter templates live next to their scaffolder in scaffolds/_templates/
 
 tests/
@@ -446,7 +446,7 @@ This is the same dependency-direction rule as Dango's layered hierarchy, but tig
 - **Adding a new Scaffolder** (e.g. for sqlmesh or Metabase greenfield setup): one new file in `scaffolds/`. Same rule. Invoked silently by `attach`, never exposed as its own command.
 - **Adding a new Metadata backing** (e.g. MotherDuck-as-metadata): one new file in `metadata_backends/`. No changes to `core/metadata.py`'s public API.
 - **Adding a new Surface** (e.g. MCP server): one new package in `surfaces/`. Reads the same core model, renders differently. Zero adapter changes.
-- **Adding a new command verb** (e.g. `dbty backfill`): a new module in `surfaces/cli/`. Calls into `core/`. The core may grow a new method, but it grows the same method for every adapter type simultaneously.
+- **Adding a new command verb** (e.g. `tycoon backfill`): a new module in `surfaces/cli/`. Calls into `core/`. The core may grow a new method, but it grows the same method for every adapter type simultaneously.
 
 This is the architectural acceptance test from manifesto §8 made concrete at the file level. The pattern is the same across four adapter folders (`runtimes/`, `transformations/`, `semantics/`, `presentations/`) — which is exactly what makes the abstraction worth its weight.
 
@@ -455,7 +455,7 @@ This is the architectural acceptance test from manifesto §8 made concrete at th
 1. **`commands/` vs. `surfaces/cli/` for command files.** Both are defensible. `surfaces/cli/` puts CLI logic inside the Surface boundary (cleaner under the manifesto). `commands/` reads more naturally to contributors. Lean toward `surfaces/cli/`; revisit after a few commands exist.
 2. **Adapter registration mechanism.** Entry points (pluggable, future-friendly) or static imports (simpler, current). Probably static for the POC; entry points when a third party wants to ship an adapter.
 3. **Where the project manifest schema lives.** Inside `core/project.py` as Pydantic models, or in a separate `core/schema/` package. Defer until the manifest grows beyond ~5 fields.
-4. **Naming.** `dbty` as the import name vs. `database_tycoon`. The PyPI name is `database-tycoon`. The CLI command is `dbty`. The Python package import should probably be `dbty` for ergonomics, with `database_tycoon` as an alias. Confirm.
+4. **Python import name.** The CLI command is `tycoon` and the package is `src/tycoon/`. The PyPI distribution is `database-tycoon`. Confirm that `import tycoon` is the right ergonomic choice, or whether `database_tycoon` (matching PyPI) should be canonical with `tycoon` as the alias.
 
 ---
 
