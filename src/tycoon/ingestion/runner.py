@@ -186,15 +186,16 @@ def _emit_event_safe(metadata_db: Path | None, event: Any) -> None:
         pass
 
 
-def _build_run_completed(name: str, load_info: Any, elapsed: float) -> RunCompleted:
-    """Build a RunCompleted event from dlt load_info."""
+def _build_run_completed(name: str, pipeline: Any, load_info: Any, elapsed: float) -> RunCompleted:
+    """Build a RunCompleted event from dlt pipeline trace + load_info."""
     rows_by_table: dict[str, int] = {}
-    for pkg in getattr(load_info, "load_packages", []) or []:
-        for job in getattr(pkg, "jobs", []) or []:
-            if getattr(job, "job_state", None) == "completed":
-                tname = getattr(job, "table_name", "")
-                if tname and not tname.startswith("_"):
-                    rows_by_table[tname] = rows_by_table.get(tname, 0) + (getattr(job, "rows_count", 0) or 0)
+    try:
+        ni = pipeline.last_trace.last_normalize_info
+        rows_by_table = {
+            t: c for t, c in (ni.row_counts or {}).items() if not t.startswith("_")
+        }
+    except Exception:
+        pass
     loads_ids = getattr(load_info, "loads_ids", []) or []
     return RunCompleted(
         source_id=name,
@@ -289,7 +290,7 @@ def run_source(
                 name, raw_db_path=raw_db_path, max_records=max_records, **kwargs
             )
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-            _emit_event_safe(_metadata_db, _build_run_completed(name, load_info, time.monotonic() - _started))
+            _emit_event_safe(_metadata_db, _build_run_completed(name, pipeline, load_info, time.monotonic() - _started))
             return pipeline, load_info
 
         # 2. Native builders win over the catalog path. These types ship with
@@ -301,7 +302,7 @@ def run_source(
                 source_type, name, source_config, raw_db_path, max_records
             )
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-            _emit_event_safe(_metadata_db, _build_run_completed(name, load_info, time.monotonic() - _started))
+            _emit_event_safe(_metadata_db, _build_run_completed(name, pipeline, load_info, time.monotonic() - _started))
             return pipeline, load_info
 
         # Generic pipeline
@@ -332,7 +333,7 @@ def run_source(
 
         load_info = pipeline.run(dlt_source)
         _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-        _emit_event_safe(_metadata_db, _build_run_completed(name, load_info, time.monotonic() - _started))
+        _emit_event_safe(_metadata_db, _build_run_completed(name, pipeline, load_info, time.monotonic() - _started))
         return pipeline, load_info
 
     except Exception as exc:
