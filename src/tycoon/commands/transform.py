@@ -73,6 +73,44 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
     except Exception:
         pass
 
+    try:
+        import json
+
+        from tycoon.core.events import DbtRunCompleted
+        from tycoon.metadata_backends.duckdb_file import DuckDBFileBackend
+        from tycoon.observability import metadata_db_path
+
+        run_results_path = config.dbt_project_dir / "target" / "run_results.json"
+        if not run_results_path.exists():
+            return
+
+        with open(run_results_path) as f:
+            run_results = json.load(f)
+
+        elapsed = float(run_results.get("elapsed_time", 0.0))
+        target = run_results.get("args", {}).get("target", "dev") or "dev"
+        results = run_results.get("results", [])
+        models_run = len(results)
+        models_errored = sum(
+            1 for r in results if r.get("status") not in ("success", "pass", "warn")
+        )
+        models_passed = models_run - models_errored
+
+        event = DbtRunCompleted(
+            source_id="dbt",
+            runtime_id="dbt",
+            command=dbt_cmd,
+            target=target,
+            models_run=models_run,
+            models_passed=models_passed,
+            models_errored=models_errored,
+            duration_seconds=elapsed,
+        )
+        with DuckDBFileBackend(metadata_db_path(config.root)) as b:
+            b.append_event(event)
+    except Exception:
+        pass
+
 
 def _auto_osi_scaffold_safe() -> None:
     """Re-emit dbt_project/semantic/osi.yaml after a successful dbt run.

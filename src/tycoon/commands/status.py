@@ -22,7 +22,6 @@ import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
-import duckdb
 import typer
 from rich.panel import Panel
 from rich.table import Table
@@ -43,48 +42,45 @@ from tycoon.project import TransformationTool
 from tycoon.utils.console import console, error, header, info, warn
 
 
-# -- Freshness helpers (preserved from v0.1.6) ----------------------------------
+# -- Freshness helpers ---------------------------------------------------------
 
 
-def _query_last_sync(raw_db: Path, schema: str) -> Optional[datetime.datetime]:
-    """Return the timestamp of the last successful dlt load for a schema."""
+def _sources_from_backend(metadata_db: Path) -> dict[str, dict]:
+    """Read per-source last-sync and row counts from the events backend.
+
+    Returns ``{source_id: {"last_sync": datetime, "rows": {table: count}}}``.
+    Falls back to an empty dict on any failure (missing file, missing table,
+    legacy schema without an events table).
+    """
+    if not metadata_db.exists():
+        return {}
     try:
-        con = duckdb.connect(str(raw_db), read_only=True)
-        row = con.execute(
-            f"SELECT max(inserted_at) FROM {schema}._dlt_loads WHERE status = 0"
-        ).fetchone()
-        con.close()
-        if row and row[0]:
-            val = row[0]
-            if isinstance(val, datetime.datetime):
-                return val
-            return datetime.datetime.fromisoformat(str(val))
-    except Exception:
-        pass
-    return None
+        from tycoon.core.events import RunCompleted
+        from tycoon.core.metadata import EventFilter
+        from tycoon.metadata_backends.duckdb_file import DuckDBFileBackend
 
+        with DuckDBFileBackend(metadata_db, read_only=True) as b:
+            events = b.query_events(EventFilter(event_type="run_completed"))
 
-def _query_row_counts(raw_db: Path, schema: str) -> dict[str, int]:
-    """Return {table: row_count} for all user tables in a schema."""
-    counts: dict[str, int] = {}
-    try:
-        con = duckdb.connect(str(raw_db), read_only=True)
-        tables = con.execute(
-            "SELECT table_name FROM information_schema.tables "
-            "WHERE table_schema = ? AND table_name NOT LIKE '_dlt_%'",
-            [schema],
-        ).fetchall()
-        for (table,) in tables:
-            row = con.execute(f'SELECT count(*) FROM "{schema}"."{table}"').fetchone()
-            counts[table] = row[0] if row else 0
-        con.close()
+        result: dict[str, dict] = {}
+        for e in events:
+            if not isinstance(e, RunCompleted):
+                continue
+            existing = result.get(e.source_id)
+            if existing is None or e.timestamp > existing["last_sync"]:
+                result[e.source_id] = {
+                    "last_sync": e.timestamp,
+                    "rows": dict(e.rows_loaded),
+                }
+        return result
     except Exception:
-        pass
-    return counts
+        return {}
 
 
 def _query_run_counts(metadata_db: Path) -> dict[str, int]:
     """Return {source_schema: run_count} from the observability metadata DB."""
+    import duckdb
+
     if not metadata_db.exists():
         return {}
     try:
@@ -127,6 +123,8 @@ def _query_layer_last_build(
     metadata_db: Path, model_names: list[str]
 ) -> Optional[datetime.datetime]:
     """Latest successful build start time across ``model_names``."""
+    import duckdb
+
     if not model_names or not metadata_db.exists():
         return None
     try:
@@ -149,7 +147,10 @@ def _query_layer_last_build(
 
 
 def _render_sources_panel(
-    sources: list[LayerClassification], *, raw_db: Path, run_counts: dict[str, int]
+    sources: list[LayerClassification],
+    *,
+    metadata_db: Path,
+    run_counts: dict[str, int],
 ) -> None:
     """The unified Sources panel: dlt + Fivetran rows side by side."""
     console.print()
@@ -162,7 +163,7 @@ def _render_sources_panel(
         )
         return
 
-    db_exists = raw_db.exists()
+    sources_data = _sources_from_backend(metadata_db)
 
     table = Table(show_lines=False)
     table.add_column("Source", style="bold cyan")
@@ -177,9 +178,10 @@ def _render_sources_panel(
     for src in sources:
         schema = src.schema or "—"
 
-        if src.vendor is Vendor.DLT and db_exists and src.schema:
-            last_sync = _query_last_sync(raw_db, src.schema)
-            row_counts = _query_row_counts(raw_db, src.schema)
+        if src.vendor is Vendor.DLT and src.schema:
+            data = sources_data.get(src.name, {})
+            last_sync = data.get("last_sync")
+            row_counts = data.get("rows", {})
             runs = run_counts.get(src.schema, 0)
             sync_str = last_sync.strftime("%Y-%m-%d %H:%M") if last_sync else "—"
             fresh_label, fresh_style = _freshness_label(last_sync)
@@ -358,9 +360,10 @@ def status_cmd() -> None:
         )
 
     all_sources = [*dlt_sources, *fivetran_sources]
-    run_counts = _query_run_counts(metadata_db_path(config.root))
+    _meta_db = metadata_db_path(config.root)
+    run_counts = _query_run_counts(_meta_db)
     _render_sources_panel(
-        all_sources, raw_db=config.raw_db, run_counts=run_counts
+        all_sources, metadata_db=_meta_db, run_counts=run_counts
     )
     if fivetran_managed:
         _render_fivetran_detail()

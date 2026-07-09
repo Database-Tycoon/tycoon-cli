@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 import dlt
+
+from tycoon.core.events import RunCompleted, RunFailed, RunStarted
 
 from tycoon.ingestion.catalog import CATALOG
 from tycoon.ingestion.source_manager import SOURCES_DIR, get_run_module_path, is_source_installed
@@ -170,6 +173,40 @@ def _build_filesystem_source(source_config: SourceConfig) -> Any:
     return files
 
 
+def _emit_event_safe(metadata_db: Path | None, event: Any) -> None:
+    """Append an event to the metadata backend; silently no-ops on any failure."""
+    if metadata_db is None:
+        return
+    try:
+        from tycoon.metadata_backends.duckdb_file import DuckDBFileBackend
+
+        with DuckDBFileBackend(metadata_db) as b:
+            b.append_event(event)
+    except Exception:
+        pass
+
+
+def _build_run_completed(name: str, load_info: Any, elapsed: float) -> RunCompleted:
+    """Build a RunCompleted event from dlt load_info."""
+    rows_by_table: dict[str, int] = {}
+    for pkg in getattr(load_info, "load_packages", []) or []:
+        for job in getattr(pkg, "jobs", []) or []:
+            if getattr(job, "job_state", None) == "completed":
+                tname = getattr(job, "table_name", "")
+                if tname and not tname.startswith("_"):
+                    rows_by_table[tname] = rows_by_table.get(tname, 0) + (getattr(job, "rows_count", 0) or 0)
+    loads_ids = getattr(load_info, "loads_ids", []) or []
+    return RunCompleted(
+        source_id=name,
+        runtime_id="dlt-managed",
+        load_id=loads_ids[0] if loads_ids else "",
+        duration_seconds=round(elapsed, 2),
+        rows_loaded=rows_by_table,
+        tables_created=list(rows_by_table),
+        tables_updated=[],
+    )
+
+
 def _capture_and_refresh_safe(
     raw_db_path: Path,
     pipeline: dlt.Pipeline | None = None,
@@ -234,56 +271,73 @@ def run_source(
 
     Returns (pipeline, load_info).
     """
-    # 1. Legacy pipeline delegation (keyed by source name)
-    if name in _LEGACY_PIPELINES:
-        pipeline, load_info = _run_legacy(
-            name, raw_db_path=raw_db_path, max_records=max_records, **kwargs
+    _started = time.monotonic()
+
+    _metadata_db: Path | None = None
+    try:
+        from tycoon.config import config as _cfg
+        _metadata_db = _cfg.root / ".tycoon" / "metadata.duckdb"
+    except Exception:
+        pass
+
+    _emit_event_safe(_metadata_db, RunStarted(source_id=name, runtime_id="dlt-managed"))
+
+    try:
+        # 1. Legacy pipeline delegation (keyed by source name)
+        if name in _LEGACY_PIPELINES:
+            pipeline, load_info = _run_legacy(
+                name, raw_db_path=raw_db_path, max_records=max_records, **kwargs
+            )
+            _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
+            _emit_event_safe(_metadata_db, _build_run_completed(name, load_info, time.monotonic() - _started))
+            return pipeline, load_info
+
+        # 2. Native builders win over the catalog path. These types ship with
+        #    dlt core and don't need an `~/.tycoon/sources/<type>/` install.
+        source_type = source_config.type
+        if source_type not in _NATIVE_BUILDERS and source_type in CATALOG:
+            # 3. Catalog source dispatch — load from ~/.tycoon/sources/
+            pipeline, load_info = _run_catalog(
+                source_type, name, source_config, raw_db_path, max_records
+            )
+            _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
+            _emit_event_safe(_metadata_db, _build_run_completed(name, load_info, time.monotonic() - _started))
+            return pipeline, load_info
+
+        # Generic pipeline
+        pipeline = dlt.pipeline(
+            pipeline_name=name,
+            destination=dlt.destinations.duckdb(str(raw_db_path)),
+            dataset_name=source_config.schema_name,
         )
+
+        builder = _NATIVE_BUILDERS.get(source_type)
+        if builder is None:
+            # Try dynamic import: dlt.sources.<source_type>
+            try:
+                import importlib
+
+                mod = importlib.import_module(f"dlt.sources.{source_type}")
+                source_fn = getattr(mod, source_type, None)
+                if source_fn is None:
+                    raise ImportError(f"No callable '{source_type}' in dlt.sources.{source_type}")
+                dlt_source = source_fn(**source_config.config)
+            except ImportError as exc:
+                raise RuntimeError(
+                    f"Unknown source type '{source_type}'. "
+                    f"Install with: tycoon sources add {source_type}"
+                ) from exc
+        else:
+            dlt_source = builder(source_config)
+
+        load_info = pipeline.run(dlt_source)
         _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
+        _emit_event_safe(_metadata_db, _build_run_completed(name, load_info, time.monotonic() - _started))
         return pipeline, load_info
 
-    # 2. Native builders win over the catalog path. These types ship with
-    #    dlt core and don't need an `~/.tycoon/sources/<type>/` install.
-    source_type = source_config.type
-    if source_type not in _NATIVE_BUILDERS and source_type in CATALOG:
-        # 3. Catalog source dispatch — load from ~/.tycoon/sources/
-        pipeline, load_info = _run_catalog(
-            source_type, name, source_config, raw_db_path, max_records
-        )
-        _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-        return pipeline, load_info
-
-    # Generic pipeline
-    pipeline = dlt.pipeline(
-        pipeline_name=name,
-        destination=dlt.destinations.duckdb(str(raw_db_path)),
-        dataset_name=source_config.schema_name,
-    )
-
-    builders = _NATIVE_BUILDERS
-
-    builder = builders.get(source_type)
-    if builder is None:
-        # Try dynamic import: dlt.sources.<source_type>
-        try:
-            import importlib
-
-            mod = importlib.import_module(f"dlt.sources.{source_type}")
-            source_fn = getattr(mod, source_type, None)
-            if source_fn is None:
-                raise ImportError(f"No callable '{source_type}' in dlt.sources.{source_type}")
-            dlt_source = source_fn(**source_config.config)
-        except ImportError as exc:
-            raise RuntimeError(
-                f"Unknown source type '{source_type}'. "
-                f"Install with: tycoon sources add {source_type}"
-            ) from exc
-    else:
-        dlt_source = builder(source_config)
-
-    load_info = pipeline.run(dlt_source)
-    _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-    return pipeline, load_info
+    except Exception as exc:
+        _emit_event_safe(_metadata_db, RunFailed(source_id=name, runtime_id="dlt-managed", error=str(exc)))
+        raise
 
 
 def _run_legacy(
