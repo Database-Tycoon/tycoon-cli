@@ -20,7 +20,7 @@ from rich.table import Table
 from tycoon.config import config
 from tycoon.core.history import HistoryRepository, RunSummary
 from tycoon.observability import metadata_db_path
-from tycoon.utils.console import console, error, header, info, warn
+from tycoon.utils.console import console, error, header, info
 
 
 app = typer.Typer(

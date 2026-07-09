@@ -9,7 +9,7 @@ import duckdb
 import pytest
 
 from tycoon.cli import app
-from tycoon.core.events import DbtRunCompleted, RunCompleted, RunFailed
+from tycoon.core.events import DbtRunCompleted, RunCompleted
 
 
 # ---------------------------------------------------------------------------
