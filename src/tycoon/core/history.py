@@ -31,7 +31,7 @@ class HistoryRepository:
     def __init__(self, backend: MetadataBackend) -> None:
         self._backend = backend
 
-    def list_runs(self, limit: int = 20) -> list[RunSummary]:
+    def list_runs(self, limit: int | None = 20) -> list[RunSummary]:
         events = self._backend.query_events()
         summaries: list[RunSummary] = []
         for e in events:
@@ -43,7 +43,7 @@ class HistoryRepository:
                     status="success",
                     started_at=e.timestamp,
                     duration_seconds=e.duration_seconds,
-                    rows_total=sum(e.rows_loaded.values()),
+                    rows_total=sum((e.rows_loaded or {}).values()),
                 ))
             elif isinstance(e, RunFailed):
                 summaries.append(RunSummary(
@@ -67,7 +67,9 @@ class HistoryRepository:
                     command=e.command,
                 ))
         summaries.sort(key=lambda s: s.started_at, reverse=True)
-        return summaries[:limit]
+        if limit is not None:
+            return summaries[:limit]
+        return summaries
 
     def get_run(self, run_id_prefix: str) -> RunDetail | None:
         events = self._backend.query_events()
@@ -84,7 +86,7 @@ class HistoryRepository:
                         status="success",
                         started_at=e.timestamp,
                         duration_seconds=e.duration_seconds,
-                        rows_total=sum(e.rows_loaded.values()),
+                        rows_total=sum((e.rows_loaded or {}).values()),
                     ), e))
             elif isinstance(e, RunFailed):
                 if e.event_id.startswith(run_id_prefix):
@@ -118,8 +120,8 @@ class HistoryRepository:
         if isinstance(event, RunCompleted):
             return RunDetail(
                 summary=summary,
-                rows_by_table=event.rows_loaded,
-                tables_created=event.tables_created,
+                rows_by_table=event.rows_loaded or {},
+                tables_created=event.tables_created or [],
                 error=None,
             )
         if isinstance(event, RunFailed):

@@ -70,7 +70,7 @@ def _sources_from_backend(metadata_db: Path) -> dict[str, dict]:
             if existing is None or e.timestamp > existing["last_sync"]:
                 result[e.source_id] = {
                     "last_sync": e.timestamp,
-                    "rows": dict(e.rows_loaded),
+                    "rows": dict(e.rows_loaded or {}),
                 }
         return result
     except Exception:

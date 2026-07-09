@@ -87,9 +87,10 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
         with open(run_results_path) as f:
             run_results = json.load(f)
 
-        elapsed = float(run_results.get("elapsed_time", 0.0))
-        target = run_results.get("args", {}).get("target", "dev") or "dev"
-        results = run_results.get("results", [])
+        elapsed = float(run_results.get("elapsed_time") or 0.0)
+        args = run_results.get("args") or {}
+        target = args.get("target", "dev") or "dev"
+        results = run_results.get("results") or []
         models_run = len(results)
         models_errored = sum(
             1 for r in results if r.get("status") not in ("success", "pass", "warn")

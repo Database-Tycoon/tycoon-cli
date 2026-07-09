@@ -157,7 +157,7 @@ def _list_history(
     try:
         with DuckDBFileBackend(meta, read_only=True) as b:
             repo = HistoryRepository(b)
-            runs = repo.list_runs(limit=limit * 3)
+            runs = repo.list_runs(limit=None)
     except Exception:
         runs = []
 
