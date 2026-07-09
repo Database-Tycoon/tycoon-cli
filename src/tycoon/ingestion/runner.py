@@ -186,13 +186,17 @@ def _emit_event_safe(metadata_db: Path | None, event: Any) -> None:
         pass
 
 
+_DLT_INTERNAL_TABLES = frozenset({"_dlt_pipeline_state", "_dlt_loads", "_dlt_version"})
+
+
 def _build_run_completed(name: str, pipeline: Any, load_info: Any, elapsed: float) -> RunCompleted:
     """Build a RunCompleted event from dlt pipeline trace + load_info."""
     rows_by_table: dict[str, int] = {}
     try:
         ni = pipeline.last_trace.last_normalize_info
         rows_by_table = {
-            t: c for t, c in (ni.row_counts or {}).items() if not t.startswith("_")
+            t: c for t, c in (ni.row_counts or {}).items()
+            if t not in _DLT_INTERNAL_TABLES
         }
     except Exception:
         pass
