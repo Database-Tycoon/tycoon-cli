@@ -38,6 +38,12 @@ class DuckDBFileBackend:
         self._read_only = read_only
         self._con: duckdb.DuckDBPyConnection | None = None
 
+    @property
+    def connection(self) -> duckdb.DuckDBPyConnection:
+        if self._con is None:
+            raise RuntimeError("Backend is not open. Use DuckDBFileBackend as a context manager.")
+        return self._con
+
     def __enter__(self) -> DuckDBFileBackend:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._con = duckdb.connect(str(self._path), read_only=self._read_only)
@@ -51,8 +57,7 @@ class DuckDBFileBackend:
             self._con = None
 
     def append_event(self, event: BaseEvent) -> None:
-        assert self._con is not None
-        self._con.execute(
+        self.connection.execute(
             """
             INSERT INTO events (event_id, event_type, source_id, runtime_id, timestamp, payload)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -68,7 +73,6 @@ class DuckDBFileBackend:
         )
 
     def query_events(self, filter: EventFilter | None = None) -> list[BaseEvent]:
-        assert self._con is not None
         where_clauses: list[str] = []
         params: list[object] = []
 
@@ -80,11 +84,14 @@ class DuckDBFileBackend:
                 where_clauses.append("event_type = ?")
                 params.append(filter.event_type)
             if filter.since is not None:
+                since = filter.since
+                if since.tzinfo is None:
+                    since = since.replace(tzinfo=timezone.utc)
                 where_clauses.append("timestamp >= ?")
-                params.append(filter.since)
+                params.append(since)
 
         where = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-        rows = self._con.execute(
+        rows = self.connection.execute(
             f"SELECT payload FROM events {where} ORDER BY timestamp ASC",
             params,
         ).fetchall()
@@ -92,9 +99,8 @@ class DuckDBFileBackend:
         return [_EVENT_ADAPTER.validate_json(row[0]) for row in rows]
 
     def upsert_snapshot(self, kind: str, key: str, blob: dict) -> None:
-        assert self._con is not None
         now = datetime.now(tz=timezone.utc)
-        self._con.execute(
+        self.connection.execute(
             """
             INSERT INTO snapshots (kind, key, blob, updated_at)
             VALUES (?, ?, ?, ?)
@@ -104,8 +110,7 @@ class DuckDBFileBackend:
         )
 
     def read_snapshot(self, kind: str, key: str) -> dict | None:
-        assert self._con is not None
-        row = self._con.execute(
+        row = self.connection.execute(
             "SELECT blob FROM snapshots WHERE kind = ? AND key = ?",
             [kind, key],
         ).fetchone()
