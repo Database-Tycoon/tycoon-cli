@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "database-tycoon"
 version = "0.1.9"
-description = "Database Tycoon — local-first analytics CLI that adapts to your existing data stack"
+description = "Tycoon CLI — local-first analytics CLI that adapts to your existing data stack"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Database Tycoon Team"}]
