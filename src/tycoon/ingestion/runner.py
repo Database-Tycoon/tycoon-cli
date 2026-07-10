@@ -186,9 +186,6 @@ def _emit_event_safe(metadata_db: Path | None, event: Any) -> None:
         pass
 
 
-_DLT_INTERNAL_TABLES = frozenset({"_dlt_pipeline_state", "_dlt_loads", "_dlt_version"})
-
-
 def _build_run_completed(name: str, pipeline: Any, load_info: Any, elapsed: float) -> RunCompleted:
     """Build a RunCompleted event from dlt pipeline trace + load_info."""
     rows_by_table: dict[str, int] = {}
@@ -196,7 +193,7 @@ def _build_run_completed(name: str, pipeline: Any, load_info: Any, elapsed: floa
         ni = pipeline.last_trace.last_normalize_info
         rows_by_table = {
             t: c for t, c in (ni.row_counts or {}).items()
-            if t not in _DLT_INTERNAL_TABLES
+            if not t.startswith("_dlt")
         }
     except Exception:
         pass
@@ -281,7 +278,8 @@ def run_source(
     _metadata_db: Path | None = None
     try:
         from tycoon.config import config as _cfg
-        _metadata_db = _cfg.root / ".tycoon" / "metadata.duckdb"
+        from tycoon.observability import metadata_db_path
+        _metadata_db = metadata_db_path(_cfg.root)
     except Exception:
         pass
 

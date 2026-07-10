@@ -173,7 +173,7 @@ def _render_sources_panel(
     table.add_column("Freshness")
     table.add_column("Runs", justify="right")
     table.add_column("Tables", justify="right")
-    table.add_column("Rows", justify="right")
+    table.add_column("Last Sync Rows", justify="right")
 
     for src in sources:
         schema = src.schema or "—"

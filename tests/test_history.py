@@ -579,7 +579,7 @@ class TestHistoryLayerFilter:
         )
         return cfg
 
-    def test_layer_filter_restricts_to_invocations_touching_layer(
+    def test_layer_filter_shows_all_dbt_runs_m1_limitation(
         self, history_project, cli_runner, monkeypatch
     ):
         self._setup(history_project, monkeypatch)

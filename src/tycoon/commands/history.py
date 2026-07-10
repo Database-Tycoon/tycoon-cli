@@ -158,7 +158,8 @@ def _list_history(
         with DuckDBFileBackend(meta, read_only=True) as b:
             repo = HistoryRepository(b)
             runs = repo.list_runs(limit=None)
-    except Exception:
+    except Exception as exc:
+        console.print(f"[dim]Warning: could not read run history ({exc})[/dim]")
         runs = []
 
     if tool == "dlt":
@@ -212,7 +213,8 @@ def _show_run(id_prefix: str) -> None:
         with DuckDBFileBackend(meta, read_only=True) as b:
             repo = HistoryRepository(b)
             detail = repo.get_run(id_prefix)
-    except Exception:
+    except Exception as exc:
+        console.print(f"[dim]Warning: could not read run detail ({exc})[/dim]")
         detail = None
 
     if detail is None:
@@ -283,10 +285,11 @@ def history_default(
         "--layer",
         "-l",
         help=(
-            "Filter dbt invocations to those that touched at least one "
-            "model in the given layer: staging / intermediate / mart / "
-            "snapshot / seed. Suppresses dlt rows. Requires a compiled "
-            "dbt manifest."
+            "Restrict history to dbt runs, validated against the given "
+            "layer (staging / intermediate / mart / snapshot / seed). "
+            "Requires a compiled dbt manifest. Note: per-model filtering "
+            "is not yet available — all dbt invocations are shown "
+            "regardless of which models were touched (M1 limitation)."
         ),
     ),
 ) -> None:
