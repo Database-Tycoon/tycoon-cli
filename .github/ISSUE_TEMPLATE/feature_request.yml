@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest an idea or improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem?
+      description: What are you trying to do, and where does tycoon get in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like to see?
+      description: A rough idea is fine — no need for a full design.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of tycoon?
+      options:
+        - "tycoon init (scaffolding / stack config)"
+        - "data sources (ingestion / dlt)"
+        - "data transform (dbt)"
+        - "data analyze (Rill / dashboards)"
+        - "data history / status (observability)"
+        - "ask (Nao / natural language)"
+        - "Not sure / other"
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything you've tried or considered?
+      description: Workarounds, other tools, alternatives you weighed. Optional.
+    validations:
+      required: false
