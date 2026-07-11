@@ -92,7 +92,7 @@ class DuckDBFileBackend:
 
         where = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         rows = self.connection.execute(
-            f"SELECT payload FROM events {where} ORDER BY timestamp ASC",
+            f"SELECT payload FROM events {where} ORDER BY timestamp ASC, event_id ASC",
             params,
         ).fetchall()
 
