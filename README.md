@@ -31,7 +31,7 @@ pip install "database-tycoon[ask]"       # AI natural language queries (Ollama s
 
 The csv-import template ships with a sample CSV and a working dbt project, so the full ingest → transform pipeline runs without any external network call. This is the block our CI gate runs against every commit — if it ever breaks, the release is blocked.
 
-<!-- tycoon-test: mode=offline -->
+<!-- tycoon-test: mode=offline requires=pandas -->
 ```bash
 tycoon init --template csv-import --name analytics-demo
 tycoon data sources run files

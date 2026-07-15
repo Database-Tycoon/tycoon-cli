@@ -62,6 +62,7 @@ class RecipeBlock:
     source: Path
     line: int
     mode: str
+    requires: str | None  # optional Python package name (e.g. "pandas")
     body: str
 
     @property
@@ -111,6 +112,7 @@ def _collect_blocks() -> list[RecipeBlock]:
                     source=doc,
                     line=line,
                     mode=mode,
+                    requires=args.get("requires"),
                     body=match.group("body").strip(),
                 )
             )
@@ -134,6 +136,8 @@ def test_recipe_block(
 ) -> None:
     if block.mode == "online" and not request.config.getoption("--run-online"):
         pytest.skip("online block; pass --run-online to enable (nightly only)")
+    if block.requires:
+        pytest.importorskip(block.requires, reason=f"requires database-tycoon[{block.requires}]")
 
     tycoon_bin = shutil.which("tycoon")
     assert tycoon_bin, (

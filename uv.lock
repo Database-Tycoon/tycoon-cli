@@ -221,7 +221,6 @@ dependencies = [
     { name = "dlt", extra = ["duckdb"] },
     { name = "duckdb" },
     { name = "httpx" },
-    { name = "pandas" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "rich" },
@@ -232,6 +231,9 @@ dependencies = [
 docs = [
     { name = "mkdocs" },
     { name = "mkdocs-material" },
+]
+pandas = [
+    { name = "pandas" },
 ]
 
 [package.dev-dependencies]
@@ -250,13 +252,13 @@ requires-dist = [
     { name = "httpx", specifier = "==0.28.1" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = "==1.6.1" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = "==9.5.49" },
-    { name = "pandas", specifier = ">=2.0" },
+    { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.0" },
     { name = "pydantic", specifier = "==2.13.3" },
     { name = "pyyaml", specifier = "==6.0.3" },
     { name = "rich", specifier = "==15.0.0" },
     { name = "typer", specifier = "==0.25.0" },
 ]
-provides-extras = ["docs"]
+provides-extras = ["pandas", "docs"]
 
 [package.metadata.requires-dev]
 dev = [

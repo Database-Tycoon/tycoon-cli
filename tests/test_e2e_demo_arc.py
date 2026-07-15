@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("pandas", reason="requires database-tycoon[pandas]")
+
 
 def _tycoon_bin() -> str:
     """Resolve the installed ``tycoon`` binary or skip if not on PATH.
