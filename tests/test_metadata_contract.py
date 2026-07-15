@@ -72,3 +72,38 @@ def test_upsert_overwrites_snapshot(backend):
 def test_read_nonexistent_snapshot_returns_none(backend):
     result = backend.read_snapshot("schema", "nonexistent")
     assert result is None
+
+
+def test_since_filter_tz_aware_excludes_earlier_events(backend):
+    from datetime import datetime, timezone
+
+    early = RunStarted(source_id="early", runtime_id="dlt-managed")
+    early = early.model_copy(update={"timestamp": datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc)})
+    late = RunStarted(source_id="late", runtime_id="dlt-managed")
+    late = late.model_copy(update={"timestamp": datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)})
+
+    backend.append_event(early)
+    backend.append_event(late)
+
+    cutoff = datetime(2024, 1, 1, 11, 0, tzinfo=timezone.utc)
+    results = backend.query_events(EventFilter(since=cutoff))
+    assert len(results) == 1
+    assert results[0].source_id == "late"
+
+
+def test_since_filter_naive_datetime_coerced_to_utc(backend):
+    from datetime import datetime, timezone
+
+    early = RunStarted(source_id="early", runtime_id="dlt-managed")
+    early = early.model_copy(update={"timestamp": datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc)})
+    late = RunStarted(source_id="late", runtime_id="dlt-managed")
+    late = late.model_copy(update={"timestamp": datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)})
+
+    backend.append_event(early)
+    backend.append_event(late)
+
+    # naive datetime — backend must coerce to UTC before comparing
+    naive_cutoff = datetime(2024, 1, 1, 11, 0)
+    results = backend.query_events(EventFilter(since=naive_cutoff))
+    assert len(results) == 1
+    assert results[0].source_id == "late"

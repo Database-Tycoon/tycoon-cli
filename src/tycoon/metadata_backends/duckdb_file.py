@@ -10,7 +10,7 @@ from pydantic import TypeAdapter
 from tycoon.core.events import BaseEvent, Event
 from tycoon.core.metadata import EventFilter
 
-_EVENT_ADAPTER: TypeAdapter = TypeAdapter(Event)
+_EVENT_ADAPTER: TypeAdapter[Event] = TypeAdapter(Event)
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS events (
@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS events (
     timestamp   TIMESTAMPTZ NOT NULL,
     payload     TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_events_timestamp  ON events (timestamp);
+CREATE INDEX IF NOT EXISTS idx_events_source_id  ON events (source_id);
+CREATE INDEX IF NOT EXISTS idx_events_event_type ON events (event_type);
 
 CREATE TABLE IF NOT EXISTS snapshots (
     kind        TEXT NOT NULL,
@@ -45,7 +49,8 @@ class DuckDBFileBackend:
         return self._con
 
     def __enter__(self) -> DuckDBFileBackend:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+        if not self._read_only:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
         self._con = duckdb.connect(str(self._path), read_only=self._read_only)
         if not self._read_only:
             self._con.execute(_SCHEMA_SQL)
@@ -92,11 +97,17 @@ class DuckDBFileBackend:
 
         where = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         rows = self.connection.execute(
-            f"SELECT payload FROM events {where} ORDER BY timestamp ASC",
+            f"SELECT payload FROM events {where} ORDER BY timestamp ASC, event_id ASC",
             params,
         ).fetchall()
 
-        return [_EVENT_ADAPTER.validate_json(row[0]) for row in rows]
+        events: list[BaseEvent] = []
+        for row in rows:
+            try:
+                events.append(_EVENT_ADAPTER.validate_json(row[0]))
+            except Exception:
+                continue
+        return events
 
     def upsert_snapshot(self, kind: str, key: str, blob: dict) -> None:
         now = datetime.now(tz=timezone.utc)
