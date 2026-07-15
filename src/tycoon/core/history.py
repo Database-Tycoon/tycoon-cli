@@ -112,8 +112,11 @@ class HistoryRepository:
                         command=e.command,
                     ), e))
 
-        if len(matches) != 1:
+        if len(matches) == 0:
             return None
+        if len(matches) > 1:
+            ids = ", ".join(s.run_id for s, _ in matches)
+            raise ValueError(f"Ambiguous prefix '{run_id_prefix}' matches {len(matches)} runs: {ids}")
 
         summary, event = matches[0]
 

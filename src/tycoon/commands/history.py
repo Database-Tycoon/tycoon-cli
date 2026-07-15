@@ -15,6 +15,7 @@ import datetime
 from pathlib import Path
 
 import typer
+from rich.markup import escape
 from rich.table import Table
 
 from tycoon.config import config
@@ -150,6 +151,13 @@ def _list_history(
     # layer name surfaces with a clean exit(1) regardless of project state.
     layer_models = _resolve_layer_models(layer) if layer else None
 
+    if tool == "dlt" and layer_models is not None:
+        error("--layer filters dbt runs; it cannot be combined with --tool dlt.")
+        raise typer.Exit(1)
+    if tool == "dbt" and source is not None:
+        error("--source filters dlt runs; it cannot be combined with --tool dbt.")
+        raise typer.Exit(1)
+
     meta = _metadata_or_exit()
 
     from tycoon.metadata_backends.duckdb_file import DuckDBFileBackend
@@ -159,7 +167,7 @@ def _list_history(
             repo = HistoryRepository(b)
             runs = repo.list_runs(limit=None)
     except Exception as exc:
-        console.print(f"[dim]Warning: could not read run history ({exc})[/dim]")
+        console.print(f"[dim]Warning: could not read run history ({escape(str(exc))})[/dim]")
         runs = []
 
     if tool == "dlt":
@@ -213,13 +221,16 @@ def _show_run(id_prefix: str) -> None:
         with DuckDBFileBackend(meta, read_only=True) as b:
             repo = HistoryRepository(b)
             detail = repo.get_run(id_prefix)
+    except ValueError as exc:
+        error(str(exc))
+        raise typer.Exit(1)
     except Exception as exc:
-        console.print(f"[dim]Warning: could not read run detail ({exc})[/dim]")
+        console.print(f"[dim]Warning: could not read run detail ({escape(str(exc))})[/dim]")
         detail = None
 
     if detail is None:
         error(
-            f"No run matches prefix '{id_prefix}' (or prefix is ambiguous). "
+            f"No run found matching prefix '{id_prefix}'. "
             "Try [bold]tycoon data history[/bold] to list."
         )
         raise typer.Exit(1)

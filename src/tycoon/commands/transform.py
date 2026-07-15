@@ -93,7 +93,7 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
         results = run_results.get("results") or []
         models_run = len(results)
         models_errored = sum(
-            1 for r in results if r.get("status") not in ("success", "pass", "warn")
+            1 for r in results if r.get("status") not in ("success", "pass", "warn", "skipped")
         )
         models_passed = models_run - models_errored
 
