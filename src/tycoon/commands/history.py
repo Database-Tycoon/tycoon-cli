@@ -167,8 +167,8 @@ def _list_history(
             repo = HistoryRepository(b)
             runs = repo.list_runs(limit=None)
     except Exception as exc:
-        error(f"Could not read run history: {escape(str(exc))}")
-        raise typer.Exit(1)
+        console.print(f"[dim]Warning: could not read run history ({escape(str(exc))})[/dim]")
+        runs = []
 
     if tool == "dlt":
         runs = [r for r in runs if r.runtime_id != "dbt"]
@@ -225,8 +225,8 @@ def _show_run(id_prefix: str) -> None:
         error(str(exc))
         raise typer.Exit(1)
     except Exception as exc:
-        error(f"Could not read run detail: {escape(str(exc))}")
-        raise typer.Exit(1)
+        console.print(f"[dim]Warning: could not read run detail ({escape(str(exc))})[/dim]")
+        detail = None
 
     if detail is None:
         error(
