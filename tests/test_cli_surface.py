@@ -33,14 +33,19 @@ from tycoon.cli import app
 # addition then guards against regressions across the entire codebase.
 
 _STALE_SUBSTRINGS: tuple[tuple[str, str], ...] = (
-    # Note: `tycoon ask init` was removed in v0.1.5 (it had been a
-    # confusing alias for `register llm`) and re-introduced in v0.1.6
-    # with a different contract: idempotent project-bootstrap that
-    # writes nao_config.yaml from the existing tycoon.yml, no prompts.
-    # That's why this list no longer flags "tycoon ask init" — the
-    # current command is genuine, not a regression to the old one.
     ("ask install-model",
         "removed in v0.1.5 — folded into `tycoon register llm`"),
+    # v0.1.10 dropped the entire ask/nao surface (PR #147): no `tycoon
+    # ask`, no `tycoon register llm`, no Nao agent. Any source string
+    # mentioning them points users at commands that no longer exist.
+    ("tycoon ask",
+        "removed in v0.1.10 — the ask/nao surface was dropped entirely"),
+    ("register llm",
+        "removed in v0.1.10 — the ask/nao surface was dropped entirely"),
+    ("nao",
+        "removed in v0.1.10 — the Nao agent integration was dropped"),
+    ("Nao",
+        "removed in v0.1.10 — the Nao agent integration was dropped"),
     ("pip install tycoon[",
         "wrong package name — use `pip install database-tycoon[...]`"),
     ("pip install tycoon\\[",
