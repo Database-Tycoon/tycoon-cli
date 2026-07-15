@@ -87,7 +87,7 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str, *, started_at: float) -> None:
         if run_results_path.stat().st_mtime < started_at:
             return
 
-        with open(run_results_path) as f:
+        with open(run_results_path, encoding="utf-8") as f:
             run_results = json.load(f)
 
         elapsed = float(run_results.get("elapsed_time") or 0.0)

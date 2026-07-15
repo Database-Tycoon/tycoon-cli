@@ -209,6 +209,18 @@ def _build_run_completed(name: str, pipeline: Any, load_info: Any, elapsed: floa
     )
 
 
+def _emit_run_completed_safe(
+    metadata_db: Path | None, name: str, pipeline: Any, load_info: Any, elapsed: float
+) -> None:
+    """Build and emit a RunCompleted event; swallows all exceptions so observability
+    code never fails a successful pipeline run."""
+    try:
+        event = _build_run_completed(name, pipeline, load_info, elapsed)
+        _emit_event_safe(metadata_db, event)
+    except Exception:
+        pass
+
+
 def _capture_and_refresh_safe(
     raw_db_path: Path,
     pipeline: dlt.Pipeline | None = None,
@@ -293,7 +305,7 @@ def run_source(
             )
             load_info.raise_on_failed_jobs()
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-            _emit_event_safe(_metadata_db, _build_run_completed(name, pipeline, load_info, time.monotonic() - _started))
+            _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
             return pipeline, load_info
 
         # 2. Native builders win over the catalog path. These types ship with
@@ -305,7 +317,7 @@ def run_source(
                 source_type, name, source_config, raw_db_path, max_records
             )
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-            _emit_event_safe(_metadata_db, _build_run_completed(name, pipeline, load_info, time.monotonic() - _started))
+            _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
             return pipeline, load_info
 
         # Generic pipeline
@@ -337,7 +349,7 @@ def run_source(
         load_info = pipeline.run(dlt_source)
         load_info.raise_on_failed_jobs()
         _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-        _emit_event_safe(_metadata_db, _build_run_completed(name, pipeline, load_info, time.monotonic() - _started))
+        _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
         return pipeline, load_info
 
     except Exception as exc:
