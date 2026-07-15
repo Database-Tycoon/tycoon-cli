@@ -107,6 +107,12 @@ def _resolve_targets(skip: list[str], only: list[str]) -> list[str]:
 
 def _preflight_checks(targets: list[str]) -> None:
     """Warn if required binaries are missing before starting."""
+    if "rill" in targets:
+        import shutil
+        if not shutil.which("rill"):
+            warn("rill not found — skipping.")
+            targets.remove("rill")
+
     if "quack" in targets:
         from tycoon import quack
         if not quack.extension_available():
@@ -120,13 +126,8 @@ def _start_server(name: str) -> subprocess.Popen | None:
     from tycoon.constants import PORTS
 
     if name == "rill":
-        import shutil
-        rill_bin = shutil.which("rill")
-        if not rill_bin:
-            warn("rill not found — skipping.")
-            return None
         return subprocess.Popen(
-            [rill_bin, "start", str(config.rill_dir)],
+            ["rill", "start", str(config.rill_dir)],
             cwd=config.root,
         )
 
