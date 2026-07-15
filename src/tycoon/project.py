@@ -38,14 +38,6 @@ class BITool(str, Enum):
     none = "none"
 
 
-class OrchestratorTool(str, Enum):
-    dagster = "dagster"
-    airflow = "airflow"
-    prefect = "prefect"
-    other = "other"
-    none = "none"
-
-
 class TransformationTool(str, Enum):
     dbt = "dbt"
     none = "none"
@@ -99,8 +91,6 @@ class StackConfig(BaseModel):
     transformation_managed: bool = True
     bi: BITool = BITool.rill
     bi_managed: bool = True
-    orchestrator: OrchestratorTool = OrchestratorTool.dagster
-    orchestrator_managed: bool = True
 
 
 def _interpolate_env(value: str) -> str:
@@ -143,42 +133,6 @@ class DatabaseConfig(BaseModel):
 
     raw: str = Field(default="data/raw.duckdb", description="Raw ingestion database")
     warehouse: str = Field(default="data/warehouse.duckdb", description="Transformed warehouse database")
-
-
-class LLMConfig(BaseModel):
-    """LLM provider config for the ask (Nao) feature."""
-
-    provider: str = Field(
-        default="openai",
-        description=(
-            "LLM provider. Built-in shortcuts: openai, anthropic, ollama, "
-            "mistral, gemini, lm-studio. The lm-studio shortcut emits a "
-            "valid OpenAI-compatible config pointed at the local server."
-        ),
-    )
-    model: str | None = Field(default=None, description="Model name override")
-    api_key_env: str | None = Field(default=None, description="Env var name holding the API key")
-    base_url: str | None = Field(
-        default=None,
-        description=(
-            "OpenAI-compatible base URL (e.g. http://localhost:1234/v1 for "
-            "LM Studio). Auto-set when provider=lm-studio."
-        ),
-    )
-
-
-class AskConfig(BaseModel):
-    """Configuration for `tycoon ask` (Nao analytics agent)."""
-
-    llm: LLMConfig | None = Field(default=None)
-    port: int = Field(default=5005, description="Port for nao chat UI")
-    rules: str | None = Field(default=None, description="Custom instructions written to RULES.md")
-    include_schemas: list[str] = Field(default_factory=list, description="Only expose these schemas to nao")
-    exclude_schemas: list[str] = Field(default_factory=list, description="Hide these schemas from nao")
-    skills_dir: str | None = Field(
-        default=None,
-        description="Path to skills folder. Defaults to .tycoon/nao/agent/skills/"
-    )
 
 
 class SyncSourceSpec(BaseModel):
@@ -295,7 +249,6 @@ class TycoonProject(BaseModel):
         ),
     )
     rill_dir: str = Field(default="rill", description="Path to Rill dashboards")
-    ask: AskConfig | None = Field(default=None, description="Nao analytics agent configuration")
     sync: SyncConfig | None = Field(default=None, description="`tycoon data sync` defaults")
     transform: TransformConfig = Field(
         default_factory=lambda: TransformConfig(),

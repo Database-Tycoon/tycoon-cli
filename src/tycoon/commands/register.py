@@ -624,12 +624,7 @@ def register_rill(
     info(f"Updated {yml_path.name}.")
 
 
-_VALID_LLM_PROVIDERS = frozenset(
-    {"lm-studio", "ollama", "openai", "anthropic", "gemini", "mistral"}
-)
-
-
-@app.command(name="llm")
+@app.command(name="llm", hidden=True)
 def register_llm(
     provider: Annotated[
         Optional[str],
@@ -681,109 +676,10 @@ def register_llm(
         ),
     ] = False,
 ) -> None:
-    """Register an LLM provider for the AI analytics agent.
+    """(Removed) The AI analytics agent has been removed from tycoon.
 
-    Symmetric with [bold]tycoon register dbt[/bold] and [bold]tycoon
-    register warehouse[/bold] — points tycoon at an external resource
-    (here, an LLM runtime) and writes the linkage to tycoon.yml.
-
-    Without arguments, re-runs the post-register flow (write nao
-    config, refresh AGENTS.md, offer model install) against whatever's
-    already configured. Useful after editing tycoon.yml by hand or
-    when you swap runtimes (e.g. you installed Ollama after picking
-    LM Studio at init time).
-
-    Local-LLM model setup is part of the same flow: after registering
-    LM Studio or Ollama, tycoon probes the runtime and offers to pull
-    the recommended model (Qwen 2.5 Coder 7B) if none is loaded. Pass
-    [bold]--skip-install[/bold] to bypass the offer.
+    This command is kept as a stub so existing scripts that reference it
+    get a clear message rather than a hard CLI error.
     """
-    if not (config.root / PROJECT_FILENAME).exists():
-        error(
-            "No tycoon.yml in the current directory. Run "
-            "[bold]tycoon init[/bold] first."
-        )
-        raise typer.Exit(1)
-
-    # Lazy-import the ask helpers so users without the [ask] extra
-    # still get a clean error message (rather than ImportError on
-    # `from tycoon.commands.register import register_llm`).
-    try:
-        import nao_core  # noqa: F401
-    except ImportError:
-        error(
-            r"The AI agent requires the \[ask] extra. Install with:" "\n"
-            r"  [bold]pip install 'database-tycoon\[ask]'[/bold]"
-        )
-        raise typer.Exit(1)
-
-    from tycoon.commands.ask import setup_ask_stack
-    from tycoon.project import AskConfig, LLMConfig, save_project
-
-    # Refresh the cached config so we see any hand-edits to tycoon.yml
-    # that happened between commands.
-    config.reload()
-    project = config.project
-    assert project is not None  # has_project_file checked above
-
-    if provider is not None:
-        if provider not in _VALID_LLM_PROVIDERS:
-            error(
-                f"Unknown provider {provider!r}. Expected one of: "
-                f"{', '.join(sorted(_VALID_LLM_PROVIDERS))}."
-            )
-            raise typer.Exit(1)
-
-        # Update ask.llm in place; preserve any fields we weren't asked
-        # to override (model, api_key_env, base_url defaults stay sticky).
-        existing = project.ask.llm if project.ask else None
-        new_llm = LLMConfig(
-            provider=provider,
-            model=model if model is not None else (existing.model if existing else None),
-            api_key_env=api_key_env if api_key_env is not None else (
-                existing.api_key_env if existing else None
-            ),
-            base_url=base_url if base_url is not None else (
-                existing.base_url if existing else None
-            ),
-        )
-        if project.ask is None:
-            project.ask = AskConfig(llm=new_llm)
-        else:
-            project.ask.llm = new_llm
-        save_project(project, config.root)
-        config.reload()
-        success(f"Registered LLM provider [bold]{provider}[/bold] in tycoon.yml.")
-    else:
-        # Refresh-only path: tycoon.yml must already have a provider.
-        if project.ask is None or project.ask.llm is None:
-            error(
-                "No LLM provider in tycoon.yml. Pass a provider arg "
-                "(lm-studio, ollama, openai, anthropic, gemini, mistral) "
-                "to register one."
-            )
-            raise typer.Exit(1)
-        info(
-            f"Refreshing AI agent setup against existing provider "
-            f"[bold]{project.ask.llm.provider}[/bold]."
-        )
-
-    # Run the post-register stack setup: nao config + AGENTS.md +
-    # exclude_schemas seed + (optional) model install offer.
-    if skip_install:
-        # Temporarily monkey-patch the offer to a no-op for this call.
-        # Cleaner than threading a flag through setup_ask_stack since
-        # the setup logic doesn't otherwise need to know about install.
-        from tycoon.commands import ask as ask_mod
-        original = ask_mod._offer_model_install
-
-        def _noop(_p: str) -> None:
-            return None
-
-        ask_mod._offer_model_install = _noop
-        try:
-            setup_ask_stack()
-        finally:
-            ask_mod._offer_model_install = original
-    else:
-        setup_ask_stack()
+    error("The AI analytics agent (ask/nao) has been removed from tycoon.")
+    raise typer.Exit(1)

@@ -15,7 +15,7 @@ class TestCLIHelp:
     def test_help_contains_expected_commands(self, cli_runner):
         result = cli_runner.invoke(app, ["--help"])
         output = result.stdout
-        for cmd in ("init", "data", "start", "stop", "run", "doctor", "ask"):
+        for cmd in ("init", "data", "start", "stop", "run", "doctor"):
             assert cmd in output, f"Expected command '{cmd}' in help output"
 
     def test_version_flag_prints_version(self, cli_runner):

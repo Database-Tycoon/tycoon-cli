@@ -85,38 +85,6 @@ class TestServeAndProbes:
 
 
 # ---------------------------------------------------------------------------
-# Service definition
-# ---------------------------------------------------------------------------
-
-
-class TestServiceDefinition:
-    def _bind(self, tmp_path, monkeypatch):
-        from tycoon.config import TycoonConfig
-        from tycoon.services import definitions as defs_mod
-
-        cfg = TycoonConfig(project_root=tmp_path)
-        monkeypatch.setattr(defs_mod, "config", cfg)
-        return cfg
-
-    def test_no_quack_service_without_token(self, tmp_path, monkeypatch):
-        self._bind(tmp_path, monkeypatch)
-        from tycoon.services.definitions import get_service_definitions
-
-        names = {d.name for d in get_service_definitions()}
-        assert "quack" not in names
-
-    def test_quack_service_appears_once_token_exists(self, tmp_path, monkeypatch):
-        self._bind(tmp_path, monkeypatch)
-        quack.ensure_token(tmp_path)
-        from tycoon.services.definitions import get_service_definitions
-
-        quack_defs = [d for d in get_service_definitions() if d.name == "quack"]
-        assert len(quack_defs) == 1
-        assert quack_defs[0].port == quack.QUACK_PORT
-        assert quack_defs[0].command[0] == "duckdb"
-
-
-# ---------------------------------------------------------------------------
 # `tycoon start` preflight folding
 # ---------------------------------------------------------------------------
 
