@@ -1,9 +1,10 @@
-"""tycoon start — launch the three long-running servers."""
+"""tycoon start — launch the long-running servers."""
 
 from __future__ import annotations
 
 import json
 import signal
+import subprocess
 import threading
 from pathlib import Path
 
@@ -12,11 +13,7 @@ import typer
 from tycoon.config import config
 from tycoon.utils.console import console, error, header, info, success, warn
 
-# The servers that run continuously and are not Dagster assets. `quack` serves
-# the warehouse over DuckDB's multi-client RPC protocol so local clients share
-# the live DB instead of fighting the single-writer file lock; it's skipped
-# automatically when the (core_nightly) extension isn't available.
-_SERVER_NAMES = ["tycoon", "rill", "dagster", "nao", "quack"]
+_SERVER_NAMES = ["rill", "quack"]
 
 _PID_FILE = Path(".tycoon") / "run" / "pids.json"
 
@@ -39,34 +36,37 @@ def clear_pids() -> None:
 
 def start_cmd(
     skip: list[str] = typer.Option(
-        [], "--skip", help="Server(s) to skip. Repeatable: --skip nao --skip dagster"
+        [], "--skip", help="Server(s) to skip. Repeatable: --skip rill"
     ),
     only: list[str] = typer.Option(
         [], "--only", help="Only start these server(s). Repeatable: --only rill"
     ),
 ) -> None:
-    """Start the Tycoon web UI, Rill dashboard, Dagster orchestrator, and Nao AI agent.
+    """Start the Rill dashboard and Quack warehouse server.
 
     All servers run as background processes in this session.
     Press Ctrl-C or run `tycoon stop` to shut everything down.
     """
-    from tycoon.services.manager import ServiceManager
-
     targets = _resolve_targets(skip, only)
     if not targets:
         error("No servers to start.")
         raise typer.Exit(1)
 
     _preflight_checks(targets)
+    if not targets:
+        error("No servers to start.")
+        raise typer.Exit(1)
 
-    manager = ServiceManager()
+    pids: dict[str, int] = {}
+    procs: dict[str, subprocess.Popen] = {}
     header("Tycoon")
 
     for name in targets:
-        manager.start(name)
+        proc = _start_server(name)
+        if proc is not None:
+            procs[name] = proc
+            pids[name] = proc.pid
 
-    # Persist PIDs so `tycoon stop` can kill them from another terminal
-    pids = {name: proc.pid for name, proc in manager._processes.items()}
     if pids:
         write_pids(pids)
 
@@ -82,7 +82,16 @@ def start_cmd(
 
     console.print()
     info("Shutting down...")
-    manager.stop_all()
+    for proc in procs.values():
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=3)
+        except Exception:
+            pass
     clear_pids()
     info("Done.")
 
@@ -97,30 +106,12 @@ def _resolve_targets(skip: list[str], only: list[str]) -> list[str]:
 
 
 def _preflight_checks(targets: list[str]) -> None:
-    """Warn if required config or binaries are missing before starting."""
-    if "tycoon" in targets:
-        try:
-            import tycoon.server.app  # noqa: F401
-        except ImportError:
-            warn("tycoon.server.app could not be imported — skipping Tycoon web UI.")
-            targets.remove("tycoon")
-
-    if "nao" in targets:
-        try:
-            import nao_core  # noqa: F401
-        except ImportError:
-            warn("nao-core is not installed — skipping Nao.")
-            targets.remove("nao")
-            return
-        if not (config.nao_dir / "nao_config.yaml").exists():
-            warn("Nao not initialised. Run [bold]tycoon register llm <provider> && tycoon ask sync[/bold] first.")
-            targets.remove("nao")
-
-    if "dagster" in targets:
+    """Warn if required binaries are missing before starting."""
+    if "rill" in targets:
         import shutil
-        if not shutil.which("dagster"):
-            warn(r"dagster not found — skipping. Install with: [bold]pip install 'database-tycoon\[dagster]'[/bold]")
-            targets.remove("dagster")
+        if not shutil.which("rill"):
+            warn("rill not found — skipping.")
+            targets.remove("rill")
 
     if "quack" in targets:
         from tycoon import quack
@@ -128,19 +119,30 @@ def _preflight_checks(targets: list[str]) -> None:
             info("Quack extension unavailable (needs duckdb core_nightly) — serving the warehouse in file mode.")
             targets.remove("quack")
         else:
-            # Generate + persist the token before ServiceManager reads the
-            # definitions, so the served command carries it.
             quack.ensure_token(config.root)
+
+
+def _start_server(name: str) -> subprocess.Popen | None:
+    from tycoon.constants import PORTS
+
+    if name == "rill":
+        return subprocess.Popen(
+            ["rill", "start", str(config.rill_dir)],
+            cwd=config.root,
+        )
+
+    if name == "quack":
+        from tycoon import quack
+        return quack.start_server(config.root, port=PORTS["quack"])
+
+    return None
 
 
 def _print_urls(targets: list[str]) -> None:
     from tycoon.constants import PORTS
     lines = {
-        "tycoon":  ("Tycoon UI",        f"http://localhost:{PORTS['tycoon']}"),
-        "rill":    ("Rill dashboards",  f"http://localhost:{PORTS['rill']}"),
-        "dagster": ("Dagster UI",       f"http://localhost:{PORTS['dagster']}"),
-        "nao":     ("Nao AI queries",   f"http://localhost:{PORTS['nao']}"),
-        "quack":   ("Quack warehouse",  f"quack:localhost:{PORTS['quack']}"),
+        "rill":  ("Rill dashboards", f"http://localhost:{PORTS['rill']}"),
+        "quack": ("Quack warehouse", f"quack:localhost:{PORTS['quack']}"),
     }
     for name in targets:
         if name in lines:

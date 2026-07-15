@@ -10,9 +10,6 @@ PORTS = {
     "dbt_docs": 8080,
     "recce": 8000,
     "rill": 9009,
-    "tycoon": 8888,
-    "dagster": 3000,
-    "nao": 5005,
     "quack": 9494,
 }
 

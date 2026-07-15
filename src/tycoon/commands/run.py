@@ -11,7 +11,7 @@ from tycoon.utils.console import error
 
 def run_cmd(
     ctx: typer.Context,
-    tool: str = typer.Argument(help="Tool to invoke (e.g. dbt, dlt, dagster, rill)."),
+    tool: str = typer.Argument(help="Tool to invoke (e.g. dbt, dlt, rill)."),
 ) -> None:
     """Invoke any CLI tool in the tycoon environment and forward all arguments.
 
@@ -22,8 +22,6 @@ def run_cmd(
       tycoon run dbt run --select staging+
 
       tycoon run dlt pipeline nyc_dot_pipeline show
-
-      tycoon run dagster asset list
 
       tycoon run rill --help
     """
