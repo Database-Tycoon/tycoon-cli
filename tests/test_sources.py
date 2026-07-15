@@ -278,6 +278,29 @@ class TestSourceInstaller:
             result = install_dlt_extra("rest_api")
             assert result is False
 
+    def test_install_dlt_extra_pins_installed_dlt_version(self):
+        """The runtime extra install pins dlt to the already-installed version.
+
+        An unpinned `pip install dlt[extra]` could silently upgrade dlt
+        itself at runtime (GH #68).
+        """
+        import importlib.metadata
+        from unittest.mock import patch, MagicMock
+
+        from tycoon.ingestion.source_installer import install_dlt_extra
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        expected = f"dlt[rest_api]=={importlib.metadata.version('dlt')}"
+
+        with patch(
+            "tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result
+        ) as mock_run:
+            assert install_dlt_extra("rest_api") is True
+
+        cmd = mock_run.call_args.args[0]
+        assert cmd[-1] == expected
+
 
 # ---------------------------------------------------------------------------
 # Auto-scaffold (`_maybe_auto_scaffold` — used by `data sources run`)

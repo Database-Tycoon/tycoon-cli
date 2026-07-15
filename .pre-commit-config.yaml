@@ -21,8 +21,37 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        # Snapshot files pin exact CLI output, incl. Rich's trailing
+        # padding — stripping it breaks every snapshot assertion.
+        exclude: ^tests/__snapshots__/
       - id: end-of-file-fixer
+        exclude: ^tests/__snapshots__/
       - id: check-yaml
       - id: check-merge-conflict
       - id: check-added-large-files
         args: ['--maxkb=500']
+
+  - repo: https://github.com/gitleaks/gitleaks
+    # Same gitleaks version CI runs (ci.yml secret-scan job); bump together.
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        files: ^src/
+        # Skips, in the order listed:
+        #   B101          asserts guard internal invariants, not user input
+        #   B110/B112     existing best-effort cleanup blocks (try/except pass)
+        #   B301/B403     pickle.load of dlt's own local trace files
+        #                 (observability.py; move to `# nosec B301` inline
+        #                 when that file is next open for edits)
+        #   B404/B603/B607  this CLI shells out to uv/dbt/dlt by design
+        #   B608          SQL identifiers interpolated into local DuckDB
+        #                 queries (quoted via quote_identifier; no remote
+        #                 SQL surface)
+        # Everything else — hardcoded credentials, weak crypto, shell=True,
+        # unsafe YAML, etc. — still gates.
+        args: ['--skip', 'B101,B110,B112,B301,B403,B404,B603,B607,B608']

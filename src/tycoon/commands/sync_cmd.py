@@ -152,5 +152,3 @@ def sync_cmd(
         ("tycoon data query \"SELECT ...\"", f"query the local snapshot ({to.name})"),
         ("tycoon data sync --mode skip-existing", "re-run later, only fill in new tables"),
     )
-
-
