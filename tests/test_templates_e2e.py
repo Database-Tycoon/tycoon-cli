@@ -20,8 +20,6 @@ from pathlib import Path
 import duckdb
 import pytest
 
-pytest.importorskip("pandas", reason="requires database-tycoon[pandas]")
-
 from tycoon.cli import app
 
 
