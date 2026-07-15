@@ -10,7 +10,7 @@ from pydantic import TypeAdapter
 from tycoon.core.events import BaseEvent, Event
 from tycoon.core.metadata import EventFilter
 
-_EVENT_ADAPTER: TypeAdapter = TypeAdapter(Event)
+_EVENT_ADAPTER: TypeAdapter[Event] = TypeAdapter(Event)
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS events (
@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS events (
     timestamp   TIMESTAMPTZ NOT NULL,
     payload     TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_events_timestamp  ON events (timestamp);
+CREATE INDEX IF NOT EXISTS idx_events_source_id  ON events (source_id);
+CREATE INDEX IF NOT EXISTS idx_events_event_type ON events (event_type);
 
 CREATE TABLE IF NOT EXISTS snapshots (
     kind        TEXT NOT NULL,
@@ -45,7 +49,8 @@ class DuckDBFileBackend:
         return self._con
 
     def __enter__(self) -> DuckDBFileBackend:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+        if not self._read_only:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
         self._con = duckdb.connect(str(self._path), read_only=self._read_only)
         if not self._read_only:
             self._con.execute(_SCHEMA_SQL)
