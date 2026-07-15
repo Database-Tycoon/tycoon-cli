@@ -123,6 +123,7 @@ nav:
     - recipes/fivetran-metadata.md
     - recipes/layered-architecture.md
   - Releases:
+    - "v0.1.10": releases/v0.1.10.md
     - "v0.1.9": releases/v0.1.9.md
     - "v0.1.8": releases/v0.1.8.md
     - "v0.1.7": releases/v0.1.7.md
