@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 
 class BaseEvent(BaseModel):
@@ -12,7 +12,7 @@ class BaseEvent(BaseModel):
     event_type: str
     source_id: str
     runtime_id: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    timestamp: AwareDatetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 
 class RunStarted(BaseEvent):

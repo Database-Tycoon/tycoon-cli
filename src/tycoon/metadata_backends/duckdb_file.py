@@ -101,7 +101,13 @@ class DuckDBFileBackend:
             params,
         ).fetchall()
 
-        return [_EVENT_ADAPTER.validate_json(row[0]) for row in rows]
+        events: list[BaseEvent] = []
+        for row in rows:
+            try:
+                events.append(_EVENT_ADAPTER.validate_json(row[0]))
+            except Exception:
+                continue
+        return events
 
     def upsert_snapshot(self, kind: str, key: str, blob: dict) -> None:
         now = datetime.now(tz=timezone.utc)
