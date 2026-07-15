@@ -53,6 +53,9 @@ def start_cmd(
         raise typer.Exit(1)
 
     _preflight_checks(targets)
+    if not targets:
+        error("No servers to start.")
+        raise typer.Exit(1)
 
     pids: dict[str, int] = {}
     procs: dict[str, subprocess.Popen] = {}
@@ -82,6 +85,11 @@ def start_cmd(
     for proc in procs.values():
         try:
             proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=3)
         except Exception:
             pass
     clear_pids()
