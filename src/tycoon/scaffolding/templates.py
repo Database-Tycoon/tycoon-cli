@@ -114,11 +114,6 @@ dbt_project/logs/
 # Tycoon observability — dlt + dbt run-history metadata DB (disposable)
 .tycoon/metadata.duckdb*
 
-# Nao (AI agent) — chat SQLite and per-project sync artifacts
-.tycoon/nao/db.sqlite*
-.tycoon/nao/databases/
-.tycoon/nao/repos/
-
 # OS
 .DS_Store
 """

@@ -320,7 +320,7 @@ def register_dbt(
                 if changed:
                     info(f"Added [bold]tycoon_meta[/bold] ATTACH to {profiles_yml}")
                 # Also generate the _tycoon staging models so users get the
-                # full surface (dbt + Nao via downstream sync).
+                # full dbt surface.
                 scaffold_observability_models(resolved)
                 info(
                     f"Generated [bold]models/_tycoon/[/bold] under {resolved}. "
