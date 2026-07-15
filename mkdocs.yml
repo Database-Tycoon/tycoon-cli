@@ -98,8 +98,6 @@ nav:
       - "tycoon data analyze": commands/data/analyze.md
       - "tycoon data status": commands/data/status.md
       - "tycoon data run-all": commands/data/run-all.md
-    - AI agent:
-      - "tycoon ask": commands/ask/index.md
     - Services:
       - "tycoon start / stop": commands/start.md
     - Tools:
@@ -116,13 +114,13 @@ nav:
   - Recipes:
     - recipes/csv-to-dashboard.md
     - recipes/motherduck-cloud-sync.md
-    - recipes/lm-studio-local-llm.md
     - recipes/existing-dbt-project.md
     - recipes/existing-dbt-profile.md
     - recipes/osi-export.md
     - recipes/fivetran-metadata.md
     - recipes/layered-architecture.md
   - Releases:
+    - "v0.1.10": releases/v0.1.10.md
     - "v0.1.9": releases/v0.1.9.md
     - "v0.1.8": releases/v0.1.8.md
     - "v0.1.7": releases/v0.1.7.md
