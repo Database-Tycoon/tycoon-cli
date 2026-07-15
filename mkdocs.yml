@@ -98,8 +98,6 @@ nav:
       - "tycoon data analyze": commands/data/analyze.md
       - "tycoon data status": commands/data/status.md
       - "tycoon data run-all": commands/data/run-all.md
-    - AI agent:
-      - "tycoon ask": commands/ask/index.md
     - Services:
       - "tycoon start / stop": commands/start.md
     - Tools:
@@ -116,7 +114,6 @@ nav:
   - Recipes:
     - recipes/csv-to-dashboard.md
     - recipes/motherduck-cloud-sync.md
-    - recipes/lm-studio-local-llm.md
     - recipes/existing-dbt-project.md
     - recipes/existing-dbt-profile.md
     - recipes/osi-export.md
