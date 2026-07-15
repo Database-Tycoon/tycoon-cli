@@ -86,10 +86,6 @@ class TycoonConfig:
             return p if p.is_absolute() else (self.root / p).resolve()
         return self.root / _DEFAULT_RILL_DIR
 
-    @property
-    def nao_dir(self) -> Path:
-        return self.root / ".tycoon" / "nao"
-
     # -- Sources --
 
     @property

@@ -5,9 +5,8 @@ Issue #20. Two surfaces today:
 - ``tycoon data observability scaffold`` — generate dbt staging models on
   top of ``.tycoon/metadata.duckdb`` and ATTACH the metadata DB into the
   project's dbt profile. After running, ``tycoon data transform run``
-  builds the ``stg_tycoon__*`` views, ``tycoon ask sync`` exposes them
-  to Nao, and the agent can answer "which dbt models failed last week?"
-  without extra plumbing.
+  builds the ``stg_tycoon__*`` views, queryable like any other model
+  ("which dbt models failed last week?") without extra plumbing.
 """
 
 from __future__ import annotations
@@ -118,6 +117,5 @@ def observability_scaffold(
     success("Observability scaffolding complete.")
     next_steps(
         ("tycoon data transform run --select _tycoon", "build the staging views"),
-        ("tycoon ask sync", "expose them to Nao"),
         ("tycoon data query \"SELECT * FROM stg_tycoon__dlt_runs LIMIT 5\"", "smoke-test"),
     )
