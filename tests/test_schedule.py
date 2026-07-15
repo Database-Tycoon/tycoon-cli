@@ -89,7 +89,66 @@ class TestRendering:
     def test_systemd_service_has_workdir_and_exec(self, tmp_path):
         svc = sched.render_systemd_service(_spec(tmp_path), home=tmp_path)
         assert f"WorkingDirectory={tmp_path / 'proj'}" in svc
-        assert "ExecStart=" in svc and "data run-all --notify" in svc
+        assert "ExecStart=" in svc and '"data" "run-all" "--notify"' in svc
+
+
+# ---------------------------------------------------------------------------
+# systemd unit-file injection hardening (#67)
+# ---------------------------------------------------------------------------
+
+
+class TestSystemdQuoting:
+    def _exec_start_line(self, tmp_path, args):
+        with patch("tycoon.schedule.tycoon_program", return_value=["/usr/bin/tycoon"]):
+            svc = sched.render_systemd_service(_spec(tmp_path, args=args), home=tmp_path)
+        return next(line for line in svc.splitlines() if line.startswith("ExecStart="))
+
+    def test_plain_args_quoted(self, tmp_path):
+        line = self._exec_start_line(tmp_path, ["data", "run-all"])
+        assert line == 'ExecStart="/usr/bin/tycoon" "data" "run-all"'
+
+    def test_arg_with_space_stays_one_token(self, tmp_path):
+        line = self._exec_start_line(tmp_path, ["data", "run", "--select", "my model"])
+        assert '"my model"' in line
+
+    def test_arg_with_double_quote_escaped(self, tmp_path):
+        line = self._exec_start_line(tmp_path, ['say "hi"'])
+        assert '"say \\"hi\\""' in line
+
+    def test_arg_with_backslash_escaped(self, tmp_path):
+        line = self._exec_start_line(tmp_path, ["a\\b"])
+        assert '"a\\\\b"' in line
+
+
+class TestControlCharRejection:
+    """A newline inside a shlex-quoted token would inject unit directives."""
+
+    @pytest.mark.parametrize("plat", ["linux", "darwin"])
+    @pytest.mark.parametrize("evil", ["run\nExecStartPre=/bin/evil", "run\rx", "run\0x"])
+    def test_control_char_in_arg_raises_before_writing(self, tmp_path, plat, evil):
+        spec = _spec(tmp_path, args=["data", evil])
+        with patch("tycoon.schedule.current_platform", return_value=plat), \
+             patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)) as run:
+            with pytest.raises(sched.ScheduleError, match="must not contain"):
+                sched.add(spec, home=tmp_path)
+        run.assert_not_called()
+        assert not sched.systemd_user_dir(tmp_path).exists()
+        assert not sched.launch_agents_dir(tmp_path).exists()
+
+    def test_newline_in_project_root_raises(self, tmp_path):
+        spec = _spec(tmp_path, project_root=tmp_path / "pro\nj\nExecStart=/bin/evil")
+        with patch("tycoon.schedule.current_platform", return_value="linux"), \
+             patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)):
+            with pytest.raises(sched.ScheduleError, match="must not contain"):
+                sched.add(spec, home=tmp_path)
+        assert not sched.systemd_user_dir(tmp_path).exists()
+
+    def test_launchd_rendering_untouched_by_quoting(self, tmp_path):
+        # plistlib already escapes everything — args must round-trip verbatim,
+        # with no systemd-style quoting leaking into ProgramArguments.
+        spec = _spec(tmp_path, args=["data", "run", "--select", 'my "model"'])
+        pl = plistlib.loads(sched.render_launchd_plist(spec, home=tmp_path))
+        assert pl["ProgramArguments"][-1] == 'my "model"'
 
 
 # ---------------------------------------------------------------------------

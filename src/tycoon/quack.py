@@ -20,7 +20,9 @@ path stays in-process until the extension reaches ``core``.
 
 from __future__ import annotations
 
+import re
 import secrets
+import stat
 from pathlib import Path
 
 import yaml
@@ -41,25 +43,61 @@ _SECRETS_REL = Path(".tycoon") / "secrets.yml"
 # the install instruction is correct everywhere.
 _LOAD_QUACK = "INSTALL quack FROM core_nightly; LOAD quack;"
 
+# `secrets.token_urlsafe` only ever emits these characters. The token is
+# interpolated into SQL string literals (`serve_command` / `connect`), so a
+# token carrying a quote char is never legitimate — it's a tampered
+# secrets.yml attempting SQL injection. Validate on load (#66).
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+class QuackTokenError(RuntimeError):
+    """Raised when ``.tycoon/secrets.yml`` holds a malformed Quack token."""
+
 
 def secrets_path(project_root: Path) -> Path:
     return project_root / _SECRETS_REL
 
 
+def _tighten_permissions(path: Path) -> None:
+    """Clamp the secrets file to owner-only (0600).
+
+    Fixes files created before the permission hardening (#66): any group/other
+    bit lets another local user read the token and connect to the warehouse.
+    """
+    try:
+        if stat.S_IMODE(path.stat().st_mode) != 0o600:
+            path.chmod(0o600)
+    except OSError:
+        pass  # Best-effort on filesystems without POSIX modes.
+
+
 def load_token(project_root: Path) -> str | None:
-    """Return the persisted Quack token, or None if not set up yet."""
+    """Return the persisted Quack token, or None if not set up yet.
+
+    Raises QuackTokenError if a token is present but malformed — it would be
+    interpolated into SQL string literals, so it must never be used.
+    """
     path = secrets_path(project_root)
     if not path.exists():
         return None
+    _tighten_permissions(path)
     try:
         data = yaml.safe_load(path.read_text()) or {}
     except yaml.YAMLError:
         return None
     quack = data.get("quack")
-    if isinstance(quack, dict):
-        token = quack.get("token")
-        return token if isinstance(token, str) and token else None
-    return None
+    if not isinstance(quack, dict):
+        return None
+    token = quack.get("token")
+    if not isinstance(token, str):
+        return None
+    if not _TOKEN_RE.match(token):
+        raise QuackTokenError(
+            f"Malformed Quack token in {path}: expected URL-safe characters only "
+            "([A-Za-z0-9_-]). Delete the 'quack' entry from that file and rerun "
+            "`tycoon start` to generate a fresh token."
+        )
+    return token
 
 
 def generate_token() -> str:
@@ -89,6 +127,10 @@ def ensure_token(project_root: Path) -> str:
         except yaml.YAMLError:
             data = {}
     data.setdefault("quack", {})["token"] = token
+    # Owner-only *before* the token lands on disk: with default modes (0644)
+    # any other local user could read it and connect to the served warehouse.
+    path.touch(mode=0o600)
+    path.chmod(0o600)  # touch() leaves the mode of a pre-existing file alone
     path.write_text(yaml.safe_dump(data, default_flow_style=False, sort_keys=False))
 
     _ensure_gitignored(project_root)

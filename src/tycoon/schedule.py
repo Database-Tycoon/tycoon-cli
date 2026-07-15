@@ -60,6 +60,23 @@ def validate_name(name: str) -> None:
         )
 
 
+def _reject_control_chars(spec: ScheduleSpec) -> None:
+    """Refuse argv tokens / project paths carrying line breaks or NUL (#67).
+
+    systemd unit files are line-oriented INI: a newline smuggled through a
+    quoted `--command` token (shlex.split preserves them) or a directory name
+    would inject extra unit directives that run on every timer fire. launchd
+    is immune (plistlib escapes everything), but no legitimate value contains
+    these characters, so reject on every platform before rendering.
+    """
+    for value in [*spec.args, str(spec.project_root)]:
+        if any(c in value for c in ("\n", "\r", "\0")):
+            raise ScheduleError(
+                "Schedule command arguments and project path must not contain "
+                "newline, carriage-return, or NUL characters."
+            )
+
+
 def parse_time(at: str) -> tuple[int, int]:
     """Parse ``HH:MM`` into (hour, minute). Raises ScheduleError on bad input."""
     m = re.match(r"^(\d{1,2}):(\d{2})$", at.strip())
@@ -166,8 +183,22 @@ def _systemd_oncalendar(spec: ScheduleSpec) -> str:
     return f"*-*-* {spec.hour:02d}:{spec.minute:02d}:00"  # daily
 
 
+def _systemd_quote(arg: str) -> str:
+    """Quote one argv token per systemd.service "Command lines" rules.
+
+    Double-quote the token, escaping backslash and double-quote — the same
+    argv-preserving discipline plistlib gives the launchd path, so argument
+    content can never be parsed as unit syntax.
+    """
+    escaped = arg.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 def render_systemd_service(spec: ScheduleSpec, home: Path | None = None) -> str:
-    exec_start = " ".join(tycoon_program() + spec.args)
+    # WorkingDirectory takes its value literally (systemd does no quote
+    # removal on single-path settings), so it is emitted raw; `add()` rejects
+    # the control characters that could break out of its line.
+    exec_start = " ".join(_systemd_quote(a) for a in tycoon_program() + spec.args)
     log = log_file(spec.name, home)
     return (
         "[Unit]\n"
@@ -204,6 +235,7 @@ def add(spec: ScheduleSpec, home: Path | None = None) -> str:
     Raises ScheduleError on an unsupported platform or a scheduler failure.
     """
     validate_name(spec.name)
+    _reject_control_chars(spec)
     home = home or Path.home()
     plat = current_platform()
     log_dir(spec.name, home).mkdir(parents=True, exist_ok=True)
