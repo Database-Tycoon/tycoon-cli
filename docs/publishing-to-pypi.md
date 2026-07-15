@@ -122,9 +122,6 @@ pip install --index-url https://test.pypi.org/simple/ database-tycoon
 **PyPI (real):**
 ```bash
 pip install database-tycoon
-# or with extras:
-pip install "database-tycoon[dagster]"
-pip install "database-tycoon[ask]"
 ```
 
 ---

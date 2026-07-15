@@ -41,8 +41,7 @@ tycoon doctor
 ```
 
 Walks through tycoon.yml validity, dbt project presence, Rill setup,
-optional services (Dagster, Nao), and observability state. Use it any
-time something feels off.
+and observability state. Use it any time something feels off.
 
 ## 3. Ingest
 
@@ -133,29 +132,7 @@ duration, total bytes written, per-step timings, per-table row counts.
 For a dbt run: per-node status, execution time, and a "Schema changes
 vs. previous run" table when columns shifted.
 
-## 7. Add an AI agent (optional)
-
-```bash
-pip install 'database-tycoon[ask]'    # if you didn't already
-tycoon register llm lm-studio         # configures Nao + writes AGENTS.md + offers model install
-tycoon ask sync                       # introspects warehouse + dbt project
-tycoon ask doctor                     # health check
-tycoon ask chat                       # opens Nao UI on :5005
-```
-
-The `--llm lm-studio` shortcut configures Nao to use LM Studio's local
-OpenAI-compat server at `http://localhost:1234/v1` — no API key, fully
-offline. Other shortcuts: `ollama`, `openai`, `anthropic`, `gemini`,
-`mistral`.
-
-To pipe context into any agent (Claude Code, Cursor, etc.) without the
-chat UI:
-
-```bash
-tycoon ask context --table stg_widgets | claude -p "explain this table"
-```
-
-## 8. Tear down
+## 7. Tear down
 
 ```bash
 tycoon stop                # stop any background services
@@ -166,8 +143,8 @@ rm -rf my-project          # tycoon writes nothing outside this directory
 
 ## Where to go next
 
-- [Concepts](concepts.md) — what `tycoon.yml` actually models, how
-  observability works, and the AGENTS.md mechanic.
+- [Concepts](concepts.md) — what `tycoon.yml` actually models and how
+  observability works.
 - [Commands](../commands/index.md) — full reference for every command.
 - [Reference: tycoon.yml](../reference/tycoon-yml.md) — every key in the
   config file.

@@ -17,16 +17,14 @@ tycoon data run-all
 
 ## What is tycoon?
 
-Tycoon is a single command-line tool that orchestrates a local analytics
-pipeline — ingestion, transformation, dashboards, and an AI agent — across
+Tycoon is a single command-line tool that runs a local analytics
+pipeline — ingestion, transformation, and dashboards — across
 the tools you already use:
 
 - **[dlt](https://dlthub.com)** for ingestion (REST APIs, files, SQL databases, your own dlt sources)
 - **[dbt](https://getdbt.com)** for transformation (with first-class duckdb, MotherDuck, Snowflake, BigQuery, and Redshift support)
 - **[DuckDB](https://duckdb.org)** for the warehouse (or MotherDuck, when you want it in the cloud)
 - **[Rill](https://rilldata.com)** for dashboards
-- **[Nao](https://getnao.io)** for natural-language queries via the LLM of your choice (LM Studio, Ollama, Claude, OpenAI, ...)
-- **[Dagster](https://dagster.io)** for orchestration
 
 You write one `tycoon.yml`. Tycoon scaffolds, configures, and runs the rest.
 
@@ -50,7 +48,7 @@ tycoon run identically on a laptop and on a cloud VM.
     ---
 
     Install tycoon, scaffold a first project, and walk through ingestion
-    → transformation → dashboards → AI agent end-to-end.
+    → transformation → dashboards end-to-end.
 
 -   :material-console: **[Commands](commands/index.md)**
 

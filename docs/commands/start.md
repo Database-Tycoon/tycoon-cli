@@ -1,6 +1,6 @@
 # `tycoon start` / `tycoon stop`
 
-Start and stop background services — Rill dashboards, Dagster orchestrator, Nao chat UI, and the optional tycoon web UI.
+Start and stop background services — Rill dashboards and the Quack warehouse server.
 
 ## `tycoon start`
 
@@ -8,19 +8,16 @@ Start and stop background services — Rill dashboards, Dagster orchestrator, Na
 tycoon start [OPTIONS]
 
 Options:
-  --only TEXT       Start only the named service (rill / dagster / nao / web / quack)
-  --no-open         Don't open a browser
+  --only TEXT       Only start the named service(s) (rill / quack). Repeatable.
+  --skip TEXT       Start everything except the named service(s). Repeatable.
   -h, --help        Show this message and exit
 ```
 
-By default, `tycoon start` boots every service that's relevant to the project (based on `stack` in `tycoon.yml`):
+By default, `tycoon start` boots both services:
 
 | Service | Port | Started when |
 |---|---|---|
-| Rill | 9009 | `stack.bi = rill` |
-| Dagster | 3000 | `stack.orchestrator = dagster` AND `tycoon[dagster]` extra installed |
-| Nao | 5005 | `stack.transformation` set AND `tycoon[ask]` extra installed AND `.tycoon/nao/nao_config.yaml` exists |
-| Web UI | 8080 | `tycoon[server]` extra installed |
+| Rill | 9009 | the `rill` binary is on `$PATH` |
 | Quack | 9494 | the DuckDB **Quack** extension is available (`core_nightly`) |
 
 Each service runs as a managed subprocess. PIDs are tracked under `.tycoon/run/` so `tycoon stop` finds them.
@@ -41,32 +38,26 @@ There's nothing new to learn — it folds into the commands you already run:
 
 ```bash
 tycoon start --only rill
-tycoon start --only dagster
-tycoon start --only nao
-tycoon start --only web
+tycoon start --only quack
+tycoon start --skip quack    # everything except Quack
 ```
 
 When you only need dashboards, `--only rill` saves a couple of seconds vs. starting everything.
 
-### Browser auto-open
-
-By default, the first started service opens in your browser. `--no-open` skips this — useful in headless environments.
-
 ## `tycoon stop`
 
 ```
-tycoon stop [OPTIONS]
+tycoon stop [SERVICES]...
 
-Options:
-  --only TEXT       Stop only the named service
-  -h, --help        Show this message and exit
+Arguments:
+  SERVICES...       Specific server(s) to stop. Defaults to all (rill, quack).
 ```
 
-Sends SIGTERM to every tracked PID and waits for clean shutdown. Stale PIDs (process already gone) are pruned silently.
+Sends SIGTERM to every tracked PID and waits for clean shutdown. If the PID file is missing, it falls back to finding the processes by port.
 
 ```bash
 tycoon stop                  # all services
-tycoon stop --only rill      # one service
+tycoon stop rill             # one service
 ```
 
 ## Service detection
@@ -74,24 +65,15 @@ tycoon stop --only rill      # one service
 `tycoon start` skips services whose underlying tool isn't available:
 
 - **Rill** — needs the `rill` binary on `$PATH` (`curl https://rill.sh | sh`)
-- **Dagster** — needs `pip install 'database-tycoon[dagster]'`
-- **Nao** — needs `pip install 'database-tycoon[ask]'` AND `tycoon register llm <provider>` to have run
-- **Web UI** — needs `pip install 'database-tycoon[server]'`
+- **Quack** — needs the DuckDB Quack extension to be loadable (currently `core_nightly` only)
 
 If a service is missing its dependency, `tycoon start` prints a one-line note and continues with the others.
 
 ## Logs
 
-Each service writes to `.tycoon/run/<service>.log`. Tail them while debugging:
-
-```bash
-tail -f .tycoon/run/rill.log
-tail -f .tycoon/run/dagster.log
-tail -f .tycoon/run/nao.log
-```
+Server output streams into the terminal running `tycoon start` — keep that session visible while debugging.
 
 ## Related
 
-- [`tycoon ask chat`](ask/index.md#ask-chat-the-web-ui) — direct way to launch just Nao with auto-init
 - [`tycoon data analyze --rill`](data/analyze.md) — generate dashboards before `tycoon start --only rill`
 - [Reference: tycoon.yml `stack` block](../reference/tycoon-yml.md#stack) — what services are scoped

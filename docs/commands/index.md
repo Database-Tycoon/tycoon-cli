@@ -8,12 +8,11 @@ every flag listed, see [Reference: All commands](../reference/all-commands.md).
 
 | Command | What it does |
 |---|---|
-| [`tycoon init`](init.md) | Scaffold a new project (wizard or `--template <name>`). Wizard auto-detects running LM Studio / Ollama and chains the AI agent setup. |
+| [`tycoon init`](init.md) | Scaffold a new project (wizard or `--template <name>`). |
 | [`tycoon register dbt`](register.md#tycoon-register-dbt) | Attach an existing dbt project; `--profiles-dir`, `--profile`, `--target` persist into `tycoon.yml`. |
 | [`tycoon register rill`](register.md#tycoon-register-rill) | Attach an existing Rill project. |
 | [`tycoon register warehouse`](register.md#tycoon-register-warehouse) | Switch warehouse (DuckDB / MotherDuck); `--type`, `--path`, `--catalog`, `--no-prompt`, `--force` for scripted use. |
-| [`tycoon register llm`](register.md#tycoon-register-llm) | Wire up the AI agent — provider, `nao_config.yaml`, `AGENTS.md`, model-install offer. Six provider shortcuts. |
-| [`tycoon doctor`](doctor.md) | Cross-component health check (dbt, warehouse, observability, AI stack). |
+| [`tycoon doctor`](doctor.md) | Cross-component health check (dbt, warehouse, observability). |
 | [`tycoon docs serve`](docs.md) | Build + serve this docs site locally with hot reload. |
 | [`tycoon docs build`](docs.md) | One-shot build into `site/`. |
 
@@ -40,26 +39,11 @@ every flag listed, see [Reference: All commands](../reference/all-commands.md).
 | `tycoon data observability scaffold` | Retrofit the `_tycoon` staging views + metadata-DB ATTACH onto an existing dbt project. Idempotent. |
 | [`tycoon data run-all`](data/run-all.md) | Ingest all sources, then `dbt build`. The full-pipeline shortcut. |
 
-## AI analytics ([`tycoon ask`](ask/index.md))
-
-LLM provider configuration lives under [`tycoon register llm`](register.md#tycoon-register-llm) — symmetric with `register dbt` / `register warehouse`. The `ask` namespace is reserved for analytics endpoints.
-
-Local-LLM runtimes (LM Studio, Ollama) are detected automatically by the wizard; downloaded LM Studio models are auto-loaded via `lms load` when chat is invoked against an empty memory.
-
-| Command | What it does |
-|---|---|
-| `tycoon ask sync` | Run `nao sync` — refresh DB + dbt context. |
-| `tycoon ask chat` | Open the Nao web UI on `:5005`. Fail-fast if no LLM configured / runtime unreachable / 0 models loaded. |
-| `tycoon ask context` | Cat synced context to stdout for piping into any agent. |
-| `tycoon ask doctor` | Health check for the ask stack (config, dirs, warehouse auth, LLM endpoint). |
-| `tycoon ask skills list / new` | Manage Nao skills (project-specific agent prompts). |
-| `tycoon ask mcp list / add` | Manage MCP server config. |
-
 ## Services
 
 | Command | What it does |
 |---|---|
-| [`tycoon start`](start.md) | Start Rill, Dagster, Nao, web UI. |
+| [`tycoon start`](start.md) | Start the Rill dashboard and Quack warehouse servers. |
 | [`tycoon start --only <svc>`](start.md) | Start one specific service. |
 | `tycoon stop` | Stop all services started by `tycoon start`. |
 
@@ -70,7 +54,6 @@ Local-LLM runtimes (LM Studio, Ollama) are detected automatically by the wizard;
 | `tycoon run dlt ...` | Pass through to dlt CLI. |
 | `tycoon run dbt ...` | Pass through to dbt CLI. |
 | `tycoon run rill ...` | Pass through to Rill CLI. |
-| `tycoon run dagster ...` | Pass through to Dagster CLI. |
 
 ## Help anywhere
 
@@ -78,6 +61,6 @@ Every command supports `--help` (or the `-h` short alias):
 
 ```bash
 tycoon data sync --help
-tycoon register llm -h
-tycoon ask doctor --help
+tycoon register dbt -h
+tycoon doctor --help
 ```

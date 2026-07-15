@@ -32,22 +32,15 @@ tycoon --help          # top-level command surface
 
 ## Optional extras
 
-Tycoon ships with several **optional dependency groups** that you opt
-into based on what parts of the stack you use. Each extra is installed
-by appending its name in brackets:
+The base install covers the full data pipeline. One **optional
+dependency group** exists, installed by appending its name in brackets:
 
 ```bash
-pip install 'database-tycoon[ask]'              # AI agent
-pip install 'database-tycoon[dagster]'          # orchestration
-pip install 'database-tycoon[server]'           # local web UI for tycoon start
-pip install 'database-tycoon[ask,dagster]'      # combine
+pip install 'database-tycoon[docs]'             # MkDocs docs site
 ```
 
 | Extra | Pulls in | When to use |
 |---|---|---|
-| `[ask]` | `nao-core` + `ibis-framework[duckdb]` | You want `tycoon ask chat` and the AGENTS.md context surface |
-| `[dagster]` | `dagster` family | You want `tycoon start --only dagster` to run materializations on a schedule |
-| `[server]` | `fastapi`, `uvicorn`, `websockets` | You want `tycoon start` to expose a local web dashboard |
 | `[docs]` | `mkdocs` + Material theme | You're hacking on these docs |
 
 ## External tools
@@ -64,10 +57,6 @@ them separately if you want their integrations:
   ```bash
   curl https://rill.sh | sh
   ```
-
-- **LM Studio** (optional, for the local-LLM `tycoon ask` story):
-  download from [lmstudio.ai](https://lmstudio.ai/) and start the
-  built-in OpenAI-compat server on `:1234`.
 
 - **MotherDuck** (optional, for cloud DuckDB):
   set `MOTHERDUCK_TOKEN` in your environment, or run `motherduck connect`
