@@ -66,12 +66,11 @@ def _sources_from_backend(metadata_db: Path) -> dict[str, dict]:
         for e in events:
             if not isinstance(e, RunCompleted):
                 continue
-            existing = result.get(e.source_id)
-            if existing is None or e.timestamp > existing["last_sync"]:
-                result[e.source_id] = {
-                    "last_sync": e.timestamp,
-                    "rows": dict(e.rows_loaded or {}),
-                }
+            entry = result.setdefault(e.source_id, {"last_sync": None, "rows": {}, "runs": 0})
+            entry["runs"] += 1
+            if entry["last_sync"] is None or e.timestamp > entry["last_sync"]:
+                entry["last_sync"] = e.timestamp
+                entry["rows"] = dict(e.rows_loaded or {})
         return result
     except Exception:
         return {}
@@ -84,11 +83,10 @@ def _query_run_counts(metadata_db: Path) -> dict[str, int]:
     if not metadata_db.exists():
         return {}
     try:
-        con = duckdb.connect(str(metadata_db), read_only=True)
-        rows = con.execute(
-            "SELECT source_schema, COUNT(*) FROM dlt_runs GROUP BY source_schema"
-        ).fetchall()
-        con.close()
+        with duckdb.connect(str(metadata_db), read_only=True) as con:
+            rows = con.execute(
+                "SELECT source_schema, COUNT(*) FROM dlt_runs GROUP BY source_schema"
+            ).fetchall()
         return {schema: count for schema, count in rows}
     except Exception:
         return {}
@@ -128,16 +126,14 @@ def _query_layer_last_build(
     if not model_names or not metadata_db.exists():
         return None
     try:
-        con = duckdb.connect(str(metadata_db), read_only=True)
-        # IN clause via parameterised list — DuckDB supports list params.
-        row = con.execute(
-            "SELECT MAX(r.started_at) "
-            "FROM dbt_runs r "
-            "JOIN dbt_nodes n ON n.invocation_id = r.invocation_id "
-            "WHERE n.status = 'success' AND list_contains(?, n.node_name)",
-            [model_names],
-        ).fetchone()
-        con.close()
+        with duckdb.connect(str(metadata_db), read_only=True) as con:
+            row = con.execute(
+                "SELECT MAX(r.started_at) "
+                "FROM dbt_runs r "
+                "JOIN dbt_nodes n ON n.invocation_id = r.invocation_id "
+                "WHERE n.status = 'success' AND list_contains(?, n.node_name)",
+                [model_names],
+            ).fetchone()
         return row[0] if row and row[0] else None
     except Exception:
         return None
@@ -150,7 +146,6 @@ def _render_sources_panel(
     sources: list[LayerClassification],
     *,
     metadata_db: Path,
-    run_counts: dict[str, int],
 ) -> None:
     """The unified Sources panel: dlt + Fivetran rows side by side."""
     console.print()
@@ -182,7 +177,7 @@ def _render_sources_panel(
             data = sources_data.get(src.name, {})
             last_sync = data.get("last_sync")
             row_counts = data.get("rows", {})
-            runs = run_counts.get(src.schema, 0)
+            runs = data.get("runs", 0)
             sync_str = last_sync.strftime("%Y-%m-%d %H:%M") if last_sync else "—"
             fresh_label, fresh_style = _freshness_label(last_sync)
             runs_str = f"{runs:,}" if runs else "—"
@@ -361,14 +356,11 @@ def status_cmd() -> None:
 
     all_sources = [*dlt_sources, *fivetran_sources]
     _meta_db = metadata_db_path(config.root)
-    run_counts = _query_run_counts(_meta_db)
-    _render_sources_panel(
-        all_sources, metadata_db=_meta_db, run_counts=run_counts
-    )
+    _render_sources_panel(all_sources, metadata_db=_meta_db)
     if fivetran_managed:
         _render_fivetran_detail()
 
-    if run_counts:
+    if _meta_db.exists():
         console.print()
         info("Drill in with [bold]tycoon data history[/bold] for per-run detail.")
 

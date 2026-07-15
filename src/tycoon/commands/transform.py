@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -52,7 +53,7 @@ def _dbt_executable() -> str:
     return dbt
 
 
-def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
+def _capture_dbt_and_refresh_safe(dbt_cmd: str, *, started_at: float) -> None:
     """Best-effort dbt observability capture + Rill dashboard refresh."""
     try:
         from tycoon.observability import (
@@ -82,6 +83,8 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
 
         run_results_path = config.dbt_project_dir / "target" / "run_results.json"
         if not run_results_path.exists():
+            return
+        if run_results_path.stat().st_mtime < started_at:
             return
 
         with open(run_results_path) as f:
@@ -212,8 +215,9 @@ def _run_dbt(
 
     console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")
 
+    started_at = time.time()
     result = subprocess.run(cmd, cwd=project_dir)
-    _capture_dbt_and_refresh_safe(dbt_cmd)
+    _capture_dbt_and_refresh_safe(dbt_cmd, started_at=started_at)
     if result.returncode == 0 and dbt_cmd in {"run", "build"}:
         _auto_osi_scaffold_safe()
     return result.returncode

@@ -513,12 +513,12 @@ class TestStatusRunsColumn:
         )
         con.close()
 
-        _seed_metadata(
+        _seed_events(
             history_project,
-            dlt_runs=[
-                ("raw_src_a", "load-1", 0, datetime(2026, 4, 19, 10, 0), "h"),
-                ("raw_src_a", "load-2", 0, datetime(2026, 4, 19, 11, 0), "h"),
-                ("raw_src_a", "load-3", 0, datetime(2026, 4, 19, 12, 0), "h"),
+            [
+                RunCompleted(source_id="src_a", runtime_id="dlt-managed", rows_loaded={"t": 10}),
+                RunCompleted(source_id="src_a", runtime_id="dlt-managed", rows_loaded={"t": 20}),
+                RunCompleted(source_id="src_a", runtime_id="dlt-managed", rows_loaded={"t": 30}),
             ],
         )
 
@@ -526,7 +526,7 @@ class TestStatusRunsColumn:
         assert result.exit_code == 0
         # The count 3 should appear in the Runs column
         assert "3" in result.stdout
-        # Drill-in hint should be shown when runs > 0
+        # Drill-in hint should be shown when metadata DB exists
         assert "tycoon data history" in result.stdout
 
 

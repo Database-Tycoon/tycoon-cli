@@ -291,6 +291,7 @@ def run_source(
             pipeline, load_info = _run_legacy(
                 name, raw_db_path=raw_db_path, max_records=max_records, **kwargs
             )
+            load_info.raise_on_failed_jobs()
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
             _emit_event_safe(_metadata_db, _build_run_completed(name, pipeline, load_info, time.monotonic() - _started))
             return pipeline, load_info
@@ -334,6 +335,7 @@ def run_source(
             dlt_source = builder(source_config)
 
         load_info = pipeline.run(dlt_source)
+        load_info.raise_on_failed_jobs()
         _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
         _emit_event_safe(_metadata_db, _build_run_completed(name, pipeline, load_info, time.monotonic() - _started))
         return pipeline, load_info

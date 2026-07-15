@@ -72,6 +72,8 @@ class HistoryRepository:
         return summaries
 
     def get_run(self, run_id_prefix: str) -> RunDetail | None:
+        if not run_id_prefix:
+            return None
         events = self._backend.query_events()
         matches: list[tuple[RunSummary, object]] = []
 

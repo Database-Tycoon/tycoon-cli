@@ -239,19 +239,19 @@ def _show_run(id_prefix: str) -> None:
     is_dbt = s.runtime_id == "dbt"
 
     if is_dbt:
-        cmd = s.command or "run"
-        header(f"dbt {cmd}: {s.run_id}")
+        cmd = escape(s.command or "run")
+        header(f"dbt {cmd}: {escape(s.run_id)}")
     else:
-        header(f"dlt load: {s.run_id}")
+        header(f"dlt load: {escape(s.run_id)}")
 
     status_str = "[green]success[/green]" if s.status == "success" else "[red]failed[/red]"
-    console.print(f"  [bold]Source:[/bold] {s.source_id}")
+    console.print(f"  [bold]Source:[/bold] {escape(s.source_id)}")
     console.print(f"  [bold]Status:[/bold] {status_str}")
     console.print(f"  [bold]Started:[/bold] {_fmt_ts(s.started_at)}")
     console.print(f"  [bold]Duration:[/bold] {_fmt_duration(s.duration_seconds)}")
 
     if detail.error:
-        console.print(f"  [bold]Error:[/bold] [red]{detail.error}[/red]")
+        console.print(f"  [bold]Error:[/bold] [red]{escape(detail.error)}[/red]")
 
     if detail.rows_by_table:
         rows_table = Table(title="Tables", show_lines=False)
