@@ -72,7 +72,7 @@ Already have a pipeline? `tycoon init` will ask about your ingestion tool, wareh
 | `tycoon data status` | Show freshness, row counts, and capture counts for each source |
 | `tycoon data history` | List recent dlt + dbt runs from the observability metadata DB |
 | `tycoon data history show <id>` | Per-run detail (per-table rows for dlt, per-node status for dbt) |
-| `tycoon start` | Start the Rill dashboard and Quack warehouse servers |
+| `tycoon start` | Start the Rill dashboards and the Quack warehouse server |
 | `tycoon stop` | Stop all services |
 | `tycoon run <tool>` | Passthrough to dbt, dlt, rill |
 

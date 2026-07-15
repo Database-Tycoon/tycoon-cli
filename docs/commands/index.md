@@ -43,7 +43,7 @@ every flag listed, see [Reference: All commands](../reference/all-commands.md).
 
 | Command | What it does |
 |---|---|
-| [`tycoon start`](start.md) | Start the Rill dashboard and Quack warehouse servers. |
+| [`tycoon start`](start.md) | Start the Rill dashboards and the Quack warehouse server. |
 | [`tycoon start --only <svc>`](start.md) | Start one specific service. |
 | `tycoon stop` | Stop all services started by `tycoon start`. |
 
