@@ -141,9 +141,6 @@ path.
 
 ## What's next (deferred)
 
-- **Path B — Nao consumes OSI.** Deferred until dbt-core ships native
-  OSI export. Once that lands, `tycoon ask chat` will read OSI
-  metric definitions instead of the raw warehouse schema.
 - **Path C — Rill `metrics_views` from OSI.** Deferred until Rill
   joins the OSI consortium.
 - **`tycoon semantics push <consumer>`** — possible v0.1.7+ surface

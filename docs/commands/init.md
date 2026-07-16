@@ -28,7 +28,7 @@ Or the full interactive wizard:
 tycoon init
 ```
 
-The wizard asks about each component (ingestion, warehouse, transformation, BI, orchestrator) with sensible defaults. Pick `none` for any component you don't use.
+The wizard asks about each component (ingestion, warehouse, dbt, Rill) with sensible defaults. Pick `none` for any component you don't use.
 
 ## What gets created
 
@@ -78,7 +78,6 @@ The name shows up in:
 
 - `tycoon.yml`'s `name:` field
 - dlt pipeline names (`my-analytics-files-pipeline`)
-- Nao project name (visible in the chat UI)
 
 ## After init
 
