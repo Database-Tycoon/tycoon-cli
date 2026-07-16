@@ -129,8 +129,13 @@ def ensure_token(project_root: Path) -> str:
     data.setdefault("quack", {})["token"] = token
     # Owner-only *before* the token lands on disk: with default modes (0644)
     # any other local user could read it and connect to the served warehouse.
-    path.touch(mode=0o600)
-    path.chmod(0o600)  # touch() leaves the mode of a pre-existing file alone
+    try:
+        path.touch(mode=0o600)
+        path.chmod(0o600)  # touch() leaves the mode of a pre-existing file alone
+    except OSError:
+        # Restricted mounts can refuse chmod; keep the same best-effort
+        # semantics as _tighten_permissions rather than failing startup.
+        pass
     path.write_text(yaml.safe_dump(data, default_flow_style=False, sort_keys=False))
 
     _ensure_gitignored(project_root)

@@ -97,6 +97,11 @@ class TycoonConfig:
         p = Path(value)
         resolved = p.resolve() if p.is_absolute() else (self.root / p).resolve()
         boundary = self.root.resolve().parent
+        # A project sitting in a top-level dir (/app, /workspace) would make
+        # the boundary the filesystem root, which contains every path — fall
+        # back to root-scoped containment there (PR #153 review).
+        if boundary == boundary.parent:
+            boundary = self.root.resolve()
         if not resolved.is_relative_to(boundary):
             raise ValueError(
                 f"tycoon.yml {field} ({value!r}) resolves to {resolved}, "

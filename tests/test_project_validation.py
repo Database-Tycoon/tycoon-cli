@@ -237,3 +237,36 @@ class TestPathContainment:
     def test_nul_in_profiles_dir_rejected(self):
         with pytest.raises(ValidationError, match="NUL, newline"):
             TycoonProject(dbt_profiles_dir="profiles\x00dir")
+
+
+class TestTopLevelProjectBoundary:
+    """A project in a top-level dir (/app) must not degrade containment to /."""
+
+    def _config_at(self, root: str):
+        from tycoon.config import TycoonConfig
+
+        return TycoonConfig(project_root=Path(root))
+
+    def test_etc_rejected_for_top_level_root(self, monkeypatch):
+        cfg = self._config_at("/app")
+        cfg._project = TycoonProject(name="t", dbt_project_dir="/etc/cron.d")
+        with pytest.raises(ValueError, match="outside"):
+            _ = cfg.dbt_project_dir
+
+    def test_in_project_path_accepted_for_top_level_root(self):
+        cfg = self._config_at("/app")
+        cfg._project = TycoonProject(name="t", dbt_project_dir="dbt")
+        assert cfg.dbt_project_dir == Path("/app/dbt")
+
+
+class TestSourceTypeValidation:
+    """SourceConfig.type reaches dlt init argv and filesystem paths."""
+
+    def test_known_types_accepted(self):
+        for src_type in ("rest_api", "sql_database", "filesystem", "google_sheets"):
+            SourceConfig(type=src_type, schema_name="raw")
+
+    @pytest.mark.parametrize("bad", ["../evil", "rest api", "rest-api", "a;b", "", "1type"])
+    def test_unsafe_types_rejected(self, bad):
+        with pytest.raises(ValidationError, match="not a valid identifier"):
+            SourceConfig(type=bad, schema_name="raw")

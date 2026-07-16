@@ -120,6 +120,17 @@ class TestSystemdQuoting:
         assert '"a\\\\b"' in line
 
 
+    def test_dollar_doubled_against_env_expansion(self):
+        from tycoon.schedule import _systemd_quote
+
+        assert _systemd_quote("a$VAR") == '"a$$VAR"'
+
+    def test_percent_doubled_against_specifier_expansion(self):
+        from tycoon.schedule import _systemd_quote
+
+        assert _systemd_quote("LIKE '%abc%'") == "\"LIKE '%%abc%%'\""
+
+
 class TestControlCharRejection:
     """A newline inside a shlex-quoted token would inject unit directives."""
 

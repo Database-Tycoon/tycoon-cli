@@ -186,11 +186,13 @@ def _systemd_oncalendar(spec: ScheduleSpec) -> str:
 def _systemd_quote(arg: str) -> str:
     """Quote one argv token per systemd.service "Command lines" rules.
 
-    Double-quote the token, escaping backslash and double-quote — the same
-    argv-preserving discipline plistlib gives the launchd path, so argument
-    content can never be parsed as unit syntax.
+    Double-quote the token, escaping backslash and double-quote, and double
+    ``$``/``%`` so systemd's env-var and specifier expansion can't rewrite
+    argument content — the same argv-preserving discipline plistlib gives
+    the launchd path, so tokens always round-trip verbatim.
     """
-    escaped = arg.replace("\\", "\\\\").replace('"', '\\"')
+    escaped = arg.replace("%", "%%").replace("$", "$$")
+    escaped = escaped.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
 

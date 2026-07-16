@@ -178,6 +178,18 @@ class SourceConfig(BaseModel):
 
     model_config = {"populate_by_name": True}
 
+    @field_validator("type")
+    @classmethod
+    def _check_type(cls, v: str) -> str:
+        # `type` names a dlt source module: it reaches `dlt init` argv and
+        # filesystem paths, so it gets the strict identifier charset.
+        if not _IDENTIFIER_RE.match(v):
+            raise ValueError(
+                f"source type {v!r} is not a valid identifier "
+                "(letters, digits, and underscores only; must not start with a digit)"
+            )
+        return v
+
     @field_validator("schema_name")
     @classmethod
     def _check_schema_name(cls, v: str) -> str:
