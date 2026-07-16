@@ -9,7 +9,7 @@ import click
 import typer
 
 from tycoon.config import config
-from tycoon.utils.console import ai_hint, error, header, info, success, warn
+from tycoon.utils.console import error, header, info, success, warn
 
 
 def analyze_cmd(
@@ -230,7 +230,6 @@ def analyze_cmd(
                 raise typer.Exit(rc)
             success("dbt build completed successfully.")
 
-    ai_hint(f"improve the staging models for {source_name}")
 
 
 def _analyze_all(*, force: bool, no_dbt: bool, rill: bool, build: bool) -> None:

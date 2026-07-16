@@ -40,11 +40,6 @@ def header(msg: str) -> None:
     console.print(Panel(msg, style="bold cyan"))
 
 
-def ai_hint(suggestion: str) -> None:
-    """Print a hint suggesting an AI command for follow-up."""
-    console.print(f"[dim]Tip: [bold]tycoon ask chat \"{suggestion}\"[/bold][/dim]")
-
-
 def next_steps(*suggestions: tuple[str, str]) -> None:
     """Print 1–3 suggested next commands after a successful operation.
 

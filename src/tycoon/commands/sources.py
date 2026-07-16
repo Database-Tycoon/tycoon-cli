@@ -12,7 +12,7 @@ from rich.table import Table
 from tycoon.config import config
 from tycoon.ingestion.catalog import CATALOG, CatalogEntry
 from tycoon.project import SourceConfig, load_project, save_project
-from tycoon.utils.console import ai_hint, console, error, header, info, next_steps, success, warn
+from tycoon.utils.console import console, error, header, info, next_steps, success, warn
 
 app = typer.Typer(help="Manage registered data sources.")
 
@@ -711,8 +711,6 @@ def run_source(
     except Exception as exc:
         from tycoon.ingestion.runner import IngestionError
         error(str(exc) if isinstance(exc, IngestionError) else f"{source_name} pipeline failed: {exc}")
-        if not isinstance(exc, IngestionError):
-            ai_hint(f"help me debug the {source_name} ingestion")
         raise typer.Exit(1) from exc
 
 
@@ -758,7 +756,6 @@ def run_all(
             _maybe_auto_scaffold(name, source_config, scaffold=not no_scaffold)
         except Exception as exc:
             error(f"{name} pipeline failed: {exc}")
-            ai_hint(f"help me debug the {name} ingestion")
             raise typer.Exit(1) from exc
 
     success("All ingestion pipelines completed successfully.")
