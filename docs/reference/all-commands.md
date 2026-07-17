@@ -67,23 +67,6 @@ Options:
   --force                  Overwrite an existing warehouse without prompting
 ```
 
-### [`tycoon register llm`](../commands/register.md#tycoon-register-llm)
-
-```
-tycoon register llm [PROVIDER] [OPTIONS]
-
-Arguments:
-  PROVIDER                 lm-studio / ollama / openai / anthropic / gemini /
-                           mistral. Omit to refresh setup against existing
-                           ask.llm.provider.
-
-Options:
-  --base-url TEXT          Override the OpenAI-compat base URL
-  --model TEXT             Pin a specific model name
-  --api-key-env TEXT       Env var holding the API key (cloud providers)
-  --skip-install           Skip the post-register model install offer
-```
-
 ### [`tycoon doctor`](../commands/doctor.md)
 
 ```
@@ -326,74 +309,6 @@ Generates `dbt_project/models/_tycoon/` (nine `stg_tycoon__*` views + `dim_runs`
 
 ---
 
-## AI agent
-
-LLM provider configuration lives under `tycoon register llm` (see the
-Project section above). The `tycoon ask` namespace is reserved for
-analytics endpoints — chat, sync data context, query exposure.
-
-### [`tycoon ask sync`](../commands/ask/index.md#what-ask-sync-does)
-
-```
-tycoon ask sync [OPTIONS]
-
-Options:
-  --reinit                 Regenerate nao_config.yaml before syncing
-```
-
-### [`tycoon ask chat`](../commands/ask/index.md#ask-chat-the-web-ui)
-
-```
-tycoon ask chat [OPTIONS]
-
-Options:
-  --port INTEGER           Port override (default: tycoon.yml's ask.port, then 5005)
-```
-
-### [`tycoon ask context`](../commands/ask/index.md#ask-context-pipe-context-anywhere)
-
-```
-tycoon ask context [OPTIONS]
-
-Options:
-  -t, --table TEXT         Filter to a single table name
-  -s, --schema TEXT        Filter to a single schema name
-  --include-dbt            Also dump synced dbt model SQL
-  --rules-only             Only print RULES.md
-```
-
-### [`tycoon ask doctor`](../commands/ask/index.md#ask-doctor-health-check)
-
-```
-tycoon ask doctor
-```
-
-No flags. Renders OK / WARN / FAIL panel per check. Exits non-zero on any FAIL.
-
-### `tycoon ask skills list / new`
-
-```
-tycoon ask skills list
-
-tycoon ask skills new NAME
-
-Arguments:
-  NAME                     Skill name (used as filename and frontmatter name)
-```
-
-### `tycoon ask mcp list / add`
-
-```
-tycoon ask mcp list
-
-tycoon ask mcp add SERVER
-
-Arguments:
-  SERVER                   MCP server name to add (currently: metabase)
-```
-
----
-
 ## Services
 
 ### [`tycoon start`](../commands/start.md)
@@ -402,17 +317,21 @@ Arguments:
 tycoon start [OPTIONS]
 
 Options:
-  --only TEXT              Start only the named service: rill, dagster, nao, web
-  --no-open                Don't open a browser
+  --skip TEXT              Server(s) to skip. Repeatable: --skip rill
+  --only TEXT              Only start these server(s): rill, quack. Repeatable.
 ```
+
+Starts the Rill dashboards (port 9009) and the Quack warehouse server
+(port 9494).
 
 ### [`tycoon stop`](../commands/start.md#tycoon-stop)
 
 ```
-tycoon stop [OPTIONS]
+tycoon stop [SERVICES]...
 
-Options:
-  --only TEXT              Stop only the named service
+Arguments:
+  [SERVICES]...            Specific server(s) to stop. Defaults to all
+                           (rill, quack).
 ```
 
 ---
@@ -428,8 +347,6 @@ Tools:
   dlt                      The dlt CLI
   dbt                      The dbt CLI
   rill                     The Rill CLI
-  dagster                  The Dagster CLI
-  nao                      The Nao CLI (when [ask] extra is installed)
   duckdb                   The DuckDB CLI (when installed externally)
 ```
 
@@ -456,5 +373,5 @@ Show help. Works at every level:
 tycoon -h
 tycoon data -h
 tycoon data sync -h
-tycoon ask doctor -h
+tycoon register dbt -h
 ```

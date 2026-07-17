@@ -6,7 +6,7 @@ Every environment variable tycoon reads or recommends. Set them in your shell, i
 
 ### `MOTHERDUCK_TOKEN`
 
-MotherDuck access token. Read by `tycoon doctor`, surfaced as a warning by `tycoon ask doctor` when the warehouse is `md:*`, and passed through to dlt / dbt / DuckDB when they ATTACH `md:` URLs.
+MotherDuck access token. Read by `tycoon doctor` and passed through to dlt / dbt / DuckDB when they ATTACH `md:` URLs.
 
 ```bash
 export MOTHERDUCK_TOKEN=eyJ…
@@ -24,14 +24,6 @@ Tycoon does not consume DLT's environment variables directly, but they're respec
 - `DLT_DATA_DIR` — override the dlt working dir per pipeline
 
 If you set these, they should be in scope for both interactive shells and any cron / CI environment that runs `tycoon data sources run`.
-
-### `DB_URI`
-
-Set automatically by `tycoon ask` to point Nao's chat SQLite database at `.tycoon/nao/db.sqlite`. Don't override unless you know why — the per-project location ensures chat history survives `uv sync` / venv rebuilds (issue #8 fix from v0.1.2).
-
-### `NAO_DEFAULT_PROJECT_PATH`
-
-Set automatically by `tycoon ask` so Nao can resolve its working directory. Same advice — don't override.
 
 ### `FORCE_COLOR` / `NO_COLOR`
 
@@ -92,26 +84,6 @@ sources:
       auth_header: "Bearer ${MY_API_TOKEN}"
 ```
 
-## Used by `ask.llm`
-
-The `ask` block uses `api_key_env` to declare which environment variable holds the LLM's API key. Tycoon translates that to Nao's interpolation syntax (`{{ env('VAR_NAME') }}`) when generating `nao_config.yaml`:
-
-```yaml
-ask:
-  llm:
-    provider: anthropic
-    api_key_env: ANTHROPIC_API_KEY
-    model: claude-opus-4-5
-```
-
-Then:
-
-```bash
-export ANTHROPIC_API_KEY=sk-…
-```
-
-For LM Studio, no API key is needed — set `provider: lm-studio` and tycoon emits a placeholder `api_key: lm-studio` (the LM Studio server ignores it).
-
 ## Used by CI
 
 For GitHub Actions, store any of the above as repo secrets and inject:
@@ -120,7 +92,6 @@ For GitHub Actions, store any of the above as repo secrets and inject:
 env:
   MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
 Tycoon's own CI workflows (`.github/workflows/ci.yml`, `.github/workflows/e2e.yml`) demonstrate the pattern.
@@ -141,10 +112,8 @@ For clarity, these aren't read or set by tycoon:
 
 - `DBT_PROFILES_DIR` — dbt's own. tycoon passes `--profiles-dir` explicitly when needed (see [`tycoon register dbt`](../commands/register.md#tycoon-register-dbt)).
 - `DUCKDB_*` — none.
-- `DAGSTER_HOME` — Dagster's own. Tycoon's `start --only dagster` sets it to `.tycoon/dagster/` per-project but doesn't read it back.
 
 ## Related
 
 - [Reference: tycoon.yml](tycoon-yml.md) — where `${VAR}` interpolation happens
 - [`tycoon doctor`](../commands/doctor.md) — the source of truth for "did this env var get picked up?"
-- [`tycoon ask doctor`](../commands/ask/index.md#ask-doctor-health-check) — same for the ask stack

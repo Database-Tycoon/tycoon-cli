@@ -9,7 +9,6 @@ For an existing dbt project:
 - **Run history.** Every `tycoon data transform run` lands in `.tycoon/metadata.duckdb` — invocation timing, per-model status, manifest fingerprint, schema-change diffs across runs.
 - **Auto-generated dashboards** for the run history (`_tycoon_dbt_usage` Rill dashboard) — drift detection without writing the dashboard yourself.
 - **Cloud → local snapshots.** `tycoon data sync` from MotherDuck / etc. for an offline dev loop.
-- **AI context layer.** `tycoon register llm lm-studio` gives any coding agent (or Nao's chat UI) a self-updating view of your warehouse + dbt models.
 - **Consistent invocation across machines.** `tycoon run dbt run` always uses the venv-pinned dbt, never a system one.
 
 ## What tycoon doesn't replace
@@ -152,23 +151,12 @@ tycoon data sync                  # uses the block above
 
 Point your dbt dev target at `data/local_snapshot.duckdb` for instant queries; switch to the cloud target when you actually want to write to prod.
 
-### Add the AI agent
-
-```bash
-pip install 'database-tycoon[ask]'
-tycoon register llm lm-studio
-tycoon ask sync
-tycoon ask chat
-```
-
-Nao reads from your warehouse and dbt project — your existing models become the agent's source of truth. See [Recipe: LM Studio local LLM](lm-studio-local-llm.md) for the full LM Studio walkthrough.
-
 ## CI integration
 
 A typical CI workflow (GitHub Actions example):
 
 ```yaml
-- run: pip install 'database-tycoon[dagster]'
+- run: pip install database-tycoon
 - run: tycoon doctor                    # fail fast on env issues
 - run: tycoon data run-all              # ingest + dbt build
 - run: tycoon data transform test       # explicit test step (run-all does this too)
@@ -194,7 +182,7 @@ If you decide tycoon isn't for you: just stop using `tycoon` commands. Your dbt 
 To clean up tycoon's state:
 
 ```bash
-rm -rf .tycoon/                         # removes metadata DB + nao state
+rm -rf .tycoon/                         # removes metadata DB + per-project state
 rm tycoon.yml                            # removes tycoon's config
 ```
 

@@ -1,6 +1,6 @@
 # `tycoon doctor`
 
-Health check for the tycoon environment — `tycoon.yml` validity, dbt / Rill / Dagster / Nao presence, observability state, and warehouse auth. Use it any time something feels off.
+Health check for the tycoon environment — `tycoon.yml` validity, dbt / Rill presence, observability state, and warehouse auth. Use it any time something feels off.
 
 ## Synopsis
 
@@ -42,11 +42,7 @@ If `stack.transformation = dbt`: confirms `dbt_project_dir` exists and contains 
 
 If `stack.bi = rill`: confirms `rill_dir` exists. Reports a skip if `bi: none` or a different BI tool is configured.
 
-### 5. Dagster
-
-If the `[dagster]` extra is installed: confirms the `dagster` binary is on `$PATH`. The orchestrator is optional — most projects don't need it.
-
-### 6. Warehouse auth
+### 5. Warehouse auth
 
 For DuckDB warehouses: nothing to check (no auth).
 
@@ -59,7 +55,7 @@ Reports `OK token (env)`, `OK OAuth (cached session)`, or `ERROR not configured`
 
 For Snowflake / BigQuery / Redshift: warehouse auth lives in dbt's `profiles.yml` and isn't tycoon's concern. `doctor` skips these.
 
-### 7. Layer coverage (v0.1.7)
+### 6. Layer coverage (v0.1.7)
 
 When `stack.transformation = dbt` and a compiled dbt manifest exists, doctor verifies that every registered source in `tycoon.yml` has at least one staging model:
 
@@ -70,7 +66,7 @@ Silently skipped when `transformation: none` or when the manifest hasn't been co
 
 See [layered architecture](../recipes/layered-architecture.md) for the underlying classification rules.
 
-### 8. Observability
+### 7. Observability
 
 Reports the state of `.tycoon/metadata.duckdb`:
 
@@ -94,10 +90,9 @@ Useful when "my dashboards are empty" — usually it means observability hasn't 
 
 `tycoon doctor` always exits **0**, even when checks fail. The output is informational; nothing else in tycoon depends on doctor having a clean run.
 
-If you want a CI-style fail-on-error mode, `tycoon ask doctor` is the per-feature equivalent for the AI agent stack and *does* exit non-zero on any FAIL row. For other surfaces, parse the output (`grep ERROR`) or rely on the underlying commands (`tycoon data sources run`, etc.) to fail directly.
+If you want a CI-style fail-on-error mode, parse the output (`grep ERROR`) or rely on the underlying commands (`tycoon data sources run`, etc.) to fail directly.
 
 ## Related
 
-- [`tycoon ask doctor`](ask/index.md#ask-doctor-health-check) — the same shape for the ask stack
 - [Concepts → Observability is a side-effect of running](../getting-started/concepts.md#3-observability-is-a-side-effect-of-running)
 - [Reference: tycoon.yml](../reference/tycoon-yml.md) — what doctor validates against

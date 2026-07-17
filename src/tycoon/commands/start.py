@@ -90,7 +90,7 @@ def start_cmd(
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=3)
-        except Exception:
+        except (OSError, subprocess.TimeoutExpired):
             pass
     clear_pids()
     info("Done.")

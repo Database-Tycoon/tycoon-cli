@@ -15,7 +15,7 @@ Every invocation is captured into `.tycoon/metadata.duckdb` (the observability D
 
 You can — `tycoon run dbt ...` passes through. But `tycoon data transform` adds:
 
-1. **dbt executable resolution** — uses the venv-colocated `dbt` so `pip install database-tycoon[ask]` doesn't shadow your system dbt.
+1. **dbt executable resolution** — uses the venv-colocated `dbt` so a system-wide `dbt` from a different install can't shadow the version tycoon pins.
 2. **Profile resolution from `tycoon.yml`** — honors `dbt_profiles_dir` / `dbt_profile` / `dbt_target` from `tycoon.register dbt`'s persisted flags. CLI flags still win.
 3. **Observability capture** — every run lands in `.tycoon/metadata.duckdb` for `tycoon data history`.
 4. **Rill dashboard refresh** — re-exports the dbt-runs Parquet so the `_tycoon_dbt_usage` dashboard stays current.

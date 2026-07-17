@@ -109,10 +109,6 @@ class TycoonConfig:
             )
         return resolved
 
-    @property
-    def nao_dir(self) -> Path:
-        return self.root / ".tycoon" / "nao"
-
     # -- Sources --
 
     @property

@@ -49,7 +49,7 @@ Three protocols carry the whole thing:
 |---|---|---|
 | `DltManagedRuntime` | tycoon-managed dlt sources (the default) | `tycoon attach dlt` |
 | `DltProjectRuntime` tier 1 | your own dlt project, run as a subprocess | `tycoon attach dlt-project <path>` |
-| `DltProjectRuntime` tier 2 | your project with a `tycoon_src.py` shim for status/history | `tycoon sources upgrade <id>` |
+| `DltProjectRuntime` tier 2 | your project with a `tycoon_src.py` shim for status/history | `tycoon data sources upgrade <id>` |
 | `FivetranRuntime` | Fivetran connections via the existing `fivetran_client.py` | `tycoon attach fivetran` |
 | `AirbyteRuntime` | Airbyte (skeleton in M7) | — |
 | `EstuaryRuntime` | Estuary (skeleton in M7) | — |
@@ -118,7 +118,7 @@ From [#81](https://github.com/Database-Tycoon/tycoon-cli/issues/81):
 - `runner.py` is deleted
 - `tycoon data sources run` routes through `Runtime.run()`
 - `tycoon data status` reads exclusively from the MetadataBackend
-- `tycoon catalog` is driven by the JSON manifest
+- `tycoon data sources catalog` is driven by the JSON manifest
 - The global `config` singleton is gone from the ingestion path
 - All dlt-specific logic lives behind `DltManagedRuntime`
 - `git diff main src/tycoon/core/` is empty after every milestone

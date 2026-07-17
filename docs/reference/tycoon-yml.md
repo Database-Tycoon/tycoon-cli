@@ -20,7 +20,7 @@ Anything not declared falls back to the defaults below.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `name` | string | `my-project` | Used in dlt pipeline names + Nao project name |
+| `name` | string | `my-project` | Used in dlt pipeline names |
 | `version` | string | `0.1.0` | Project's own version, free-form |
 | `database` | block | see below | Where data lives |
 | `sources` | map[name → source] | `{}` | Registered ingestion sources |
@@ -29,7 +29,6 @@ Anything not declared falls back to the defaults below.
 | `dbt_profile` | string | unset | Profile name within `profiles.yml`. Defaults to the `profile:` field in `dbt_project.yml`. |
 | `dbt_target` | string | unset | Target within the profile (`dev` / `prod` / ...). Defaults to the profile's own `target:`, then `dev`. |
 | `rill_dir` | string | `rill` | Path to Rill project dir |
-| `ask` | block | unset | AI agent (Nao) configuration |
 | `sync` | block | unset | `tycoon data sync` defaults |
 | `stack` | block | see below | Tool-by-tool stack toggle |
 
@@ -85,55 +84,6 @@ Source types not in `tycoon data sources catalog` need to be installed
 via `tycoon data sources add <type>` first (it runs `dlt init`
 under the hood and stages the source files in `~/.tycoon/sources/`).
 
-## `ask`
-
-Configures the AI agent (Nao). Optional — omitted when the `[ask]`
-extra isn't installed.
-
-```yaml
-ask:
-  llm:
-    provider: lm-studio
-    model: qwen2.5-coder-32b-instruct
-  port: 5005
-  include_schemas: [mart]
-  exclude_schemas: [pg_catalog]
-  rules: |
-    Custom RULES.md content for the agent.
-```
-
-| Key | Type | Default | Notes |
-|---|---|---|---|
-| `llm` | block | unset | LLM provider config. See below. |
-| `port` | int | `5005` | Port for `tycoon ask chat` web UI |
-| `rules` | string | unset | Override the default RULES.md content |
-| `include_schemas` | list[string] | `[]` | Glob filter — only these schemas exposed to Nao |
-| `exclude_schemas` | list[string] | `[]` | Glob filter — these schemas hidden from Nao |
-| `skills_dir` | string | `.tycoon/nao/agent/skills` | Custom path to skills folder |
-
-### `ask.llm`
-
-```yaml
-ask:
-  llm:
-    provider: lm-studio              # shortcut → expands to OpenAI-compat
-    base_url: http://localhost:1234/v1   # optional override
-    model: qwen2.5-coder-32b-instruct    # optional override
-    api_key_env: ANTHROPIC_API_KEY       # for cloud providers
-```
-
-| Key | Type | Default | Notes |
-|---|---|---|---|
-| `provider` | string | `openai` | Provider shortcut. `lm-studio` expands to OpenAI-compat at localhost:1234 with a placeholder api_key. Other shortcuts: `openai`, `anthropic`, `ollama`, `gemini`, `mistral`. |
-| `model` | string | (provider default) | Override model name |
-| `base_url` | string | (provider default) | OpenAI-compatible base URL — set automatically when `provider: lm-studio` |
-| `api_key_env` | string | unset | Env var name (e.g. `ANTHROPIC_API_KEY`) holding the key. Tycoon writes `{{ env('VAR_NAME') }}` into nao_config.yaml so the key isn't committed. |
-
-`tycoon register llm <provider>` is the easiest way to set the
-provider shortcut from the command line; it edits this block in place
-and runs the post-register setup (nao_config.yaml, AGENTS.md, model
-install offer for local providers).
-
 ## `sync`
 
 Configures defaults for `tycoon data sync` (cloud → local snapshots).
@@ -185,8 +135,6 @@ stack:
   transformation_managed: true    # tycoon scaffolds + manages this
   bi: rill                        # or metabase, looker, tableau, other, none
   bi_managed: true
-  orchestrator: dagster           # or airflow, prefect, other, none
-  orchestrator_managed: true
 ```
 
 | Key | Type | Default | Notes |
@@ -195,7 +143,6 @@ stack:
 | `warehouse` | enum | `duckdb` | `duckdb`, `motherduck`, `snowflake`, `bigquery`, `redshift`, `other` |
 | `transformation` | enum | `dbt` | `dbt`, `none` |
 | `bi` | enum | `rill` | `rill`, `metabase`, `looker`, `tableau`, `other`, `none` |
-| `orchestrator` | enum | `dagster` | `dagster`, `airflow`, `prefect`, `other`, `none` |
 | `<tool>_managed` | bool | `true` | If `true`, tycoon scaffolds + maintains this tool's project. If `false`, tycoon just records the path and stays out of the way. |
 
 Setting any tool to `none` skips its scaffolding and `tycoon doctor`
@@ -277,4 +224,3 @@ transform:
   `./rill` relative to the project root, which works on every machine.
 - **Run history** — that lives in `.tycoon/metadata.duckdb` (auto-gitignored
   in scaffolded projects).
-- **Nao chat history** — `.tycoon/nao/db.sqlite`, also auto-gitignored.
