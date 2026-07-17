@@ -11,7 +11,7 @@ Requires Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/).
 ```bash
 git clone git@github.com:Database-Tycoon/tycoon-cli.git
 cd tycoon-cli
-uv sync --all-extras   # install runtime + dagster + ask extras + dev deps
+uv sync --all-extras   # install runtime + dev deps + the docs extra (mkdocs)
 ```
 
 Verify the install:
@@ -23,7 +23,8 @@ uv run pytest -q
 
 ## What CI gates on
 
-Every pull request and push to `main` runs `.github/workflows/ci.yml`:
+Every pull request (whatever branch it targets) and every push to `main` runs
+`.github/workflows/ci.yml`:
 
 - **`uv run pytest -q`** — full default test suite (256 tests as of v0.1.2).
   Runs against Python 3.12 **and** 3.13 in parallel. Network-gated tests
@@ -72,8 +73,12 @@ Not enforced — CI is still the source of truth.
 
 1. Open an issue first for anything non-trivial. We'd rather discuss design
    before you write the code than after.
-2. Branch from `main`. Release branches (`v0.1.2`, etc.) are for release
-   coordination, not feature work.
+2. Branch from the **active release branch** (`v0.1.x` — the highest open
+   version branch, e.g. `v0.1.10`), and open your PR back into that same
+   branch. Nothing PRs into `main` directly: `main` only advances when a
+   release branch merges into it at release time, so it always reflects the
+   latest published version. If no release branch is open yet, ask in an
+   issue and a maintainer will cut one.
 3. Write tests. New behavior needs a test; bug fixes need a regression test.
    Reach for `conftest.py` fixtures before hand-rolling new ones.
 4. Update `CHANGELOG.md` under the appropriate `[Unreleased]` subsection
@@ -83,7 +88,7 @@ Not enforced — CI is still the source of truth.
 ### Fixing a bug
 
 1. If there's an open issue, reference it in the commit (`fix: foo bar — #42`).
-2. Add a regression test that fails on `main` and passes on your branch.
+2. Add a regression test that fails on the release branch and passes on yours.
    This is enforced by review, not CI, but it's load-bearing.
 
 ## Code conventions
@@ -101,16 +106,20 @@ Not enforced — CI is still the source of truth.
 
 ## Release process
 
-Releases are coordinated on per-version branches (`v0.1.2`, `v0.1.3`, etc.).
-The procedure lives in `docs/releases/` narrative files. Every release gets:
+Each release cycle lives on its own version branch, cut from `main` when the
+cycle starts:
 
-- A dated entry in `CHANGELOG.md`
-- A `docs/releases/v<ver>.md` long-form narrative
-- A git tag + GitHub release
-- PyPI publish via `.github/workflows/publish.yml` (triggered by the tag)
+1. A maintainer cuts `v0.1.x` off `main` and it becomes the active release
+   branch. All feature and fix PRs for that cycle target it (see *Making
+   changes* above).
+2. When the cycle is done, the maintainer finalizes `CHANGELOG.md` and the
+   `docs/releases/v<ver>.md` long-form narrative on the branch.
+3. The release branch merges into `main` via PR, then the version tag is
+   pushed. The tag triggers PyPI publish via `.github/workflows/publish.yml`
+   and the GitHub release.
 
-Contributors don't usually cut releases — maintainers do. If you want to
-propose one, open an issue first.
+Contributors don't cut releases — maintainers do. If you want to propose one,
+open an issue first.
 
 ## Questions?
 
