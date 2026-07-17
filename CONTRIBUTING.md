@@ -73,12 +73,8 @@ Not enforced — CI is still the source of truth.
 
 1. Open an issue first for anything non-trivial. We'd rather discuss design
    before you write the code than after.
-2. Branch from the **active release branch** — the branch named for the
-   version being prepared (e.g. `v0.1.10`; the highest open version branch)
-   — and open your PR back into that same branch. Nothing PRs into `main`
-   directly: `main` only advances when a release branch merges into it at
-   release time, so it always reflects the latest published version. If no
-   release branch is open yet, ask in an issue and a maintainer will cut one.
+2. Branch from the active release branch (e.g. `v0.1.10`) and PR back into
+   it — not `main`. See *Release process* below.
 3. Write tests. New behavior needs a test; bug fixes need a regression test.
    Reach for `conftest.py` fixtures before hand-rolling new ones.
 4. Update `CHANGELOG.md` under the appropriate `[Unreleased]` subsection
@@ -106,19 +102,19 @@ Not enforced — CI is still the source of truth.
 
 ## Release process
 
-Each release cycle lives on its own version branch, cut from `main` when the
-cycle starts:
+Each release cycle lives on its own version branch. Nothing PRs into `main`
+directly — it only advances when a release branch merges into it, so it
+always reflects the latest published version.
 
 1. A maintainer cuts a branch named for the next version (e.g. `v0.1.10`)
-   off `main` and it becomes the active release branch. All feature and fix
-   PRs for that cycle target it (see *Making changes* above). The release
-   tag will share this name, so pushes of either use fully-qualified refs
-   (see `docs/publishing-to-pypi.md`).
+   off `main`. It becomes the active release branch, and all feature and fix
+   PRs for the cycle target it. If none is open yet, ask in an issue.
 2. When the cycle is done, the maintainer finalizes `CHANGELOG.md` and the
    `docs/releases/v<ver>.md` long-form narrative on the branch.
 3. The release branch merges into `main` via PR, then the version tag is
-   pushed. The tag triggers PyPI publish via `.github/workflows/publish.yml`
-   and the GitHub release.
+   pushed (branch and tag share a name, so use fully-qualified refs — see
+   `docs/publishing-to-pypi.md`). The tag triggers PyPI publish via
+   `.github/workflows/publish.yml` and the GitHub release.
 
 Contributors don't cut releases — maintainers do. If you want to propose one,
 open an issue first.
