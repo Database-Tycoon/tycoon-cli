@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 
 class IngestionTool(str, Enum):
@@ -105,15 +105,66 @@ def _interpolate_env(value: str) -> str:
     return re.sub(r"\$\{([^}]+)}", _replace, value)
 
 
-def _interpolate_recursive(obj: Any) -> Any:
-    """Recursively interpolate env vars in strings throughout a data structure."""
+# ${VAR} expansion runs against the victim's full os.environ, so expanding the
+# whole config would let a malicious shared tycoon.yml exfiltrate arbitrary
+# secrets (${MOTHERDUCK_TOKEN}, ${AWS_SECRET_ACCESS_KEY}, ...) by planting
+# references in fields that flow into generated artifacts or the notify
+# webhook payload (#62). Expansion is therefore limited to the fields
+# documented to carry credentials, connection strings, or machine-specific
+# paths; everywhere else ``${...}`` stays literal.
+#
+# Patterns are tuples of on-disk yml key segments; "*" matches any single map
+# key or list index. Leaves expand one string field; subtrees expand every
+# string beneath the prefix.
+_INTERPOLATED_LEAVES: tuple[tuple[str, ...], ...] = (
+    ("database", "raw"),
+    ("database", "warehouse"),
+    ("stack", "ingestion_metadata", "api_key"),
+    ("stack", "ingestion_metadata", "api_secret"),
+    ("sync", "to"),
+    ("sync", "sources", "*", "from"),
+)
+_INTERPOLATED_SUBTREES: tuple[tuple[str, ...], ...] = (
+    # dlt source credentials: tokens, connection strings, bucket URLs.
+    ("sources", "*", "config"),
+)
+
+
+def _path_matches(path: tuple[str, ...], pattern: tuple[str, ...]) -> bool:
+    return len(path) == len(pattern) and all(
+        p in ("*", segment) for segment, p in zip(path, pattern)
+    )
+
+
+def _is_interpolated_field(path: tuple[str, ...]) -> bool:
+    if any(_path_matches(path, leaf) for leaf in _INTERPOLATED_LEAVES):
+        return True
+    return any(
+        len(path) > len(prefix) and _path_matches(path[: len(prefix)], prefix)
+        for prefix in _INTERPOLATED_SUBTREES
+    )
+
+
+def _interpolate_allowed_fields(obj: Any, path: tuple[str, ...] = ()) -> Any:
+    """Interpolate env vars only in the allowlisted fields of a parsed tycoon.yml."""
     if isinstance(obj, str):
-        return _interpolate_env(obj)
+        return _interpolate_env(obj) if _is_interpolated_field(path) else obj
     if isinstance(obj, dict):
-        return {k: _interpolate_recursive(v) for k, v in obj.items()}
+        return {k: _interpolate_allowed_fields(v, (*path, str(k))) for k, v in obj.items()}
     if isinstance(obj, list):
-        return [_interpolate_recursive(v) for v in obj]
+        return [_interpolate_allowed_fields(v, (*path, str(i))) for i, v in enumerate(obj)]
     return obj
+
+
+# Source names flow into filesystem paths (models/staging/<source_name>/) and
+# generated dbt SQL ({{ source('<name>', '<table>') }}); schema names become
+# DuckDB schemas / dlt dataset names. Constraining them to identifier-safe
+# characters blocks path traversal (../..) and SQL/jinja quote breakout from a
+# shared tycoon.yml (#65). Source names additionally allow "-" because the CLI
+# and shipped templates use hyphenated names (e.g. nyc-dot) and derive schemas
+# via replace("-", "_").
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_SOURCE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
 class SourceConfig(BaseModel):
@@ -126,6 +177,39 @@ class SourceConfig(BaseModel):
     dbt_package: str | None = Field(default=None, description="Optional dbt hub package name")
 
     model_config = {"populate_by_name": True}
+
+    @field_validator("type")
+    @classmethod
+    def _check_type(cls, v: str) -> str:
+        # `type` names a dlt source module: it reaches `dlt init` argv and
+        # filesystem paths, so it gets the strict identifier charset.
+        if not _IDENTIFIER_RE.match(v):
+            raise ValueError(
+                f"source type {v!r} is not a valid identifier "
+                "(letters, digits, and underscores only; must not start with a digit)"
+            )
+        return v
+
+    @field_validator("schema_name")
+    @classmethod
+    def _check_schema_name(cls, v: str) -> str:
+        if not _IDENTIFIER_RE.match(v):
+            raise ValueError(
+                f"schema {v!r} is not a valid identifier "
+                "(letters, digits, and underscores only; must not start with a digit)"
+            )
+        return v
+
+    @field_validator("tables")
+    @classmethod
+    def _check_tables(cls, v: list[str] | None) -> list[str] | None:
+        for table in v or []:
+            if not _IDENTIFIER_RE.match(table):
+                raise ValueError(
+                    f"table {table!r} is not a valid identifier "
+                    "(letters, digits, and underscores only; must not start with a digit)"
+                )
+        return v
 
 
 class DatabaseConfig(BaseModel):
@@ -260,6 +344,25 @@ class TycoonProject(BaseModel):
         description="Notification preferences for `--notify` runs and `tycoon notify`.",
     )
 
+    @field_validator("sources")
+    @classmethod
+    def _check_source_names(cls, v: dict[str, SourceConfig]) -> dict[str, SourceConfig]:
+        for name in v:
+            if not _SOURCE_NAME_RE.match(name):
+                raise ValueError(
+                    f"source name {name!r} is not a valid identifier "
+                    "(letters, digits, underscores, and hyphens only; "
+                    "must not start with a digit or hyphen)"
+                )
+        return v
+
+    @field_validator("dbt_project_dir", "dbt_profiles_dir", "rill_dir")
+    @classmethod
+    def _check_path_field(cls, v: str | None) -> str | None:
+        if v is not None and any(ch in v for ch in "\x00\n\r"):
+            raise ValueError("path must not contain NUL, newline, or carriage-return characters")
+        return v
+
 
 PROJECT_FILENAME = "tycoon.yml"
 
@@ -272,7 +375,7 @@ def load_project(project_root: Path) -> TycoonProject | None:
     raw = yaml.safe_load(path.read_text())
     if raw is None:
         return TycoonProject()
-    raw = _interpolate_recursive(raw)
+    raw = _interpolate_allowed_fields(raw)
     return TycoonProject.model_validate(raw)
 
 

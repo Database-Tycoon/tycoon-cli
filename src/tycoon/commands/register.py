@@ -622,5 +622,3 @@ def register_rill(
     _write_raw_tycoon_yml(yml_path, raw)
     success(f"Registered Rill project at {resolved}")
     info(f"Updated {yml_path.name}.")
-
-

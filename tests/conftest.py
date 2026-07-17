@@ -36,5 +36,3 @@ def cli_runner():
     from typer.testing import CliRunner
 
     return CliRunner()
-
-

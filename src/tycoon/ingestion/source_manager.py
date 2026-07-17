@@ -12,6 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tycoon.utils.console import info
+
 SOURCES_DIR = Path.home() / ".tycoon" / "sources"
 
 # Per-source shim: imports from the dlt-init'd package, maps tycoon config keys
@@ -277,6 +279,10 @@ def install_source(source_type: str) -> bool:
     # Re-running dlt init with captured stdin on an existing package can fail
     # when dlt prompts "overwrite?" with no tty to answer.
     if not (source_pkg.is_dir() and (source_pkg / "__init__.py").exists()):
+        info(
+            f"Downloading verified source '{dlt_name}' from dlt-hub/verified-sources "
+            f"(github.com) into {SOURCES_DIR} — this code runs during ingestion."
+        )
         result = subprocess.run(
             [sys.executable, "-m", "dlt", "init", dlt_name, "duckdb"],
             cwd=SOURCES_DIR,

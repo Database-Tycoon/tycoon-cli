@@ -14,6 +14,11 @@ on:
     - cron: "0 8 * * *"
   workflow_dispatch:
 
+# Floor for the workflow; the e2e job re-grants issues: write for the
+# open-issue-on-failure step.
+permissions:
+  contents: read
+
 jobs:
   e2e:
     name: pytest -m e2e (no credentials)
@@ -23,10 +28,10 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
