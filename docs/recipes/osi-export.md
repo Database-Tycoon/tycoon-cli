@@ -144,9 +144,6 @@ without setting up CI first.
 
 ## What's deferred
 
-- **Nao reading OSI.** When dbt-core ships native OSI export, the
-  `tycoon ask` agent will switch to reading OSI metrics. Until then,
-  Nao reads the warehouse schema directly.
 - **Rill auto-generated `metrics_views` from OSI.** Deferred until Rill
   joins the OSI consortium.
 - **`tycoon semantics push <consumer>`.** Direct push to consumer

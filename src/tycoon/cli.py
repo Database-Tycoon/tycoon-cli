@@ -7,7 +7,7 @@ from typer.core import TyperGroup
 
 import tycoon
 
-_COMMAND_ORDER = ["init", "setup", "register", "profiles", "semantics", "ask", "data", "start", "stop", "run", "notify", "schedule", "doctor", "docs"]
+_COMMAND_ORDER = ["init", "setup", "register", "profiles", "semantics", "data", "start", "stop", "run", "notify", "schedule", "doctor", "docs"]
 
 _SECTIONS = {
     "init":  "Project",
@@ -15,7 +15,6 @@ _SECTIONS = {
     "register": "Project",
     "profiles": "Project",
     "semantics": "Project",
-    "ask": "AI Analytics",
     "data":  "Data Pipeline",
     "start": "Services",
     "stop":  "Services",
@@ -80,7 +79,7 @@ def _root(
     pass
 
 
-from tycoon.commands import ask, data, docs as docs_cmd_mod, profiles, register, semantics
+from tycoon.commands import data, docs as docs_cmd_mod, profiles, register, semantics
 from tycoon.commands.doctor import doctor_cmd
 from tycoon.commands.init import init_cmd
 from tycoon.commands.notify import notify_cmd
@@ -95,7 +94,6 @@ app.command(name="setup")(setup_cmd)
 app.add_typer(register.app, name="register")
 app.add_typer(profiles.app, name="profiles")
 app.add_typer(semantics.app, name="semantics")
-app.add_typer(ask.app, name="ask")
 app.add_typer(data.app, name="data")
 app.add_typer(docs_cmd_mod.app, name="docs")
 app.command(name="start")(start_cmd)

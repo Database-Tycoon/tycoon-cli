@@ -89,7 +89,7 @@ sources.
 ## Auto-sync
 
 Not in v0.1.6 — you call `tycoon data fivetran sync` manually (or
-schedule it from cron / Dagster / Prefect). A future version may add
+schedule it from cron). A future version may add
 auto-sync on `tycoon data status` but the Fivetran API has rate limits
 and we don't want to hammer it on every status check.
 

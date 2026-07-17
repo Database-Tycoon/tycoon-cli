@@ -137,17 +137,6 @@ tycoon data transform run
 
 Both update the warehouse, refresh the Parquet exports, and the open Rill dashboard reloads automatically.
 
-## Add an AI agent (optional)
-
-```bash
-pip install 'database-tycoon[ask,server]'
-tycoon register llm lm-studio         # zero-config local LLM
-tycoon ask sync                       # ~30s, builds context
-tycoon ask chat                       # http://localhost:5005
-```
-
-Now you can ask "which customer has the most orders this month?" in natural language. The LLM has read access to your warehouse, dbt models, and any rules you put in `.tycoon/nao/RULES.md`.
-
 ## Tear down
 
 ```bash
@@ -160,4 +149,3 @@ rm -rf analytics-demo                 # tycoon writes nothing outside it
 - [Templates: `csv-import`](../reference/templates.md#csv-import)
 - [`tycoon data sources run`](../commands/data/sources.md)
 - [`tycoon data analyze`](../commands/data/analyze.md)
-- [`tycoon ask`](../commands/ask/index.md)

@@ -9,7 +9,7 @@ from typing import Annotated, Optional
 import typer
 
 from tycoon.config import config
-from tycoon.utils.console import ai_hint, console, error, header, info, next_steps, success, warn
+from tycoon.utils.console import console, error, header, info, next_steps, success, warn
 
 
 def run_all_cmd(
@@ -99,7 +99,6 @@ def run_all_cmd(
             except Exception as exc:
                 error(f"{name} failed: {exc}")
                 _emit("error", f"run-all failed during ingest of '{name}'", stage="ingest", error=str(exc)[:300])
-                ai_hint(f"help me debug the {name} ingestion")
                 raise typer.Exit(1) from exc
     else:
         info("Skipping ingestion (--skip-ingest)")

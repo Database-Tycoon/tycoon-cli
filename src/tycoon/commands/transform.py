@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -11,7 +12,7 @@ import typer
 
 from tycoon.config import config
 from tycoon.dbt_profiles import ProfileOverrides, resolve_profile
-from tycoon.utils.console import ai_hint, console, error, header, next_steps, success
+from tycoon.utils.console import console, error, header, next_steps, success
 
 app = typer.Typer(
     help="Run dbt transformations against the local DuckDB warehouse.",
@@ -52,7 +53,7 @@ def _dbt_executable() -> str:
     return dbt
 
 
-def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
+def _capture_dbt_and_refresh_safe(dbt_cmd: str, *, started_at: float) -> None:
     """Best-effort dbt observability capture + Rill dashboard refresh."""
     try:
         from tycoon.observability import (
@@ -70,6 +71,47 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str) -> None:
         )
         capture_dbt_manifest_safe(meta, config.dbt_project_dir)
         refresh_usage_dashboards(project_root=config.root, rill_dir=config.rill_dir)
+    except Exception:
+        pass
+
+    try:
+        import json
+
+        from tycoon.core.events import DbtRunCompleted
+        from tycoon.metadata_backends.duckdb_file import DuckDBFileBackend
+        from tycoon.observability import metadata_db_path
+
+        run_results_path = config.dbt_project_dir / "target" / "run_results.json"
+        if not run_results_path.exists():
+            return
+        if run_results_path.stat().st_mtime < started_at:
+            return
+
+        with open(run_results_path, encoding="utf-8") as f:
+            run_results = json.load(f)
+
+        elapsed = float(run_results.get("elapsed_time") or 0.0)
+        args = run_results.get("args") or {}
+        target = args.get("target", "dev") or "dev"
+        results = run_results.get("results") or []
+        models_run = len(results)
+        models_errored = sum(
+            1 for r in results if r.get("status") not in ("success", "pass", "warn", "skipped")
+        )
+        models_passed = models_run - models_errored
+
+        event = DbtRunCompleted(
+            source_id="dbt",
+            runtime_id="dbt",
+            command=dbt_cmd,
+            target=target,
+            models_run=models_run,
+            models_passed=models_passed,
+            models_errored=models_errored,
+            duration_seconds=elapsed,
+        )
+        with DuckDBFileBackend(metadata_db_path(config.root)) as b:
+            b.append_event(event)
     except Exception:
         pass
 
@@ -173,8 +215,9 @@ def _run_dbt(
 
     console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")
 
+    started_at = time.time()
     result = subprocess.run(cmd, cwd=project_dir)
-    _capture_dbt_and_refresh_safe(dbt_cmd)
+    _capture_dbt_and_refresh_safe(dbt_cmd, started_at=started_at)
     if result.returncode == 0 and dbt_cmd in {"run", "build"}:
         _auto_osi_scaffold_safe()
     return result.returncode
@@ -242,7 +285,6 @@ def test(
         success("dbt test completed successfully.")
     else:
         error(f"dbt test exited with code {rc}.")
-        ai_hint("why did my dbt tests fail?")
         raise typer.Exit(rc)
 
 

@@ -10,14 +10,14 @@ import typer
 from tycoon.constants import PORTS
 from tycoon.utils.console import info, success, warn
 
-_SERVER_NAMES = ["tycoon", "rill", "dagster", "nao"]
+_SERVER_NAMES = ["rill", "quack"]
 _SERVER_PORTS = {name: PORTS[name] for name in _SERVER_NAMES}
 
 
 def stop_cmd(
     services: list[str] = typer.Argument(
         default=None,
-        help="Specific server(s) to stop. Defaults to all (rill, dagster, nao).",
+        help="Specific server(s) to stop. Defaults to all (rill, quack).",
     ),
 ) -> None:
     """Stop tycoon servers started by `tycoon start`."""

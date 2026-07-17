@@ -11,7 +11,6 @@ import typer
 from tycoon.project import (
     BITool,
     IngestionTool,
-    OrchestratorTool,
     StackConfig,
     TransformationTool,
     WarehouseType,
@@ -124,7 +123,6 @@ class WizardResult:
     dbt_path: str | None = None  # where dbt project lives (None => skipped)
     rill_path: str | None = None  # where Rill project lives (None => skipped)
     warehouse_path: str | None = None  # DuckDB path or cloud conn string
-    llm_provider: str | None = None  # ask.llm.provider; None => skipped
 
 
 def _print_section(title: str) -> None:
@@ -359,142 +357,11 @@ def _maybe_align_warehouse(wizard_warehouse_path: str, dbt_project_dir: Path) ->
     return wizard_warehouse_path
 
 
-def _detect_local_llm() -> list[tuple[str, int]]:
-    """Probe LM Studio's :1234 and Ollama's :11434 ports for an
-    OpenAI-compatible ``/models`` endpoint. Returns a list of
-    ``(provider, model_count)`` for whichever runtimes are reachable.
-
-    The wizard uses the model count to break ties: when both runtimes
-    are up, the one with models loaded is the obvious pick (the other
-    needs a model install regardless). Bounded at 2s per probe so
-    wizard latency stays acceptable even when both ports are dead.
-    """
-    from tycoon.commands.ask import _probe_local_llm
-    from tycoon.nao import _LM_STUDIO_PRESET, _OLLAMA_PRESET
-
-    detected: list[tuple[str, int]] = []
-    lm_ok, lm_count, _ = _probe_local_llm(_LM_STUDIO_PRESET["base_url"], "lm-studio")
-    if lm_ok:
-        detected.append(("lm-studio", lm_count))
-    ol_ok, ol_count, _ = _probe_local_llm(_OLLAMA_PRESET["base_url"], "ollama")
-    if ol_ok:
-        detected.append(("ollama", ol_count))
-    return detected
-
-
-def _prompt_llm() -> str | None:
-    """Pick an LLM provider for the `tycoon ask` AI agent.
-
-    Auto-detection: before showing the menu, probe LM Studio and
-    Ollama's default ports. If exactly one is reachable, offer a
-    one-keystroke confirmation instead of the full 7-option menu.
-    Either runtime running locally is the strongest signal we can get
-    that the user wants it — short-circuit accordingly.
-
-    Returns the provider shortcut string (e.g. ``lm-studio``) or ``None``
-    if the user opts out. The shortcut is consumed by
-    ``scaffold_blank_project`` and persisted as ``ask.llm.provider`` in
-    tycoon.yml; ``tycoon register llm <provider>`` later expands it to
-    a full nao config.
-
-    Defaults to LM Studio in the menu because it's the lowest-friction
-    option: no account, no API key, runs offline, doesn't send schema
-    or rows over the wire. This matters a lot when the warehouse holds
-    anything sensitive — the entire point of a local-first stack.
-    """
-    _print_section("AI analytics agent (`tycoon ask`)")
-
-    # Auto-detect path: probe ports + model counts.
-    #   - Exactly one runtime up → ask only for confirmation.
-    #   - Both up + only one has models loaded → suggest the loaded one
-    #     (the other would just need a model install anyway).
-    #   - Both up + both have models → fall through to the menu (truly
-    #     ambiguous; user knows which they want).
-    #   - Both up + neither has models → fall through to the menu (no
-    #     basis for picking, both will need an install).
-    # User can always decline the suggestion to fall through.
-    detected = _detect_local_llm()
-    suggestion: tuple[str, int] | None = None
-    if len(detected) == 1:
-        suggestion = detected[0]
-    elif len(detected) == 2:
-        loaded = [d for d in detected if d[1] >= 1]
-        if len(loaded) == 1:
-            suggestion = loaded[0]
-
-    if suggestion is not None:
-        provider, model_count = suggestion
-        label = "LM Studio" if provider == "lm-studio" else "Ollama"
-        loaded_note = (
-            f"{model_count} model(s) loaded"
-            if model_count >= 1
-            else "no models loaded yet"
-        )
-        console.print(
-            f"Detected [bold]{label}[/bold] running locally "
-            f"([dim]{loaded_note}[/dim]) — the recommended pick for "
-            "natural-language analytics over your warehouse."
-        )
-        if typer.confirm(f"Use {label}?", default=True):
-            return provider
-        console.print()  # Falls through to the full menu below.
-
-    if len(detected) == 2 and suggestion is None:
-        # Both reachable, both have models OR both have none — surface
-        # the state so the user picks knowingly.
-        notes = [
-            f"{'LM Studio' if p == 'lm-studio' else 'Ollama'} ({c} model(s))"
-            for p, c in detected
-        ]
-        console.print(
-            f"[dim]Detected both runtimes locally: {', '.join(notes)}. "
-            "Pick one below.[/dim]"
-        )
-
-    console.print(
-        "Pick an LLM provider for natural-language queries over your data.\n"
-        "[dim]Without one, `tycoon ask chat` is unavailable — the rest of "
-        "tycoon (init, ingest, transform, query, sync, history) works "
-        "regardless.\n"
-        "Recommended local model: Qwen 2.5 Coder 7B Instruct (~4.7 GB). "
-        "Pull instructions surface after you pick a local provider.[/dim]"
-    )
-    choice = _prompt_choice("Choice", [
-        "LM Studio — local, OpenAI-compatible, no API key (recommended)",
-        "Ollama — local, OpenAI-compatible, no API key",
-        "OpenAI",
-        "Anthropic",
-        "Gemini",
-        "Mistral",
-        "Skip — `tycoon ask chat` will be unavailable until you run "
-        "`tycoon register llm <provider>`",
-    ])
-    return [
-        "lm-studio", "ollama", "openai", "anthropic", "gemini", "mistral", None
-    ][choice - 1]
-
-
-def _prompt_orchestrator() -> tuple[OrchestratorTool, bool]:
-    _print_section("Orchestrator")
-    console.print("How should tycoon handle scheduling?")
-    choice = _prompt_choice("Choice", [
-        "Dagster — tycoon manages it (runs `dagster dev`, auto-generates assets)",
-        "External (Airflow / Prefect / Dagster Cloud / other) — tycoon records only",
-        "Skip — I'll run pipelines manually via tycoon CLI",
-    ])
-    if choice == 1:
-        return OrchestratorTool.dagster, True
-    if choice == 2:
-        sub = _prompt_choice("Which external orchestrator?", ["Airflow", "Prefect", "Other"])
-        tool = [OrchestratorTool.airflow, OrchestratorTool.prefect, OrchestratorTool.other][sub - 1]
-        return tool, False
-    return OrchestratorTool.none, False
-
 
 def _run_wizard(target: Path, project_name: str) -> WizardResult:
     """Run the interactive setup questionnaire, per-component.
 
-    Order follows the data flow: ingestion → warehouse → dbt → rill → orchestrator.
+    Order follows the data flow: ingestion → warehouse → dbt → rill.
     """
     detected = _detect_existing(target)
     if detected.has_any():
@@ -528,8 +395,6 @@ def _run_wizard(target: Path, project_name: str) -> WizardResult:
                 warehouse = WarehouseType.duckdb
 
     bi, bi_managed, rill_path = _prompt_rill(target, detected)
-    llm_provider = _prompt_llm()
-    orchestrator, orchestrator_managed = _prompt_orchestrator()
 
     stack = StackConfig(
         ingestion=ingestion,
@@ -539,55 +404,37 @@ def _run_wizard(target: Path, project_name: str) -> WizardResult:
         transformation_managed=transformation_managed,
         bi=bi,
         bi_managed=bi_managed,
-        orchestrator=orchestrator,
-        orchestrator_managed=orchestrator_managed,
     )
     return WizardResult(
         stack=stack,
         dbt_path=dbt_path,
         rill_path=rill_path,
         warehouse_path=warehouse_path,
-        llm_provider=llm_provider,
     )
 
 
 def _mode_next_steps(
     stack: StackConfig,
     existing_dbt_path: str | None,
-    *,
-    ask_chained: bool = False,
 ) -> None:
-    """Print next steps appropriate to the configured stack mode.
-
-    When ``ask_chained=True``, the AI agent setup already ran during
-    init — point the user at ``tycoon ask chat`` directly instead of
-    asking them to run ``tycoon register llm`` first.
-    """
-    ask_step = (
-        ("tycoon ask chat", "launch the AI analytics agent")
-        if ask_chained
-        else ("tycoon register llm <provider>", "wire up the AI analytics agent")
-    )
+    """Print next steps appropriate to the configured stack mode."""
     if not stack.ingestion_managed and existing_dbt_path:
         # BYO full pipeline
         next_steps(
             ("tycoon doctor", "verify your stack configuration"),
             ("tycoon data transform run", "run dbt transformations"),
-            ask_step,
         )
     elif not stack.ingestion_managed:
         # Warehouse-only
         next_steps(
             ("tycoon doctor", "verify your stack configuration"),
             ("tycoon data transform run", "scaffold and run dbt models"),
-            ask_step,
         )
     else:
         # Greenfield / dlt-managed
         next_steps(
             ("tycoon data sources catalog", "browse available data sources"),
             ("tycoon data sources add", "add your first data source"),
-            ask_step,
         )
 
 
@@ -686,7 +533,6 @@ def init_cmd(
         next_steps(
             ("tycoon data sources catalog", "browse available data sources"),
             ("tycoon data sources add", "add your first data source"),
-            ("tycoon register llm <provider>", "wire up the AI analytics agent"),
         )
     else:
         result = _run_wizard(target, project_name)
@@ -698,38 +544,7 @@ def init_cmd(
             existing_dbt_path=result.dbt_path,
             existing_warehouse_path=result.warehouse_path,
             existing_rill_path=result.rill_path,
-            llm_provider=result.llm_provider,
         )
         console.print()
         success(f"Project '{project_name}' initialized successfully!")
-
-        # Chain the AI agent setup if the user picked a provider in the
-        # wizard AND nao_core is importable. Without the [ask] extra,
-        # we print a fallback hint and leave it for the user to install
-        # the extra and re-run via `tycoon register llm <provider>`.
-        ask_chained = False
-        if result.llm_provider is not None:
-            console.print()
-            try:
-                import nao_core  # noqa: F401
-            except ImportError:
-                info(
-                    "AI agent setup skipped — `nao_core` not installed.\n"
-                    r"Install the \[ask] extra and register the provider to "
-                    "finish wiring up `tycoon ask chat`:\n"
-                    r"  [bold]pip install 'database-tycoon\[ask]'[/bold]" "\n"
-                    f"  [bold]tycoon register llm {result.llm_provider}[/bold]"
-                )
-            else:
-                # Build a fresh config that sees the just-written
-                # tycoon.yml (scaffold writes via project_data, not via
-                # the cached singleton). Pass it through explicitly so
-                # we don't mutate module-level state.
-                from tycoon.commands.ask import setup_ask_stack
-                from tycoon.config import TycoonConfig
-
-                _print_section("AI agent setup")
-                setup_ask_stack(TycoonConfig(project_root=target))
-                ask_chained = True
-
-        _mode_next_steps(result.stack, result.dbt_path, ask_chained=ask_chained)
+        _mode_next_steps(result.stack, result.dbt_path)
