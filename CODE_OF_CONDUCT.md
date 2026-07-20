@@ -41,9 +41,9 @@ official account or an event.
 
 ## Reporting
 
-If something crosses a line, tell us. Email info@databasetycoon.com 
-with what happened. You don't need to have it
-perfectly documented; a rough account and we'll take it from there.
+If something crosses a line, tell us. Email info@databasetycoon.com with what
+happened. You don't need to have it perfectly documented; send a rough account
+and we'll take it from there.
 
 We'll look into every report promptly and fairly, and we'll keep the reporter's
 identity private. Reporting something in good faith will never count against
