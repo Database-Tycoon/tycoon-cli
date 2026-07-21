@@ -75,20 +75,39 @@ class TycoonConfig:
     @property
     def dbt_project_dir(self) -> Path:
         if self._project:
-            p = Path(self._project.dbt_project_dir)
-            return p if p.is_absolute() else (self.root / p).resolve()
+            return self._resolve_contained_path(self._project.dbt_project_dir, "dbt_project_dir")
         return self.root / _DEFAULT_DBT_DIR
 
     @property
     def rill_dir(self) -> Path:
         if self._project:
-            p = Path(self._project.rill_dir)
-            return p if p.is_absolute() else (self.root / p).resolve()
+            return self._resolve_contained_path(self._project.rill_dir, "rill_dir")
         return self.root / _DEFAULT_RILL_DIR
 
-    @property
-    def nao_dir(self) -> Path:
-        return self.root / ".tycoon" / "nao"
+    def _resolve_contained_path(self, value: str, field: str) -> Path:
+        """Resolve a tycoon.yml path field, rejecting escapes from the project area.
+
+        Containment is enforced against the project root's *parent*, not the
+        root itself: the init wizard's default layout puts the dbt project in
+        a sibling directory of the root (e.g. ``../myproj-dbt``), so a
+        root-scoped check would break every standard project. Parent scoping
+        still rejects a malicious tycoon.yml pointing at system locations
+        like ``/etc/cron.d`` or traversing out via ``../../..`` (#65).
+        """
+        p = Path(value)
+        resolved = p.resolve() if p.is_absolute() else (self.root / p).resolve()
+        boundary = self.root.resolve().parent
+        # A project sitting in a top-level dir (/app, /workspace) would make
+        # the boundary the filesystem root, which contains every path — fall
+        # back to root-scoped containment there (PR #153 review).
+        if boundary == boundary.parent:
+            boundary = self.root.resolve()
+        if not resolved.is_relative_to(boundary):
+            raise ValueError(
+                f"tycoon.yml {field} ({value!r}) resolves to {resolved}, "
+                f"outside the project's parent directory {boundary}"
+            )
+        return resolved
 
     # -- Sources --
 

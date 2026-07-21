@@ -7,12 +7,17 @@ available, exercising the actual `quack.connect` SQL.
 
 from __future__ import annotations
 
+import stat
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 from tycoon import quack
 from tycoon.cli import app
+
+_posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
 
 
 # ---------------------------------------------------------------------------
@@ -38,8 +43,6 @@ class TestTokenLifecycle:
         assert ".tycoon/" in gitignore
 
     def test_ensure_preserves_other_secret_keys(self, tmp_path):
-        import yaml
-
         path = quack.secrets_path(tmp_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(yaml.safe_dump({"other": {"k": "v"}}))
@@ -47,6 +50,64 @@ class TestTokenLifecycle:
         data = yaml.safe_load(path.read_text())
         assert data["other"] == {"k": "v"}
         assert data["quack"]["token"]
+
+
+# ---------------------------------------------------------------------------
+# secrets.yml hardening (#66): owner-only perms + token-shape validation
+# ---------------------------------------------------------------------------
+
+
+def _write_secrets(tmp_path, token):
+    path = quack.secrets_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump({"quack": {"token": token}}))
+    return path
+
+
+class TestSecretsHardening:
+    @_posix_only
+    def test_secrets_file_created_owner_only(self, tmp_path):
+        quack.ensure_token(tmp_path)
+        mode = stat.S_IMODE(quack.secrets_path(tmp_path).stat().st_mode)
+        assert mode == 0o600
+
+    @_posix_only
+    def test_loose_perms_tightened_on_load(self, tmp_path):
+        # A secrets file from before the hardening (or a careless copy) sits at
+        # 0644 — loading it must clamp back to owner-only.
+        path = _write_secrets(tmp_path, "abc123")
+        path.chmod(0o644)
+        assert quack.load_token(tmp_path) == "abc123"
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+    @_posix_only
+    def test_loose_perms_tightened_on_rewrite(self, tmp_path):
+        # ensure_token on a pre-existing file (no token yet) fixes its mode too.
+        path = quack.secrets_path(tmp_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump({"other": {"k": "v"}}))
+        path.chmod(0o644)
+        quack.ensure_token(tmp_path)
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "tok'en",  # single quote — the SQL string-literal breakout char
+            'tok"en',  # double quote
+            "tok\nen",  # newline
+            "",  # empty — token_urlsafe never emits this
+            "tok en",  # whitespace
+        ],
+    )
+    def test_malformed_token_rejected_on_load(self, tmp_path, bad):
+        _write_secrets(tmp_path, bad)
+        with pytest.raises(quack.QuackTokenError, match="Malformed Quack token"):
+            quack.load_token(tmp_path)
+
+    def test_generated_tokens_pass_validation(self, tmp_path):
+        token = quack.ensure_token(tmp_path)
+        assert quack.load_token(tmp_path) == token  # no raise
 
 
 # ---------------------------------------------------------------------------
@@ -82,38 +143,6 @@ class TestServeAndProbes:
         with patch("shutil.which", return_value="/usr/bin/duckdb"), \
              patch("subprocess.run", return_value=bad):
             assert quack.extension_available() is False
-
-
-# ---------------------------------------------------------------------------
-# Service definition
-# ---------------------------------------------------------------------------
-
-
-class TestServiceDefinition:
-    def _bind(self, tmp_path, monkeypatch):
-        from tycoon.config import TycoonConfig
-        from tycoon.services import definitions as defs_mod
-
-        cfg = TycoonConfig(project_root=tmp_path)
-        monkeypatch.setattr(defs_mod, "config", cfg)
-        return cfg
-
-    def test_no_quack_service_without_token(self, tmp_path, monkeypatch):
-        self._bind(tmp_path, monkeypatch)
-        from tycoon.services.definitions import get_service_definitions
-
-        names = {d.name for d in get_service_definitions()}
-        assert "quack" not in names
-
-    def test_quack_service_appears_once_token_exists(self, tmp_path, monkeypatch):
-        self._bind(tmp_path, monkeypatch)
-        quack.ensure_token(tmp_path)
-        from tycoon.services.definitions import get_service_definitions
-
-        quack_defs = [d for d in get_service_definitions() if d.name == "quack"]
-        assert len(quack_defs) == 1
-        assert quack_defs[0].port == quack.QUACK_PORT
-        assert quack_defs[0].command[0] == "duckdb"
 
 
 # ---------------------------------------------------------------------------

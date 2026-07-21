@@ -11,8 +11,6 @@ Tools:
   dlt       The dlt CLI
   dbt       The dbt CLI (dbt-core + dbt-duckdb)
   rill      The Rill CLI
-  dagster   The Dagster CLI
-  nao       The Nao CLI (when [ask] extra is installed)
   duckdb    The DuckDB CLI (when installed externally)
 ```
 
@@ -53,21 +51,6 @@ tycoon run rill validate              # check Rill project health
 tycoon run rill query "SELECT 1"      # query a metrics view
 ```
 
-### Dagster
-
-```bash
-tycoon run dagster --version
-tycoon run dagster asset list
-tycoon run dagster asset materialize --select '*'
-```
-
-### Nao
-
-```bash
-tycoon run nao --help
-tycoon run nao sync                   # equivalent to tycoon ask sync
-```
-
 ### DuckDB
 
 ```bash
@@ -94,5 +77,4 @@ If you want a `tycoon run` invocation captured, run the wrapped tycoon command i
 ## Related
 
 - [`tycoon data transform`](data/transform.md) — wraps `dbt run/test/build/docs` with capture
-- [`tycoon ask sync`](ask/index.md) — wraps `nao sync` with refresh + AGENTS.md
 - [Concepts → The CLI is a thin facade over real tools](../getting-started/concepts.md#4-the-cli-is-a-thin-facade-over-real-tools)

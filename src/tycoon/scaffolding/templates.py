@@ -114,11 +114,6 @@ dbt_project/logs/
 # Tycoon observability — dlt + dbt run-history metadata DB (disposable)
 .tycoon/metadata.duckdb*
 
-# Nao (AI agent) — chat SQLite and per-project sync artifacts
-.tycoon/nao/db.sqlite*
-.tycoon/nao/databases/
-.tycoon/nao/repos/
-
 # OS
 .DS_Store
 """
@@ -131,7 +126,6 @@ def scaffold_blank_project(
     existing_dbt_path: str | None = None,
     existing_warehouse_path: str | None = None,
     existing_rill_path: str | None = None,
-    llm_provider: str | None = None,
 ) -> None:
     """Create a minimal tycoon project with a ``tycoon.yml`` and supporting dirs.
 
@@ -202,16 +196,7 @@ def scaffold_blank_project(
             "transformation_managed": stack.transformation_managed,
             "bi": stack.bi.value,
             "bi_managed": stack.bi_managed,
-            "orchestrator": stack.orchestrator.value,
-            "orchestrator_managed": stack.orchestrator_managed,
         }
-
-    # Record the LLM provider chosen during the wizard so the chained
-    # `setup_ask_stack()` call (or a later `tycoon register llm`) can
-    # expand the shortcut without re-prompting. Skipping (None) leaves
-    # the ask block off — `tycoon register llm <provider>` adds it later.
-    if llm_provider:
-        project_data["ask"] = {"llm": {"provider": llm_provider}}
 
     yml_path = target / "tycoon.yml"
     yml_path.write_text(yaml.dump(project_data, default_flow_style=False, sort_keys=False))

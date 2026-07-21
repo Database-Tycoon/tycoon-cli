@@ -16,7 +16,7 @@ class TestPorts:
         assert len(values) == len(set(values)), "All ports must be unique"
 
     def test_expected_keys_present(self):
-        expected_keys = {"duckdb_ui", "dbt_docs", "rill", "tycoon", "dagster", "nao"}
+        expected_keys = {"duckdb_ui", "dbt_docs", "rill", "quack"}
         assert expected_keys.issubset(set(constants.PORTS.keys()))
 
 

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "database-tycoon"
-version = "0.1.9"
-description = "Database Tycoon — local-first analytics CLI that adapts to your existing data stack"
+version = "0.1.10"
+description = "Tycoon CLI — local-first analytics CLI that adapts to your existing data stack"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Database Tycoon Team"}]
@@ -26,6 +26,11 @@ dependencies = [
     "dbt-core==1.11.8",
     "dbt-duckdb==1.10.1",
     "dlt[duckdb]==1.26.0",
+    # Nothing in src/ imports pandas, but dlt's filesystem source
+    # (downloaded on demand via `dlt init`) needs it for its CSV
+    # reader — tests/test_e2e_demo_arc.py fails without it. Optional-
+    # extra treatment tracked in #148.
+    "pandas==3.0.3",
     "duckdb==1.5.2",
     "httpx==0.28.1",
     "pyyaml==6.0.3",
@@ -33,19 +38,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-server = [
-    "fastapi==0.136.1",
-    "uvicorn[standard]==0.46.0",
-]
-dagster = [
-    "dagster==1.13.2",
-    "dagster-webserver==1.13.2",
-    "dagster-dbt==0.29.2",
-    "dagster-dlt==0.29.2",
-]
-ask = [
-    "nao-core==0.1.11",
-]
 docs = [
     "mkdocs==1.6.1",
     "mkdocs-material==9.5.49",
@@ -98,14 +90,12 @@ source = ["src/tycoon"]
 branch = false
 
 [tool.coverage.report]
-# Baseline at v0.1.2 is ~65% (after server route tests and Dagster
-# asset-definition smoke tests landed). The remaining untested code is
-# concentrated in the websocket streaming path, the services.manager
-# subprocess orchestrator, and a handful of dead/untested orchestration
-# assets that require a full Dagster + dbt stack to exercise. Floor is
-# set at 60 to give routine drift meaningful headroom over the baseline;
-# raise it 1-2 points per release alongside real test additions.
-fail_under = 60
+# Floor re-baselined after dropping server/dagster/ask extras (v0.1.10).
+# Removing that largely-untested code lifted the real ratio from ~65%
+# to ~73%. Floor sits 5 points under baseline for routine-drift
+# headroom (same margin as the old 65/60 split); raise it 1-2 points
+# per release alongside genuine test additions.
+fail_under = 68
 show_missing = true
 skip_covered = false
 exclude_lines = [

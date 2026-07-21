@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -14,7 +13,7 @@ from rich.panel import Panel
 from tycoon.config import config
 from tycoon.constants import MAX_PYTHON_EXCLUSIVE as _MAX_PYTHON_EXCLUSIVE
 from tycoon.constants import MIN_PYTHON as _MIN_PYTHON
-from tycoon.project import BITool, IngestionTool, OrchestratorTool, TransformationTool, WarehouseType
+from tycoon.project import BITool, IngestionTool, TransformationTool, WarehouseType
 from tycoon.utils.console import error, header, info, success, warn
 
 console = Console()
@@ -220,16 +219,6 @@ def _check_stack_config() -> None:
             success("Rill project found.")
     elif not stack.bi_managed and stack.bi != BITool.none:
         info(f"BI is managed externally by {stack.bi.value}. Skipping Rill checks.")
-
-    if stack.orchestrator == OrchestratorTool.none:
-        info("Orchestrator: skipped by choice (stack.orchestrator = none).")
-    elif stack.orchestrator == OrchestratorTool.dagster and stack.orchestrator_managed:
-        if shutil.which("dagster"):
-            success("Dagster is installed.")
-        else:
-            warn("Dagster not found. Run: pip install dagster dagster-webserver")
-    elif not stack.orchestrator_managed:
-        info(f"Orchestration is managed externally by {stack.orchestrator.value}.")
 
     if stack.transformation == TransformationTool.dbt and not stack.transformation_managed:
         from pathlib import Path

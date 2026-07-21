@@ -1,0 +1,14 @@
+# Keeps the SHA-pinned GitHub Actions and Python dependencies current.
+# Actions are pinned to full commit SHAs (see .github/workflows/); Dependabot
+# understands SHA pins and bumps both the SHA and the version comment.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly

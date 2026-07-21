@@ -36,19 +36,3 @@ def cli_runner():
     from typer.testing import CliRunner
 
     return CliRunner()
-
-
-@pytest.fixture(autouse=True)
-def _stub_local_llm_probe(monkeypatch):
-    """Default-stub LM Studio / Ollama port probes so tests that drive
-    the init wizard don't behave differently depending on whether the
-    developer has Ollama or LM Studio running locally.
-
-    Tests that specifically exercise auto-detection override this by
-    re-patching ``_probe_local_llm`` after the fixture runs.
-    """
-    from tycoon.commands import ask as ask_mod
-
-    monkeypatch.setattr(
-        ask_mod, "_probe_local_llm", lambda *_args, **_kw: (False, 0, "stub: no probe")
-    )

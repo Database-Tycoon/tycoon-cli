@@ -33,14 +33,19 @@ from tycoon.cli import app
 # addition then guards against regressions across the entire codebase.
 
 _STALE_SUBSTRINGS: tuple[tuple[str, str], ...] = (
-    # Note: `tycoon ask init` was removed in v0.1.5 (it had been a
-    # confusing alias for `register llm`) and re-introduced in v0.1.6
-    # with a different contract: idempotent project-bootstrap that
-    # writes nao_config.yaml from the existing tycoon.yml, no prompts.
-    # That's why this list no longer flags "tycoon ask init" — the
-    # current command is genuine, not a regression to the old one.
     ("ask install-model",
         "removed in v0.1.5 — folded into `tycoon register llm`"),
+    # v0.1.10 dropped the entire ask/nao surface (PR #147): no `tycoon
+    # ask`, no `tycoon register llm`, no Nao agent. Any source string
+    # mentioning them points users at commands that no longer exist.
+    ("tycoon ask",
+        "removed in v0.1.10 — the ask/nao surface was dropped entirely"),
+    ("register llm",
+        "removed in v0.1.10 — the ask/nao surface was dropped entirely"),
+    ("nao",
+        "removed in v0.1.10 — the Nao agent integration was dropped"),
+    ("Nao",
+        "removed in v0.1.10 — the Nao agent integration was dropped"),
     ("pip install tycoon[",
         "wrong package name — use `pip install database-tycoon[...]`"),
     ("pip install tycoon\\[",
@@ -123,17 +128,11 @@ _KEY_HELP_PATHS = [
     ("register", "dbt"),
     ("register", "warehouse"),
     ("register", "rill"),
-    ("register", "llm"),
     ("data",),
     ("data", "sources"),
     ("data", "transform"),
     ("data", "sync"),
     ("data", "analyze"),
-    ("ask",),
-    ("ask", "chat"),
-    ("ask", "sync"),
-    ("ask", "context"),
-    ("ask", "doctor"),
     ("doctor",),
 ]
 
@@ -162,119 +161,11 @@ class TestHelpSurface:
             )
 
 
-# -- 3. Removed commands stay removed -------------------------------------
-
-
-class TestRemovedCommands:
-    """Sanity that v0.1.5 removals didn't regress.
-
-    Calling a removed command should fail (typer exits non-zero on
-    unknown subcommand) — not silently dispatch to something else.
-    """
-
-    def test_ask_init_re_registered_with_new_contract(self, cli_runner):
-        """Note: `tycoon ask init` was removed in v0.1.5 (it had been a
-        confusing alias for `register llm`) and re-introduced in v0.1.6
-        with a different contract: idempotent project-bootstrap that
-        writes nao_config.yaml from the existing tycoon.yml — no
-        prompts, no LLM args. This test guards the re-introduction.
-        """
-        result = cli_runner.invoke(app, ["ask", "init", "--help"])
-        assert result.exit_code == 0, result.stdout
-        # Sanity: the help text reflects the new contract, not the old.
-        assert "--force" in result.stdout
-        # The old removed alias prompted for provider; the new one
-        # explicitly does NOT take an LLM provider arg.
-        assert "PROVIDER" not in result.stdout.upper()
-
-    def test_ask_install_model_no_longer_registered(self, cli_runner):
-        result = cli_runner.invoke(app, ["ask", "install-model", "--help"])
-        assert result.exit_code != 0, (
-            f"`tycoon ask install-model` should be removed but exited 0:\n"
-            f"{result.stdout}"
-        )
-
-    def test_register_llm_is_registered(self, cli_runner):
-        """The replacement should exist."""
-        result = cli_runner.invoke(app, ["register", "llm", "--help"])
-        assert result.exit_code == 0, result.stdout
-        # And documents the provider arg.
-        assert "lm-studio" in result.stdout or "Provider" in result.stdout
-
-
-# -- 4. Specific warning strings target current commands ------------------
-
-
-class TestStartCommandWarnings:
-    """`tycoon start` emits warnings for missing prerequisites. After
-    v0.1.5 those messages had to be updated to point at the current
-    commands. Lock in the wording so a future grep-and-replace doesn't
-    regress.
-    """
-
-    def test_nao_uninitialised_warn_points_at_register_llm(
-        self, tmp_path, monkeypatch, capsys
-    ):
-        """If `_preflight_checks` runs against a project without
-        nao_config.yaml, the warning should direct the user at
-        `tycoon register llm`, not the removed `tycoon ask init`.
-
-        Tests `_preflight_checks` directly rather than the CLI; the
-        full `start` command launches subprocesses which would block
-        the test runner.
-        """
-        from tycoon.commands import start as start_mod
-        from tycoon.config import TycoonConfig
-
-        (tmp_path / "tycoon.yml").write_text(
-            "name: test\n"
-            "version: 0.1.0\n"
-            "database:\n"
-            "  raw: data/raw.duckdb\n"
-            "  warehouse: data/warehouse.duckdb\n"
-            "sources: {}\n"
-        )
-        (tmp_path / "data").mkdir()
-        monkeypatch.setattr(start_mod, "config", TycoonConfig(project_root=tmp_path))
-
-        targets = ["nao"]
-        start_mod._preflight_checks(targets)
-        # Nao got skipped (no nao_config.yaml), and the warn was emitted.
-        assert targets == []
-        captured = capsys.readouterr()
-        # The fix this test guards: warn must NOT reference the removed
-        # `tycoon ask init`.
-        combined = captured.out + captured.err
-        assert "tycoon ask init" not in combined, (
-            f"start warn references removed command:\n{combined}"
-        )
-        # And the new wording should appear.
-        assert "tycoon register llm" in combined, (
-            f"start warn doesn't reference register llm:\n{combined}"
-        )
-
-    def test_dagster_install_hint_uses_correct_package_name(self):
-        """The dagster install hint inside start.py must reference the
-        correct package name AND escape the [dagster] bracket so Rich
-        doesn't parse it as a style tag and silently strip it."""
-        start_src = (
-            Path(__file__).parent.parent / "src" / "tycoon" / "commands" / "start.py"
-        ).read_text()
-        # Negative: the buggy package name forms must not appear.
-        assert "pip install tycoon[dagster]" not in start_src
-        assert "pip install tycoon\\[dagster]" not in start_src
-        # Negative: the unescaped [dagster] form (Rich strips it) must not appear.
-        assert "database-tycoon[dagster]" not in start_src
-        # Positive: the escaped form (Rich renders [dagster] literally) must appear.
-        assert "database-tycoon\\[dagster]" in start_src
-
-
-# -- 4b. Rich-markup pitfall: `database-tycoon[ask]` etc. must render
-#         literally. Rich treats `[ask]` as a style tag and silently
-#         strips it unless the bracket is escaped. We learned this when
-#         a user copied the suggested install command verbatim and
-#         missed the extra. Lock in the rendered output, not just the
-#         source.
+# -- 3. Rich-markup pitfall: extras names must render literally ----------
+#
+#         Rich treats `[docs]` as a style tag and silently strips it
+#         unless the bracket is escaped. Lock in the rendered output,
+#         not just the source.
 
 
 class TestExtrasNamesRenderLiterally:
@@ -284,7 +175,7 @@ class TestExtrasNamesRenderLiterally:
 
     The `error()`, `warn()`, and `info()` helpers use the project's
     shared Rich console — which parses markup — so an unescaped
-    `[ask]` becomes a (nonexistent) style and disappears.
+    `[docs]` becomes a (nonexistent) style and disappears.
     """
 
     def _render(self, message_string: str) -> str:
@@ -294,35 +185,6 @@ class TestExtrasNamesRenderLiterally:
         c = Console(record=True, force_terminal=False, width=200)
         c.print(message_string)
         return c.export_text()
-
-    def test_ask_install_hint_in_ask_module(self):
-        from tycoon.commands import ask
-        import inspect
-
-        src = inspect.getsource(ask)
-        # Find every line that mentions database-tycoon and check the
-        # rendered form contains the literal `[ask]`.
-        for line in src.splitlines():
-            if "database-tycoon" not in line or "ask" not in line:
-                continue
-            # Eval out the string content if it's a clean r"..." or "..." literal.
-            # Skip lines we can't isolate; the per-site tests below cover them.
-
-        # Direct assertion on the two key error messages: simulate what
-        # _require_nao prints by re-constructing the literal it would feed
-        # to error().
-        msg = r"Nao is not installed. Run: [bold]pip install 'database-tycoon\[ask]'[/bold]"
-        rendered = self._render(msg)
-        assert "database-tycoon[ask]" in rendered, rendered
-
-        msg = r"`nao` not found. Reinstall: [bold]pip install 'database-tycoon\[ask]'[/bold]"
-        rendered = self._render(msg)
-        assert "database-tycoon[ask]" in rendered, rendered
-
-    def test_dagster_install_hint_renders(self):
-        msg = r"dagster not found — skipping. Install with: [bold]pip install 'database-tycoon\[dagster]'[/bold]"
-        rendered = self._render(msg)
-        assert "database-tycoon[dagster]" in rendered, rendered
 
     def test_docs_install_hint_renders(self):
         msg = (

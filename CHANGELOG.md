@@ -1,5 +1,38 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] - 2026-07-21
+
+_Headline: the codebase gets dramatically smaller and more focused. The ingestion rewrite's M1 metadata backend lands ([#82][], PRs [#136][]/[#137][]), and the FastAPI server, Dagster orchestration, and Nao/ask AI-agent extras are removed outright ([#139][], PR [#147][]) — the lockfile drops from 174 to 109 packages. Cycle plan in [`docs/proposals/v0.1.10-scope.md`](docs/proposals/v0.1.10-scope.md)._
+
+### Added
+
+- **MetadataBackend protocol + DuckDB file backend** ([#82][], PR [#136][]). Run history now flows through a typed abstraction — `RunStarted` / `RunCompleted` / `RunFailed` event models, a structural `MetadataBackend` Protocol, and a `DuckDBFileBackend` writing to `.tycoon/metadata.duckdb` — instead of raw SQL against hardcoded table names inside `observability.py`. This is the foundation the rest of the ingestion rewrite ([#81][]) builds on; alternative backends (MotherDuck, Postgres, in-memory for tests) become an implementation of the Protocol rather than a fork of the capture path.
+- **Run events wired into the live command paths** (PR [#137][]). `runner.py` emits lifecycle events around every dlt dispatch (best-effort — a metadata write never blocks or fails a run), and `data history` / `data status` / `data transform` read through the backend. Row counts come from dlt's `load_packages`, filtered to user tables.
+- **Ingestion architecture doc** (PR [#149][]). `docs/ingestion-architecture.md` — the plain-English map of the rewrite: the Runtime / Destination / MetadataBackend protocol design, the dlt tier model, the source-catalog manifest plan, and the milestone sequence for [#81][].
+
+### Removed
+
+- **FastAPI web UI, Dagster orchestration, and the Nao/ask AI agent** ([#139][], PR [#147][]). ~15 modules deleted (`tycoon.server`, `tycoon.orchestration`, `tycoon.services`, `tycoon.nao`, `commands/ask.py`) along with the `[server]`, `[dagster]`, and `[ask]` extras. `tycoon ask` and `tycoon register llm` are gone — no stubs, typer's standard "no such command" error. The init wizard is now 4 steps (ingestion → warehouse → dbt → rill); `tycoon start`/`stop` manage exactly two servers, Rill (`:9009`) and Quack (`:9494`). Lockfile: 174 → 109 packages. Rationale: none of it was load-bearing for the local-first analytics core, and the AI-agent surface will be rethought as part of the rewrite ([#78][]).
+
+### Changed
+
+- **Coverage floor re-baselined to 68%** (PR [#147][] follow-up). Deleting the largely-untested server/orchestration code lifted real coverage from ~65% to ~73%; the floor keeps the same 5-point drift headroom as before.
+- **`pandas` is now an explicit, pinned core dependency**. It was previously transitive via Dagster; nothing in `src/` imports it, but dlt's filesystem source (pulled on demand via `dlt init`) needs it for its CSV reader. Optional-extra treatment tracked in [#148][].
+
+### Fixed
+
+- **Stale AI-agent hints removed from live error paths** (PR [#147][] follow-up). Failed ingestions and dbt test failures no longer suggest the removed `tycoon ask chat`; `data observability scaffold` no longer suggests `tycoon ask sync`. The CLI-surface stale-string sentinel now guards `tycoon ask` / `register llm` / Nao references so this class of drift fails tests. Docs swept to match the trimmed surface, and `tycoon start`'s shutdown loop catches specific exceptions (`OSError`, `TimeoutExpired`) instead of a blanket `except Exception`.
+
+[#78]: https://github.com/Database-Tycoon/tycoon-cli/pull/78
+[#81]: https://github.com/Database-Tycoon/tycoon-cli/issues/81
+[#82]: https://github.com/Database-Tycoon/tycoon-cli/issues/82
+[#136]: https://github.com/Database-Tycoon/tycoon-cli/pull/136
+[#137]: https://github.com/Database-Tycoon/tycoon-cli/pull/137
+[#139]: https://github.com/Database-Tycoon/tycoon-cli/issues/139
+[#147]: https://github.com/Database-Tycoon/tycoon-cli/pull/147
+[#148]: https://github.com/Database-Tycoon/tycoon-cli/issues/148
+[#149]: https://github.com/Database-Tycoon/tycoon-cli/pull/149
+
 ## [0.1.9] - 2026-06-10
 
 _Headline: Google Sheets source ([#52][]). Plus managed project-local `.venv` + `doctor --fix` ([#57][]), DuckDB Quack live warehouse ([#42][]), pipeline notifications ([#46][]), and scheduled runs ([#48][]). Layer-granular backup ([#31][]) is deferred — no backup track exists yet to make layer-aware (it depended on the deferred DuckLake path). Also closes two High-severity findings from a security review ([#60][], [#61][]). Cycle plan in [`docs/proposals/v0.1.9-scope.md`](docs/proposals/v0.1.9-scope.md)._

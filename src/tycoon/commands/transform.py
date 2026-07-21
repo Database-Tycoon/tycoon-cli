@@ -12,7 +12,7 @@ import typer
 
 from tycoon.config import config
 from tycoon.dbt_profiles import ProfileOverrides, resolve_profile
-from tycoon.utils.console import ai_hint, console, error, header, next_steps, success
+from tycoon.utils.console import console, error, header, next_steps, success
 
 app = typer.Typer(
     help="Run dbt transformations against the local DuckDB warehouse.",
@@ -285,7 +285,6 @@ def test(
         success("dbt test completed successfully.")
     else:
         error(f"dbt test exited with code {rc}.")
-        ai_hint("why did my dbt tests fail?")
         raise typer.Exit(rc)
 
 

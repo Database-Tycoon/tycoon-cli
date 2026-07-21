@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import shutil
 import subprocess
 
@@ -50,7 +51,10 @@ def install_dlt_extra(source_type: str) -> bool:
     to ``pip install``. Returns True on success, False on failure.
     """
     extra_name = DLT_EXTRAS.get(source_type, source_type)
-    package = f"dlt[{extra_name}]"
+    # Pin to the already-installed dlt version so a runtime extra install
+    # can't silently upgrade (or downgrade) dlt itself.
+    dlt_version = importlib.metadata.version("dlt")
+    package = f"dlt[{extra_name}]=={dlt_version}"
 
     # Prefer uv, fall back to pip
     if shutil.which("uv"):

@@ -109,12 +109,11 @@ class TestWizardGreenfield:
         project = tmp_path / "green"
         project.mkdir()
         monkeypatch.chdir(project)
-        # ingestion=dlt, warehouse=local, dbt=create, rill=create,
-        # llm=lm-studio, orch=dagster
+        # ingestion=dlt, warehouse=local, dbt=create, rill=create
         result = cli_runner.invoke(
             app,
             ["init", "--name", "green"],
-            input="1\n1\n1\n1\n1\n1\n",
+            input="1\n1\n1\n1\n",
         )
         assert result.exit_code == 0, result.stdout
 
@@ -125,18 +124,16 @@ class TestWizardGreenfield:
         assert data["stack"]["transformation_managed"] is True
         assert data["stack"]["bi"] == "rill"
         assert data["stack"]["bi_managed"] is True
-        assert data["stack"]["orchestrator"] == "dagster"
 
     def test_skip_every_optional_component(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "skippy"
         project.mkdir()
         monkeypatch.chdir(project)
-        # ingestion=skip(3), warehouse=local(1), dbt=skip(3), rill=skip(3),
-        # llm=skip(7), orch=skip(3)
+        # ingestion=skip(3), warehouse=local(1), dbt=skip(3), rill=skip(3)
         result = cli_runner.invoke(
             app,
             ["init", "--name", "skippy"],
-            input="3\n1\n3\n3\n7\n3\n",
+            input="3\n1\n3\n3\n",
         )
         assert result.exit_code == 0, result.stdout
 
@@ -144,7 +141,6 @@ class TestWizardGreenfield:
         assert data["stack"]["ingestion"] == "none"
         assert data["stack"]["transformation"] == "none"
         assert data["stack"]["bi"] == "none"
-        assert data["stack"]["orchestrator"] == "none"
         assert "dbt_project_dir" not in data
         assert "rill_dir" not in data
 
@@ -155,7 +151,7 @@ class TestWizardGreenfield:
         result = cli_runner.invoke(
             app,
             ["init", "--name", "myproj"],
-            input="1\n1\n1\n1\n1\n1\n",  # dbt "create" = sibling
+            input="1\n1\n1\n1\n",  # dbt "create" = sibling
         )
         assert result.exit_code == 0, result.stdout
 
@@ -177,12 +173,11 @@ class TestWizardDetection:
         (dbt / "dbt_project.yml").write_text("name: mine\nversion: '1.0.0'\nconfig-version: 2\nprofile: mine\n")
 
         monkeypatch.chdir(project)
-        # ingestion=dlt, warehouse=local, dbt=1 (detected), rill=1 (create),
-        # llm=lm-studio, orch=1
+        # ingestion=dlt, warehouse=local, dbt=1 (detected), rill=1 (create)
         result = cli_runner.invoke(
             app,
             ["init", "--name", "myproj"],
-            input="1\n1\n1\n1\n1\n1\n",
+            input="1\n1\n1\n1\n",
         )
         assert result.exit_code == 0, result.stdout
 
@@ -276,7 +271,7 @@ class TestWizardSkipSemantics:
         init_result = cli_runner.invoke(
             app,
             ["init", "--name", "skippy"],
-            input="3\n1\n3\n3\n7\n3\n",  # ingest/dbt/rill/llm/orch all skip
+            input="3\n1\n3\n3\n",  # ingest/dbt/rill all skip
         )
         assert init_result.exit_code == 0
 

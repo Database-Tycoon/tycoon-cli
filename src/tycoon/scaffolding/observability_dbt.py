@@ -3,8 +3,7 @@
 Implements issue #20. Tycoon already accumulates rich metadata in
 ``.tycoon/metadata.duckdb`` (dlt runs, dlt traces, dbt invocations, dbt
 nodes, manifest snapshots, schema-diff history). The Rill dashboards see
-it via Parquet exports; this module makes the same data visible to dbt
-and to Nao.
+it via Parquet exports; this module makes the same data visible to dbt.
 
 Three pieces compose:
 
@@ -21,10 +20,8 @@ Three pieces compose:
 3. **Schema YAML** — ``_tycoon__schema.yml`` documents every column so
    ``dbt docs`` renders proper lineage.
 
-Once the staging models exist, ``tycoon ask sync`` introspects them as
-part of the warehouse and they show up in ``tycoon ask context``
-without extra plumbing — that's the third sub-ask in #20, satisfied
-emergently.
+Once the staging models exist they're part of the warehouse like any
+other model — that's the third sub-ask in #20, satisfied emergently.
 """
 
 from __future__ import annotations

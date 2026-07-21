@@ -87,23 +87,31 @@ git push origin v0.1.0
 
 ### Future releases
 
-1. Update the version in `pyproject.toml`:
+Development happens on a per-version release branch (see the *Release
+process* section of `CONTRIBUTING.md`); nothing pushes to `main` directly.
+
+1. On the release branch, update the version in `pyproject.toml`:
    ```toml
    version = "0.2.0"
    ```
 
-2. Commit the bump:
+2. Commit the bump to the release branch:
    ```bash
    git add pyproject.toml
    git commit -m "chore: bump version to 0.2.0"
-   git push origin main
+   git push origin refs/heads/v0.2.0
    ```
 
-3. Tag and push:
+3. Merge the release branch into `main` via PR, then tag the merge commit:
    ```bash
-   git tag v0.2.0
-   git push origin v0.2.0
+   git fetch origin main
+   git tag v0.2.0 origin/main
+   git push origin refs/tags/v0.2.0   # triggers the publish workflow
    ```
+
+   The branch and its tag share a name, so always push with the
+   fully-qualified `refs/heads/…` / `refs/tags/…` form — a bare
+   `git push origin v0.2.0` is ambiguous and will be rejected.
 
 The workflow triggers automatically. Watch it at:
 `https://github.com/Database-Tycoon/tycoon-cli/actions`
@@ -122,9 +130,6 @@ pip install --index-url https://test.pypi.org/simple/ database-tycoon
 **PyPI (real):**
 ```bash
 pip install database-tycoon
-# or with extras:
-pip install "database-tycoon[dagster]"
-pip install "database-tycoon[ask]"
 ```
 
 ---

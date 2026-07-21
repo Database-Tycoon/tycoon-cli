@@ -28,7 +28,7 @@ app = typer.Typer(help="Local documentation site.")
 def _mkdocs_executable() -> str | None:
     """Return the venv-colocated `mkdocs` binary if available, else None.
 
-    Mirrors `_nao_executable` and `_dbt_executable` — prefer the binary
+    Mirrors `_dbt_executable` — prefer the binary
     next to ``sys.executable`` so we hit the version pinned in the
     project's environment rather than a globally-installed one.
     """
