@@ -1,6 +1,6 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.10] - UNRELEASED
+## [0.1.10] - 2026-07-21
 
 _Headline: the codebase gets dramatically smaller and more focused. The ingestion rewrite's M1 metadata backend lands ([#82][], PRs [#136][]/[#137][]), and the FastAPI server, Dagster orchestration, and Nao/ask AI-agent extras are removed outright ([#139][], PR [#147][]) — the lockfile drops from 174 to 109 packages. Cycle plan in [`docs/proposals/v0.1.10-scope.md`](docs/proposals/v0.1.10-scope.md)._
 
