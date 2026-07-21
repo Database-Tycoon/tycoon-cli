@@ -21,7 +21,7 @@ classifiers = [
     "Topic :: Database",
 ]
 dependencies = [
-    "typer==0.25.0",
+    "typer==0.27.0",
     "rich==15.0.0",
     "dbt-core==1.11.8",
     "dbt-duckdb==1.10.1",
