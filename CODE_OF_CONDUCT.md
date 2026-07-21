@@ -1,9 +1,10 @@
 # Code of Conduct
 
-Database Tycoon is a small team, and this is a public project. It only works 
-if people feel comfortable showing up: asking a basic question, filing a rough bug, 
-disagreeing about a design. This document is the short version of how we keep it 
-that way. It applies to everyone who shows up in an issue, a pull request, or a discussion.
+Database Tycoon is a small team, and this is a public project. It only works
+if people feel comfortable showing up: asking a basic question, filing a rough
+bug, disagreeing about a design. This document is the short version of how we
+keep it that way. It applies to everyone who shows up in an issue, a pull
+request, or a discussion.
 
 ## What we expect
 
