@@ -140,3 +140,48 @@ class TestConfigIntegration:
         )
         cfg = TycoonConfig(project_root=tmp_path)
         assert "my-api" in cfg.sources
+
+
+class TestRuntimesAndMetadata:
+    """T2-1: runtimes: and metadata: fields on TycoonProject."""
+
+    def test_existing_yml_loads_without_new_fields(self, tmp_path):
+        """A tycoon.yml with no runtimes/metadata keys must load with defaults."""
+        (tmp_path / "tycoon.yml").write_text("name: legacy-project\n")
+        p = load_project(tmp_path)
+        assert p is not None
+        assert p.runtimes == {}
+        assert p.metadata.backend == "duckdb_file"
+        assert p.metadata.path == ".tycoon/metadata.duckdb"
+
+    def test_runtimes_field_parses(self, tmp_path):
+        """runtimes: block with mixed types should parse into RuntimeEntry objects."""
+        (tmp_path / "tycoon.yml").write_text(
+            "name: runtimes-test\n"
+            "runtimes:\n"
+            "  shopify:\n"
+            "    type: dlt-managed\n"
+            "  custom_pipeline:\n"
+            "    type: dlt-project\n"
+            "    path: pipelines/custom\n"
+            "  fivetran_sync:\n"
+            "    type: fivetran\n"
+        )
+        p = load_project(tmp_path)
+        assert p is not None
+        assert set(p.runtimes) == {"shopify", "custom_pipeline", "fivetran_sync"}
+        assert p.runtimes["shopify"].type == "dlt-managed"
+        assert p.runtimes["shopify"].path is None
+        assert p.runtimes["custom_pipeline"].type == "dlt-project"
+        assert p.runtimes["custom_pipeline"].path == "pipelines/custom"
+        assert p.runtimes["fivetran_sync"].type == "fivetran"
+
+    def test_metadata_field_parses(self, tmp_path):
+        """metadata: block with custom values should override defaults."""
+        (tmp_path / "tycoon.yml").write_text(
+            "name: metadata-test\nmetadata:\n  backend: duckdb_file\n  path: .tycoon/custom_meta.duckdb\n"
+        )
+        p = load_project(tmp_path)
+        assert p is not None
+        assert p.metadata.backend == "duckdb_file"
+        assert p.metadata.path == ".tycoon/custom_meta.duckdb"

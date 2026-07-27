@@ -6,7 +6,7 @@ import os
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -279,6 +279,25 @@ class TransformConfig(BaseModel):
     )
 
 
+class RuntimeEntry(BaseModel):
+    """One named ingestion runtime declared under ``runtimes:``."""
+
+    type: Literal["dlt-managed", "dlt-project", "fivetran", "airbyte", "estuary"]
+    # only meaningful for dlt-project; ignored for cloud-managed runtimes
+    path: str | None = None
+
+
+class MetadataConfig(BaseModel):
+    """Where tycoon stores its internal state (run history, source records).
+
+    ``backend: duckdb_file`` is the only supported backend in v0.1.x.
+    ``path`` is relative to the project root.
+    """
+
+    backend: str = "duckdb_file"
+    path: str = ".tycoon/metadata.duckdb"
+
+
 class NotifyConfig(BaseModel):
     """Optional ``notify:`` block — non-secret notification prefs (#46).
 
@@ -332,6 +351,21 @@ class TycoonProject(BaseModel):
         description="Defaults for transform-side commands (`data analyze`, `data sources run`).",
     )
     stack: StackConfig = Field(default_factory=StackConfig)
+    runtimes: dict[str, RuntimeEntry] = Field(
+        default_factory=dict,
+        description=(
+            "Named ingestion runtimes. Keys are arbitrary labels (e.g. 'shopify', "
+            "'custom_pipeline'); each entry declares which ingestion tool owns that "
+            "pipeline and, for dlt-project runtimes, where the project lives."
+        ),
+    )
+    metadata: MetadataConfig = Field(
+        default_factory=MetadataConfig,
+        description=(
+            "Where tycoon stores internal state (run history, source records). "
+            "Defaults to a local DuckDB file at .tycoon/metadata.duckdb."
+        ),
+    )
     notify: NotifyConfig = Field(
         default_factory=lambda: NotifyConfig(),
         description="Notification preferences for `--notify` runs and `tycoon notify`.",
