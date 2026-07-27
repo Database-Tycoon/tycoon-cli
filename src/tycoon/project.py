@@ -392,6 +392,7 @@ class TycoonProject(BaseModel):
 
 
 PROJECT_FILENAME = "tycoon.yml"
+SCHEMA_VERSION = "0.2.0"
 
 
 def load_project(project_root: Path) -> TycoonProject | None:
@@ -426,3 +427,39 @@ def save_project(project: TycoonProject, project_root: Path) -> None:
             if existing_meta is not None and isinstance(data.get("stack"), dict):
                 data["stack"]["ingestion_metadata"] = existing_meta
     path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+
+
+def migrate_project(project_root: Path) -> bool:
+    """Upgrade tycoon.yml to SCHEMA_VERSION in place.
+
+    Operates on raw YAML so comments and key ordering are preserved.
+    Adds ``metadata:`` with defaults if the key is absent, then bumps
+    ``version`` to SCHEMA_VERSION. Writes back only when a change is
+    needed. Returns True if the file was modified, False if it was
+    already up to date (idempotent).
+    """
+    path = project_root / PROJECT_FILENAME
+    if not path.exists():
+        return False
+
+    raw = yaml.safe_load(path.read_text())
+    if not isinstance(raw, dict):
+        return False
+
+    changed = False
+
+    if "metadata" not in raw:
+        raw["metadata"] = {
+            "backend": MetadataConfig().backend,
+            "path": MetadataConfig().path,
+        }
+        changed = True
+
+    if raw.get("version") != SCHEMA_VERSION:
+        raw["version"] = SCHEMA_VERSION
+        changed = True
+
+    if changed:
+        path.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False))
+
+    return changed
