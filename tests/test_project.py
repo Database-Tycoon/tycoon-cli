@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from tycoon.project import DatabaseConfig, SourceConfig, TycoonProject, load_project, save_project
+from tycoon.project import (
+    DatabaseConfig,
+    SCHEMA_VERSION,
+    SourceConfig,
+    TycoonProject,
+    load_project,
+    migrate_project,
+    save_project,
+)
 
 
 class TestTycoonProject:
@@ -185,3 +193,44 @@ class TestRuntimesAndMetadata:
         assert p is not None
         assert p.metadata.backend == "duckdb_file"
         assert p.metadata.path == ".tycoon/custom_meta.duckdb"
+
+
+class TestMigrateProject:
+    """T2-2: migrate_project writes missing keys and is idempotent."""
+
+    def test_missing_metadata_block_is_written(self, tmp_path):
+        """A yml without metadata: gets it added and version bumped on first call."""
+        (tmp_path / "tycoon.yml").write_text("name: old-project\nversion: 0.1.0\n")
+
+        modified = migrate_project(tmp_path)
+
+        assert modified is True
+        p = load_project(tmp_path)
+        assert p is not None
+        assert p.metadata.backend == "duckdb_file"
+        assert p.metadata.path == ".tycoon/metadata.duckdb"
+        assert p.version == SCHEMA_VERSION
+
+    def test_second_call_is_no_op(self, tmp_path):
+        """Running migrate_project twice returns False on the second call."""
+        (tmp_path / "tycoon.yml").write_text("name: old-project\nversion: 0.1.0\n")
+
+        migrate_project(tmp_path)
+        modified_again = migrate_project(tmp_path)
+
+        assert modified_again is False
+
+    def test_already_migrated_yml_is_unchanged(self, tmp_path):
+        """A yml that already has metadata: and the current version is left alone."""
+        (tmp_path / "tycoon.yml").write_text(
+            f"name: current-project\nversion: {SCHEMA_VERSION}\n"
+            "metadata:\n  backend: duckdb_file\n  path: .tycoon/metadata.duckdb\n"
+        )
+
+        modified = migrate_project(tmp_path)
+
+        assert modified is False
+
+    def test_missing_file_returns_false(self, tmp_path):
+        """migrate_project on a directory with no tycoon.yml returns False."""
+        assert migrate_project(tmp_path) is False
