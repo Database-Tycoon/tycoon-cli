@@ -6,7 +6,7 @@ import os
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -60,8 +60,7 @@ class FivetranIngestionMetadata(BaseModel):
 
     api_key: SecretStr = Field(
         description=(
-            "Fivetran API key (Basic Auth username). Recommended: "
-            "${FIVETRAN_API_KEY} rather than a literal value."
+            "Fivetran API key (Basic Auth username). Recommended: ${FIVETRAN_API_KEY} rather than a literal value."
         )
     )
     api_secret: SecretStr = Field(
@@ -95,6 +94,7 @@ class StackConfig(BaseModel):
 
 def _interpolate_env(value: str) -> str:
     """Replace ${ENV_VAR} and ${ENV_VAR:-default} patterns with env values."""
+
     def _replace(match: re.Match) -> str:
         var = match.group(1)
         if ":-" in var:
@@ -131,17 +131,14 @@ _INTERPOLATED_SUBTREES: tuple[tuple[str, ...], ...] = (
 
 
 def _path_matches(path: tuple[str, ...], pattern: tuple[str, ...]) -> bool:
-    return len(path) == len(pattern) and all(
-        p in ("*", segment) for segment, p in zip(path, pattern)
-    )
+    return len(path) == len(pattern) and all(p in ("*", segment) for segment, p in zip(path, pattern))
 
 
 def _is_interpolated_field(path: tuple[str, ...]) -> bool:
     if any(_path_matches(path, leaf) for leaf in _INTERPOLATED_LEAVES):
         return True
     return any(
-        len(path) > len(prefix) and _path_matches(path[: len(prefix)], prefix)
-        for prefix in _INTERPOLATED_SUBTREES
+        len(path) > len(prefix) and _path_matches(path[: len(prefix)], prefix) for prefix in _INTERPOLATED_SUBTREES
     )
 
 
@@ -282,6 +279,25 @@ class TransformConfig(BaseModel):
     )
 
 
+class RuntimeEntry(BaseModel):
+    """One named ingestion runtime declared under ``runtimes:``."""
+
+    type: Literal["dlt-managed", "dlt-project", "fivetran", "airbyte", "estuary"]
+    # only meaningful for dlt-project; ignored for cloud-managed runtimes
+    path: str | None = None
+
+
+class MetadataConfig(BaseModel):
+    """Where tycoon stores its internal state (run history, source records).
+
+    ``backend: duckdb_file`` is the only supported backend in v0.1.x.
+    ``path`` is relative to the project root.
+    """
+
+    backend: str = "duckdb_file"
+    path: str = ".tycoon/metadata.duckdb"
+
+
 class NotifyConfig(BaseModel):
     """Optional ``notify:`` block — non-secret notification prefs (#46).
 
@@ -320,16 +336,12 @@ class TycoonProject(BaseModel):
     )
     dbt_profile: str | None = Field(
         default=None,
-        description=(
-            "Profile name within profiles.yml. Defaults to the `profile:` "
-            "field in dbt_project.yml."
-        ),
+        description=("Profile name within profiles.yml. Defaults to the `profile:` field in dbt_project.yml."),
     )
     dbt_target: str | None = Field(
         default=None,
         description=(
-            "Target within the profile (dev / prod / ...). Defaults to the "
-            "profile's `target:` field, then 'dev'."
+            "Target within the profile (dev / prod / ...). Defaults to the profile's `target:` field, then 'dev'."
         ),
     )
     rill_dir: str = Field(default="rill", description="Path to Rill dashboards")
@@ -339,6 +351,21 @@ class TycoonProject(BaseModel):
         description="Defaults for transform-side commands (`data analyze`, `data sources run`).",
     )
     stack: StackConfig = Field(default_factory=StackConfig)
+    runtimes: dict[str, RuntimeEntry] = Field(
+        default_factory=dict,
+        description=(
+            "Named ingestion runtimes. Keys are arbitrary labels (e.g. 'shopify', "
+            "'custom_pipeline'); each entry declares which ingestion tool owns that "
+            "pipeline and, for dlt-project runtimes, where the project lives."
+        ),
+    )
+    metadata: MetadataConfig = Field(
+        default_factory=MetadataConfig,
+        description=(
+            "Where tycoon stores internal state (run history, source records). "
+            "Defaults to a local DuckDB file at .tycoon/metadata.duckdb."
+        ),
+    )
     notify: NotifyConfig = Field(
         default_factory=lambda: NotifyConfig(),
         description="Notification preferences for `--notify` runs and `tycoon notify`.",
