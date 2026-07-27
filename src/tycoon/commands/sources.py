@@ -9,7 +9,7 @@ import click
 import typer
 from rich.table import Table
 
-from tycoon.config import config
+from tycoon.config import TycoonConfig, _find_project_root
 from tycoon.ingestion.catalog import CATALOG, CatalogEntry
 from tycoon.project import SourceConfig, load_project, save_project
 from tycoon.utils.console import console, error, header, info, next_steps, success, warn
@@ -32,11 +32,13 @@ app.add_typer(catalog_app, name="catalog")
 app.add_typer(list_app, name="list")
 
 
-def _require_project() -> None:
-    """Abort if no tycoon.yml exists."""
-    if not config.has_project_file:
+def _require_project() -> TycoonConfig:
+    """Return a fresh TycoonConfig, aborting if no tycoon.yml exists."""
+    cfg = TycoonConfig(project_root=_find_project_root())
+    if not cfg.has_project_file:
         error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
         raise typer.Exit(1)
+    return cfg
 
 
 # ---------------------------------------------------------------------------
@@ -79,9 +81,9 @@ def catalog_default(ctx: typer.Context) -> None:
 
 def _list_sources() -> None:
     """Print registered sources table."""
-    _require_project()
+    cfg = _require_project()
 
-    sources = config.sources
+    sources = cfg.sources
     if not sources:
         info("No sources registered yet.")
         info("Browse available sources with [bold]tycoon data sources catalog[/bold]")
@@ -110,9 +112,9 @@ def show_source(
     name: str = typer.Argument(help="Name of the source to show"),
 ) -> None:
     """Show detailed configuration for a specific source."""
-    _require_project()
+    cfg = _require_project()
 
-    sources = config.sources
+    sources = cfg.sources
     if name not in sources:
         error(f"Source [bold]{name}[/bold] not found.")
         info(f"Available sources: {', '.join(sources.keys()) if sources else '(none)'}")
@@ -381,7 +383,7 @@ def add_source(
     credentials default to ``${ENV_VAR}`` references in both modes —
     set the env var separately.
     """
-    _require_project()
+    cfg = _require_project()
 
     if not source_type:
         if no_prompt:
@@ -449,7 +451,7 @@ def add_source(
         config=source_config,
     )
 
-    project = load_project(config.root)
+    project = load_project(cfg.root)
     assert project is not None  # guarded by _require_project
 
     if source_name in project.sources:
@@ -464,8 +466,8 @@ def add_source(
                 raise typer.Exit(0)
 
     project.sources[source_name] = new_source
-    save_project(project, config.root)
-    config.reload()
+    save_project(project, cfg.root)
+    cfg.reload()
 
     success(f"Source [bold]{source_name}[/bold] added to tycoon.yml")
 
@@ -534,9 +536,9 @@ def remove_source(
     name: str = typer.Argument(help="Name of the source to remove"),
 ) -> None:
     """Remove a registered data source."""
-    _require_project()
+    cfg = _require_project()
 
-    project = load_project(config.root)
+    project = load_project(cfg.root)
     assert project is not None
 
     if name not in project.sources:
@@ -547,8 +549,8 @@ def remove_source(
     typer.confirm(f"Remove source '{name}'?", abort=True)
 
     del project.sources[name]
-    save_project(project, config.root)
-    config.reload()
+    save_project(project, cfg.root)
+    cfg.reload()
 
     success(f"Source [bold]{name}[/bold] removed from tycoon.yml")
 
@@ -585,7 +587,7 @@ def _source_already_referenced(dbt_dir: Path, source_name: str) -> bool:
     return False
 
 
-def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, scaffold: bool) -> None:
+def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, cfg: TycoonConfig, scaffold: bool) -> None:
     """Auto-run the analyze flow if a dbt project exists and no staging
     models are present for this source yet.
 
@@ -595,10 +597,10 @@ def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, scaff
     """
     if not scaffold:
         return
-    project = config.project
+    project = cfg.project
     if project is not None and not project.transform.auto_scaffold:
         return
-    dbt_dir = config.dbt_project_dir
+    dbt_dir = cfg.dbt_project_dir
     if not dbt_dir.exists():
         return  # No dbt project to scaffold into.
 
@@ -611,7 +613,7 @@ def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, scaff
         from tycoon.scaffolding.dbt_generator import generate_staging_models
 
         result = generate_staging_models(
-            raw_db_path=config.raw_db,
+            raw_db_path=cfg.raw_db,
             schema_name=source_config.schema_name,
             source_name=source_name,
             output_dir=staging_dir,
@@ -644,9 +646,9 @@ def run_source(
     """Ingest data from a registered source by name."""
     from tycoon.ingestion.runner import run_source as _run_source
 
-    _require_project()
+    cfg = _require_project()
 
-    sources = config.sources
+    sources = cfg.sources
     if not source_name:
         if not sources:
             error("No sources registered. Run 'tycoon data sources add' first.")
@@ -667,17 +669,17 @@ def run_source(
     if max_records is not None:
         info(f"Record cap: {max_records:,}")
 
-    config.ensure_data_dir()
+    cfg.ensure_data_dir()
 
     try:
         _pipeline, load_info = _run_source(
             name=source_name,
             source_config=source_config,
-            raw_db_path=config.raw_db,
+            raw_db_path=cfg.raw_db,
             max_records=max_records,
         )
         success(f"{source_name} load complete. {load_info}")
-        _maybe_auto_scaffold(source_name, source_config, scaffold=not no_scaffold)
+        _maybe_auto_scaffold(source_name, source_config, cfg=cfg, scaffold=not no_scaffold)
         next_steps(
             ("tycoon data transform run", "run dbt models on the ingested data"),
             ("tycoon start --only rill", "open the Rill dashboard"),
@@ -704,9 +706,9 @@ def run_all(
     """Run all registered source pipelines sequentially."""
     from tycoon.ingestion.runner import run_source as _run_source
 
-    _require_project()
+    cfg = _require_project()
 
-    sources = config.sources
+    sources = cfg.sources
     if not sources:
         error("No sources registered. Run 'tycoon data sources add' first.")
         raise typer.Exit(1)
@@ -716,7 +718,7 @@ def run_all(
     if max_records is not None:
         info(f"Record cap per resource: {max_records:,}")
 
-    config.ensure_data_dir()
+    cfg.ensure_data_dir()
 
     for i, (name, source_config) in enumerate(sources.items(), 1):
         info(f"Step {i}/{total} — {name} ({source_config.type})...")
@@ -724,11 +726,11 @@ def run_all(
             _pipeline, load_info = _run_source(
                 name=name,
                 source_config=source_config,
-                raw_db_path=config.raw_db,
+                raw_db_path=cfg.raw_db,
                 max_records=max_records,
             )
             success(f"{name} complete. {load_info}")
-            _maybe_auto_scaffold(name, source_config, scaffold=not no_scaffold)
+            _maybe_auto_scaffold(name, source_config, cfg=cfg, scaffold=not no_scaffold)
         except Exception as exc:
             error(f"{name} pipeline failed: {exc}")
             raise typer.Exit(1) from exc

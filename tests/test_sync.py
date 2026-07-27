@@ -55,11 +55,6 @@ def project(tmp_path: Path, monkeypatch):
         "sources: {}\n"
     )
 
-    from tycoon.commands import sync_cmd as sync_mod
-    from tycoon.config import TycoonConfig
-
-    cfg = TycoonConfig(project_root=tmp_path)
-    monkeypatch.setattr(sync_mod, "config", cfg)
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
@@ -339,12 +334,6 @@ class TestSyncCli:
             f"    - from: {source_db}\n"
             f"      schemas: ['mart']\n"
         )
-        # Re-rebind config to pick up the new tycoon.yml
-        from tycoon.commands import sync_cmd as sync_mod
-        from tycoon.config import TycoonConfig
-
-        sync_mod.config = TycoonConfig(project_root=project)
-
         result = cli_runner.invoke(app, ["data", "sync"])
         assert result.exit_code == 0, result.stdout
         assert dest.exists()

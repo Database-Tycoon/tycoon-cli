@@ -708,11 +708,6 @@ class TestAnalyzeCLIErrors:
     def test_analyze_all_with_source_name_errors(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         (tmp_path / "tycoon.yml").write_text("name: test\nversion: 0.1.0\nsources: {}\n")
-        from tycoon.commands import explore as explore_mod
-        from tycoon.config import TycoonConfig
-
-        monkeypatch.setattr(explore_mod, "config", TycoonConfig(project_root=tmp_path))
-
         result = cli_runner.invoke(app, ["data", "analyze", "my-source", "--all"])
         assert result.exit_code != 0
         combined = (result.stdout or "") + (result.stderr or "")
@@ -747,11 +742,6 @@ class TestAnalyzeCLIErrors:
         # Need a dbt project dir so output_dir parent is valid.
         (tmp_path / "dbt_project" / "models").mkdir(parents=True)
 
-        from tycoon.commands import explore as explore_mod
-        from tycoon.config import TycoonConfig
-
-        monkeypatch.setattr(explore_mod, "config", TycoonConfig(project_root=tmp_path))
-
         result = cli_runner.invoke(app, ["data", "analyze", "--all"])
         assert result.exit_code == 0, result.stdout
 
@@ -784,12 +774,6 @@ class TestAnalyzeCLIErrors:
         con.execute("CREATE SCHEMA raw_src_a")
         con.execute("CREATE TABLE raw_src_a.items (id INTEGER)")
         con.close()
-
-        # Reload config for the analyze command
-        from tycoon.commands import explore as explore_mod
-        from tycoon.config import TycoonConfig
-
-        monkeypatch.setattr(explore_mod, "config", TycoonConfig(project_root=tmp_path))
 
         # Supply "src_a" as the interactive choice
         result = cli_runner.invoke(app, ["data", "analyze", "--no-dbt"], input="src_a\n")

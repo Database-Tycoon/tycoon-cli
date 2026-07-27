@@ -8,7 +8,7 @@ from typing import Annotated
 
 import typer
 
-from tycoon.config import config
+from tycoon.config import TycoonConfig, _find_project_root
 from tycoon.utils.console import console, error, header, info, next_steps, success, warn
 
 
@@ -46,7 +46,8 @@ def run_all_cmd(
     ] = False,
 ) -> None:
     """Ingest all registered sources then run dbt build."""
-    if not config.has_project_file:
+    cfg = TycoonConfig(project_root=_find_project_root())
+    if not cfg.has_project_file:
         error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
         raise typer.Exit(1)
 
@@ -59,7 +60,7 @@ def run_all_cmd(
             return
         from tycoon import notify as notify_mod
 
-        project = config.project
+        project = cfg.project
         prefs = project.notify if project is not None else None
         allowed = prefs.severities if prefs is not None else ["success", "error"]
         if severity not in allowed:
@@ -75,12 +76,12 @@ def run_all_cmd(
     if not skip_ingest:
         from tycoon.ingestion.runner import run_source as _run_source
 
-        sources = config.sources
+        sources = cfg.sources
         if not sources:
             error("No sources registered. Run [bold]tycoon data sources add[/bold] first.")
             raise typer.Exit(1)
 
-        config.ensure_data_dir()
+        cfg.ensure_data_dir()
         total = len(sources)
         info(f"Ingesting {total} source{'s' if total != 1 else ''}...")
         if max_records is not None:
@@ -92,7 +93,7 @@ def run_all_cmd(
                 _pipeline, load_info = _run_source(
                     name=name,
                     source_config=source_config,
-                    raw_db_path=config.raw_db,
+                    raw_db_path=cfg.raw_db,
                     max_records=max_records,
                 )
                 success(f"{name}: {load_info}")
@@ -111,7 +112,7 @@ def run_all_cmd(
             _emit("error", "run-all failed: dbt not found on PATH", stage="transform")
             raise typer.Exit(1)
 
-        project_dir = config.dbt_project_dir
+        project_dir = cfg.dbt_project_dir
         if not project_dir.exists():
             warn(f"dbt project not found at {project_dir} — skipping transform.")
         else:
@@ -132,7 +133,7 @@ def run_all_cmd(
     elapsed = time.time() - start
     console.rule("[bold green]Done")
     success(f"Finished in {elapsed:.1f}s")
-    _emit("success", "run-all complete", elapsed=f"{elapsed:.1f}s", sources=str(len(config.sources)))
+    _emit("success", "run-all complete", elapsed=f"{elapsed:.1f}s", sources=str(len(cfg.sources)))
     next_steps(
         ("tycoon data status", "check source freshness and row counts"),
         ("tycoon start --only rill", "explore results in Rill"),
