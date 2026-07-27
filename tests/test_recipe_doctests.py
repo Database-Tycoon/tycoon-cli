@@ -150,7 +150,7 @@ def test_recipe_block(
     # doesn't hang waiting on a port that isn't listening in CI.
     env["TYCOON_DISABLE_LLM_PROBE"] = "1"
 
-    result = subprocess.run(  # noqa: S603 - intentional subprocess for CLI surface test
+    result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", block.body],
         cwd=tmp_path,
         env=env,

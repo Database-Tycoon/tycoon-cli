@@ -79,7 +79,8 @@ def _root(
     pass
 
 
-from tycoon.commands import data, docs as docs_cmd_mod, profiles, register, semantics
+from tycoon.commands import data, profiles, register, semantics
+from tycoon.commands import docs as docs_cmd_mod
 from tycoon.commands.doctor import doctor_cmd
 from tycoon.commands.init import init_cmd
 from tycoon.commands.notify import notify_cmd

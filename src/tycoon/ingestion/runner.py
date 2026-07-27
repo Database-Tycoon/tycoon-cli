@@ -17,7 +17,6 @@ from typing import Any
 import dlt
 
 from tycoon.core.events import RunCompleted, RunFailed, RunStarted
-
 from tycoon.ingestion.catalog import CATALOG
 from tycoon.ingestion.source_manager import SOURCES_DIR, get_run_module_path, is_source_installed
 from tycoon.project import SourceConfig

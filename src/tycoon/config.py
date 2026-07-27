@@ -10,7 +10,6 @@ from pathlib import Path
 
 from tycoon.project import PROJECT_FILENAME, TycoonProject, load_project
 
-
 # v0.1 defaults (used when no tycoon.yml exists)
 _DEFAULT_RAW_DB = "data/raw.duckdb"
 _DEFAULT_LOCAL_DB = "data/warehouse.duckdb"

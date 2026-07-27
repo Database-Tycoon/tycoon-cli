@@ -10,8 +10,8 @@ import typer
 from rich.table import Table
 
 from tycoon.config import config
-from tycoon.utils.console import console, header, info, success, error, warn, status_table
-from tycoon.utils.duckdb_utils import db_file_size_mb, get_tables, get_row_count
+from tycoon.utils.console import console, error, header, info, status_table, success, warn
+from tycoon.utils.duckdb_utils import db_file_size_mb, get_row_count, get_tables
 
 
 def _resolve_source_db(source_name: str) -> Path | None:

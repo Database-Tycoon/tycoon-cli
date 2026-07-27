@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import click
 import typer
@@ -14,7 +14,7 @@ from tycoon.utils.console import error, header, info, success, warn
 
 def analyze_cmd(
     source_name: Annotated[
-        Optional[str],
+        str | None,
         typer.Argument(help="Name of the registered source to analyze."),
     ] = None,
     no_dbt: Annotated[

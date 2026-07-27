@@ -92,7 +92,7 @@ class FivetranClient:
     def __enter__(self) -> FivetranClient:
         return self
 
-    def __exit__(self, *_args: Any) -> None:
+    def __exit__(self, *_args: object) -> None:
         self.close()
 
     def close(self) -> None:
@@ -211,7 +211,7 @@ def _parse_iso(raw: Any) -> datetime.datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=datetime.timezone.utc)
+        dt = dt.replace(tzinfo=datetime.UTC)
     return dt
 
 

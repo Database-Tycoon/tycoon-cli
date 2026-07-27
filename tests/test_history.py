@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -10,7 +10,6 @@ import pytest
 
 from tycoon.cli import app
 from tycoon.core.events import DbtRunCompleted, RunCompleted
-
 
 # ---------------------------------------------------------------------------
 # Fixtures and seeding helpers
@@ -55,7 +54,7 @@ def _seed_metadata(
     meta = metadata_db_path(root)
     ensure_schema(meta)
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     con = duckdb.connect(str(meta))
     try:
         for row in dlt_runs or []:
@@ -130,7 +129,7 @@ class TestHistoryList:
                     runtime_id="dlt-managed",
                     load_id="load-aaaaaaaa-001",
                     rows_loaded={"items": 100, "orders": 50},
-                    timestamp=datetime(2026, 4, 19, 15, 30, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 15, 30, tzinfo=UTC),
                 ),
             ],
         )
@@ -154,7 +153,7 @@ class TestHistoryList:
                     models_passed=12,
                     models_errored=0,
                     duration_seconds=38.1,
-                    timestamp=datetime(2026, 4, 19, 16, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 16, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -172,7 +171,7 @@ class TestHistoryList:
                     source_id="s",
                     runtime_id="dlt-managed",
                     load_id="load-1",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
                 DbtRunCompleted(
                     event_id="inv-1",
@@ -180,7 +179,7 @@ class TestHistoryList:
                     runtime_id="dbt",
                     command="run",
                     target="dev",
-                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -202,7 +201,7 @@ class TestHistoryList:
                 source_id="s",
                 runtime_id="dlt-managed",
                 load_id=f"{p}-{i:03d}",
-                timestamp=datetime(2026, 4, 19, 10, i, tzinfo=timezone.utc),
+                timestamp=datetime(2026, 4, 19, 10, i, tzinfo=UTC),
             )
             for i, p in enumerate(prefixes)
         ]
@@ -226,13 +225,13 @@ class TestHistorySourceFilter:
                     source_id="raw_apples",
                     runtime_id="dlt-managed",
                     load_id="apple-load-1",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
                 RunCompleted(
                     source_id="raw_bananas",
                     runtime_id="dlt-managed",
                     load_id="banana-load-1",
-                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -271,13 +270,13 @@ class TestHistorySourceFilter:
                     source_id="pokeapi",
                     runtime_id="dlt-managed",
                     load_id="poke-load-1",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
                 RunCompleted(
                     source_id="other",
                     runtime_id="dlt-managed",
                     load_id="other-load-1",
-                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -295,7 +294,7 @@ class TestHistorySourceFilter:
                     source_id="raw_apples",
                     runtime_id="dlt-managed",
                     load_id="apple-load-1",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
                 DbtRunCompleted(
                     event_id="inv-xyz",
@@ -303,7 +302,7 @@ class TestHistorySourceFilter:
                     runtime_id="dbt",
                     command="build",
                     target="dev",
-                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -322,7 +321,7 @@ class TestHistorySourceFilter:
                     source_id="raw_apples",
                     runtime_id="dlt-managed",
                     load_id="apple-load-1",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -349,7 +348,7 @@ class TestHistoryShow:
                     load_id="load-xyz-123456",
                     rows_loaded={"items": 42},
                     tables_created=["items"],
-                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -373,7 +372,7 @@ class TestHistoryShow:
                     models_passed=1,
                     models_errored=0,
                     duration_seconds=5.0,
-                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -392,7 +391,7 @@ class TestHistoryShow:
                     load_id="load-dur-001",
                     rows_loaded={"widgets": 42},
                     duration_seconds=3.0,
-                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -414,7 +413,7 @@ class TestHistoryShow:
                     models_run=2,
                     models_errored=0,
                     duration_seconds=3.0,
-                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -432,7 +431,7 @@ class TestHistoryShow:
                     source_id="s",
                     runtime_id="dlt-managed",
                     load_id="load-1",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -447,13 +446,13 @@ class TestHistoryShow:
                     source_id="s1",
                     runtime_id="dlt-managed",
                     load_id="shared-prefix-aaa",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
                 RunCompleted(
                     source_id="s2",
                     runtime_id="dlt-managed",
                     load_id="shared-prefix-bbb",
-                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -593,7 +592,7 @@ class TestHistoryLayerFilter:
                     command="run",
                     target="dev",
                     models_run=1,
-                    timestamp=datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 5, 1, 10, 0, tzinfo=UTC),
                 ),
                 DbtRunCompleted(
                     event_id="inv-marts00",
@@ -602,7 +601,7 @@ class TestHistoryLayerFilter:
                     command="build",
                     target="dev",
                     models_run=1,
-                    timestamp=datetime(2026, 5, 1, 11, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 5, 1, 11, 0, tzinfo=UTC),
                 ),
             ],
         )

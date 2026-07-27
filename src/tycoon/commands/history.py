@@ -23,7 +23,6 @@ from tycoon.core.history import HistoryRepository, RunSummary
 from tycoon.observability import metadata_db_path
 from tycoon.utils.console import console, error, header, info
 
-
 app = typer.Typer(
     help="Show dlt + dbt run history captured in .tycoon/metadata.duckdb.",
     invoke_without_command=True,

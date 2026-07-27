@@ -21,14 +21,13 @@ source URL, schema, table, and row count.
 from __future__ import annotations
 
 import fnmatch
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 import duckdb
 
 from tycoon.project import SyncSourceSpec
-
 
 _SYSTEM_SCHEMAS = frozenset(
     {

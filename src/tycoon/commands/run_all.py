@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shutil
 import time
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -14,7 +14,7 @@ from tycoon.utils.console import console, error, header, info, next_steps, succe
 
 def run_all_cmd(
     max_records: Annotated[
-        Optional[int],
+        int | None,
         typer.Option(
             "--max-records",
             "-n",

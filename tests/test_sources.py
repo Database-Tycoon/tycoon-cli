@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 from tycoon.cli import app
 from tycoon.project import SourceConfig, TycoonProject, load_project, save_project
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -253,11 +251,11 @@ class TestSourceInstaller:
 
     def test_install_dlt_extra_returns_bool(self):
         """Verify install_dlt_extra returns a bool (don't actually install)."""
-        from tycoon.ingestion.source_installer import install_dlt_extra
-
         # We don't want to actually run pip in tests, but we can verify
         # the function signature and return type by mocking subprocess
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_dlt_extra
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -268,8 +266,9 @@ class TestSourceInstaller:
 
     def test_install_dlt_extra_failure(self):
         """Verify install_dlt_extra returns False on failure."""
+        from unittest.mock import MagicMock, patch
+
         from tycoon.ingestion.source_installer import install_dlt_extra
-        from unittest.mock import patch, MagicMock
 
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -285,7 +284,7 @@ class TestSourceInstaller:
         itself at runtime (GH #68).
         """
         import importlib.metadata
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         from tycoon.ingestion.source_installer import install_dlt_extra
 

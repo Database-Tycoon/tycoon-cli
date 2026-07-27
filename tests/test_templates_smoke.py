@@ -8,12 +8,10 @@ marker (not present yet; will be added when we add network e2e infra).
 
 from __future__ import annotations
 
-
 import pytest
 import yaml
 
 from tycoon.cli import app
-
 
 TEMPLATES = ["csv-import", "nyc-transit"]
 

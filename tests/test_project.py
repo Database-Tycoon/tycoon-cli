@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-
-from tycoon.project import TycoonProject, SourceConfig, DatabaseConfig, load_project, save_project
+from tycoon.project import DatabaseConfig, SourceConfig, TycoonProject, load_project, save_project
 
 
 class TestTycoonProject:

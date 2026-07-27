@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 from tycoon import notify
 from tycoon.cli import app
 
-
 # ---------------------------------------------------------------------------
 # Payload + URL helpers
 # ---------------------------------------------------------------------------

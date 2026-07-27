@@ -39,11 +39,10 @@ observability bookkeeping.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
-
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -279,7 +278,7 @@ def capture_dlt(metadata_db: Path, raw_db: Path) -> int:
     try:
         meta_con.execute(f"ATTACH '{raw_db}' AS {q(raw_alias)} (READ_ONLY)")
         try:
-            captured_at = datetime.now(tz=timezone.utc)
+            captured_at = datetime.now(tz=UTC)
 
             schema_rows = meta_con.execute(
                 """
@@ -481,7 +480,7 @@ def capture_dbt(
                 tests_failed += 1
 
     ensure_schema(metadata_db)
-    captured_at = datetime.now(tz=timezone.utc)
+    captured_at = datetime.now(tz=UTC)
 
     con = duckdb.connect(str(metadata_db))
     try:
@@ -641,7 +640,7 @@ def capture_dlt_trace_from_dict(metadata_db: Path, trace: dict) -> str | None:
         finished = _coerce_ts(trace.get("finished_at"))
         duration = _duration_s(trace.get("started_at"), trace.get("finished_at"))
         success, exception = _derive_success_and_exception(steps)
-        captured_at = datetime.now(tz=timezone.utc)
+        captured_at = datetime.now(tz=UTC)
 
         con.execute(
             """
@@ -931,7 +930,7 @@ def capture_dbt_manifest(
 
     fingerprint = _extract_manifest_fingerprint(manifest)
     ensure_schema(metadata_db)
-    captured_at = datetime.now(tz=timezone.utc)
+    captured_at = datetime.now(tz=UTC)
     generated_at = _parse_run_results_timestamp(metadata.get("generated_at"))
     dbt_schema_version = metadata.get("dbt_schema_version")
 

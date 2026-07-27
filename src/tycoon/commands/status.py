@@ -19,8 +19,8 @@ existing per-source freshness + row-count detail.
 from __future__ import annotations
 
 import datetime
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
 
 import typer
 from rich.panel import Panel
@@ -40,7 +40,6 @@ from tycoon.layers import (
 from tycoon.observability import metadata_db_path
 from tycoon.project import TransformationTool
 from tycoon.utils.console import console, error, header, info, warn
-
 
 # -- Freshness helpers ---------------------------------------------------------
 
@@ -92,14 +91,14 @@ def _query_run_counts(metadata_db: Path) -> dict[str, int]:
         return {}
 
 
-def _freshness_label(last_sync: Optional[datetime.datetime]) -> tuple[str, str]:
+def _freshness_label(last_sync: datetime.datetime | None) -> tuple[str, str]:
     """Return (label, style) describing how fresh a sync is."""
     if last_sync is None:
         return "never", "red"
 
-    now = datetime.datetime.now(tz=datetime.timezone.utc)
+    now = datetime.datetime.now(tz=datetime.UTC)
     if last_sync.tzinfo is None:
-        last_sync = last_sync.replace(tzinfo=datetime.timezone.utc)
+        last_sync = last_sync.replace(tzinfo=datetime.UTC)
 
     age = now - last_sync
     hours = age.total_seconds() / 3600
@@ -119,7 +118,7 @@ def _freshness_label(last_sync: Optional[datetime.datetime]) -> tuple[str, str]:
 
 def _query_layer_last_build(
     metadata_db: Path, model_names: list[str]
-) -> Optional[datetime.datetime]:
+) -> datetime.datetime | None:
     """Latest successful build start time across ``model_names``."""
     import duckdb
 
@@ -206,7 +205,7 @@ def _render_sources_panel(
     console.print(table)
 
 
-def _live_refresh_fivetran(client, metadata_db: Path) -> tuple[bool, Optional[str]]:
+def _live_refresh_fivetran(client, metadata_db: Path) -> tuple[bool, str | None]:
     """Pull connectors live and write them through to the metadata cache.
 
     Returns ``(refreshed, warning)``. ``refreshed`` is True when the live
@@ -260,6 +259,8 @@ def _render_fivetran_detail() -> None:
     """Service / sync-state detail on top of the unified Sources panel."""
     from tycoon.ingestion.fivetran_sync import (
         freshness_label as fv_freshness_label,
+    )
+    from tycoon.ingestion.fivetran_sync import (
         latest_connector_snapshot,
     )
 

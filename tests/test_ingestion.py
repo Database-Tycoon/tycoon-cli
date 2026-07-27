@@ -159,7 +159,7 @@ class TestBuildRestApiSource:
 class TestBuildFilesystemSource:
     """Unit tests for _build_filesystem_source glob-based dispatch."""
 
-    def _make_source_config(self, file_glob: str) -> "SourceConfig":
+    def _make_source_config(self, file_glob: str) -> SourceConfig:
         from tycoon.project import SourceConfig
 
         return SourceConfig(

@@ -13,7 +13,6 @@ a configuration concern, not a pipeline one. Three subcommands:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 import yaml
@@ -63,9 +62,9 @@ def _require_project() -> None:
 
 
 def _resolve_for_cli(
-    profile: Optional[str],
-    profiles_dir: Optional[Path],
-    target: Optional[str],
+    profile: str | None,
+    profiles_dir: Path | None,
+    target: str | None,
 ):
     """Centralized resolve_profile call; returns ResolvedProfile | None."""
     project = config.project
@@ -85,7 +84,7 @@ def _resolve_for_cli(
 
 @app.command(name="list")
 def list_cmd(
-    profiles_dir: Optional[Path] = _PROFILES_DIR_OPTION,
+    profiles_dir: Path | None = _PROFILES_DIR_OPTION,
 ) -> None:
     """List every profile in the active profiles.yml + targets + adapters."""
     _require_project()
@@ -142,11 +141,11 @@ def list_cmd(
 
 @app.command()
 def show(
-    name: Optional[str] = typer.Argument(
+    name: str | None = typer.Argument(
         None,
         help="Profile name. Defaults to the active profile (per tycoon.yml + dbt_project.yml).",
     ),
-    profiles_dir: Optional[Path] = _PROFILES_DIR_OPTION,
+    profiles_dir: Path | None = _PROFILES_DIR_OPTION,
 ) -> None:
     """Pretty-print one profile, with secrets redacted."""
     _require_project()
@@ -175,9 +174,9 @@ def show(
 
 @app.command()
 def doctor(
-    profile: Optional[str] = _PROFILE_OPTION,
-    profiles_dir: Optional[Path] = _PROFILES_DIR_OPTION,
-    target: Optional[str] = _TARGET_OPTION,
+    profile: str | None = _PROFILE_OPTION,
+    profiles_dir: Path | None = _PROFILES_DIR_OPTION,
+    target: str | None = _TARGET_OPTION,
 ) -> None:
     """Validate the active profile + cross-check against tycoon.yml."""
     _require_project()
@@ -188,9 +187,9 @@ def doctor(
 
 
 def run_profile_checks(
-    profile: Optional[str] = None,
-    profiles_dir: Optional[Path] = None,
-    target: Optional[str] = None,
+    profile: str | None = None,
+    profiles_dir: Path | None = None,
+    target: str | None = None,
 ) -> int:
     """Shared check logic — also called by ``tycoon doctor``.
 

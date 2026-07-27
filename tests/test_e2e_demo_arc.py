@@ -45,7 +45,7 @@ def _tycoon_bin() -> str:
 def _run(
     args: list[str], *, cwd: Path, env: dict[str, str], timeout: int = 90
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - intentional subprocess for CLI surface test
+    return subprocess.run(
         args,
         cwd=cwd,
         env=env,

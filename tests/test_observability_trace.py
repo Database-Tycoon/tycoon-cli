@@ -8,7 +8,7 @@ pickle format in the test fixtures.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -29,10 +29,10 @@ def _sample_trace(
     step_exception: str | None = None,
 ) -> dict:
     """Hand-built trace dict in the shape of ``PipelineTrace.asdict()``."""
-    started = datetime(2026, 4, 19, 10, 0, 0, tzinfo=timezone.utc)
-    extract_end = datetime(2026, 4, 19, 10, 0, 5, tzinfo=timezone.utc)
-    normalize_end = datetime(2026, 4, 19, 10, 0, 6, tzinfo=timezone.utc)
-    load_end = datetime(2026, 4, 19, 10, 0, 8, tzinfo=timezone.utc)
+    started = datetime(2026, 4, 19, 10, 0, 0, tzinfo=UTC)
+    extract_end = datetime(2026, 4, 19, 10, 0, 5, tzinfo=UTC)
+    normalize_end = datetime(2026, 4, 19, 10, 0, 6, tzinfo=UTC)
+    load_end = datetime(2026, 4, 19, 10, 0, 8, tzinfo=UTC)
 
     load_packages = [
         {

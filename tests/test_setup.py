@@ -12,8 +12,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tycoon.cli import app
 from tycoon import venv as venv_mod
+from tycoon.cli import app
 
 
 def _ok(returncode: int = 0, stdout: str = "", stderr: str = "") -> MagicMock:

@@ -31,7 +31,6 @@ from pathlib import Path
 
 import yaml
 
-
 # Each tuple: (table_name_in_metadata_db, dbt_model_filename_stem, description)
 # Tracks the schema documented in `docs/reference/observability.md`. Add new
 # tables here when observability captures new state.

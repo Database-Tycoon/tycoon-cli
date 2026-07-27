@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 
 from tycoon.cli import app
 
@@ -158,7 +159,7 @@ class TestDoctorObservabilityCheck:
         assert "no runs captured yet" in out
 
     def test_populated_metadata_db_reports_counts(self, monkeypatch, tmp_path, capsys):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         import duckdb
 
@@ -169,7 +170,7 @@ class TestDoctorObservabilityCheck:
         meta = metadata_db_path(cfg.root)
         ensure_schema(meta)
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         con = duckdb.connect(str(meta))
         try:
             con.execute(

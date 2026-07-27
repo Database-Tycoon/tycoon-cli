@@ -24,7 +24,6 @@ import pytest
 
 from tycoon.cli import app
 
-
 # -- Stale-string registry ------------------------------------------------
 #
 # Every entry is a substring that should NOT appear anywhere in the

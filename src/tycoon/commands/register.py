@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 import yaml
@@ -15,13 +15,12 @@ from tycoon.commands.init import (
 )
 from tycoon.config import config
 from tycoon.project import (
-    BITool,
     PROJECT_FILENAME,
+    BITool,
     TransformationTool,
     WarehouseType,
 )
 from tycoon.utils.console import console, error, header, info, success, warn
-
 
 app = typer.Typer(
     help="Attach existing dbt, Rill, or warehouse components to the current tycoon.yml.",
@@ -141,7 +140,7 @@ def _write_raw_tycoon_yml(path: Path, data: dict) -> None:
 @app.command(name="dbt")
 def register_dbt(
     source: Annotated[
-        Optional[str],
+        str | None,
         typer.Argument(
             help=(
                 "Local path or GitHub URL of an existing dbt project. "
@@ -164,7 +163,7 @@ def register_dbt(
         ),
     ] = False,
     profiles_dir: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             "--profiles-dir",
             help=(
@@ -174,14 +173,14 @@ def register_dbt(
         ),
     ] = None,
     profile: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--profile",
             help="Profile name within profiles.yml. Default: the `profile:` field in dbt_project.yml.",
         ),
     ] = None,
     target: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--target",
             help="Target within the profile (dev / prod / ...). Default: the profile's `target:` field, then 'dev'.",
@@ -429,7 +428,7 @@ _CLOUD_TYPE_ALIASES = {"cloud", "c", "motherduck", "md"}
 @app.command(name="warehouse")
 def register_warehouse(
     warehouse_type: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--type",
             help=(
@@ -440,14 +439,14 @@ def register_warehouse(
         ),
     ] = None,
     path: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--path",
             help="For --type duckdb: path to the local .duckdb file. Default: data/warehouse.duckdb.",
         ),
     ] = None,
     catalog: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--catalog",
             help="For --type motherduck: catalog name. Becomes md:<catalog> in tycoon.yml.",

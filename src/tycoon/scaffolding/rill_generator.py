@@ -21,7 +21,6 @@ import duckdb
 
 from tycoon.utils.duckdb_utils import quote_identifier
 
-
 # ---------------------------------------------------------------------------
 # dlt internal columns / tables — excluded from all Rill output
 # ---------------------------------------------------------------------------

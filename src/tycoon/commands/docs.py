@@ -21,7 +21,6 @@ import typer
 
 from tycoon.utils.console import error, info, next_steps, success
 
-
 app = typer.Typer(help="Local documentation site.")
 
 

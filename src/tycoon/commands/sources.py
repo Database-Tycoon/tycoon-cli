@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import click
 import typer
@@ -264,12 +264,12 @@ def _parse_config_pairs(pairs: list[str]) -> dict[str, Any]:
 def _build_source_config_from_flags(
     source_type: str,
     *,
-    base_url: Optional[str],
-    resources: Optional[str],
-    connection_string: Optional[str],
-    path: Optional[str],
+    base_url: str | None,
+    resources: str | None,
+    connection_string: str | None,
+    path: str | None,
     config_pairs: list[str],
-    catalog_entry: Optional[CatalogEntry],
+    catalog_entry: CatalogEntry | None,
 ) -> dict[str, Any]:
     """Assemble a source's ``config:`` dict from non-interactive flags.
 
@@ -317,11 +317,11 @@ def _build_source_config_from_flags(
 
 @app.command("add")
 def add_source(
-    source_type: Optional[str] = typer.Argument(
+    source_type: str | None = typer.Argument(
         None,
         help="Source type — run `tycoon data sources catalog` to see all options.",
     ),
-    name: Optional[str] = typer.Option(
+    name: str | None = typer.Option(
         None,
         "--name",
         help=(
@@ -330,27 +330,27 @@ def add_source(
             "for other types under --no-prompt."
         ),
     ),
-    schema: Optional[str] = typer.Option(
+    schema: str | None = typer.Option(
         None,
         "--schema",
         help="Raw schema name in DuckDB. Auto-derived when omitted.",
     ),
-    base_url: Optional[str] = typer.Option(
+    base_url: str | None = typer.Option(
         None,
         "--base-url",
         help="Base URL for `rest_api` sources (e.g. `https://api.example.com`).",
     ),
-    resources: Optional[str] = typer.Option(
+    resources: str | None = typer.Option(
         None,
         "--resources",
         help="Comma-separated resource list for `rest_api` (e.g. `pokemon,berry,type`).",
     ),
-    connection_string: Optional[str] = typer.Option(
+    connection_string: str | None = typer.Option(
         None,
         "--connection-string",
         help="Connection string for `sql_database`. Use ${ENV_VAR} for secrets.",
     ),
-    path: Optional[str] = typer.Option(
+    path: str | None = typer.Option(
         None,
         "--path",
         help="File path or URL for `filesystem` sources.",
@@ -654,8 +654,8 @@ def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, scaff
 
 @app.command(name="run")
 def run_source(
-    source_name: Optional[str] = typer.Argument(None, help="Name of the registered source to ingest."),
-    max_records: Optional[int] = _MaxRecordsOption,
+    source_name: str | None = typer.Argument(None, help="Name of the registered source to ingest."),
+    max_records: int | None = _MaxRecordsOption,
     no_scaffold: bool = typer.Option(
         False,
         "--no-scaffold",
@@ -716,7 +716,7 @@ def run_source(
 
 @app.command(name="run-all")
 def run_all(
-    max_records: Optional[int] = _MaxRecordsOption,
+    max_records: int | None = _MaxRecordsOption,
     no_scaffold: bool = typer.Option(
         False,
         "--no-scaffold",

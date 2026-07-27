@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 from uuid import uuid4
 
@@ -12,7 +12,7 @@ class BaseEvent(BaseModel):
     event_type: str
     source_id: str
     runtime_id: str
-    timestamp: AwareDatetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    timestamp: AwareDatetime = Field(default_factory=lambda: datetime.now(tz=UTC))
 
 
 class RunStarted(BaseEvent):

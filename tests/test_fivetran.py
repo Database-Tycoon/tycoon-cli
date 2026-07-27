@@ -26,7 +26,6 @@ from tycoon.ingestion.fivetran_sync import (
     sync_fivetran_metadata,
 )
 
-
 # --------------------------------------------------------------------------
 # Fixtures
 # --------------------------------------------------------------------------
@@ -183,7 +182,7 @@ class TestFivetranClient:
         assert c.succeeded_at is not None
         assert c.succeeded_at.tzinfo is not None
         assert c.succeeded_at == datetime.datetime(
-            2026, 5, 8, 8, 30, tzinfo=datetime.timezone.utc
+            2026, 5, 8, 8, 30, tzinfo=datetime.UTC
         )
 
     def test_invalid_timestamp_becomes_none(self):
@@ -201,7 +200,7 @@ class TestFivetranClient:
         """When the client creates its own httpx.Client, exiting the `with`
         block must close it. Reuses a real client + asserts via is_closed."""
         client = FivetranClient("k", "s", "g1")
-        underlying = client._http  # noqa: SLF001 — explicit white-box check
+        underlying = client._http
         with client:
             assert not underlying.is_closed
         assert underlying.is_closed
@@ -415,7 +414,7 @@ class TestFreshnessLabel:
         assert style == "red"
 
     def test_recent_success_is_green(self):
-        recent = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(
+        recent = datetime.datetime.now(tz=datetime.UTC) - datetime.timedelta(
             minutes=10
         )
         _, style = freshness_label(
@@ -424,7 +423,7 @@ class TestFreshnessLabel:
         assert style == "green"
 
     def test_failure_after_success_is_red_failed(self):
-        now = datetime.datetime.now(tz=datetime.timezone.utc)
+        now = datetime.datetime.now(tz=datetime.UTC)
         succ = now - datetime.timedelta(hours=2)
         fail = now - datetime.timedelta(minutes=5)
         label, style = freshness_label(

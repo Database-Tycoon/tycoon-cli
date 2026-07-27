@@ -16,7 +16,6 @@ import typer
 from tycoon.config import config
 from tycoon.utils.console import error, info, next_steps, success, warn
 
-
 app = typer.Typer(help="Tycoon's observability metadata as first-class data.")
 
 

@@ -7,16 +7,15 @@ from pathlib import Path
 import duckdb
 from rich.table import Table
 
-from tycoon.utils.process import is_port_in_use, command_exists
+from tycoon.utils.console import error, info, status_table, success, warn
 from tycoon.utils.duckdb_utils import (
     db_file_size_mb,
-    get_tables,
     get_row_count,
+    get_tables,
     quote_identifier,
     remove_wal,
 )
-from tycoon.utils.console import status_table, success, warn, error, info
-
+from tycoon.utils.process import command_exists, is_port_in_use
 
 # ---------------------------------------------------------------------------
 # Port checking

@@ -40,7 +40,7 @@ def sync_fivetran_metadata(
     keep the call safely retryable in tight loops.
     """
     ensure_schema(metadata_db)
-    captured_at = datetime.datetime.now(tz=datetime.timezone.utc)
+    captured_at = datetime.datetime.now(tz=datetime.UTC)
     connectors = client.list_connectors()
 
     healthy = paused = failing = new = 0
@@ -147,9 +147,9 @@ def freshness_label(
     if last is None:
         return "never", "red"
 
-    now = datetime.datetime.now(tz=datetime.timezone.utc)
+    now = datetime.datetime.now(tz=datetime.UTC)
     if last.tzinfo is None:
-        last = last.replace(tzinfo=datetime.timezone.utc)
+        last = last.replace(tzinfo=datetime.UTC)
     age = now - last
     hours = age.total_seconds() / 3600
     style = (

@@ -16,7 +16,6 @@ RelationalAI, ...) can ingest directly.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -57,7 +56,7 @@ def _has_dbt_transformation(project) -> bool:
 
 @app.command()
 def scaffold(
-    out: Optional[Path] = typer.Option(
+    out: Path | None = typer.Option(
         None,
         "--out",
         "-o",
@@ -127,7 +126,7 @@ def scaffold(
 
 @app.command()
 def doctor(
-    path: Optional[Path] = typer.Option(
+    path: Path | None = typer.Option(
         None,
         "--path",
         help="OSI YAML to validate. Default: <dbt_project_dir>/semantic/osi.yaml.",
@@ -161,7 +160,7 @@ def doctor(
     raise typer.Exit(1)
 
 
-def run_osi_check(path: Optional[Path] = None) -> int:
+def run_osi_check(path: Path | None = None) -> int:
     """Shared check used by `tycoon doctor`. Returns 0 if valid or skipped, 1 if invalid.
 
     Skips silently when no OSI file exists — OSI is opt-in per the v0.1.6

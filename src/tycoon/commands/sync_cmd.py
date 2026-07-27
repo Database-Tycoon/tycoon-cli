@@ -16,7 +16,6 @@ local-first development:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -27,22 +26,22 @@ from tycoon.utils.console import console, error, info, next_steps, success, warn
 
 
 def sync_cmd(
-    from_: Optional[list[str]] = typer.Option(
+    from_: list[str] | None = typer.Option(
         None,
         "--from",
         help="Source URL — repeatable. md:<catalog>, /path/to/other.duckdb, etc.",
     ),
-    to: Optional[Path] = typer.Option(
+    to: Path | None = typer.Option(
         None,
         "--to",
         help="Destination DuckDB file. Defaults to tycoon.yml's sync.to.",
     ),
-    schema: Optional[str] = typer.Option(
+    schema: str | None = typer.Option(
         None,
         "--schema",
         help="Filter to one schema (applied to every --from source).",
     ),
-    tables: Optional[str] = typer.Option(
+    tables: str | None = typer.Option(
         None,
         "--tables",
         help="Glob filter for table names within selected schemas (e.g. 'mart.*,dim_*').",

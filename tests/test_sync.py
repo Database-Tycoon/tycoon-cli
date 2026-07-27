@@ -17,7 +17,6 @@ from tycoon.cli import app
 from tycoon.project import SyncSourceSpec
 from tycoon.sync import sync_to_local
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

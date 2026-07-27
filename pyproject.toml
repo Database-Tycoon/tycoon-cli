@@ -53,6 +53,7 @@ dev = [
     "pytest==9.0.3",
     "pytest-cov>=7.1.0",
     "syrupy==5.2.0",
+    "ruff==0.15.20",
 ]
 
 [project.scripts]
@@ -81,6 +82,9 @@ target-version = "py312"
 # cli.py intentionally registers subcommands after the Typer app is
 # constructed, which ruff flags as E402. The alternative is circular imports.
 "src/tycoon/cli.py" = ["E402"]
+# init.py re-exports moved symbols at the bottom of the file for backwards
+# compatibility; they are intentionally placed after the module body.
+"src/tycoon/commands/init.py" = ["E402"]
 # Forward-reference string literals in type annotations trip F821 when the
 # referenced name is imported inside the method body to avoid circular imports.
 "tests/test_ingestion.py" = ["F821"]

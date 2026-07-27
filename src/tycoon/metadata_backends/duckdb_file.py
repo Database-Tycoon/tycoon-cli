@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -91,7 +91,7 @@ class DuckDBFileBackend:
             if filter.since is not None:
                 since = filter.since
                 if since.tzinfo is None:
-                    since = since.replace(tzinfo=timezone.utc)
+                    since = since.replace(tzinfo=UTC)
                 where_clauses.append("timestamp >= ?")
                 params.append(since)
 
@@ -110,7 +110,7 @@ class DuckDBFileBackend:
         return events
 
     def upsert_snapshot(self, kind: str, key: str, blob: dict) -> None:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         self.connection.execute(
             """
             INSERT INTO snapshots (kind, key, blob, updated_at)

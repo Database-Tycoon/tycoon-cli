@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -297,8 +297,10 @@ def _prompt_rill(
 # commands and the new `tycoon profiles` namespace. We re-export the old
 # names here so any external importer (and the existing test suite) keeps
 # working.
-from tycoon.dbt_profiles import (  # noqa: E402
+from tycoon.dbt_profiles import (
     DbtWarehouseTarget as DbtWarehouseTarget,  # re-exported for tests + register.py
+)
+from tycoon.dbt_profiles import (
     extract_dbt_warehouse_target as _extract_dbt_warehouse_target,
 )
 
@@ -461,7 +463,7 @@ def _parse_param_pairs(raw: list[str]) -> dict[str, str]:
 
 def init_cmd(
     template: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--template",
             "-t",
@@ -469,7 +471,7 @@ def init_cmd(
         ),
     ] = None,
     name: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--name",
             "-n",
@@ -484,7 +486,7 @@ def init_cmd(
         ),
     ] = False,
     param: Annotated[
-        Optional[list[str]],
+        list[str] | None,
         typer.Option(
             "--param",
             "-p",
