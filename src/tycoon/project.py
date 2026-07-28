@@ -432,11 +432,13 @@ def save_project(project: TycoonProject, project_root: Path) -> None:
 def migrate_project(project_root: Path) -> bool:
     """Upgrade tycoon.yml to SCHEMA_VERSION in place.
 
-    Operates on raw YAML so comments and key ordering are preserved.
     Adds ``metadata:`` with defaults if the key is absent, then bumps
-    ``version`` to SCHEMA_VERSION. Writes back only when a change is
-    needed. Returns True if the file was modified, False if it was
-    already up to date (idempotent).
+    ``version`` to SCHEMA_VERSION when the existing value is absent or
+    older. Writes back only when a change is needed. Returns True if the
+    file was modified, False if it was already up to date (idempotent).
+
+    Note: round-trips through yaml.safe_load / yaml.dump, so comments
+    in the file are not preserved.
     """
     path = project_root / PROJECT_FILENAME
     if not path.exists():
@@ -449,13 +451,12 @@ def migrate_project(project_root: Path) -> bool:
     changed = False
 
     if "metadata" not in raw:
-        raw["metadata"] = {
-            "backend": MetadataConfig().backend,
-            "path": MetadataConfig().path,
-        }
+        defaults = MetadataConfig()
+        raw["metadata"] = {"backend": defaults.backend, "path": defaults.path}
         changed = True
 
-    if raw.get("version") != SCHEMA_VERSION:
+    existing_version = raw.get("version")
+    if existing_version is None or existing_version < SCHEMA_VERSION:
         raw["version"] = SCHEMA_VERSION
         changed = True
 
