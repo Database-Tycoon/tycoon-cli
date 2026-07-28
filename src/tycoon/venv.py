@@ -140,8 +140,7 @@ def create_venv(
             ok=False,
             venv_path=target,
             message=(
-                f"{target} already exists. Re-run with --force to recreate it "
-                "(this removes the existing environment)."
+                f"{target} already exists. Re-run with --force to recreate it (this removes the existing environment)."
             ),
         )
 

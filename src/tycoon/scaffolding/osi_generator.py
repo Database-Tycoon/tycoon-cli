@@ -114,10 +114,7 @@ def scaffold_osi(
     if not warehouse_db.exists():
         return ScaffoldResult(
             out_path=out_path,
-            warnings=[
-                f"Warehouse not found at {warehouse_db}. "
-                "Run `tycoon data transform run` first."
-            ],
+            warnings=[f"Warehouse not found at {warehouse_db}. Run `tycoon data transform run` first."],
         )
 
     mart_set, discovery_warnings = _resolve_marts_from_manifest(dbt_project_dir)
@@ -134,9 +131,7 @@ def scaffold_osi(
             )
         else:
             warnings.append(
-                "No marts found. Looked for tables prefixed "
-                + ", ".join(MART_PREFIXES)
-                + f" in {warehouse_db}."
+                "No marts found. Looked for tables prefixed " + ", ".join(MART_PREFIXES) + f" in {warehouse_db}."
             )
 
     doc = _build_osi_document(project_name=project_name, datasets=datasets)
@@ -317,13 +312,30 @@ def _build_field_entry(col_name: str, data_type: str) -> dict[str, Any]:
 # These cover the long tail; everything not in NUMERIC or TIME falls
 # through to the dimension branch.
 _NUMERIC_TYPES = {
-    "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT",
-    "UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT",
-    "FLOAT", "DOUBLE", "DECIMAL", "REAL", "NUMERIC",
+    "TINYINT",
+    "SMALLINT",
+    "INTEGER",
+    "BIGINT",
+    "HUGEINT",
+    "UTINYINT",
+    "USMALLINT",
+    "UINTEGER",
+    "UBIGINT",
+    "FLOAT",
+    "DOUBLE",
+    "DECIMAL",
+    "REAL",
+    "NUMERIC",
 }
 _TIME_TYPES = {
-    "DATE", "TIME", "TIMESTAMP", "TIMESTAMP_S", "TIMESTAMP_MS",
-    "TIMESTAMP_NS", "TIMESTAMP WITH TIME ZONE", "TIMESTAMPTZ",
+    "DATE",
+    "TIME",
+    "TIMESTAMP",
+    "TIMESTAMP_S",
+    "TIMESTAMP_MS",
+    "TIMESTAMP_NS",
+    "TIMESTAMP WITH TIME ZONE",
+    "TIMESTAMPTZ",
     "TIME WITH TIME ZONE",
 }
 
@@ -378,7 +390,7 @@ def _guess_primary_key(
     table_lower = table.lower()
     for prefix in MART_PREFIXES:
         if table_lower.startswith(prefix):
-            stem = table_lower[len(prefix):]
+            stem = table_lower[len(prefix) :]
             for cand in (f"{stem}_id", f"{stem.rstrip('s')}_id"):
                 if cand in name_set:
                     for n in names:
@@ -410,11 +422,7 @@ def _build_osi_document(
                 "fields": [
                     {
                         "name": "_placeholder_field",
-                        "expression": {
-                            "dialects": [
-                                {"dialect": "ANSI_SQL", "expression": "1"}
-                            ]
-                        },
+                        "expression": {"dialects": [{"dialect": "ANSI_SQL", "expression": "1"}]},
                     }
                 ],
             }

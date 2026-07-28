@@ -250,9 +250,7 @@ def generate_rill_config(
     raw_table_names = [
         row[0]
         for row in table_rows
-        if row[0] not in _DLT_INTERNAL_TABLES
-        and "__" not in row[0]
-        and not row[0].startswith("_")
+        if row[0] not in _DLT_INTERNAL_TABLES and "__" not in row[0] and not row[0].startswith("_")
     ]
 
     if not raw_table_names:
@@ -275,8 +273,7 @@ def generate_rill_config(
             filtered = [
                 (col_name, data_type)
                 for col_name, data_type in col_rows
-                if col_name not in _DLT_INTERNAL_COLUMNS
-                and not col_name.startswith("_dlt_")
+                if col_name not in _DLT_INTERNAL_COLUMNS and not col_name.startswith("_dlt_")
             ]
             if filtered:
                 tables[table_name] = filtered
@@ -343,9 +340,7 @@ def generate_rill_config(
 
         # Explore YAML
         explore_path = dashboards_dir / f"{model_name}.yaml"
-        explore_path.write_text(
-            _generate_explore_yaml(source_name, table_name, metrics_view_name)
-        )
+        explore_path.write_text(_generate_explore_yaml(source_name, table_name, metrics_view_name))
         generated.append(str(explore_path))
 
     # ------------------------------------------------------------------
@@ -365,9 +360,7 @@ def generate_rill_config(
     try:
         from tycoon.config import config
 
-        generated.extend(
-            refresh_usage_dashboards(project_root=config.root, rill_dir=output_dir)
-        )
+        generated.extend(refresh_usage_dashboards(project_root=config.root, rill_dir=output_dir))
     except Exception:
         pass
 

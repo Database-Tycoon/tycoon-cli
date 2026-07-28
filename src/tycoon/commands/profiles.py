@@ -54,10 +54,7 @@ _TARGET_OPTION = typer.Option(
 def _require_project() -> None:
     """Bail when there's no tycoon.yml — every subcommand needs one."""
     if not config.has_project_file:
-        error(
-            "No tycoon.yml found. Run [bold]tycoon init[/bold] first, "
-            "or cd into an existing tycoon project."
-        )
+        error("No tycoon.yml found. Run [bold]tycoon init[/bold] first, or cd into an existing tycoon project.")
         raise typer.Exit(1)
 
 
@@ -120,10 +117,7 @@ def list_cmd(
         active_target = resolved.target if is_active else ""
         targets_display = ", ".join(p.targets) if p.targets else "—"
         if active_target:
-            targets_display = ", ".join(
-                f"[bold]{t}[/bold]" if t == active_target else t
-                for t in p.targets
-            )
+            targets_display = ", ".join(f"[bold]{t}[/bold]" if t == active_target else t for t in p.targets)
         table.add_row(
             f"[bold]{p.name}[/bold]" if is_active else p.name,
             targets_display,
@@ -134,8 +128,7 @@ def list_cmd(
 
     console.print(table)
     console.print(
-        f"\n[dim]Tycoon will use:[/dim] [bold]{resolved.profile}[/bold] "
-        f"(target: [bold]{resolved.target}[/bold])"
+        f"\n[dim]Tycoon will use:[/dim] [bold]{resolved.profile}[/bold] (target: [bold]{resolved.target}[/bold])"
     )
 
 
@@ -215,9 +208,7 @@ def run_profile_checks(
             f"profile [bold]{resolved.profile}[/bold]'s outputs. "
             "Available targets: "
             + ", ".join(
-                discover_profiles(resolved.profiles_yml)[0].targets
-                if discover_profiles(resolved.profiles_yml)
-                else []
+                discover_profiles(resolved.profiles_yml)[0].targets if discover_profiles(resolved.profiles_yml) else []
             )
         )
         return 1

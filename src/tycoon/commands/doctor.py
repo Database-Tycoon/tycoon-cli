@@ -59,8 +59,7 @@ def _check_python_version(version_info: tuple[int, int] | None = None) -> bool:
         )
         return False
 
-    success(f"Python {label} is in the supported range "
-            f"(>={_fmt_ver(_MIN_PYTHON)},<{_fmt_ver(_MAX_PYTHON_EXCLUSIVE)}).")
+    success(f"Python {label} is in the supported range (>={_fmt_ver(_MIN_PYTHON)},<{_fmt_ver(_MAX_PYTHON_EXCLUSIVE)}).")
     return True
 
 
@@ -208,6 +207,7 @@ def _check_stack_config() -> None:
     elif stack.ingestion == IngestionTool.dlt:
         try:
             import dlt  # noqa: F401
+
             success("dlt is installed.")
         except ImportError:
             error("dlt not found. Run: pip install 'dlt[duckdb]'")
@@ -222,6 +222,7 @@ def _check_stack_config() -> None:
 
     if stack.transformation == TransformationTool.dbt and not stack.transformation_managed:
         from pathlib import Path
+
         dbt_dir = Path(project.dbt_project_dir)
         if not dbt_dir.is_absolute():
             dbt_dir = config.root / dbt_dir
@@ -240,10 +241,7 @@ def _check_fivetran_credentials(stack) -> None:
     """
     meta = stack.ingestion_metadata
     if meta is None:
-        error(
-            "stack.ingestion is fivetran but stack.ingestion_metadata is "
-            "missing. Add api_key, api_secret, group_id."
-        )
+        error("stack.ingestion is fivetran but stack.ingestion_metadata is missing. Add api_key, api_secret, group_id.")
         return
 
     if not (meta.api_key and meta.api_secret and meta.group_id):
@@ -350,10 +348,7 @@ def _check_layer_coverage() -> None:
             uncovered.append(src.name)
 
     if not uncovered:
-        success(
-            f"Layer coverage: every source ({len(sources)}) has at least "
-            f"one staging model."
-        )
+        success(f"Layer coverage: every source ({len(sources)}) has at least one staging model.")
         return
 
     warn(
@@ -411,8 +406,7 @@ def _check_observability() -> None:
         con.close()
 
     success(
-        f"Observability: {dlt_count} dlt load(s), {dbt_count} dbt run(s) captured. "
-        f"View with `tycoon data history`."
+        f"Observability: {dlt_count} dlt load(s), {dbt_count} dbt run(s) captured. View with `tycoon data history`."
     )
 
 
@@ -429,8 +423,7 @@ def _check_schedules() -> None:
         info("Schedules: none installed.")
         return
     success(
-        f"Schedules: {len(names)} installed ({', '.join(names)}). "
-        f"Inspect a run with `tycoon schedule status <name>`."
+        f"Schedules: {len(names)} installed ({', '.join(names)}). Inspect a run with `tycoon schedule status <name>`."
     )
 
 

@@ -37,13 +37,29 @@ import yaml
 _METADATA_TABLES = [
     ("dlt_runs", "stg_tycoon__dlt_runs", "One row per dlt load — load_id, schema, status, inserted_at."),
     ("dlt_rows_by_table", "stg_tycoon__dlt_rows_by_table", "Per-table row counts within each dlt load."),
-    ("dlt_trace_runs", "stg_tycoon__dlt_trace_runs", "Per-pipeline timing and success metadata from dlt's trace.pickle."),
-    ("dlt_trace_steps", "stg_tycoon__dlt_trace_steps", "Per-step (extract / normalize / load) durations within a dlt run."),
+    (
+        "dlt_trace_runs",
+        "stg_tycoon__dlt_trace_runs",
+        "Per-pipeline timing and success metadata from dlt's trace.pickle.",
+    ),
+    (
+        "dlt_trace_steps",
+        "stg_tycoon__dlt_trace_steps",
+        "Per-step (extract / normalize / load) durations within a dlt run.",
+    ),
     ("dlt_trace_jobs", "stg_tycoon__dlt_trace_jobs", "Per-job byte sizes and elapsed times from dlt's trace.pickle."),
     ("dbt_runs", "stg_tycoon__dbt_runs", "One row per dbt invocation — command, target, duration, success counts."),
     ("dbt_nodes", "stg_tycoon__dbt_nodes", "One row per (model, test, snapshot) per dbt invocation."),
-    ("dbt_manifest_snapshots", "stg_tycoon__dbt_manifest_snapshots", "Per-invocation fingerprint of dbt's manifest.json."),
-    ("dbt_schema_changes", "stg_tycoon__dbt_schema_changes", "Per-column / per-model changes detected across consecutive manifest snapshots."),
+    (
+        "dbt_manifest_snapshots",
+        "stg_tycoon__dbt_manifest_snapshots",
+        "Per-invocation fingerprint of dbt's manifest.json.",
+    ),
+    (
+        "dbt_schema_changes",
+        "stg_tycoon__dbt_schema_changes",
+        "Per-column / per-model changes detected across consecutive manifest snapshots.",
+    ),
 ]
 
 _DIM_RUNS_SQL = """\
@@ -128,9 +144,10 @@ def _schema_yml(tables: list[tuple[str, str, str]]) -> str:
             "config": {"materialized": "view"},
         }
     )
-    return _SCHEMA_YML_HEADER + yaml.dump(
-        {"models": models}, default_flow_style=False, sort_keys=False
-    ).split("models:\n", 1)[1]
+    return (
+        _SCHEMA_YML_HEADER
+        + yaml.dump({"models": models}, default_flow_style=False, sort_keys=False).split("models:\n", 1)[1]
+    )
 
 
 def scaffold_observability_models(
@@ -215,10 +232,7 @@ def attach_metadata_to_profiles(
             attach_list = output_data.setdefault("attach", [])
             if not isinstance(attach_list, list):
                 continue
-            already = any(
-                isinstance(item, dict) and item.get("alias") == "tycoon_meta"
-                for item in attach_list
-            )
+            already = any(isinstance(item, dict) and item.get("alias") == "tycoon_meta" for item in attach_list)
             if already:
                 continue
             attach_list.append(
@@ -231,7 +245,5 @@ def attach_metadata_to_profiles(
             changed = True
 
     if changed:
-        profiles_yml_path.write_text(
-            yaml.dump(raw, default_flow_style=False, sort_keys=False)
-        )
+        profiles_yml_path.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False))
     return changed

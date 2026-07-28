@@ -17,9 +17,7 @@ from tycoon.dbt_profiles import (
 
 def _write_dbt_project(dir_: Path, profile_name: str = "p") -> None:
     dir_.mkdir(parents=True, exist_ok=True)
-    (dir_ / "dbt_project.yml").write_text(
-        yaml.dump({"name": "p", "profile": profile_name, "version": "1"})
-    )
+    (dir_ / "dbt_project.yml").write_text(yaml.dump({"name": "p", "profile": profile_name, "version": "1"}))
 
 
 def _write_profiles(
@@ -109,9 +107,7 @@ class TestResolveProfile:
         assert r.profiles_yml == elsewhere / "profiles.yml"
         assert r.source.startswith("tycoon.yml")
 
-    def test_env_var_dbt_profiles_dir_used_when_no_other(
-        self, tmp_path, monkeypatch
-    ):
+    def test_env_var_dbt_profiles_dir_used_when_no_other(self, tmp_path, monkeypatch):
         """``$DBT_PROFILES_DIR`` is honored after the co-located file."""
         dbt = tmp_path / "dbt"
         _write_dbt_project(dbt)
@@ -128,9 +124,7 @@ class TestResolveProfile:
         assert r.profiles_yml == env_dir / "profiles.yml"
         assert r.source == "$DBT_PROFILES_DIR"
 
-    def test_returns_none_when_no_profiles_yml_anywhere(
-        self, tmp_path, monkeypatch
-    ):
+    def test_returns_none_when_no_profiles_yml_anywhere(self, tmp_path, monkeypatch):
         dbt = tmp_path / "dbt"
         _write_dbt_project(dbt)  # dbt_project.yml only
         monkeypatch.delenv("DBT_PROFILES_DIR", raising=False)

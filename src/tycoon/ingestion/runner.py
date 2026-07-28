@@ -54,24 +54,27 @@ def _classify_error(exc: Exception, source_type: str) -> IngestionError:
         )
     if any(x in msg for x in ("403", "forbidden", "permission denied", "insufficient scope")):
         return IngestionError(
-            f"Access denied for '{source_type}'. "
-            "Your token may lack the required scopes or permissions."
+            f"Access denied for '{source_type}'. Your token may lack the required scopes or permissions."
         )
-    if any(x in msg for x in ("connectionerror", "connection refused", "name or service not known",
-                               "failed to establish", "nodename nor servname provided")):
+    if any(
+        x in msg
+        for x in (
+            "connectionerror",
+            "connection refused",
+            "name or service not known",
+            "failed to establish",
+            "nodename nor servname provided",
+        )
+    ):
         return IngestionError(
-            f"Could not reach the '{source_type}' API. "
-            "Check your internet connection and verify the base URL."
+            f"Could not reach the '{source_type}' API. Check your internet connection and verify the base URL."
         )
     if "timeout" in msg or "timed out" in msg:
         return IngestionError(
-            f"Request to '{source_type}' timed out. "
-            "The API may be slow or unreachable — try again later."
+            f"Request to '{source_type}' timed out. The API may be slow or unreachable — try again later."
         )
     if "rate limit" in msg or "429" in msg:
-        return IngestionError(
-            f"Rate limited by '{source_type}' API. Wait a moment and try again."
-        )
+        return IngestionError(f"Rate limited by '{source_type}' API. Wait a moment and try again.")
 
     return IngestionError(str(exc))
 
@@ -190,10 +193,7 @@ def _build_run_completed(name: str, pipeline: Any, load_info: Any, elapsed: floa
     rows_by_table: dict[str, int] = {}
     try:
         ni = pipeline.last_trace.last_normalize_info
-        rows_by_table = {
-            t: c for t, c in (ni.row_counts or {}).items()
-            if not t.startswith("_dlt")
-        }
+        rows_by_table = {t: c for t, c in (ni.row_counts or {}).items() if not t.startswith("_dlt")}
     except Exception:
         pass
     loads_ids = getattr(load_info, "loads_ids", []) or []
@@ -290,6 +290,7 @@ def run_source(
     try:
         from tycoon.config import config as _cfg
         from tycoon.observability import metadata_db_path
+
         _metadata_db = metadata_db_path(_cfg.root)
     except Exception:
         pass
@@ -299,9 +300,7 @@ def run_source(
     try:
         # 1. Legacy pipeline delegation (keyed by source name)
         if name in _LEGACY_PIPELINES:
-            pipeline, load_info = _run_legacy(
-                name, raw_db_path=raw_db_path, max_records=max_records, **kwargs
-            )
+            pipeline, load_info = _run_legacy(name, raw_db_path=raw_db_path, max_records=max_records, **kwargs)
             load_info.raise_on_failed_jobs()
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
             _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
@@ -312,9 +311,7 @@ def run_source(
         source_type = source_config.type
         if source_type not in _NATIVE_BUILDERS and source_type in CATALOG:
             # 3. Catalog source dispatch — load from ~/.tycoon/sources/
-            pipeline, load_info = _run_catalog(
-                source_type, name, source_config, raw_db_path, max_records
-            )
+            pipeline, load_info = _run_catalog(source_type, name, source_config, raw_db_path, max_records)
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
             _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
             return pipeline, load_info
@@ -339,8 +336,7 @@ def run_source(
                 dlt_source = source_fn(**source_config.config)
             except ImportError as exc:
                 raise RuntimeError(
-                    f"Unknown source type '{source_type}'. "
-                    f"Install with: tycoon sources add {source_type}"
+                    f"Unknown source type '{source_type}'. Install with: tycoon sources add {source_type}"
                 ) from exc
         else:
             dlt_source = builder(source_config)
@@ -381,15 +377,13 @@ def _run_catalog(
     import importlib
 
     if not is_source_installed(source_type):
-        raise IngestionError(
-            f"Source '{source_type}' is not installed. "
-            f"Run: tycoon data sources add {source_type}"
-        )
+        raise IngestionError(f"Source '{source_type}' is not installed. Run: tycoon data sources add {source_type}")
 
     # Warn about unexpanded env vars before hitting the API
     bad_pairs = _check_unexpanded_env_vars(source_config)
     if bad_pairs:
         from tycoon.utils.console import warn
+
         for key, var in bad_pairs:
             warn(
                 f"Config key '{key}' contains an unexpanded env var: {var}\n"

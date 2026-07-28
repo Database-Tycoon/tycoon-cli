@@ -35,12 +35,8 @@ def clear_pids() -> None:
 
 
 def start_cmd(
-    skip: list[str] = typer.Option(
-        [], "--skip", help="Server(s) to skip. Repeatable: --skip rill"
-    ),
-    only: list[str] = typer.Option(
-        [], "--only", help="Only start these server(s). Repeatable: --only rill"
-    ),
+    skip: list[str] = typer.Option([], "--skip", help="Server(s) to skip. Repeatable: --skip rill"),
+    only: list[str] = typer.Option([], "--only", help="Only start these server(s). Repeatable: --only rill"),
 ) -> None:
     """Start the Rill dashboard and Quack warehouse server.
 
@@ -109,12 +105,14 @@ def _preflight_checks(targets: list[str]) -> None:
     """Warn if required binaries are missing before starting."""
     if "rill" in targets:
         import shutil
+
         if not shutil.which("rill"):
             warn("rill not found — skipping.")
             targets.remove("rill")
 
     if "quack" in targets:
         from tycoon import quack
+
         if not quack.extension_available():
             info("Quack extension unavailable (needs duckdb core_nightly) — serving the warehouse in file mode.")
             targets.remove("quack")
@@ -133,6 +131,7 @@ def _start_server(name: str) -> subprocess.Popen | None:
 
     if name == "quack":
         from tycoon import quack
+
         return quack.start_server(config.root, port=PORTS["quack"])
 
     return None
@@ -140,8 +139,9 @@ def _start_server(name: str) -> subprocess.Popen | None:
 
 def _print_urls(targets: list[str]) -> None:
     from tycoon.constants import PORTS
+
     lines = {
-        "rill":  ("Rill dashboards", f"http://localhost:{PORTS['rill']}"),
+        "rill": ("Rill dashboards", f"http://localhost:{PORTS['rill']}"),
         "quack": ("Quack warehouse", f"quack:localhost:{PORTS['quack']}"),
     }
     for name in targets:

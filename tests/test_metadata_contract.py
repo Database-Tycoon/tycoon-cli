@@ -12,6 +12,7 @@ from tycoon.core.metadata import EventFilter
 def backend(request, tmp_path):
     if request.param == "duckdb_file":
         from tycoon.metadata_backends.duckdb_file import DuckDBFileBackend
+
         with DuckDBFileBackend(tmp_path / ".tycoon" / "metadata.duckdb") as b:
             yield b
 

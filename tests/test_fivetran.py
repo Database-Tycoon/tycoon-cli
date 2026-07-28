@@ -71,10 +71,7 @@ def _list_payload(
     """Group-connector list response. Accepts full bodies (preferred) or bare
     ids as a backwards-compatible shorthand for tests that only care about
     pagination shape."""
-    items: list[dict] = [
-        c if isinstance(c, dict) else _connector_body(c)
-        for c in connectors
-    ]
+    items: list[dict] = [c if isinstance(c, dict) else _connector_body(c) for c in connectors]
     body: dict = {"data": {"items": items}}
     if next_cursor:
         body["data"]["next_cursor"] = next_cursor
@@ -108,9 +105,7 @@ def _make_handler(routes: dict[str, dict | list[dict]]):
 def _make_client(routes: dict, group_id: str = "g1") -> FivetranClient:
     transport = httpx.MockTransport(_make_handler(routes))
     http = httpx.Client(transport=transport)
-    return FivetranClient(
-        api_key="k", api_secret="s", group_id=group_id, http_client=http
-    )
+    return FivetranClient(api_key="k", api_secret="s", group_id=group_id, http_client=http)
 
 
 # --------------------------------------------------------------------------
@@ -145,9 +140,7 @@ class TestFivetranClient:
             calls.append(request.url.path)
             return httpx.Response(
                 200,
-                json=_list_payload(
-                    [_connector_body("c1"), _connector_body("c2")]
-                ),
+                json=_list_payload([_connector_body("c1"), _connector_body("c2")]),
             )
 
         http = httpx.Client(transport=httpx.MockTransport(handler))
@@ -160,9 +153,7 @@ class TestFivetranClient:
         client = _make_client(
             {
                 "/v1/groups/g1/connectors": [
-                    _list_payload(
-                        [_connector_body("c1")], next_cursor="abc"
-                    ),
+                    _list_payload([_connector_body("c1")], next_cursor="abc"),
                     _list_payload([_connector_body("c2")]),  # no cursor → done
                 ],
             }
@@ -173,24 +164,18 @@ class TestFivetranClient:
     def test_iso_timestamps_parsed_as_utc_aware(self):
         client = _make_client(
             {
-                "/v1/groups/g1/connectors": _list_payload(
-                    [_connector_body("c1", succeeded_at="2026-05-08T08:30:00Z")]
-                ),
+                "/v1/groups/g1/connectors": _list_payload([_connector_body("c1", succeeded_at="2026-05-08T08:30:00Z")]),
             }
         )
         c = client.list_connectors()[0]
         assert c.succeeded_at is not None
         assert c.succeeded_at.tzinfo is not None
-        assert c.succeeded_at == datetime.datetime(
-            2026, 5, 8, 8, 30, tzinfo=datetime.UTC
-        )
+        assert c.succeeded_at == datetime.datetime(2026, 5, 8, 8, 30, tzinfo=datetime.UTC)
 
     def test_invalid_timestamp_becomes_none(self):
         client = _make_client(
             {
-                "/v1/groups/g1/connectors": _list_payload(
-                    [_connector_body("c1", succeeded_at="not-a-date")]
-                ),
+                "/v1/groups/g1/connectors": _list_payload([_connector_body("c1", succeeded_at="not-a-date")]),
             }
         )
         c = client.list_connectors()[0]
@@ -267,9 +252,7 @@ class TestFivetranSync:
 
         con = duckdb.connect(str(meta_db), read_only=True)
         try:
-            count = con.execute(
-                "SELECT count(*) FROM fivetran_connectors"
-            ).fetchone()[0]
+            count = con.execute("SELECT count(*) FROM fivetran_connectors").fetchone()[0]
         finally:
             con.close()
         assert count == 2
@@ -278,9 +261,7 @@ class TestFivetranSync:
         """Multiple syncs produce multiple snapshots per connector."""
         client = _make_client(
             {
-                "/v1/groups/g1/connectors": _list_payload(
-                    [_connector_body("c1")]
-                ),
+                "/v1/groups/g1/connectors": _list_payload([_connector_body("c1")]),
             }
         )
         meta_db = tmp_path / "metadata.duckdb"
@@ -293,23 +274,17 @@ class TestFivetranSync:
 
         con = duckdb.connect(str(meta_db), read_only=True)
         try:
-            row = con.execute(
-                "SELECT count(DISTINCT connector_id) FROM fivetran_connectors"
-            ).fetchone()
+            row = con.execute("SELECT count(DISTINCT connector_id) FROM fivetran_connectors").fetchone()
         finally:
             con.close()
         assert row[0] == 1
         assert first.new == 1  # first sync flagged it as new
 
-    def test_latest_connector_snapshot_returns_most_recent_per_connector(
-        self, tmp_path: Path
-    ):
+    def test_latest_connector_snapshot_returns_most_recent_per_connector(self, tmp_path: Path):
         meta_db = tmp_path / "metadata.duckdb"
         client = _make_client(
             {
-                "/v1/groups/g1/connectors": _list_payload(
-                    [_connector_body("c1")]
-                ),
+                "/v1/groups/g1/connectors": _list_payload([_connector_body("c1")]),
             }
         )
         sync_fivetran_metadata(client, meta_db)
@@ -341,9 +316,7 @@ class TestStatusLiveRead:
         meta_db = tmp_path / "metadata.duckdb"
         client = _make_client(
             {
-                "/v1/groups/g1/connectors": _list_payload(
-                    [_connector_body("c1", schema="raw_live")]
-                ),
+                "/v1/groups/g1/connectors": _list_payload([_connector_body("c1", schema="raw_live")]),
             }
         )
         refreshed, warning = _live_refresh_fivetran(client, meta_db)
@@ -359,9 +332,7 @@ class TestStatusLiveRead:
         # Seed a prior snapshot so there's a cache to fall back to.
         seed = _make_client(
             {
-                "/v1/groups/g1/connectors": _list_payload(
-                    [_connector_body("c1", schema="raw_cached")]
-                ),
+                "/v1/groups/g1/connectors": _list_payload([_connector_body("c1", schema="raw_cached")]),
             }
         )
         sync_fivetran_metadata(seed, meta_db)
@@ -402,32 +373,22 @@ class TestStatusLiveRead:
 
 class TestFreshnessLabel:
     def test_paused_connector_labelled_paused(self):
-        label, _ = freshness_label(
-            succeeded_at=None, failed_at=None, paused=True
-        )
+        label, _ = freshness_label(succeeded_at=None, failed_at=None, paused=True)
         assert label == "paused"
 
     def test_never_synced_is_red(self):
-        _, style = freshness_label(
-            succeeded_at=None, failed_at=None, paused=False
-        )
+        _, style = freshness_label(succeeded_at=None, failed_at=None, paused=False)
         assert style == "red"
 
     def test_recent_success_is_green(self):
-        recent = datetime.datetime.now(tz=datetime.UTC) - datetime.timedelta(
-            minutes=10
-        )
-        _, style = freshness_label(
-            succeeded_at=recent, failed_at=None, paused=False
-        )
+        recent = datetime.datetime.now(tz=datetime.UTC) - datetime.timedelta(minutes=10)
+        _, style = freshness_label(succeeded_at=recent, failed_at=None, paused=False)
         assert style == "green"
 
     def test_failure_after_success_is_red_failed(self):
         now = datetime.datetime.now(tz=datetime.UTC)
         succ = now - datetime.timedelta(hours=2)
         fail = now - datetime.timedelta(minutes=5)
-        label, style = freshness_label(
-            succeeded_at=succ, failed_at=fail, paused=False
-        )
+        label, style = freshness_label(succeeded_at=succ, failed_at=fail, paused=False)
         assert "failed" in label
         assert style == "red"

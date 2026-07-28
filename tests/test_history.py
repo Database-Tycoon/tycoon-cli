@@ -17,20 +17,9 @@ from tycoon.core.events import DbtRunCompleted, RunCompleted
 
 
 def _write_tycoon_yml(root: Path, with_sources: bool = False) -> None:
-    body = (
-        "name: test\n"
-        "version: 0.1.0\n"
-        "database:\n"
-        "  raw: data/raw.duckdb\n"
-        "  warehouse: data/warehouse.duckdb\n"
-    )
+    body = "name: test\nversion: 0.1.0\ndatabase:\n  raw: data/raw.duckdb\n  warehouse: data/warehouse.duckdb\n"
     if with_sources:
-        body += (
-            "sources:\n"
-            "  src_a:\n"
-            "    type: rest_api\n"
-            "    schema: raw_src_a\n"
-        )
+        body += "sources:\n  src_a:\n    type: rest_api\n    schema: raw_src_a\n"
     else:
         body += "sources: {}\n"
     (root / "tycoon.yml").write_text(body)
@@ -73,9 +62,7 @@ def _seed_metadata(
                 [*row, now],
             )
         for row in dbt_nodes or []:
-            con.execute(
-                "INSERT INTO dbt_nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", list(row)
-            )
+            con.execute("INSERT INTO dbt_nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", list(row))
     finally:
         con.close()
     return meta
@@ -235,9 +222,7 @@ class TestHistorySourceFilter:
                 ),
             ],
         )
-        result = cli_runner.invoke(
-            app, ["data", "history", "--source", "raw_apples"]
-        )
+        result = cli_runner.invoke(app, ["data", "history", "--source", "raw_apples"])
         assert result.exit_code == 0
         # _short() truncates load_id to 8 chars → "apple-lo"
         assert "apple-lo" in result.stdout
@@ -306,9 +291,7 @@ class TestHistorySourceFilter:
                 ),
             ],
         )
-        result = cli_runner.invoke(
-            app, ["data", "history", "--source", "raw_apples"]
-        )
+        result = cli_runner.invoke(app, ["data", "history", "--source", "raw_apples"])
         assert result.exit_code == 0
         assert "apple-lo" in result.stdout
         assert "inv-xyz" not in result.stdout
@@ -325,9 +308,7 @@ class TestHistorySourceFilter:
                 ),
             ],
         )
-        result = cli_runner.invoke(
-            app, ["data", "history", "--source", "raw_nonexistent"]
-        )
+        result = cli_runner.invoke(app, ["data", "history", "--source", "raw_nonexistent"])
         assert result.exit_code == 0
         assert "No dlt runs captured" in result.stdout
 
@@ -417,9 +398,7 @@ class TestHistoryShow:
                 ),
             ],
         )
-        result = cli_runner.invoke(
-            app, ["data", "history", "show", "inv-schema-change"]
-        )
+        result = cli_runner.invoke(app, ["data", "history", "show", "inv-schema-change"])
         assert result.exit_code == 0
         assert "build" in result.stdout
 
@@ -578,9 +557,7 @@ class TestHistoryLayerFilter:
         )
         return cfg
 
-    def test_layer_filter_shows_all_dbt_runs_m1_limitation(
-        self, history_project, cli_runner, monkeypatch
-    ):
+    def test_layer_filter_shows_all_dbt_runs_m1_limitation(self, history_project, cli_runner, monkeypatch):
         self._setup(history_project, monkeypatch)
         _seed_events(
             history_project,
@@ -610,9 +587,7 @@ class TestHistoryLayerFilter:
         # M1: --layer shows all dbt runs; per-model filtering added in a later milestone.
         assert "build" in result.stdout
 
-    def test_layer_filter_with_no_manifest_errors_out(
-        self, history_project, cli_runner, monkeypatch
-    ):
+    def test_layer_filter_with_no_manifest_errors_out(self, history_project, cli_runner, monkeypatch):
         # No manifest written — _resolve_layer_models errors before reaching DB
         _write_tycoon_yml(history_project, with_sources=False)
         from tycoon.commands import history as history_mod
@@ -625,17 +600,13 @@ class TestHistoryLayerFilter:
         assert result.exit_code == 1
         assert "No dbt manifest" in (result.stderr or result.output)
 
-    def test_invalid_layer_errors_out(
-        self, history_project, cli_runner, monkeypatch
-    ):
+    def test_invalid_layer_errors_out(self, history_project, cli_runner, monkeypatch):
         self._setup(history_project, monkeypatch)
         result = cli_runner.invoke(app, ["data", "history", "--layer", "nonsense"])
         assert result.exit_code == 1
         assert "Invalid --layer" in (result.stderr or result.output)
 
-    def test_layer_and_source_are_mutually_exclusive(
-        self, history_project, cli_runner, monkeypatch
-    ):
+    def test_layer_and_source_are_mutually_exclusive(self, history_project, cli_runner, monkeypatch):
         self._setup(history_project, monkeypatch)
         result = cli_runner.invoke(
             app,

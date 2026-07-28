@@ -270,8 +270,6 @@ def classify_fivetran_sources(
 # -- Convenience accessors -----------------------------------------------------
 
 
-def filter_by_layer(
-    classifications: Iterable[LayerClassification], layer: Layer
-) -> list[LayerClassification]:
+def filter_by_layer(classifications: Iterable[LayerClassification], layer: Layer) -> list[LayerClassification]:
     """Return every classification matching ``layer``. Stable order."""
     return [c for c in classifications if c.layer == layer]

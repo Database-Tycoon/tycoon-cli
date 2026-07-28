@@ -304,9 +304,7 @@ def _build_source_config_from_flags(
         cfg["connection_string"] = connection_string
     elif source_type == "filesystem":
         if path is None:
-            error(
-                "--path is required for `filesystem` sources with --no-prompt."
-            )
+            error("--path is required for `filesystem` sources with --no-prompt.")
             raise typer.Exit(1)
         cfg["path"] = path
 
@@ -358,10 +356,7 @@ def add_source(
     config_pairs: list[str] = typer.Option(
         [],
         "--config",
-        help=(
-            "Extra `key=value` pairs to merge into the source config. "
-            "Repeatable. Overrides type-specific flags."
-        ),
+        help=("Extra `key=value` pairs to merge into the source config. Repeatable. Overrides type-specific flags."),
     ),
     no_prompt: bool = typer.Option(
         False,
@@ -418,17 +413,12 @@ def add_source(
             catalog_entry=catalog_entry,
         )
         if source_type in _AUTO_NAMED_SOURCES and not name:
-            source_name, derived_schema = _derive_source_identity(
-                source_type, source_config
-            )
+            source_name, derived_schema = _derive_source_identity(source_type, source_config)
         elif name:
             source_name = name
             derived_schema = f"raw_{source_name.replace('-', '_')}"
         else:
-            error(
-                f"--name is required under --no-prompt for `{source_type}` "
-                "(no auto-naming rule). Pass --name <id>."
-            )
+            error(f"--name is required under --no-prompt for `{source_type}` (no auto-naming rule). Pass --name <id>.")
             raise typer.Exit(1)
         schema_name = schema or derived_schema
     elif catalog_entry and source_type in _AUTO_NAMED_SOURCES:
@@ -442,20 +432,11 @@ def add_source(
         info(f"Schema:      [bold]{schema_name}[/bold]")
     else:
         default_name = name or (f"my-{source_type}" if catalog_entry else source_type)
-        source_name = (
-            name
-            if name
-            else typer.prompt("Source name", default=default_name)
+        source_name = name if name else typer.prompt("Source name", default=default_name)
+        default_schema = schema or (
+            catalog_entry.default_schema if catalog_entry else f"raw_{source_name.replace('-', '_')}"
         )
-        default_schema = (
-            schema
-            or (catalog_entry.default_schema if catalog_entry else f"raw_{source_name.replace('-', '_')}")
-        )
-        schema_name = (
-            schema
-            if schema
-            else typer.prompt("Schema name", default=default_schema)
-        )
+        schema_name = schema if schema else typer.prompt("Schema name", default=default_schema)
         if catalog_entry:
             source_config = _prompt_catalog_config(catalog_entry)
         else:
@@ -474,15 +455,10 @@ def add_source(
     if source_name in project.sources:
         if force or no_prompt:
             if not force:
-                error(
-                    f"Source '{source_name}' already exists. Pass --force to "
-                    "overwrite under --no-prompt."
-                )
+                error(f"Source '{source_name}' already exists. Pass --force to overwrite under --no-prompt.")
                 raise typer.Exit(1)
         else:
-            overwrite = typer.confirm(
-                f"Source '{source_name}' already exists. Overwrite?", default=False
-            )
+            overwrite = typer.confirm(f"Source '{source_name}' already exists. Overwrite?", default=False)
             if not overwrite:
                 info("Cancelled.")
                 raise typer.Exit(0)
@@ -543,9 +519,7 @@ def _maybe_install_dlt_extra(source_type: str) -> None:
     if is_dlt_extra_available(source_type):
         return
 
-    install = typer.confirm(
-        f"dlt[{source_type}] is not installed. Install it now?", default=True
-    )
+    install = typer.confirm(f"dlt[{source_type}] is not installed. Install it now?", default=True)
     if install:
         if install_dlt_extra(source_type):
             success(f"dlt[{source_type}] installed successfully.")
@@ -710,6 +684,7 @@ def run_source(
         )
     except Exception as exc:
         from tycoon.ingestion.runner import IngestionError
+
         error(str(exc) if isinstance(exc, IngestionError) else f"{source_name} pipeline failed: {exc}")
         raise typer.Exit(1) from exc
 

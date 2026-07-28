@@ -161,9 +161,13 @@ def _prompt_register_project(component: str, default_sibling: Path) -> str | Non
             f"Clone into {default_sibling}?",
             default=True,
         )
-        dest = default_sibling if clone_here else Path(
-            typer.prompt(f"Where should the {component} project be cloned?", default=str(default_sibling))
-        ).expanduser().resolve()
+        dest = (
+            default_sibling
+            if clone_here
+            else Path(typer.prompt(f"Where should the {component} project be cloned?", default=str(default_sibling)))
+            .expanduser()
+            .resolve()
+        )
         if not _clone_repo(raw, dest):
             return None
         return str(dest)
@@ -178,11 +182,14 @@ def _prompt_register_project(component: str, default_sibling: Path) -> str | Non
 def _prompt_ingestion() -> tuple[IngestionTool, bool]:
     _print_section("Ingestion")
     console.print("How do you load data into your warehouse?")
-    choice = _prompt_choice("Choice", [
-        "dlt — tycoon manages it (scaffolds and runs dlt pipelines)",
-        "External (Airbyte / Fivetran / Meltano / custom) — tycoon records only",
-        "Skip — no ingestion configured",
-    ])
+    choice = _prompt_choice(
+        "Choice",
+        [
+            "dlt — tycoon manages it (scaffolds and runs dlt pipelines)",
+            "External (Airbyte / Fivetran / Meltano / custom) — tycoon records only",
+            "Skip — no ingestion configured",
+        ],
+    )
     if choice == 1:
         return IngestionTool.dlt, True
     if choice == 2:
@@ -197,11 +204,14 @@ def _prompt_ingestion() -> tuple[IngestionTool, bool]:
 def _prompt_warehouse(project_name: str) -> tuple[WarehouseType, str]:
     _print_section("Warehouse")
     console.print("Where should your data live?")
-    choice = _prompt_choice("Choice", [
-        "Local DuckDB at ./data/warehouse.duckdb  [recommended]",
-        "Use an existing DuckDB file (provide path)",
-        "Cloud — MotherDuck / Snowflake / BigQuery",
-    ])
+    choice = _prompt_choice(
+        "Choice",
+        [
+            "Local DuckDB at ./data/warehouse.duckdb  [recommended]",
+            "Use an existing DuckDB file (provide path)",
+            "Cloud — MotherDuck / Snowflake / BigQuery",
+        ],
+    )
     if choice == 1:
         return WarehouseType.duckdb, "data/warehouse.duckdb"
     if choice == 2:
@@ -359,7 +369,6 @@ def _maybe_align_warehouse(wizard_warehouse_path: str, dbt_project_dir: Path) ->
     return wizard_warehouse_path
 
 
-
 def _run_wizard(target: Path, project_name: str) -> WizardResult:
     """Run the interactive setup questionnaire, per-component.
 
@@ -450,9 +459,7 @@ def _parse_param_pairs(raw: list[str]) -> dict[str, str]:
     out: dict[str, str] = {}
     for entry in raw:
         if "=" not in entry:
-            raise typer.BadParameter(
-                f"--param must be in 'name=value' form; got '{entry}'"
-            )
+            raise typer.BadParameter(f"--param must be in 'name=value' form; got '{entry}'")
         name, _, value = entry.partition("=")
         name = name.strip()
         if not name:

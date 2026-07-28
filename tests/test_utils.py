@@ -23,7 +23,6 @@ from tycoon.utils.process import command_exists, is_port_in_use
 
 
 class TestPortChecking:
-
     def test_is_port_in_use_returns_bool(self):
         result = is_port_in_use(59999)
         assert isinstance(result, bool)
@@ -45,7 +44,6 @@ class TestPortChecking:
 
 
 class TestDuckDBUtils:
-
     def test_db_file_size_mb_missing_file(self, tmp_path: Path):
         assert db_file_size_mb(tmp_path / "missing.duckdb") is None
 
@@ -131,7 +129,6 @@ class TestDuckDBUtils:
 
 
 class TestConsoleHelpers:
-
     def test_status_table_returns_table(self):
         rows = [("Component", "OK", "detail")]
         result = status_table(rows)

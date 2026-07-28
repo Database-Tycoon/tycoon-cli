@@ -32,12 +32,7 @@ def warehouse(tmp_path: Path) -> Path:
         ")"
     )
     con.execute(
-        "CREATE TABLE dim_customer ("
-        "  id INTEGER, "
-        "  name VARCHAR, "
-        "  signup_date DATE, "
-        "  lifetime_value DECIMAL(18, 2)"
-        ")"
+        "CREATE TABLE dim_customer (  id INTEGER,   name VARCHAR,   signup_date DATE,   lifetime_value DECIMAL(18, 2))"
     )
     # Should be skipped — not a mart prefix.
     con.execute("CREATE TABLE staging_orders (id INTEGER)")
@@ -63,30 +58,20 @@ class TestScaffoldFromMart:
         first_line = out.read_text().splitlines()[0]
         assert first_line.startswith(SENTINEL_PREFIX)
 
-    def test_numeric_measure_columns_have_no_dimension_attribute(
-        self, warehouse, tmp_path
-    ):
+    def test_numeric_measure_columns_have_no_dimension_attribute(self, warehouse, tmp_path):
         """Conservative dial: DECIMAL → measure-eligible (no dimension key)."""
         out = tmp_path / "osi.yaml"
         scaffold_osi(warehouse_db=warehouse, out_path=out, project_name="demo")
         body = yaml.safe_load(out.read_text())
-        mart = next(
-            d for d in body["semantic_model"][0]["datasets"]
-            if d["name"] == "mart_orders"
-        )
+        mart = next(d for d in body["semantic_model"][0]["datasets"] if d["name"] == "mart_orders")
         total = next(f for f in mart["fields"] if f["name"] == "total_amount")
         assert "dimension" not in total
 
-    def test_fk_named_columns_become_dimensions_even_when_numeric(
-        self, warehouse, tmp_path
-    ):
+    def test_fk_named_columns_become_dimensions_even_when_numeric(self, warehouse, tmp_path):
         out = tmp_path / "osi.yaml"
         scaffold_osi(warehouse_db=warehouse, out_path=out, project_name="demo")
         body = yaml.safe_load(out.read_text())
-        mart = next(
-            d for d in body["semantic_model"][0]["datasets"]
-            if d["name"] == "mart_orders"
-        )
+        mart = next(d for d in body["semantic_model"][0]["datasets"] if d["name"] == "mart_orders")
         cust_id = next(f for f in mart["fields"] if f["name"] == "customer_id")
         # FK shape (column ends in `_id`) → dimension, despite INTEGER type.
         assert cust_id["dimension"] == {}
@@ -98,10 +83,7 @@ class TestScaffoldFromMart:
         out = tmp_path / "osi.yaml"
         scaffold_osi(warehouse_db=warehouse, out_path=out, project_name="demo")
         body = yaml.safe_load(out.read_text())
-        mart = next(
-            d for d in body["semantic_model"][0]["datasets"]
-            if d["name"] == "mart_orders"
-        )
+        mart = next(d for d in body["semantic_model"][0]["datasets"] if d["name"] == "mart_orders")
         order_date = next(f for f in mart["fields"] if f["name"] == "order_date")
         assert order_date["dimension"] == {"is_time": True}
 
@@ -260,13 +242,7 @@ class TestLayerAwareDiscovery:
         """
         db = tmp_path / "wh.duckdb"
         con = duckdb.connect(str(db))
-        con.execute(
-            "CREATE TABLE orders_summary ("
-            "  id INTEGER, "
-            "  total DECIMAL(18, 2), "
-            "  order_date DATE"
-            ")"
-        )
+        con.execute("CREATE TABLE orders_summary (  id INTEGER,   total DECIMAL(18, 2),   order_date DATE)")
         con.execute("CREATE TABLE customer_book (id INTEGER, name VARCHAR)")
         # Should still NOT appear — manifest classifies as staging.
         con.execute("CREATE TABLE stg_raw_orders (id INTEGER)")
@@ -312,9 +288,7 @@ class TestLayerAwareDiscovery:
         )
         assert sorted(result.datasets_emitted) == ["customer_book", "orders_summary"]
 
-    def test_meta_override_promotes_table_to_mart(
-        self, tmp_path: Path
-    ) -> None:
+    def test_meta_override_promotes_table_to_mart(self, tmp_path: Path) -> None:
         """A table in models/scratch/ tagged ``meta.tycoon_layer: mart`` is included."""
         db = tmp_path / "wh.duckdb"
         con = duckdb.connect(str(db))
@@ -343,9 +317,7 @@ class TestLayerAwareDiscovery:
         )
         assert result.datasets_emitted == ["oddball"]
 
-    def test_missing_manifest_falls_back_to_prefix(
-        self, warehouse, tmp_path: Path
-    ) -> None:
+    def test_missing_manifest_falls_back_to_prefix(self, warehouse, tmp_path: Path) -> None:
         """No manifest at the given path → warn + fall back to prefix matching."""
         dbt_dir = tmp_path / "dbt"  # no manifest written
         out = tmp_path / "osi.yaml"
@@ -359,9 +331,7 @@ class TestLayerAwareDiscovery:
         assert sorted(result.datasets_emitted) == ["dim_customer", "mart_orders"]
         assert any("No dbt manifest" in w for w in result.warnings)
 
-    def test_no_dbt_project_dir_uses_prefix(
-        self, warehouse, tmp_path: Path
-    ) -> None:
+    def test_no_dbt_project_dir_uses_prefix(self, warehouse, tmp_path: Path) -> None:
         """Caller passes None → existing v0.1.6 behaviour exactly."""
         out = tmp_path / "osi.yaml"
         result = scaffold_osi(
@@ -374,9 +344,7 @@ class TestLayerAwareDiscovery:
         # No manifest-related warnings when None is passed explicitly.
         assert not any("manifest" in w.lower() for w in result.warnings)
 
-    def test_manifest_excludes_staging_even_with_mart_prefix(
-        self, tmp_path: Path
-    ) -> None:
+    def test_manifest_excludes_staging_even_with_mart_prefix(self, tmp_path: Path) -> None:
         """A table named ``fct_x`` living in ``models/staging/`` is NOT a mart."""
         db = tmp_path / "wh.duckdb"
         con = duckdb.connect(str(db))

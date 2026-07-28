@@ -88,6 +88,7 @@ def observability_scaffold(
         # projects; an explicit dbt_profiles_dir overrides.
         if project.dbt_profiles_dir:
             from pathlib import Path
+
             profiles_dir = Path(project.dbt_profiles_dir)
             if not profiles_dir.is_absolute():
                 profiles_dir = (config.root / profiles_dir).resolve()
@@ -116,5 +117,5 @@ def observability_scaffold(
     success("Observability scaffolding complete.")
     next_steps(
         ("tycoon data transform run --select _tycoon", "build the staging views"),
-        ("tycoon data query \"SELECT * FROM stg_tycoon__dlt_runs LIMIT 5\"", "smoke-test"),
+        ('tycoon data query "SELECT * FROM stg_tycoon__dlt_runs LIMIT 5"', "smoke-test"),
     )

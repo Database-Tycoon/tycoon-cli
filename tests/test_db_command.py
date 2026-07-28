@@ -10,7 +10,6 @@ from tycoon.cli import app
 
 
 class TestSchema:
-
     def test_schema_runs(self, cli_runner):
         """data schema should run even with no databases (shows WARN status)."""
         result = cli_runner.invoke(app, ["data", "schema"])
@@ -24,7 +23,6 @@ class TestSchema:
 
 
 class TestQuery:
-
     def test_query_no_database_gives_error(self, cli_runner, tmp_config, monkeypatch):
         """query should fail gracefully when the database file does not exist."""
         monkeypatch.setattr("tycoon.commands.db.config", tmp_config)
@@ -72,7 +70,6 @@ class TestQuery:
 
 
 class TestDataHelp:
-
     def test_data_help_shows_query_schema_clean(self, cli_runner):
         result = cli_runner.invoke(app, ["data", "--help"])
         assert result.exit_code == 0
@@ -120,21 +117,15 @@ class TestCleanMetadataPreservation:
         assert not local.exists()
         assert meta.exists(), "metadata.duckdb must survive --all by default"
 
-    def test_clean_all_with_metadata_flag_wipes_metadata(
-        self, tmp_path, monkeypatch, cli_runner
-    ):
+    def test_clean_all_with_metadata_flag_wipes_metadata(self, tmp_path, monkeypatch, cli_runner):
         raw, local, meta = self._setup(tmp_path, monkeypatch)
-        result = cli_runner.invoke(
-            app, ["data", "clean", "--all", "--metadata"], input="y\n"
-        )
+        result = cli_runner.invoke(app, ["data", "clean", "--all", "--metadata"], input="y\n")
         assert result.exit_code == 0
         assert not raw.exists()
         assert not local.exists()
         assert not meta.exists()
 
-    def test_clean_metadata_alone_removes_only_metadata(
-        self, tmp_path, monkeypatch, cli_runner
-    ):
+    def test_clean_metadata_alone_removes_only_metadata(self, tmp_path, monkeypatch, cli_runner):
         raw, local, meta = self._setup(tmp_path, monkeypatch)
         result = cli_runner.invoke(app, ["data", "clean", "--metadata"], input="y\n")
         assert result.exit_code == 0

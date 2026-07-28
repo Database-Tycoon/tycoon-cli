@@ -116,6 +116,7 @@ def run_all_cmd(
             warn(f"dbt project not found at {project_dir} — skipping transform.")
         else:
             import subprocess
+
             console.rule("[bold cyan]dbt build")
             cmd = [dbt, "build", "--target", target, "--profiles-dir", str(project_dir)]
             console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")

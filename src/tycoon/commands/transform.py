@@ -94,9 +94,7 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str, *, started_at: float) -> None:
         target = args.get("target", "dev") or "dev"
         results = run_results.get("results") or []
         models_run = len(results)
-        models_errored = sum(
-            1 for r in results if r.get("status") not in ("success", "pass", "warn", "skipped")
-        )
+        models_errored = sum(1 for r in results if r.get("status") not in ("success", "pass", "warn", "skipped"))
         models_passed = models_run - models_errored
 
         event = DbtRunCompleted(
@@ -175,11 +173,7 @@ def _resolve_for_run(
     # Resolver couldn't find a profile; fall back to whatever the user
     # passed on the CLI / had in tycoon.yml so dbt's own discovery still
     # has a chance.
-    fallback_target = (
-        target
-        or (project.dbt_target if project else None)
-        or "dev"
-    )
+    fallback_target = target or (project.dbt_target if project else None) or "dev"
     return profiles_dir, profile, fallback_target
 
 
@@ -351,9 +345,7 @@ def docs(
     dbt = _dbt_executable()
     project_dir = config.dbt_project_dir
     cmd = [dbt, "docs", "serve", "--port", str(port)]
-    resolved_dir, resolved_profile, _ = _resolve_for_run(
-        profile=profile, profiles_dir=profiles_dir, target=target
-    )
+    resolved_dir, resolved_profile, _ = _resolve_for_run(profile=profile, profiles_dir=profiles_dir, target=target)
     if resolved_dir is not None:
         cmd += ["--profiles-dir", str(resolved_dir)]
     if resolved_profile:

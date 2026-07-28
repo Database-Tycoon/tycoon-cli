@@ -131,9 +131,7 @@ def _list_source_tables(
     return [
         (schema, table)
         for schema, table in rows
-        if schema not in _SYSTEM_SCHEMAS
-        and _matches_any(schema, schemas_glob)
-        and _matches_any(table, tables_glob)
+        if schema not in _SYSTEM_SCHEMAS and _matches_any(schema, schemas_glob) and _matches_any(table, tables_glob)
     ]
 
 
@@ -142,9 +140,7 @@ def _quote(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
-def _table_exists(
-    con: duckdb.DuckDBPyConnection, schema: str, table: str
-) -> bool:
+def _table_exists(con: duckdb.DuckDBPyConnection, schema: str, table: str) -> bool:
     """True if a base table named ``schema.table`` already exists in the dest db."""
     row = con.execute(
         """

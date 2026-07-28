@@ -108,10 +108,7 @@ class TestDoctorRowRendering:
 
     def test_healthy_layer_coverage(self, snapshot):
         """The success path for the v0.1.7 layer-coverage doctor row."""
-        msg = (
-            "[green bold]OK[/green bold] Layer coverage: every source (3) "
-            "has at least one staging model."
-        )
+        msg = "[green bold]OK[/green bold] Layer coverage: every source (3) has at least one staging model."
         assert _render(msg) == snapshot
 
     def test_uncovered_source_warning(self, snapshot):

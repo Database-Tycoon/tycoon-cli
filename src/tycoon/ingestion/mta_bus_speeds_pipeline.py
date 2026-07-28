@@ -57,8 +57,6 @@ def _socrata_pages(
                 break
 
 
-
-
 @dlt.source(name="raw_mta_bus_speeds")
 def mta_bus_speeds_source(
     years: list[str] | None = None,
@@ -72,9 +70,7 @@ def mta_bus_speeds_source(
     datasets_to_ingest = MTA_BUS_SPEEDS_DATASETS
     if years:
         datasets_to_ingest = {
-            year_range: dataset_id
-            for year_range, dataset_id in MTA_BUS_SPEEDS_DATASETS.items()
-            if year_range in years
+            year_range: dataset_id for year_range, dataset_id in MTA_BUS_SPEEDS_DATASETS.items() if year_range in years
         }
 
     for year_range, dataset_id in datasets_to_ingest.items():

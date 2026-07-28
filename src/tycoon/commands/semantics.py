@@ -35,10 +35,7 @@ app = typer.Typer(
 
 def _require_project() -> None:
     if not config.has_project_file:
-        error(
-            "No tycoon.yml found. Run [bold]tycoon init[/bold] first, "
-            "or cd into an existing tycoon project."
-        )
+        error("No tycoon.yml found. Run [bold]tycoon init[/bold] first, or cd into an existing tycoon project.")
         raise typer.Exit(1)
 
 
@@ -84,7 +81,7 @@ def scaffold(
     _require_project()
     header("OSI semantic-layer scaffold")
 
-    out_path = (out.expanduser().resolve() if out else _default_out_path())
+    out_path = out.expanduser().resolve() if out else _default_out_path()
 
     project = config.project
     project_name = project.name if project else config.root.name
@@ -110,18 +107,13 @@ def scaffold(
     if result.datasets_emitted:
         success(
             f"Wrote {result.out_path} — "
-            f"{len(result.datasets_emitted)} dataset(s): "
-            + ", ".join(result.datasets_emitted)
+            f"{len(result.datasets_emitted)} dataset(s): " + ", ".join(result.datasets_emitted)
         )
         info(
-            "Next: edit `metrics:` and `relationships:` by hand, then "
-            "[bold]tycoon semantics doctor[/bold] to validate."
+            "Next: edit `metrics:` and `relationships:` by hand, then [bold]tycoon semantics doctor[/bold] to validate."
         )
     else:
-        info(
-            f"Wrote {result.out_path} (no marts found — placeholder "
-            "dataset emitted to keep the file schema-valid)."
-        )
+        info(f"Wrote {result.out_path} (no marts found — placeholder dataset emitted to keep the file schema-valid).")
 
 
 @app.command()
@@ -140,13 +132,10 @@ def doctor(
     _require_project()
     header("OSI semantic-layer doctor")
 
-    osi_path = (path.expanduser().resolve() if path else _default_out_path())
+    osi_path = path.expanduser().resolve() if path else _default_out_path()
 
     if not osi_path.exists():
-        error(
-            f"OSI YAML not found at {osi_path}. "
-            "Run [bold]tycoon semantics scaffold[/bold] first."
-        )
+        error(f"OSI YAML not found at {osi_path}. Run [bold]tycoon semantics scaffold[/bold] first.")
         raise typer.Exit(1)
 
     errors = validate_osi_yaml(osi_path)
@@ -166,7 +155,7 @@ def run_osi_check(path: Path | None = None) -> int:
     Skips silently when no OSI file exists — OSI is opt-in per the v0.1.6
     design (issue #28 Q6). Only flags when a file exists *and* fails.
     """
-    osi_path = (path.expanduser().resolve() if path else _default_out_path())
+    osi_path = path.expanduser().resolve() if path else _default_out_path()
     if not osi_path.exists():
         info("OSI: no semantic/osi.yaml present (opt-in via `tycoon semantics scaffold`).")
         return 0

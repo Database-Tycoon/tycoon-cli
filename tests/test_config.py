@@ -8,7 +8,6 @@ from tycoon.config import TycoonConfig
 
 
 class TestTycoonConfig:
-
     def test_finds_project_root_from_pyproject(self, tmp_path: Path):
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
         cfg = TycoonConfig(project_root=tmp_path)

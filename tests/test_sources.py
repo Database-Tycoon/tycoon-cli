@@ -69,6 +69,7 @@ class TestSourcesList:
         monkeypatch.chdir(tmp_path)
         # Reload config for the new cwd
         from tycoon.config import config
+
         config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "list"])
@@ -82,6 +83,7 @@ class TestSourcesList:
         (tmp_path / "tycoon.yml").write_text("name: empty\nsources: {}\n")
         monkeypatch.chdir(tmp_path)
         from tycoon.config import config
+
         config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "list"])
@@ -91,6 +93,7 @@ class TestSourcesList:
     def test_list_errors_without_project(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         from tycoon.config import config
+
         config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "list"])
@@ -109,6 +112,7 @@ class TestSourcesShow:
         _setup_project(tmp_path)
         monkeypatch.chdir(tmp_path)
         from tycoon.config import config
+
         config.__init__(project_root=tmp_path)
 
         # show is a subcommand of list: tycoon data sources list show <name>
@@ -122,6 +126,7 @@ class TestSourcesShow:
         _setup_project(tmp_path)
         monkeypatch.chdir(tmp_path)
         from tycoon.config import config
+
         config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "list", "show", "nonexistent"])
@@ -141,6 +146,7 @@ class TestSourcesRemove:
         _setup_project(tmp_path)
         monkeypatch.chdir(tmp_path)
         from tycoon.config import config
+
         config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "remove", "nyc-dot"], input="y\n")
@@ -156,6 +162,7 @@ class TestSourcesRemove:
         _setup_project(tmp_path)
         monkeypatch.chdir(tmp_path)
         from tycoon.config import config
+
         config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "remove", "nyc-dot"], input="n\n")
@@ -170,6 +177,7 @@ class TestSourcesRemove:
         _setup_project(tmp_path)
         monkeypatch.chdir(tmp_path)
         from tycoon.config import config
+
         config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "remove", "nonexistent"])
@@ -292,9 +300,7 @@ class TestSourceInstaller:
         mock_result.returncode = 0
         expected = f"dlt[rest_api]=={importlib.metadata.version('dlt')}"
 
-        with patch(
-            "tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result
-        ) as mock_run:
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result) as mock_run:
             assert install_dlt_extra("rest_api") is True
 
         cmd = mock_run.call_args.args[0]
@@ -347,9 +353,7 @@ class TestAutoScaffold:
         # Hand-written staging model already references the source.
         models = tmp_path / "dbt_project" / "models" / "staging"
         models.mkdir(parents=True)
-        (models / "stg_existing.sql").write_text(
-            "select * from {{ source('nyc-dot', 'i4gi-tjb9') }}\n"
-        )
+        (models / "stg_existing.sql").write_text("select * from {{ source('nyc-dot', 'i4gi-tjb9') }}\n")
         self._seed_raw_db(tmp_path / "data" / "raw.duckdb", "raw_nyc_dot", "i4gi_tjb9")
         self._bind_config(monkeypatch, tmp_path)
 
@@ -359,9 +363,7 @@ class TestAutoScaffold:
         # No nyc-dot subdirectory was created.
         assert not (models / "nyc-dot").exists()
 
-    def test_generates_when_dbt_exists_and_no_prior_reference(
-        self, tmp_path: Path, monkeypatch
-    ):
+    def test_generates_when_dbt_exists_and_no_prior_reference(self, tmp_path: Path, monkeypatch):
         from tycoon.commands.sources import _maybe_auto_scaffold
 
         _setup_project(tmp_path)
@@ -393,9 +395,7 @@ class TestAutoScaffold:
         from tycoon.commands.sources import _maybe_auto_scaffold
 
         # tycoon.yml with transform.auto_scaffold: false
-        (tmp_path / "tycoon.yml").write_text(
-            _SAMPLE_YML + "transform:\n  auto_scaffold: false\n"
-        )
+        (tmp_path / "tycoon.yml").write_text(_SAMPLE_YML + "transform:\n  auto_scaffold: false\n")
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
         (tmp_path / "dbt_project" / "models").mkdir(parents=True)
         self._seed_raw_db(tmp_path / "data" / "raw.duckdb", "raw_nyc_dot", "i4gi_tjb9")
@@ -439,16 +439,19 @@ class TestSourcesAddNoPrompt:
         monkeypatch.setattr(sources_mod, "config", cfg)
         return cfg
 
-    def test_rest_api_with_base_url_auto_derives_name_and_schema(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_rest_api_with_base_url_auto_derives_name_and_schema(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
         result = cli_runner.invoke(
             app,
             [
-                "data", "sources", "add", "rest_api",
-                "--base-url", "https://pokeapi.co/api/v2/",
-                "--resources", "pokemon,berry,type",
+                "data",
+                "sources",
+                "add",
+                "rest_api",
+                "--base-url",
+                "https://pokeapi.co/api/v2/",
+                "--resources",
+                "pokemon,berry,type",
                 "--no-prompt",
             ],
         )
@@ -463,28 +466,28 @@ class TestSourcesAddNoPrompt:
         assert src.config["base_url"] == "https://pokeapi.co/api/v2/"
         assert src.config["resources"] == "pokemon,berry,type"
 
-    def test_rest_api_missing_base_url_errors(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_rest_api_missing_base_url_errors(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
-        result = cli_runner.invoke(
-            app, ["data", "sources", "add", "rest_api", "--no-prompt"]
-        )
+        result = cli_runner.invoke(app, ["data", "sources", "add", "rest_api", "--no-prompt"])
         assert result.exit_code == 1
         # error() writes to stderr
         assert "--base-url is required" in (result.stderr or result.output)
 
-    def test_sql_database_with_connection_string(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_sql_database_with_connection_string(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
         result = cli_runner.invoke(
             app,
             [
-                "data", "sources", "add", "sql_database",
-                "--name", "warehouse-pg",
-                "--schema", "raw_pg",
-                "--connection-string", "${DATABASE_URL}",
+                "data",
+                "sources",
+                "add",
+                "sql_database",
+                "--name",
+                "warehouse-pg",
+                "--schema",
+                "raw_pg",
+                "--connection-string",
+                "${DATABASE_URL}",
                 "--no-prompt",
             ],
         )
@@ -493,71 +496,84 @@ class TestSourcesAddNoPrompt:
         assert "warehouse-pg" in project.sources
         assert project.sources["warehouse-pg"].config["connection_string"] == "${DATABASE_URL}"
 
-    def test_sql_database_requires_name_when_no_prompt(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_sql_database_requires_name_when_no_prompt(self, cli_runner, tmp_path, monkeypatch):
         """sql_database has no auto-naming rule — --name is required."""
         self._bind(tmp_path, monkeypatch)
         result = cli_runner.invoke(
             app,
             [
-                "data", "sources", "add", "sql_database",
-                "--connection-string", "postgres://x",
+                "data",
+                "sources",
+                "add",
+                "sql_database",
+                "--connection-string",
+                "postgres://x",
                 "--no-prompt",
             ],
         )
         assert result.exit_code == 1
         assert "--name is required" in (result.stderr or result.output)
 
-    def test_no_prompt_without_source_type_errors(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_no_prompt_without_source_type_errors(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
         result = cli_runner.invoke(app, ["data", "sources", "add", "--no-prompt"])
         assert result.exit_code == 1
         assert "requires a source type" in (result.stderr or result.output)
 
-    def test_duplicate_without_force_errors(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_duplicate_without_force_errors(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
         cli_runner.invoke(
             app,
             [
-                "data", "sources", "add", "rest_api",
-                "--base-url", "https://api.x.com/",
+                "data",
+                "sources",
+                "add",
+                "rest_api",
+                "--base-url",
+                "https://api.x.com/",
                 "--no-prompt",
             ],
         )
         result = cli_runner.invoke(
             app,
             [
-                "data", "sources", "add", "rest_api",
-                "--base-url", "https://api.x.com/",
+                "data",
+                "sources",
+                "add",
+                "rest_api",
+                "--base-url",
+                "https://api.x.com/",
                 "--no-prompt",
             ],
         )
         assert result.exit_code == 1
         assert "--force" in (result.stderr or result.output)
 
-    def test_force_overwrites_existing(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_force_overwrites_existing(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
         cli_runner.invoke(
             app,
             [
-                "data", "sources", "add", "rest_api",
-                "--base-url", "https://api.x.com/v1/",
+                "data",
+                "sources",
+                "add",
+                "rest_api",
+                "--base-url",
+                "https://api.x.com/v1/",
                 "--no-prompt",
             ],
         )
         result = cli_runner.invoke(
             app,
             [
-                "data", "sources", "add", "rest_api",
-                "--base-url", "https://api.x.com/v2/",
-                "--no-prompt", "--force",
+                "data",
+                "sources",
+                "add",
+                "rest_api",
+                "--base-url",
+                "https://api.x.com/v2/",
+                "--no-prompt",
+                "--force",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -565,17 +581,21 @@ class TestSourcesAddNoPrompt:
         # Newer base_url wins.
         assert project.sources["x"].config["base_url"] == "https://api.x.com/v2/"
 
-    def test_config_pairs_merge_into_source_config(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_config_pairs_merge_into_source_config(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
         result = cli_runner.invoke(
             app,
             [
-                "data", "sources", "add", "rest_api",
-                "--base-url", "https://api.x.com/",
-                "--config", "headers={'Accept':'application/json'}",
-                "--config", "timeout=30",
+                "data",
+                "sources",
+                "add",
+                "rest_api",
+                "--base-url",
+                "https://api.x.com/",
+                "--config",
+                "headers={'Accept':'application/json'}",
+                "--config",
+                "timeout=30",
                 "--no-prompt",
             ],
         )
@@ -585,16 +605,19 @@ class TestSourcesAddNoPrompt:
         assert src.config["timeout"] == "30"
         assert "headers" in src.config
 
-    def test_invalid_config_pair_errors(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_invalid_config_pair_errors(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
         result = cli_runner.invoke(
             app,
             [
-                "data", "sources", "add", "rest_api",
-                "--base-url", "https://api.x.com/",
-                "--config", "missing_equals_sign",
+                "data",
+                "sources",
+                "add",
+                "rest_api",
+                "--base-url",
+                "https://api.x.com/",
+                "--config",
+                "missing_equals_sign",
                 "--no-prompt",
             ],
         )
@@ -637,10 +660,16 @@ class TestGoogleSheetsCatalog:
         result = cli_runner.invoke(
             app,
             [
-                "data", "sources", "add", "google_sheets",
-                "--name", "marketing-sheet",
-                "--config", "spreadsheet_url_or_id=https://docs.google.com/spreadsheets/d/ABC/edit",
-                "--config", "range_names=Sheet1",
+                "data",
+                "sources",
+                "add",
+                "google_sheets",
+                "--name",
+                "marketing-sheet",
+                "--config",
+                "spreadsheet_url_or_id=https://docs.google.com/spreadsheets/d/ABC/edit",
+                "--config",
+                "range_names=Sheet1",
                 "--no-prompt",
             ],
         )

@@ -234,13 +234,7 @@ def _dlt_user_tables(con: duckdb.DuckDBPyConnection, schema: str) -> list[str]:
         """,
         [schema],
     ).fetchall()
-    return [
-        r[0]
-        for r in rows
-        if r[0] not in _DLT_INTERNAL_TABLES
-        and "__" not in r[0]
-        and not r[0].startswith("_")
-    ]
+    return [r[0] for r in rows if r[0] not in _DLT_INTERNAL_TABLES and "__" not in r[0] and not r[0].startswith("_")]
 
 
 def capture_dlt(metadata_db: Path, raw_db: Path) -> int:
@@ -303,11 +297,7 @@ def capture_dlt(metadata_db: Path, raw_db: Path) -> int:
                     [raw_alias, schema],
                 ).fetchall()
                 cols = {r[0] for r in col_rows}
-                svh_expr = (
-                    '"schema_version_hash"'
-                    if "schema_version_hash" in cols
-                    else "NULL"
-                )
+                svh_expr = '"schema_version_hash"' if "schema_version_hash" in cols else "NULL"
 
                 loads = meta_con.execute(
                     f"""
@@ -349,9 +339,7 @@ def capture_dlt(metadata_db: Path, raw_db: Path) -> int:
                 user_tables = [
                     r[0]
                     for r in table_rows
-                    if r[0] not in _DLT_INTERNAL_TABLES
-                    and "__" not in r[0]
-                    and not r[0].startswith("_")
+                    if r[0] not in _DLT_INTERNAL_TABLES and "__" not in r[0] and not r[0].startswith("_")
                 ]
 
                 for table in user_tables:
@@ -460,9 +448,7 @@ def capture_dbt(
     cmd = command or args.get("which") or args.get("rpc_method") or "unknown"
     success = data.get("success")
     elapsed = data.get("elapsed_time")
-    started_at = _earliest_started_at(results) or _parse_run_results_timestamp(
-        metadata.get("generated_at")
-    )
+    started_at = _earliest_started_at(results) or _parse_run_results_timestamp(metadata.get("generated_at"))
 
     models_ok = models_error = tests_passed = tests_failed = 0
     for res in results:
@@ -484,9 +470,7 @@ def capture_dbt(
 
     con = duckdb.connect(str(metadata_db))
     try:
-        pre = con.execute(
-            "SELECT 1 FROM dbt_runs WHERE invocation_id = ?", [invocation_id]
-        ).fetchone()
+        pre = con.execute("SELECT 1 FROM dbt_runs WHERE invocation_id = ?", [invocation_id]).fetchone()
         if pre is not None:
             return None  # already captured
 
@@ -678,8 +662,7 @@ def capture_dlt_trace_from_dict(metadata_db: Path, trace: dict) -> str | None:
                     _coerce_ts(step.get("started_at")),
                     _coerce_ts(step.get("finished_at")),
                     _duration_s(step.get("started_at"), step.get("finished_at")),
-                    (str(step.get("step_exception"))[:2000]
-                     if step.get("step_exception") else None),
+                    (str(step.get("step_exception"))[:2000] if step.get("step_exception") else None),
                 ],
             )
 
@@ -943,9 +926,7 @@ def capture_dbt_manifest(
         if pre is not None:
             return None
 
-        prev_invocation_id, prev_fingerprint = _load_previous_fingerprint(
-            con, exclude_invocation_id=invocation_id
-        )
+        prev_invocation_id, prev_fingerprint = _load_previous_fingerprint(con, exclude_invocation_id=invocation_id)
         changes = _diff_fingerprints(prev_fingerprint, fingerprint)
 
         con.execute(
@@ -1026,9 +1007,7 @@ def export_to_parquet(metadata_db: Path, parquet_dir: Path) -> dict[str, Path]:
     try:
         for table in _EXPORT_TABLES:
             path = parquet_dir / f"{table}.parquet"
-            con.execute(
-                f"COPY (SELECT * FROM {table}) TO '{path}' (FORMAT PARQUET)"
-            )
+            con.execute(f"COPY (SELECT * FROM {table}) TO '{path}' (FORMAT PARQUET)")
             out[table] = path
         return out
     finally:

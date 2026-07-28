@@ -24,9 +24,9 @@ class SyncResult:
     captured_at: datetime.datetime
     connectors_seen: int
     paused: int
-    healthy: int   # had a recent succeeded_at
-    failing: int   # last touch was a failure
-    new: int       # connectors not seen in any prior snapshot
+    healthy: int  # had a recent succeeded_at
+    failing: int  # last touch was a failure
+    new: int  # connectors not seen in any prior snapshot
 
 
 def sync_fivetran_metadata(
@@ -47,20 +47,13 @@ def sync_fivetran_metadata(
 
     con = duckdb.connect(str(metadata_db))
     try:
-        prior_ids = {
-            row[0]
-            for row in con.execute(
-                "SELECT DISTINCT connector_id FROM fivetran_connectors"
-            ).fetchall()
-        }
+        prior_ids = {row[0] for row in con.execute("SELECT DISTINCT connector_id FROM fivetran_connectors").fetchall()}
         for c in connectors:
             if c.connector_id not in prior_ids:
                 new += 1
             if c.paused:
                 paused += 1
-            if c.succeeded_at and (
-                not c.failed_at or c.succeeded_at > c.failed_at
-            ):
+            if c.succeeded_at and (not c.failed_at or c.succeeded_at > c.failed_at):
                 healthy += 1
             elif c.failed_at:
                 failing += 1
@@ -109,8 +102,7 @@ def latest_connector_snapshot(metadata_db: Path) -> list[dict]:
         names = {
             row[0]
             for row in con.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = 'main'"
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
             ).fetchall()
         }
         if "fivetran_connectors" not in names:
@@ -152,11 +144,7 @@ def freshness_label(
         last = last.replace(tzinfo=datetime.UTC)
     age = now - last
     hours = age.total_seconds() / 3600
-    style = (
-        "green" if hours < 24 else
-        "yellow" if hours < 24 * 7 else
-        "red"
-    )
+    style = "green" if hours < 24 else "yellow" if hours < 24 * 7 else "red"
     if hours < 1:
         label = f"{int(age.total_seconds() / 60)}m ago"
     elif hours < 24:

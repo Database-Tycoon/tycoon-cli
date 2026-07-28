@@ -59,9 +59,7 @@ def docs_serve(
         "--host",
         help="Host interface to bind to. Default keeps the server local-only.",
     ),
-    no_open: bool = typer.Option(
-        False, "--no-open", help="Don't try to open a browser."
-    ),
+    no_open: bool = typer.Option(False, "--no-open", help="Don't try to open a browser."),
 ) -> None:
     """Build the docs and serve them locally with hot-reload.
 
@@ -85,10 +83,7 @@ def docs_serve(
         )
         raise typer.Exit(1)
 
-    info(
-        f"Serving docs from [bold]{root / 'docs'}[/bold] on "
-        f"[bold]http://{host}:{port}[/bold]"
-    )
+    info(f"Serving docs from [bold]{root / 'docs'}[/bold] on [bold]http://{host}:{port}[/bold]")
     cmd = [mkdocs, "serve", "--dev-addr", f"{host}:{port}"]
     if no_open:
         cmd.append("--no-livereload")  # mkdocs doesn't have --no-open; quietest equivalent
@@ -102,9 +97,7 @@ def docs_serve(
 
 @app.command(name="build")
 def docs_build(
-    strict: bool = typer.Option(
-        False, "--strict", help="Fail on warnings (broken links, missing pages, ...)."
-    ),
+    strict: bool = typer.Option(False, "--strict", help="Fail on warnings (broken links, missing pages, ...)."),
 ) -> None:
     """One-shot build of the docs into ``site/`` without serving.
 
