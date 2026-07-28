@@ -8,7 +8,7 @@ from typing import Annotated
 import click
 import typer
 
-from tycoon.config import TycoonConfig, _find_project_root
+from tycoon.config import TycoonConfig, load_config
 from tycoon.utils.console import error, header, info, success, warn
 
 
@@ -75,7 +75,7 @@ def analyze_cmd(
     from tycoon.utils.duckdb_utils import get_tables
 
     # 1. Verify tycoon.yml exists
-    cfg = TycoonConfig(project_root=_find_project_root())
+    cfg = load_config()
     if not cfg.has_project_file:
         error("No tycoon.yml found. Run 'tycoon init' first.")
         raise typer.Exit(1)

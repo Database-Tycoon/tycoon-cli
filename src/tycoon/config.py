@@ -120,5 +120,13 @@ class TycoonConfig:
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
 
-# Singleton
+def load_config() -> TycoonConfig:
+    """Return a TycoonConfig rooted at the nearest project directory.
+
+    Prefer this over importing _find_project_root across module boundaries.
+    """
+    return TycoonConfig(project_root=_find_project_root())
+
+
+# Singleton (used by modules not yet migrated to load_config)
 config = TycoonConfig()

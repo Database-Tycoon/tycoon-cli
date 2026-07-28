@@ -8,7 +8,7 @@ from typing import Annotated
 
 import typer
 
-from tycoon.config import TycoonConfig, _find_project_root
+from tycoon.config import load_config
 from tycoon.utils.console import console, error, header, info, next_steps, success, warn
 
 
@@ -46,7 +46,7 @@ def run_all_cmd(
     ] = False,
 ) -> None:
     """Ingest all registered sources then run dbt build."""
-    cfg = TycoonConfig(project_root=_find_project_root())
+    cfg = load_config()
     if not cfg.has_project_file:
         error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
         raise typer.Exit(1)

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import typer
 
-from tycoon.config import TycoonConfig, _find_project_root
+from tycoon.config import load_config
 from tycoon.project import SyncSourceSpec
 from tycoon.sync import sync_to_local
 from tycoon.utils.console import console, error, info, next_steps, success, warn
@@ -59,7 +59,7 @@ def sync_cmd(
     the local snapshot is intentionally allowed to go stale until you
     re-run it.
     """
-    cfg = TycoonConfig(project_root=_find_project_root())
+    cfg = load_config()
     sync_cfg = cfg.project.sync if cfg.project else None
 
     # Resolve source specs.

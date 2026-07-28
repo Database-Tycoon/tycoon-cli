@@ -9,7 +9,7 @@ import click
 import typer
 from rich.table import Table
 
-from tycoon.config import TycoonConfig, _find_project_root
+from tycoon.config import TycoonConfig, load_config
 from tycoon.ingestion.catalog import CATALOG, CatalogEntry
 from tycoon.project import SourceConfig, load_project, save_project
 from tycoon.utils.console import console, error, header, info, next_steps, success, warn
@@ -34,7 +34,7 @@ app.add_typer(list_app, name="list")
 
 def _require_project() -> TycoonConfig:
     """Return a fresh TycoonConfig, aborting if no tycoon.yml exists."""
-    cfg = TycoonConfig(project_root=_find_project_root())
+    cfg = load_config()
     if not cfg.has_project_file:
         error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
         raise typer.Exit(1)
@@ -467,7 +467,6 @@ def add_source(
 
     project.sources[source_name] = new_source
     save_project(project, cfg.root)
-    cfg.reload()
 
     success(f"Source [bold]{source_name}[/bold] added to tycoon.yml")
 
@@ -550,7 +549,6 @@ def remove_source(
 
     del project.sources[name]
     save_project(project, cfg.root)
-    cfg.reload()
 
     success(f"Source [bold]{name}[/bold] removed from tycoon.yml")
 
