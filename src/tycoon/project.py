@@ -323,7 +323,7 @@ class TycoonProject(BaseModel):
 
     name: str = Field(default="my-project", description="Project name")
     version: str = Field(default="0.1.0", description="Project version")
-    schema_version: str | None = Field(default=None, description="Tycoon schema version (managed by tycoon)")
+    schema_version: int | None = Field(default=None, description="Tycoon schema version (managed by tycoon)")
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     sources: dict[str, SourceConfig] = Field(default_factory=dict, description="Registered data sources")
     dbt_project_dir: str = Field(default="dbt_project", description="Path to dbt project")
@@ -393,7 +393,7 @@ class TycoonProject(BaseModel):
 
 
 PROJECT_FILENAME = "tycoon.yml"
-SCHEMA_VERSION = "0.2.0"
+SCHEMA_VERSION = 2
 
 
 def load_project(project_root: Path) -> TycoonProject | None:
@@ -455,6 +455,17 @@ def migrate_project(project_root: Path) -> bool:
     if not isinstance(raw, dict):
         return False
 
+    existing = raw.get("schema_version")
+    if existing is not None and not isinstance(existing, int):
+        raise ValueError(
+            f"tycoon.yml schema_version must be an integer, got {type(existing).__name__}: {existing!r}"
+        )
+    if existing is not None and existing > SCHEMA_VERSION:
+        raise ValueError(
+            f"tycoon.yml schema_version {existing} is newer than this tycoon supports ({SCHEMA_VERSION}). "
+            "Upgrade tycoon-cli to use this project."
+        )
+
     changed = False
 
     if "metadata" not in raw:
@@ -462,8 +473,7 @@ def migrate_project(project_root: Path) -> bool:
         raw["metadata"] = {"backend": defaults.backend, "path": defaults.path}
         changed = True
 
-    existing_schema_version = raw.get("schema_version")
-    if existing_schema_version is None or existing_schema_version < SCHEMA_VERSION:
+    if existing is None or existing < SCHEMA_VERSION:
         raw["schema_version"] = SCHEMA_VERSION
         changed = True
 

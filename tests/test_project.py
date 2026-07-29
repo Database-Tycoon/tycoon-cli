@@ -252,6 +252,26 @@ class TestMigrateProject:
 
         assert modified is False
 
+    def test_future_schema_version_raises(self, tmp_path):
+        """A yml with schema_version newer than SCHEMA_VERSION raises ValueError."""
+        import pytest
+
+        (tmp_path / "tycoon.yml").write_text(
+            f"name: future-project\nschema_version: {SCHEMA_VERSION + 1}\n"
+        )
+
+        with pytest.raises(ValueError, match="newer than this tycoon supports"):
+            migrate_project(tmp_path)
+
+    def test_non_integer_schema_version_raises(self, tmp_path):
+        """A float schema_version (e.g. 0.2 unquoted in YAML) raises ValueError."""
+        import pytest
+
+        (tmp_path / "tycoon.yml").write_text("name: bad-project\nschema_version: 0.2\n")
+
+        with pytest.raises(ValueError, match="must be an integer"):
+            migrate_project(tmp_path)
+
     def test_missing_file_returns_false(self, tmp_path):
         """migrate_project on a directory with no tycoon.yml returns False."""
         assert migrate_project(tmp_path) is False
