@@ -199,8 +199,8 @@ class TestMigrateProject:
     """T2-2: migrate_project writes missing keys and is idempotent."""
 
     def test_missing_metadata_block_is_written(self, tmp_path):
-        """A yml without metadata: gets it added and version bumped on first call."""
-        (tmp_path / "tycoon.yml").write_text("name: old-project\nversion: 0.1.0\n")
+        """A yml without metadata: gets it added and schema_version stamped."""
+        (tmp_path / "tycoon.yml").write_text("name: old-project\nversion: 1.4.2\n")
 
         modified = migrate_project(tmp_path)
 
@@ -209,7 +209,28 @@ class TestMigrateProject:
         assert p is not None
         assert p.metadata.backend == "duckdb_file"
         assert p.metadata.path == ".tycoon/metadata.duckdb"
-        assert p.version == SCHEMA_VERSION
+        assert p.schema_version == SCHEMA_VERSION
+
+    def test_user_version_not_overwritten(self, tmp_path):
+        """migrate_project never touches the user's version field."""
+        (tmp_path / "tycoon.yml").write_text("name: old-project\nversion: 1.4.2\n")
+
+        migrate_project(tmp_path)
+        p = load_project(tmp_path)
+
+        assert p is not None
+        assert p.version == "1.4.2"
+
+    def test_comments_preserved(self, tmp_path):
+        """Comments and blank lines survive the ruamel.yaml round-trip."""
+        original = "# Project config\nname: acme\n\n# owner: data-platform@acme.com\nversion: 1.0.0\n"
+        (tmp_path / "tycoon.yml").write_text(original)
+
+        migrate_project(tmp_path)
+        result = (tmp_path / "tycoon.yml").read_text()
+
+        assert "# Project config" in result
+        assert "# owner: data-platform@acme.com" in result
 
     def test_second_call_is_no_op(self, tmp_path):
         """Running migrate_project twice returns False on the second call."""
@@ -221,9 +242,9 @@ class TestMigrateProject:
         assert modified_again is False
 
     def test_already_migrated_yml_is_unchanged(self, tmp_path):
-        """A yml that already has metadata: and the current version is left alone."""
+        """A yml that already has metadata: and schema_version is left alone."""
         (tmp_path / "tycoon.yml").write_text(
-            f"name: current-project\nversion: {SCHEMA_VERSION}\n"
+            f"name: current-project\nschema_version: {SCHEMA_VERSION}\n"
             "metadata:\n  backend: duckdb_file\n  path: .tycoon/metadata.duckdb\n"
         )
 
