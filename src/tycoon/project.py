@@ -398,6 +398,8 @@ SCHEMA_VERSION = 2
 
 def load_project(project_root: Path) -> TycoonProject | None:
     """Load and validate tycoon.yml from the given root. Returns None if not found."""
+    import warnings
+
     path = project_root / PROJECT_FILENAME
     if not path.exists():
         return None
@@ -405,7 +407,15 @@ def load_project(project_root: Path) -> TycoonProject | None:
     if raw is None:
         return TycoonProject()
     raw = _interpolate_allowed_fields(raw)
-    return TycoonProject.model_validate(raw)
+    project = TycoonProject.model_validate(raw)
+    if project.schema_version is None or project.schema_version < SCHEMA_VERSION:
+        current = project.schema_version if project.schema_version is not None else "none"
+        warnings.warn(
+            f"tycoon.yml is at schema version {current}, current is {SCHEMA_VERSION}. "
+            "Run 'tycoon init --upgrade' to migrate.",
+            stacklevel=2,
+        )
+    return project
 
 
 def save_project(project: TycoonProject, project_root: Path) -> None:

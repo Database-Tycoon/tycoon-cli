@@ -195,6 +195,38 @@ class TestRuntimesAndMetadata:
         assert p.metadata.path == ".tycoon/custom_meta.duckdb"
 
 
+class TestSchemaVersionWarning:
+    """T2-4: load_project emits a warning when schema_version is absent or old."""
+
+    def test_warns_when_schema_version_absent(self, tmp_path):
+        import pytest
+
+        (tmp_path / "tycoon.yml").write_text("name: old-project\n")
+
+        with pytest.warns(UserWarning, match="Run 'tycoon init --upgrade'"):
+            load_project(tmp_path)
+
+    def test_warns_when_schema_version_old(self, tmp_path):
+        import pytest
+
+        (tmp_path / "tycoon.yml").write_text(f"name: old-project\nschema_version: {SCHEMA_VERSION - 1}\n")
+
+        with pytest.warns(UserWarning, match="Run 'tycoon init --upgrade'"):
+            load_project(tmp_path)
+
+    def test_no_warning_when_current(self, tmp_path):
+        import warnings
+
+        (tmp_path / "tycoon.yml").write_text(f"name: current\nschema_version: {SCHEMA_VERSION}\n")
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("error", category=UserWarning)
+            p = load_project(tmp_path)
+
+        assert p is not None
+        assert p.schema_version == SCHEMA_VERSION
+
+
 class TestMigrateProject:
     """T2-2: migrate_project writes missing keys and is idempotent."""
 

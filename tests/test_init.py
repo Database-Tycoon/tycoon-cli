@@ -5,7 +5,7 @@ from __future__ import annotations
 import yaml
 
 from tycoon.cli import app
-from tycoon.project import load_project
+from tycoon.project import SCHEMA_VERSION, load_project
 from tycoon.scaffolding.templates import list_templates, scaffold_blank_project
 
 
@@ -18,6 +18,7 @@ class TestInitHelp:
         assert "--template" in result.stdout
         assert "--name" in result.stdout
         assert "--list-templates" in result.stdout
+        assert "--upgrade" in result.stdout
 
     def test_init_appears_in_top_level_help(self, cli_runner):
         result = cli_runner.invoke(app, ["--help"])
@@ -294,3 +295,35 @@ class TestTemplateParameterization:
         assert result.exit_code == 0
         # The unknown-param warning goes to stdout via the console helper
         assert "bogus" in result.stdout.lower() or "unknown parameter" in result.stdout.lower()
+
+
+class TestUpgrade:
+    """tycoon init --upgrade migrates tycoon.yml to the current schema version."""
+
+    def test_upgrade_no_tycoon_yml_exits_nonzero(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = cli_runner.invoke(app, ["init", "--upgrade"])
+        assert result.exit_code != 0
+
+    def test_upgrade_migrates_outdated_yml(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "tycoon.yml").write_text("name: old-project\nversion: 1.0.0\n")
+
+        result = cli_runner.invoke(app, ["init", "--upgrade"])
+
+        assert result.exit_code == 0
+        p = load_project(tmp_path)
+        assert p is not None
+        assert p.schema_version == SCHEMA_VERSION
+
+    def test_upgrade_already_current_reports_up_to_date(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "tycoon.yml").write_text(
+            f"name: current\nschema_version: {SCHEMA_VERSION}\n"
+            "metadata:\n  backend: duckdb_file\n  path: .tycoon/metadata.duckdb\n"
+        )
+
+        result = cli_runner.invoke(app, ["init", "--upgrade"])
+
+        assert result.exit_code == 0
+        assert "up to date" in result.stdout
