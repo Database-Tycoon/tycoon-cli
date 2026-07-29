@@ -323,6 +323,7 @@ class TycoonProject(BaseModel):
 
     name: str = Field(default="my-project", description="Project name")
     version: str = Field(default="0.1.0", description="Project version")
+    schema_version: str | None = Field(default=None, description="Tycoon schema version (managed by tycoon)")
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     sources: dict[str, SourceConfig] = Field(default_factory=dict, description="Registered data sources")
     dbt_project_dir: str = Field(default="dbt_project", description="Path to dbt project")
@@ -432,19 +433,25 @@ def save_project(project: TycoonProject, project_root: Path) -> None:
 def migrate_project(project_root: Path) -> bool:
     """Upgrade tycoon.yml to SCHEMA_VERSION in place.
 
-    Adds ``metadata:`` with defaults if the key is absent, then bumps
-    ``version`` to SCHEMA_VERSION when the existing value is absent or
-    older. Writes back only when a change is needed. Returns True if the
-    file was modified, False if it was already up to date (idempotent).
-
-    Note: round-trips through yaml.safe_load / yaml.dump, so comments
-    in the file are not preserved.
+    Adds ``metadata:`` with defaults if the key is absent, then stamps
+    ``schema_version`` when it is absent or older than SCHEMA_VERSION.
+    The user's ``version`` field is never touched. Writes back only when
+    a change is needed. Returns True if the file was modified, False if
+    already up to date (idempotent). Comments and blank lines are
+    preserved via ruamel.yaml.
     """
+    from ruamel.yaml import YAML
+
     path = project_root / PROJECT_FILENAME
     if not path.exists():
         return False
 
-    raw = yaml.safe_load(path.read_text())
+    ryaml = YAML()
+    ryaml.preserve_quotes = True
+
+    with path.open() as f:
+        raw = ryaml.load(f)
+
     if not isinstance(raw, dict):
         return False
 
@@ -455,12 +462,13 @@ def migrate_project(project_root: Path) -> bool:
         raw["metadata"] = {"backend": defaults.backend, "path": defaults.path}
         changed = True
 
-    existing_version = raw.get("version")
-    if existing_version is None or existing_version < SCHEMA_VERSION:
-        raw["version"] = SCHEMA_VERSION
+    existing_schema_version = raw.get("schema_version")
+    if existing_schema_version is None or existing_schema_version < SCHEMA_VERSION:
+        raw["schema_version"] = SCHEMA_VERSION
         changed = True
 
     if changed:
-        path.write_text(yaml.dump(raw, default_flow_style=False, sort_keys=False))
+        with path.open("w") as f:
+            ryaml.dump(raw, f)
 
     return changed
