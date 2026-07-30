@@ -1,14 +1,62 @@
 # Keeps the SHA-pinned GitHub Actions and Python dependencies current.
 # Actions are pinned to full commit SHAs (see .github/workflows/); Dependabot
 # understands SHA pins and bumps both the SHA and the version comment.
+#
+# Targets the active release branch, not main: per CONTRIBUTING.md nothing
+# merges to main except a finished release branch. Update target-branch when
+# cutting the next release.
+#
+# Grouped and monthly on purpose. Ungrouped weekly runs produced 8 open PRs
+# against main in one day, and ci.yml costs 8 job runs per PR.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    target-branch: v0.1.11
     schedule:
-      interval: weekly
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      # One PR for all action bumps — they only touch .github/workflows.
+      ci-actions:
+        patterns:
+          - "*"
+        # Majors land as their own PR: actions/checkout 6→7 and setup-uv 7→9
+        # both need a deliberate look, not a rubber stamp.
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: pip
     directory: /
+    target-branch: v0.1.11
     schedule:
-      interval: weekly
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      # Dev tooling can move together — a break shows up as a red CI run,
+      # never as a broken install for a user.
+      python-dev:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      # Runtime deps ship to users. Minor/patch grouped; majors excluded so
+      # they arrive as individual, reviewable PRs.
+      python-runtime:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # The engine trio breaks in ways CI can miss and users feel first —
+      # see PTC-27, where an unpinned Python bump took dbt out entirely.
+      # Majors here get upgraded deliberately, on their own ticket.
+      - dependency-name: dbt-core
+        update-types: ["version-update:semver-major"]
+      - dependency-name: dbt-duckdb
+        update-types: ["version-update:semver-major"]
+      - dependency-name: duckdb
+        update-types: ["version-update:semver-major"]
+      - dependency-name: dlt
+        update-types: ["version-update:semver-major"]
