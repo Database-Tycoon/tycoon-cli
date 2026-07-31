@@ -195,36 +195,25 @@ class TestRuntimesAndMetadata:
         assert p.metadata.path == ".tycoon/custom_meta.duckdb"
 
 
-class TestSchemaVersionWarning:
-    """T2-4: load_project emits a warning when schema_version is absent or old."""
+class TestSchemaVersionEnforcement:
+    """T2-4: load_project raises on future schema_version; save_project stamps it."""
 
-    def test_warns_when_schema_version_absent(self, tmp_path):
+    def test_future_schema_version_raises_in_load(self, tmp_path):
         import pytest
 
+        (tmp_path / "tycoon.yml").write_text(f"name: future\nschema_version: {SCHEMA_VERSION + 1}\n")
+
+        with pytest.raises(ValueError, match="newer than this tycoon supports"):
+            load_project(tmp_path)
+
+    def test_save_project_stamps_schema_version(self, tmp_path):
         (tmp_path / "tycoon.yml").write_text("name: old-project\n")
-
-        with pytest.warns(UserWarning, match="Run 'tycoon init --upgrade'"):
-            load_project(tmp_path)
-
-    def test_warns_when_schema_version_old(self, tmp_path):
-        import pytest
-
-        (tmp_path / "tycoon.yml").write_text(f"name: old-project\nschema_version: {SCHEMA_VERSION - 1}\n")
-
-        with pytest.warns(UserWarning, match="Run 'tycoon init --upgrade'"):
-            load_project(tmp_path)
-
-    def test_no_warning_when_current(self, tmp_path):
-        import warnings
-
-        (tmp_path / "tycoon.yml").write_text(f"name: current\nschema_version: {SCHEMA_VERSION}\n")
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings("error", category=UserWarning)
-            p = load_project(tmp_path)
-
+        p = load_project(tmp_path)
         assert p is not None
-        assert p.schema_version == SCHEMA_VERSION
+        save_project(p, tmp_path)
+        reloaded = load_project(tmp_path)
+        assert reloaded is not None
+        assert reloaded.schema_version == SCHEMA_VERSION
 
 
 class TestMigrateProject:

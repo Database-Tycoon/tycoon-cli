@@ -398,8 +398,6 @@ SCHEMA_VERSION = 2
 
 def load_project(project_root: Path) -> TycoonProject | None:
     """Load and validate tycoon.yml from the given root. Returns None if not found."""
-    import warnings
-
     path = project_root / PROJECT_FILENAME
     if not path.exists():
         return None
@@ -408,12 +406,10 @@ def load_project(project_root: Path) -> TycoonProject | None:
         return TycoonProject()
     raw = _interpolate_allowed_fields(raw)
     project = TycoonProject.model_validate(raw)
-    if project.schema_version is None or project.schema_version < SCHEMA_VERSION:
-        current = project.schema_version if project.schema_version is not None else "none"
-        warnings.warn(
-            f"tycoon.yml is at schema version {current}, current is {SCHEMA_VERSION}. "
-            "Run 'tycoon init --upgrade' to migrate.",
-            stacklevel=2,
+    if project.schema_version is not None and project.schema_version > SCHEMA_VERSION:
+        raise ValueError(
+            f"tycoon.yml schema_version {project.schema_version} is newer than this tycoon supports "
+            f"({SCHEMA_VERSION}). Upgrade tycoon-cli to use this project."
         )
     return project
 
@@ -431,6 +427,7 @@ def save_project(project: TycoonProject, project_root: Path) -> None:
     """
     path = project_root / PROJECT_FILENAME
     data = project.model_dump(by_alias=True, exclude_none=True, mode="json")
+    data["schema_version"] = SCHEMA_VERSION
     if path.exists():
         existing = yaml.safe_load(path.read_text())
         if isinstance(existing, dict):
@@ -466,7 +463,7 @@ def migrate_project(project_root: Path) -> bool:
         return False
 
     existing = raw.get("schema_version")
-    if existing is not None and not isinstance(existing, int):
+    if existing is not None and (isinstance(existing, bool) or not isinstance(existing, int)):
         raise ValueError(f"tycoon.yml schema_version must be an integer, got {type(existing).__name__}: {existing!r}")
     if existing is not None and existing > SCHEMA_VERSION:
         raise ValueError(

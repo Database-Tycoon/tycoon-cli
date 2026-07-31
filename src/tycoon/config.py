@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tycoon.project import PROJECT_FILENAME, TycoonProject, load_project
+from tycoon.project import PROJECT_FILENAME, SCHEMA_VERSION, TycoonProject, load_project
+from tycoon.utils.console import warn as _warn_console
 
 # v0.1 defaults (used when no tycoon.yml exists)
 _DEFAULT_RAW_DB = "data/raw.duckdb"
@@ -124,8 +125,18 @@ def load_config() -> TycoonConfig:
     """Return a TycoonConfig rooted at the nearest project directory.
 
     Prefer this over importing _find_project_root across module boundaries.
+    Emits a console warning when tycoon.yml is at an older schema version.
     """
-    return TycoonConfig(project_root=_find_project_root())
+    cfg = TycoonConfig(project_root=_find_project_root())
+    if cfg.project is not None:
+        sv = cfg.project.schema_version
+        if sv is None or sv < SCHEMA_VERSION:
+            current = sv if sv is not None else "none"
+            _warn_console(
+                f"tycoon.yml is at schema version {current}, current is {SCHEMA_VERSION}. "
+                "Run 'tycoon init --upgrade' to migrate."
+            )
+    return cfg
 
 
 # Singleton (used by modules not yet migrated to load_config)

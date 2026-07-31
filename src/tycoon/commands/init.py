@@ -519,7 +519,11 @@ def init_cmd(
         if not (target / "tycoon.yml").exists():
             error("No tycoon.yml found in the current directory. Run 'tycoon init' to create one.")
             raise typer.Exit(1)
-        changed = migrate_project(target)
+        try:
+            changed = migrate_project(target)
+        except ValueError as exc:
+            error(str(exc))
+            raise typer.Exit(1) from exc
         if changed:
             success("tycoon.yml migrated to the current schema version.")
         else:

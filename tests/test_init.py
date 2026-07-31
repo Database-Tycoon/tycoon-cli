@@ -327,3 +327,12 @@ class TestUpgrade:
 
         assert result.exit_code == 0
         assert "up to date" in result.stdout
+
+    def test_upgrade_future_schema_version_exits_nonzero_cleanly(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "tycoon.yml").write_text(f"name: future\nschema_version: {SCHEMA_VERSION + 1}\n")
+
+        result = cli_runner.invoke(app, ["init", "--upgrade"])
+
+        assert result.exit_code != 0
+        assert "newer than this tycoon supports" in result.output

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tycoon.config import TycoonConfig
+from tycoon.config import TycoonConfig, load_config
+from tycoon.project import SCHEMA_VERSION
 
 
 class TestTycoonConfig:
@@ -36,3 +37,52 @@ class TestTycoonConfig:
         assert tmp_config.data_dir == tmp_config.root / "data"
         assert tmp_config.dbt_project_dir == tmp_config.root / "dbt_project"
         assert tmp_config.rill_dir == tmp_config.root / "rill"
+
+
+class TestLoadConfigSchemaWarning:
+    """T2-4: load_config warns via console when tycoon.yml schema_version is stale."""
+
+    def test_warns_when_schema_version_absent(self, tmp_path, monkeypatch):
+        (tmp_path / "tycoon.yml").write_text("name: old-project\n")
+        monkeypatch.chdir(tmp_path)
+
+        calls = []
+        monkeypatch.setattr("tycoon.config._warn_console", lambda msg: calls.append(msg))
+
+        load_config()
+
+        assert len(calls) == 1
+        assert "tycoon init --upgrade" in calls[0]
+
+    def test_warns_when_schema_version_old(self, tmp_path, monkeypatch):
+        (tmp_path / "tycoon.yml").write_text(f"name: old\nschema_version: {SCHEMA_VERSION - 1}\n")
+        monkeypatch.chdir(tmp_path)
+
+        calls = []
+        monkeypatch.setattr("tycoon.config._warn_console", lambda msg: calls.append(msg))
+
+        load_config()
+
+        assert len(calls) == 1
+
+    def test_no_warning_when_current(self, tmp_path, monkeypatch):
+        (tmp_path / "tycoon.yml").write_text(f"name: current\nschema_version: {SCHEMA_VERSION}\n")
+        monkeypatch.chdir(tmp_path)
+
+        calls = []
+        monkeypatch.setattr("tycoon.config._warn_console", lambda msg: calls.append(msg))
+
+        load_config()
+
+        assert calls == []
+
+    def test_no_warning_without_tycoon_yml(self, tmp_path, monkeypatch):
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+        monkeypatch.chdir(tmp_path)
+
+        calls = []
+        monkeypatch.setattr("tycoon.config._warn_console", lambda msg: calls.append(msg))
+
+        load_config()
+
+        assert calls == []
