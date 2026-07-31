@@ -25,7 +25,7 @@ dependencies = [
     "rich==15.0.0",
     "dbt-core==1.11.8",
     "dbt-duckdb==1.10.1",
-    "dlt[duckdb]==1.26.0",
+    "dlt[duckdb]==1.29.1",
     # Nothing in src/ imports pandas, but dlt's filesystem source
     # (downloaded on demand via `dlt init`) needs it for its CSV
     # reader — tests/test_e2e_demo_arc.py fails without it. Optional-
