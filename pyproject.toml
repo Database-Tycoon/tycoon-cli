@@ -31,7 +31,7 @@ dependencies = [
     # reader — tests/test_e2e_demo_arc.py fails without it. Optional-
     # extra treatment tracked in #148.
     "pandas==3.0.3",
-    "duckdb==1.5.2",
+    "duckdb==1.5.5",
     "httpx==0.28.1",
     "pyyaml==6.0.3",
     "pydantic==2.13.3",
