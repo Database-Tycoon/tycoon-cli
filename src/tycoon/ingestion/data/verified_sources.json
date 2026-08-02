@@ -3,7 +3,11 @@
     "display_name": "GitHub",
     "category": "Developer Tools",
     "description": "Issues, pull requests, and commits from a repository",
-    "resources": ["issues", "pull_requests", "commits"],
+    "resources": [
+      "issues",
+      "pull_requests",
+      "commits"
+    ],
     "credentials": [
       {
         "key": "access_token",
@@ -14,8 +18,20 @@
       }
     ],
     "config_fields": [
-      {"key": "owner", "label": "Repository owner (user or org)", "required": true, "hint": "e.g. \"dlt-hub\"", "default": null},
-      {"key": "repo", "label": "Repository name", "required": true, "hint": "e.g. \"dlt\"", "default": null}
+      {
+        "key": "owner",
+        "label": "Repository owner (user or org)",
+        "required": true,
+        "hint": "e.g. \"dlt-hub\"",
+        "default": null
+      },
+      {
+        "key": "repo",
+        "label": "Repository name",
+        "required": true,
+        "hint": "e.g. \"dlt\"",
+        "default": null
+      }
     ],
     "dlt_source": "github.github_reactions",
     "dlt_init_name": "github",
@@ -27,7 +43,11 @@
     "display_name": "Slack",
     "category": "Communication",
     "description": "Channels, users, and message history",
-    "resources": ["channels", "users", "messages"],
+    "resources": [
+      "channels",
+      "users",
+      "messages"
+    ],
     "credentials": [
       {
         "key": "access_token",
@@ -56,7 +76,13 @@
     "display_name": "Stripe",
     "category": "Payments",
     "description": "Customers, subscriptions, invoices, charges, and products",
-    "resources": ["customers", "subscriptions", "invoices", "charges", "products"],
+    "resources": [
+      "customers",
+      "subscriptions",
+      "invoices",
+      "charges",
+      "products"
+    ],
     "credentials": [
       {
         "key": "stripe_secret_key",
@@ -77,7 +103,12 @@
     "display_name": "HubSpot",
     "category": "CRM",
     "description": "Contacts, companies, deals, and tickets",
-    "resources": ["contacts", "companies", "deals", "tickets"],
+    "resources": [
+      "contacts",
+      "companies",
+      "deals",
+      "tickets"
+    ],
     "credentials": [
       {
         "key": "api_key",
@@ -98,7 +129,11 @@
     "display_name": "Notion",
     "category": "Productivity",
     "description": "Databases, pages, and workspace users",
-    "resources": ["databases", "pages", "users"],
+    "resources": [
+      "databases",
+      "pages",
+      "users"
+    ],
     "credentials": [
       {
         "key": "api_key",
@@ -127,7 +162,9 @@
     "display_name": "Google Sheets",
     "category": "Spreadsheets",
     "description": "Tabs/ranges from a Google spreadsheet (header row → typed columns)",
-    "resources": ["sheets"],
+    "resources": [
+      "sheets"
+    ],
     "credentials": [
       {
         "key": "credentials_path",
@@ -163,7 +200,11 @@
     "display_name": "REST API",
     "category": "Generic",
     "description": "Any REST API — defaults to the PokéAPI demo (no auth needed)",
-    "resources": ["pokemon", "berry", "type"],
+    "resources": [
+      "pokemon",
+      "berry",
+      "type"
+    ],
     "credentials": [],
     "config_fields": [
       {
@@ -191,7 +232,9 @@
     "display_name": "CSV / Local Files",
     "category": "Generic",
     "description": "Load CSV files from a local directory into DuckDB",
-    "resources": ["files"],
+    "resources": [
+      "files"
+    ],
     "credentials": [],
     "config_fields": [
       {
@@ -250,7 +293,7 @@
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "asana",
+    "dlt_init_name": "asana_dlt",
     "requires_dlt_init": true,
     "default_schema": "raw_asana",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/asana"
@@ -276,8 +319,8 @@
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "confluence",
-    "requires_dlt_init": true,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
     "default_schema": "raw_confluence",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/confluence"
   },
@@ -328,8 +371,8 @@
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "hackernews",
-    "requires_dlt_init": true,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
     "default_schema": "raw_hackernews",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/hacker_news"
   },
@@ -367,8 +410,8 @@
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "linkedin_ads",
-    "requires_dlt_init": true,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
     "default_schema": "raw_linkedin_ads",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/linkedin_ads"
   },
@@ -432,8 +475,8 @@
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "piano",
-    "requires_dlt_init": true,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
     "default_schema": "raw_piano",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/piano"
   },
@@ -458,8 +501,8 @@
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "postgres",
-    "requires_dlt_init": true,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
     "default_schema": "raw_postgres",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/postgres"
   },
@@ -484,8 +527,8 @@
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "sendgrid",
-    "requires_dlt_init": true,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
     "default_schema": "raw_sendgrid",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/sendgrid"
   },
@@ -523,8 +566,8 @@
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "twilio",
-    "requires_dlt_init": true,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
     "default_schema": "raw_twilio",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/twilio"
   },
@@ -536,8 +579,8 @@
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "twitter",
-    "requires_dlt_init": true,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
     "default_schema": "raw_twitter",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/twitter"
   },
@@ -575,8 +618,8 @@
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "chargebee",
-    "requires_dlt_init": true,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
     "default_schema": "raw_chargebee",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/chargebee"
   },
@@ -588,8 +631,8 @@
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "google_cloud_storage",
-    "requires_dlt_init": true,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
     "default_schema": "raw_gcs",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/filesystem"
   },
@@ -601,8 +644,8 @@
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "dremio",
-    "requires_dlt_init": true,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
     "default_schema": "raw_dremio",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/dremio"
   },
