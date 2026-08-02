@@ -14,8 +14,8 @@
       }
     ],
     "config_fields": [
-      {"key": "owner", "label": "Repository owner (user or org)", "required": true, "hint": "e.g. dlt-hub", "default": null},
-      {"key": "repo", "label": "Repository name", "required": true, "hint": "e.g. dlt", "default": null}
+      {"key": "owner", "label": "Repository owner (user or org)", "required": true, "hint": "e.g. \"dlt-hub\"", "default": null},
+      {"key": "repo", "label": "Repository name", "required": true, "hint": "e.g. \"dlt\"", "default": null}
     ],
     "dlt_source": "github.github_reactions",
     "dlt_init_name": "github",
@@ -411,18 +411,18 @@
     "default_schema": "raw_mux",
     "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/mux"
   },
-  "persio": {
-    "display_name": "Persio",
-    "category": "CRM",
-    "description": "Customer engagement and deal data from Persio",
+  "personio": {
+    "display_name": "Personio",
+    "category": "HR",
+    "description": "Employee and absence data from Personio",
     "resources": [],
     "credentials": [],
     "config_fields": [],
     "dlt_source": null,
-    "dlt_init_name": "persio",
+    "dlt_init_name": "personio",
     "requires_dlt_init": true,
-    "default_schema": "raw_persio",
-    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/persio"
+    "default_schema": "raw_personio",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/personio"
   },
   "piano": {
     "display_name": "Piano",
