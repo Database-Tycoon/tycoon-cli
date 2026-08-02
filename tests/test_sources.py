@@ -67,10 +67,6 @@ class TestSourcesList:
     def test_list_shows_sources(self, cli_runner, tmp_path, monkeypatch):
         _setup_project(tmp_path)
         monkeypatch.chdir(tmp_path)
-        # Reload config for the new cwd
-        from tycoon.config import config
-
-        config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "list"])
         assert result.exit_code == 0
@@ -82,9 +78,6 @@ class TestSourcesList:
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
         (tmp_path / "tycoon.yml").write_text("name: empty\nsources: {}\n")
         monkeypatch.chdir(tmp_path)
-        from tycoon.config import config
-
-        config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "list"])
         assert result.exit_code == 0
@@ -92,9 +85,6 @@ class TestSourcesList:
 
     def test_list_errors_without_project(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        from tycoon.config import config
-
-        config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "list"])
         assert result.exit_code == 1
@@ -111,9 +101,6 @@ class TestSourcesShow:
     def test_show_existing_source(self, cli_runner, tmp_path, monkeypatch):
         _setup_project(tmp_path)
         monkeypatch.chdir(tmp_path)
-        from tycoon.config import config
-
-        config.__init__(project_root=tmp_path)
 
         # show is a subcommand of list: tycoon data sources list show <name>
         result = cli_runner.invoke(app, ["data", "sources", "list", "show", "nyc-dot"])
@@ -125,9 +112,6 @@ class TestSourcesShow:
     def test_show_nonexistent_source(self, cli_runner, tmp_path, monkeypatch):
         _setup_project(tmp_path)
         monkeypatch.chdir(tmp_path)
-        from tycoon.config import config
-
-        config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "list", "show", "nonexistent"])
         assert result.exit_code == 1
@@ -145,9 +129,6 @@ class TestSourcesRemove:
     def test_remove_with_confirmation(self, cli_runner, tmp_path, monkeypatch):
         _setup_project(tmp_path)
         monkeypatch.chdir(tmp_path)
-        from tycoon.config import config
-
-        config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "remove", "nyc-dot"], input="y\n")
         assert result.exit_code == 0
@@ -161,9 +142,6 @@ class TestSourcesRemove:
     def test_remove_abort(self, cli_runner, tmp_path, monkeypatch):
         _setup_project(tmp_path)
         monkeypatch.chdir(tmp_path)
-        from tycoon.config import config
-
-        config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "remove", "nyc-dot"], input="n\n")
         assert result.exit_code == 1  # typer.confirm abort exits 1
@@ -176,9 +154,6 @@ class TestSourcesRemove:
     def test_remove_nonexistent_source(self, cli_runner, tmp_path, monkeypatch):
         _setup_project(tmp_path)
         monkeypatch.chdir(tmp_path)
-        from tycoon.config import config
-
-        config.__init__(project_root=tmp_path)
 
         result = cli_runner.invoke(app, ["data", "sources", "remove", "nonexistent"])
         assert result.exit_code == 1
@@ -328,22 +303,20 @@ class TestAutoScaffold:
         finally:
             con.close()
 
-    def _bind_config(self, monkeypatch, project_root: Path) -> None:
-        from tycoon.commands import sources as sources_mod
+    def _make_cfg(self, project_root: Path):
         from tycoon.config import TycoonConfig
 
-        cfg = TycoonConfig(project_root=project_root)
-        monkeypatch.setattr(sources_mod, "config", cfg)
+        return TycoonConfig(project_root=project_root)
 
     def test_no_dbt_project_is_noop(self, tmp_path: Path, monkeypatch):
         from tycoon.commands.sources import _maybe_auto_scaffold
 
         _setup_project(tmp_path)
-        self._bind_config(monkeypatch, tmp_path)
+        cfg = self._make_cfg(tmp_path)
         # No dbt_project/ directory exists.
 
         sc = SourceConfig(type="rest_api", schema="raw_nyc_dot", config={})
-        _maybe_auto_scaffold("nyc-dot", sc, scaffold=True)
+        _maybe_auto_scaffold("nyc-dot", sc, cfg=cfg, scaffold=True)
         # No exception, no files written. Nothing to assert beyond "didn't raise."
 
     def test_skips_when_source_already_referenced(self, tmp_path: Path, monkeypatch):
@@ -355,10 +328,10 @@ class TestAutoScaffold:
         models.mkdir(parents=True)
         (models / "stg_existing.sql").write_text("select * from {{ source('nyc-dot', 'i4gi-tjb9') }}\n")
         self._seed_raw_db(tmp_path / "data" / "raw.duckdb", "raw_nyc_dot", "i4gi_tjb9")
-        self._bind_config(monkeypatch, tmp_path)
+        cfg = self._make_cfg(tmp_path)
 
         sc = SourceConfig(type="rest_api", schema="raw_nyc_dot", config={})
-        _maybe_auto_scaffold("nyc-dot", sc, scaffold=True)
+        _maybe_auto_scaffold("nyc-dot", sc, cfg=cfg, scaffold=True)
 
         # No nyc-dot subdirectory was created.
         assert not (models / "nyc-dot").exists()
@@ -369,10 +342,10 @@ class TestAutoScaffold:
         _setup_project(tmp_path)
         (tmp_path / "dbt_project" / "models").mkdir(parents=True)
         self._seed_raw_db(tmp_path / "data" / "raw.duckdb", "raw_nyc_dot", "i4gi_tjb9")
-        self._bind_config(monkeypatch, tmp_path)
+        cfg = self._make_cfg(tmp_path)
 
         sc = SourceConfig(type="rest_api", schema="raw_nyc_dot", config={})
-        _maybe_auto_scaffold("nyc-dot", sc, scaffold=True)
+        _maybe_auto_scaffold("nyc-dot", sc, cfg=cfg, scaffold=True)
 
         sql = tmp_path / "dbt_project" / "models" / "staging" / "nyc-dot" / "stg_nyc-dot__i4gi_tjb9.sql"
         assert sql.exists()
@@ -384,10 +357,10 @@ class TestAutoScaffold:
         _setup_project(tmp_path)
         (tmp_path / "dbt_project" / "models").mkdir(parents=True)
         self._seed_raw_db(tmp_path / "data" / "raw.duckdb", "raw_nyc_dot", "i4gi_tjb9")
-        self._bind_config(monkeypatch, tmp_path)
+        cfg = self._make_cfg(tmp_path)
 
         sc = SourceConfig(type="rest_api", schema="raw_nyc_dot", config={})
-        _maybe_auto_scaffold("nyc-dot", sc, scaffold=False)
+        _maybe_auto_scaffold("nyc-dot", sc, cfg=cfg, scaffold=False)
 
         assert not (tmp_path / "dbt_project" / "models" / "staging" / "nyc-dot").exists()
 
@@ -399,10 +372,10 @@ class TestAutoScaffold:
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
         (tmp_path / "dbt_project" / "models").mkdir(parents=True)
         self._seed_raw_db(tmp_path / "data" / "raw.duckdb", "raw_nyc_dot", "i4gi_tjb9")
-        self._bind_config(monkeypatch, tmp_path)
+        cfg = self._make_cfg(tmp_path)
 
         sc = SourceConfig(type="rest_api", schema="raw_nyc_dot", config={})
-        _maybe_auto_scaffold("nyc-dot", sc, scaffold=True)
+        _maybe_auto_scaffold("nyc-dot", sc, cfg=cfg, scaffold=True)
 
         assert not (tmp_path / "dbt_project" / "models" / "staging" / "nyc-dot").exists()
 
@@ -421,7 +394,7 @@ class TestSourcesAddNoPrompt:
     """
 
     def _bind(self, tmp_path: Path, monkeypatch):
-        """Set up an empty project + bind config to tmp_path."""
+        """Set up an empty project and chdir so commands find it."""
         body = (
             "name: test\n"
             "version: 0.1.0\n"
@@ -432,12 +405,7 @@ class TestSourcesAddNoPrompt:
         )
         (tmp_path / "tycoon.yml").write_text(body)
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
-        from tycoon.commands import sources as sources_mod
-        from tycoon.config import TycoonConfig
-
-        cfg = TycoonConfig(project_root=tmp_path)
-        monkeypatch.setattr(sources_mod, "config", cfg)
-        return cfg
+        monkeypatch.chdir(tmp_path)
 
     def test_rest_api_with_base_url_auto_derives_name_and_schema(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)

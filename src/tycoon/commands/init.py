@@ -14,6 +14,7 @@ from tycoon.project import (
     StackConfig,
     TransformationTool,
     WarehouseType,
+    migrate_project,
 )
 from tycoon.scaffolding.templates import (
     list_templates,
@@ -504,8 +505,31 @@ def init_cmd(
             ),
         ),
     ] = None,
+    upgrade: Annotated[
+        bool,
+        typer.Option(
+            "--upgrade",
+            help="Migrate tycoon.yml to the current schema version and exit.",
+        ),
+    ] = False,
 ) -> None:
     """Initialize a new tycoon project in the current directory."""
+    if upgrade:
+        target = Path.cwd()
+        if not (target / "tycoon.yml").exists():
+            error("No tycoon.yml found in the current directory. Run 'tycoon init' to create one.")
+            raise typer.Exit(1)
+        try:
+            changed = migrate_project(target)
+        except ValueError as exc:
+            error(str(exc))
+            raise typer.Exit(1) from exc
+        if changed:
+            success("tycoon.yml migrated to the current schema version.")
+        else:
+            info("tycoon.yml is already up to date.")
+        raise typer.Exit(0)
+
     if list_templates_flag:
         templates = list_templates()
         if not templates:

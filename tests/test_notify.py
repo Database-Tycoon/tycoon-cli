@@ -150,10 +150,7 @@ class TestRunAllNotify:
             "sources: {}\n"
         )
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "t"\n')
-        from tycoon.commands import run_all as ra_mod
-        from tycoon.config import TycoonConfig
-
-        monkeypatch.setattr(ra_mod, "config", TycoonConfig(project_root=tmp_path))
+        monkeypatch.chdir(tmp_path)
 
     def test_success_emits_notification(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)

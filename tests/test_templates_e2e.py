@@ -52,12 +52,10 @@ def _rebind_config(monkeypatch, project: Path) -> None:
     this patch they pick up the parent-tmpdir root pytest started in.
     """
     import tycoon.config as cfg_mod
-    from tycoon.commands import sources as sources_mod
     from tycoon.commands import transform as transform_mod
     from tycoon.config import TycoonConfig
 
     cfg = TycoonConfig(project_root=project)
-    monkeypatch.setattr(sources_mod, "config", cfg)
     monkeypatch.setattr(transform_mod, "config", cfg)
     monkeypatch.setattr(cfg_mod, "config", cfg)
 
@@ -321,12 +319,6 @@ def test_csv_import_then_data_sync(cli_runner, tmp_path, monkeypatch):
     _init_template(cli_runner, "csv-import")
     _seed_widgets_csv(project / "data" / "input", count=5)
     _rebind_config(monkeypatch, project)
-
-    # Bind sync_cmd's config too, since it imports separately.
-    from tycoon.commands import sync_cmd as sync_mod
-    from tycoon.config import TycoonConfig
-
-    monkeypatch.setattr(sync_mod, "config", TycoonConfig(project_root=project))
 
     # ingest + transform
     assert cli_runner.invoke(app, ["data", "sources", "run", "files"]).exit_code == 0

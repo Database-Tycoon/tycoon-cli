@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from tycoon.project import DatabaseConfig, SourceConfig, TycoonProject, load_project, save_project
+from tycoon.project import (
+    DatabaseConfig,
+    SCHEMA_VERSION,
+    SourceConfig,
+    TycoonProject,
+    load_project,
+    migrate_project,
+    save_project,
+)
 
 
 class TestTycoonProject:
@@ -140,3 +148,162 @@ class TestConfigIntegration:
         )
         cfg = TycoonConfig(project_root=tmp_path)
         assert "my-api" in cfg.sources
+
+
+class TestRuntimesAndMetadata:
+    """T2-1: runtimes: and metadata: fields on TycoonProject."""
+
+    def test_existing_yml_loads_without_new_fields(self, tmp_path):
+        """A tycoon.yml with no runtimes/metadata keys must load with defaults."""
+        (tmp_path / "tycoon.yml").write_text("name: legacy-project\n")
+        p = load_project(tmp_path)
+        assert p is not None
+        assert p.runtimes == {}
+        assert p.metadata.backend == "duckdb_file"
+        assert p.metadata.path == ".tycoon/metadata.duckdb"
+
+    def test_runtimes_field_parses(self, tmp_path):
+        """runtimes: block with mixed types should parse into RuntimeEntry objects."""
+        (tmp_path / "tycoon.yml").write_text(
+            "name: runtimes-test\n"
+            "runtimes:\n"
+            "  shopify:\n"
+            "    type: dlt-managed\n"
+            "  custom_pipeline:\n"
+            "    type: dlt-project\n"
+            "    path: pipelines/custom\n"
+            "  fivetran_sync:\n"
+            "    type: fivetran\n"
+        )
+        p = load_project(tmp_path)
+        assert p is not None
+        assert set(p.runtimes) == {"shopify", "custom_pipeline", "fivetran_sync"}
+        assert p.runtimes["shopify"].type == "dlt-managed"
+        assert p.runtimes["shopify"].path is None
+        assert p.runtimes["custom_pipeline"].type == "dlt-project"
+        assert p.runtimes["custom_pipeline"].path == "pipelines/custom"
+        assert p.runtimes["fivetran_sync"].type == "fivetran"
+
+    def test_metadata_field_parses(self, tmp_path):
+        """metadata: block with custom values should override defaults."""
+        (tmp_path / "tycoon.yml").write_text(
+            "name: metadata-test\nmetadata:\n  backend: duckdb_file\n  path: .tycoon/custom_meta.duckdb\n"
+        )
+        p = load_project(tmp_path)
+        assert p is not None
+        assert p.metadata.backend == "duckdb_file"
+        assert p.metadata.path == ".tycoon/custom_meta.duckdb"
+
+
+class TestSchemaVersionEnforcement:
+    """T2-4: load_project is permissive; save_project preserves schema_version."""
+
+    def test_future_schema_version_loads_without_raise(self, tmp_path):
+        """load_project must not raise for a future schema_version — the gate
+        lives in load_config() so the import-time singleton never trips it."""
+        (tmp_path / "tycoon.yml").write_text(f"name: future\nschema_version: {SCHEMA_VERSION + 1}\n")
+        p = load_project(tmp_path)
+        assert p is not None
+        assert p.schema_version == SCHEMA_VERSION + 1
+
+    def test_save_project_preserves_schema_version(self, tmp_path):
+        """save_project preserves whatever schema_version is in the model;
+        only migrate_project (via init --upgrade) advances the stamp."""
+        (tmp_path / "tycoon.yml").write_text(f"name: old\nschema_version: {SCHEMA_VERSION}\n")
+        p = load_project(tmp_path)
+        assert p is not None
+        save_project(p, tmp_path)
+        reloaded = load_project(tmp_path)
+        assert reloaded is not None
+        assert reloaded.schema_version == SCHEMA_VERSION
+
+    def test_save_project_does_not_stamp_when_absent(self, tmp_path):
+        """A project with no schema_version on disk stays unstamped after save_project."""
+        (tmp_path / "tycoon.yml").write_text("name: old-project\n")
+        p = load_project(tmp_path)
+        assert p is not None
+        assert p.schema_version is None
+        save_project(p, tmp_path)
+        reloaded = load_project(tmp_path)
+        assert reloaded is not None
+        assert reloaded.schema_version is None
+
+
+class TestMigrateProject:
+    """T2-2: migrate_project writes missing keys and is idempotent."""
+
+    def test_missing_metadata_block_is_written(self, tmp_path):
+        """A yml without metadata: gets it added and schema_version stamped."""
+        (tmp_path / "tycoon.yml").write_text("name: old-project\nversion: 1.4.2\n")
+
+        modified = migrate_project(tmp_path)
+
+        assert modified is True
+        p = load_project(tmp_path)
+        assert p is not None
+        assert p.metadata.backend == "duckdb_file"
+        assert p.metadata.path == ".tycoon/metadata.duckdb"
+        assert p.schema_version == SCHEMA_VERSION
+
+    def test_user_version_not_overwritten(self, tmp_path):
+        """migrate_project never touches the user's version field."""
+        (tmp_path / "tycoon.yml").write_text("name: old-project\nversion: 1.4.2\n")
+
+        migrate_project(tmp_path)
+        p = load_project(tmp_path)
+
+        assert p is not None
+        assert p.version == "1.4.2"
+
+    def test_comments_preserved(self, tmp_path):
+        """Comments and blank lines survive the ruamel.yaml round-trip."""
+        original = "# Project config\nname: acme\n\n# owner: data-platform@acme.com\nversion: 1.0.0\n"
+        (tmp_path / "tycoon.yml").write_text(original)
+
+        migrate_project(tmp_path)
+        result = (tmp_path / "tycoon.yml").read_text()
+
+        assert "# Project config" in result
+        assert "# owner: data-platform@acme.com" in result
+
+    def test_second_call_is_no_op(self, tmp_path):
+        """Running migrate_project twice returns False on the second call."""
+        (tmp_path / "tycoon.yml").write_text("name: old-project\nversion: 0.1.0\n")
+
+        migrate_project(tmp_path)
+        modified_again = migrate_project(tmp_path)
+
+        assert modified_again is False
+
+    def test_already_migrated_yml_is_unchanged(self, tmp_path):
+        """A yml that already has metadata: and schema_version is left alone."""
+        (tmp_path / "tycoon.yml").write_text(
+            f"name: current-project\nschema_version: {SCHEMA_VERSION}\n"
+            "metadata:\n  backend: duckdb_file\n  path: .tycoon/metadata.duckdb\n"
+        )
+
+        modified = migrate_project(tmp_path)
+
+        assert modified is False
+
+    def test_future_schema_version_raises(self, tmp_path):
+        """A yml with schema_version newer than SCHEMA_VERSION raises ValueError."""
+        import pytest
+
+        (tmp_path / "tycoon.yml").write_text(f"name: future-project\nschema_version: {SCHEMA_VERSION + 1}\n")
+
+        with pytest.raises(ValueError, match="newer than this tycoon supports"):
+            migrate_project(tmp_path)
+
+    def test_non_integer_schema_version_raises(self, tmp_path):
+        """A float schema_version (e.g. 0.2 unquoted in YAML) raises ValueError."""
+        import pytest
+
+        (tmp_path / "tycoon.yml").write_text("name: bad-project\nschema_version: 0.2\n")
+
+        with pytest.raises(ValueError, match="must be an integer"):
+            migrate_project(tmp_path)
+
+    def test_missing_file_returns_false(self, tmp_path):
+        """migrate_project on a directory with no tycoon.yml returns False."""
+        assert migrate_project(tmp_path) is False
