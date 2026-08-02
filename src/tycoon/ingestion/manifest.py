@@ -44,7 +44,7 @@ class SourceSpec(BaseModel):
     default_schema: str = ""
     docs_url: str = ""
 
-    def credential_defaults(self) -> dict[str, Any]:
+    def credential_defaults(self) -> dict[str, str]:
         """Return {key: "${ENV_VAR}"} for every credential field."""
         return {c.key: f"${{{c.env_var}}}" for c in self.credentials}
 
@@ -54,5 +54,5 @@ _MANIFEST_PATH = Path(__file__).parent / "data" / "verified_sources.json"
 
 def load_manifest() -> dict[str, SourceSpec]:
     """Load and validate verified_sources.json from the package data directory."""
-    raw: dict[str, Any] = json.loads(_MANIFEST_PATH.read_text())
+    raw: dict[str, Any] = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
     return {k: SourceSpec(id=k, **v) for k, v in raw.items()}

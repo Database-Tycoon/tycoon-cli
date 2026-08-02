@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from tycoon.ingestion.manifest import ConfigField, CredentialField, SourceSpec, load_manifest
 
 
