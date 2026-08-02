@@ -24,18 +24,7 @@ class SourceFactory:
         no_prompt: bool = False,
         flags: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        """Collect config for this source from prompts or flags.
-
-        Interactive mode (no_prompt=False):
-          - credentials: prompt with hide_input, default "${ENV_VAR}"
-          - config_fields: prompt with label, default=field.default when set
-
-        Non-interactive mode (no_prompt=True):
-          - credentials: read from flags or fall back to "${ENV_VAR}"
-          - config_fields: read from flags; raise SystemExit(1) if required and missing
-
-        Returns a flat config dict: {"access_token": "${GITHUB_TOKEN}", "owner": "dlt-hub", ...}
-        """
+        """Produce a flat config dict from spec-driven prompts or flags."""
         flags = flags or {}
         cfg: dict[str, Any] = {}
 
@@ -64,9 +53,8 @@ class SourceFactory:
                         f"[bold]{self.spec.id}[/bold] under --no-prompt."
                     )
                     raise SystemExit(1)
-                elif field.default is not None:
-                    if field.default != "":
-                        cfg[field.key] = field.default
+                elif field.default is not None and field.default != "":
+                    cfg[field.key] = field.default
             else:
                 if field.hint:
                     console.print(f"  [dim]{field.hint}[/dim]")
@@ -76,7 +64,7 @@ class SourceFactory:
                 else:
                     value = typer.prompt(
                         f"  {field.label}",
-                        default=field.default or "",
+                        default=field.default if field.default is not None else "",
                         show_default=bool(field.default),
                     )
                     if value:

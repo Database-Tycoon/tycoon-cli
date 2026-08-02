@@ -40,13 +40,15 @@ class TestCollectConfigNonInteractive:
 
     def test_missing_required_config_field_raises_exit(self):
         spec = load_manifest()["github"]
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit) as exc_info:
             SourceFactory(spec).collect_config(no_prompt=True, flags={})
+        assert exc_info.value.code == 1
 
     def test_missing_one_required_field_raises_exit(self):
         spec = load_manifest()["github"]
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit) as exc_info:
             SourceFactory(spec).collect_config(no_prompt=True, flags={"owner": "acme"})
+        assert exc_info.value.code == 1
 
     def test_optional_field_absent_keeps_default(self):
         spec = load_manifest()["slack"]
@@ -79,10 +81,19 @@ class TestCollectConfigNonInteractive:
         config = SourceFactory(spec).collect_config(no_prompt=True, flags=None)
         assert config == {}
 
-    def test_rest_api_no_credentials_no_required_fields(self):
+    def test_rest_api_optional_defaults_included(self):
         spec = load_manifest()["rest_api"]
         config = SourceFactory(spec).collect_config(no_prompt=True, flags={})
         assert "access_token" not in config
+        assert config["base_url"] == "https://pokeapi.co/api/v2/"
+        assert config["resources"] == "pokemon,berry,type"
+
+    def test_optional_field_with_none_default_excluded(self):
+        spec = _spec_with(
+            config_fields=[ConfigField(key="ids", label="IDs", required=False, default=None)]
+        )
+        config = SourceFactory(spec).collect_config(no_prompt=True, flags={})
+        assert "ids" not in config
 
     def test_multiple_credentials_all_defaulted(self):
         spec = _spec_with(
@@ -112,7 +123,8 @@ class TestCollectConfigInteractive:
             result_holder["config"] = SourceFactory(spec).collect_config(no_prompt=False)
 
         runner = CliRunner()
-        runner.invoke(_app, [], input=input_text)
+        result = runner.invoke(_app, [], input=input_text)
+        assert result.exit_code == 0, f"CLI crashed: {result.exception}"
         return result_holder.get("config", {})
 
     def test_interactive_credential_uses_env_var_default(self):
