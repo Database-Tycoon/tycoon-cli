@@ -1,6 +1,8 @@
 # Proposal: native DuckLake layered storage (SQLite-catalog)
 
-_Status: drafted 2026-06-21 from a spike investigation (4 spikes, all green). **Not scheduled** and **not part of v0.1.10** (the security pass). This is a storage-engine proposal for a future minor. It revives the DuckLake track deferred since v0.1.7 ([#31][], open) with new evidence, and builds on — does not replace — the **already-shipped** layer-aware data model ([#30][], closed): #30 delivered the *logical* layers, this adds an optional *physical* backing for them._
+_Status: drafted 2026-06-21 from a spike investigation (4 spikes, all green). **Not scheduled** and **not part of v0.1.10** (which shipped 2026-07-21). This is a storage-engine proposal. It revives the DuckLake track deferred since v0.1.7 ([#31][], open) with new evidence, and builds on — does not replace — the **already-shipped** layer-aware data model ([#30][], closed): #30 delivered the *logical* layers, this adds an optional *physical* backing for them._
+
+_Update 2026-08-02: since this was drafted, the ingestion rewrite has taken ownership of the DuckLake surface — **milestone M6** ([#87][]) covers `DuckLakeDestination`, `ObjectStorageDestination`, and `tycoon attach ducklake`. Read this document as the **design evidence feeding M6**, not as an independent track: the phasing in "Proposed phasing" below predates that milestone and its sequencing is now M6's to set. The spike findings, the corrected lock model, and the validated dbt profile shape all stand as written — each was re-checked against both `main` and the `v0.1.12` release branch on 2026-08-02 and none of the code they describe has changed._
 
 ## TL;DR
 
@@ -85,7 +87,7 @@ Models materialize with `{{ config(database='mart', schema='main') }}`; sources 
 
 | Today | Becomes |
 |---|---|
-| `DatabaseConfig` — two fixed fields `raw` / `warehouse` (`src/tycoon/project.py:141`) | a named map of layers, each `{metadata path, data_path, read/write}` |
+| `DatabaseConfig` — two fixed fields `raw` / `warehouse` (`src/tycoon/project.py`) | a named map of layers, each `{metadata path, data_path, read/write}` |
 | `ingestion/ducklake_config.py` — **misnamed**: claims DuckLake, actually dumps plain Parquet via dlt's `filesystem` destination | a real per-layer `ATTACH 'ducklake:sqlite:…'` |
 | `observability_dbt.attach_metadata_to_profiles` — emits `{path, alias, read_only}` | emit the DuckLake attach list above |
 | dlt destination → `raw.duckdb` file (`config.raw_db`) | dlt writes into the `raw` DuckLake catalog |
@@ -136,3 +138,4 @@ Models materialize with `{{ config(database='mart', schema='main') }}`; sources 
 
 [#30]: https://github.com/Database-Tycoon/tycoon-cli/issues/30
 [#31]: https://github.com/Database-Tycoon/tycoon-cli/issues/31
+[#87]: https://github.com/Database-Tycoon/tycoon-cli/issues/87
