@@ -421,6 +421,8 @@ def save_project(project: TycoonProject, project_root: Path) -> None:
     """
     path = project_root / PROJECT_FILENAME
     data = project.model_dump(by_alias=True, exclude_none=True, mode="json")
+    if project.schema_version is not None:
+        data["schema_version"] = project.schema_version
     if path.exists():
         existing = yaml.safe_load(path.read_text())
         if isinstance(existing, dict):
@@ -456,7 +458,7 @@ def migrate_project(project_root: Path) -> bool:
         return False
 
     existing = raw.get("schema_version")
-    if existing is not None and not isinstance(existing, int):
+    if existing is not None and (isinstance(existing, bool) or not isinstance(existing, int)):
         raise ValueError(f"tycoon.yml schema_version must be an integer, got {type(existing).__name__}: {existing!r}")
     if existing is not None and existing > SCHEMA_VERSION:
         raise ValueError(

@@ -14,7 +14,7 @@ from pathlib import Path
 import typer
 import yaml
 
-from tycoon.project import StackConfig
+from tycoon.project import SCHEMA_VERSION, StackConfig
 from tycoon.utils.console import info, success, warn
 
 
@@ -159,6 +159,7 @@ def scaffold_blank_project(
     project_data: dict = {
         "name": name,
         "version": "0.1.0",
+        "schema_version": SCHEMA_VERSION,
         "database": {
             "raw": raw_db_path,
             "warehouse": warehouse_db_path,
@@ -537,6 +538,9 @@ def scaffold_from_template(
         warn("tycoon.yml already exists, skipping")
     else:
         shutil.copy2(src_yml, dst_yml)
+        _raw = yaml.safe_load(dst_yml.read_text()) or {}
+        _raw["schema_version"] = SCHEMA_VERSION
+        dst_yml.write_text(yaml.dump(_raw, default_flow_style=False, sort_keys=False))
         success(f"Created tycoon.yml from template '{template_name}'")
 
     # Copy any subdirectories from the template (e.g. dbt_project/, rill/)
