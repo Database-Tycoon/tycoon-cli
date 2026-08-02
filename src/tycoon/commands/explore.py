@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import click
 import typer
@@ -14,7 +14,7 @@ from tycoon.utils.console import error, header, info, success, warn
 
 def analyze_cmd(
     source_name: Annotated[
-        Optional[str],
+        str | None,
         typer.Argument(help="Name of the registered source to analyze."),
     ] = None,
     no_dbt: Annotated[
@@ -102,10 +102,7 @@ def analyze_cmd(
         )
 
     if source_name not in sources:
-        error(
-            f"Source '{source_name}' not found in tycoon.yml. "
-            f"Available: {', '.join(sources.keys()) or '(none)'}"
-        )
+        error(f"Source '{source_name}' not found in tycoon.yml. Available: {', '.join(sources.keys()) or '(none)'}")
         raise typer.Exit(1)
 
     source_cfg = sources[source_name]
@@ -117,10 +114,7 @@ def analyze_cmd(
     # 3. Verify raw database exists and has data for this schema
     raw_db = config.raw_db
     if not raw_db.exists():
-        error(
-            f"Raw database not found at {raw_db}. "
-            f"Run 'tycoon data sources run {source_name}' first."
-        )
+        error(f"Raw database not found at {raw_db}. Run 'tycoon data sources run {source_name}' first.")
         raise typer.Exit(1)
 
     all_tables = get_tables(raw_db)
@@ -203,10 +197,7 @@ def analyze_cmd(
     from tycoon.utils.console import console
 
     console.print()
-    success(
-        f"Explore scaffolding complete — "
-        f"{len(all_generated)} file(s) generated for source '{source_name}'"
-    )
+    success(f"Explore scaffolding complete — {len(all_generated)} file(s) generated for source '{source_name}'")
     # 7. Optionally run dbt build — route through transform's _run_dbt so
     # profile resolution honors tycoon.yml + $DBT_PROFILES_DIR + ~/.dbt
     # exactly like a standalone `tycoon data transform build`.
@@ -229,7 +220,6 @@ def analyze_cmd(
                 error("dbt build failed. Check the dbt logs above for details.")
                 raise typer.Exit(rc)
             success("dbt build completed successfully.")
-
 
 
 def _analyze_all(*, force: bool, no_dbt: bool, rill: bool, build: bool) -> None:
@@ -287,10 +277,7 @@ def _analyze_all(*, force: bool, no_dbt: bool, rill: bool, build: bool) -> None:
         f"generated {len(total_generated)} dbt file(s) total"
     )
     if total_skipped:
-        warn(
-            f"Skipped {len(total_skipped)} hand-edited file(s) (sentinel removed). "
-            f"Re-run with --force to overwrite."
-        )
+        warn(f"Skipped {len(total_skipped)} hand-edited file(s) (sentinel removed). Re-run with --force to overwrite.")
 
     # Note: --rill and --build aren't yet wired for --all to keep the
     # initial surface small. File a follow-up issue if needed.

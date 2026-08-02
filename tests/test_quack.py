@@ -134,14 +134,12 @@ class TestServeAndProbes:
 
     def test_extension_available_true_on_clean_load(self):
         ok = MagicMock(returncode=0)
-        with patch("shutil.which", return_value="/usr/bin/duckdb"), \
-             patch("subprocess.run", return_value=ok):
+        with patch("shutil.which", return_value="/usr/bin/duckdb"), patch("subprocess.run", return_value=ok):
             assert quack.extension_available() is True
 
     def test_extension_available_false_on_load_failure(self):
         bad = MagicMock(returncode=1)
-        with patch("shutil.which", return_value="/usr/bin/duckdb"), \
-             patch("subprocess.run", return_value=bad):
+        with patch("shutil.which", return_value="/usr/bin/duckdb"), patch("subprocess.run", return_value=bad):
             assert quack.extension_available() is False
 
 
@@ -205,9 +203,11 @@ class TestQueryViaQuack:
         fake_con.description = [("answer",)]
         fake_con.fetchall.return_value = [(42,)]
 
-        with patch("tycoon.quack.load_token", return_value="tok"), \
-             patch("tycoon.quack.is_server_running", return_value=True), \
-             patch("tycoon.quack.connect", return_value=fake_con) as connect:
+        with (
+            patch("tycoon.quack.load_token", return_value="tok"),
+            patch("tycoon.quack.is_server_running", return_value=True),
+            patch("tycoon.quack.connect", return_value=fake_con) as connect,
+        ):
             result = cli_runner.invoke(app, ["data", "query", "SELECT 42 AS answer"])
 
         assert result.exit_code == 0, result.output
@@ -217,8 +217,7 @@ class TestQueryViaQuack:
     def test_raw_query_never_uses_quack(self, cli_runner, tmp_path, monkeypatch):
         """--raw is file-based; the Quack server only holds the warehouse."""
         self._bind(tmp_path, monkeypatch)
-        with patch("tycoon.quack.connect") as connect, \
-             patch("tycoon.quack.is_server_running", return_value=True):
+        with patch("tycoon.quack.connect") as connect, patch("tycoon.quack.is_server_running", return_value=True):
             result = cli_runner.invoke(app, ["data", "query", "SELECT 1", "--raw"])
         # raw.duckdb doesn't exist in the tmp project → file-path error, and we
         # must never have tried to attach via Quack for a --raw query.

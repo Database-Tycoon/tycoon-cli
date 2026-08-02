@@ -72,9 +72,7 @@ class TestRendering:
         assert pl["StartCalendarInterval"] == {"Minute": 30}
 
     def test_launchd_weekly_interval(self, tmp_path):
-        pl = plistlib.loads(
-            sched.render_launchd_plist(_spec(tmp_path, cadence="weekly", weekday=3), home=tmp_path)
-        )
+        pl = plistlib.loads(sched.render_launchd_plist(_spec(tmp_path, cadence="weekly", weekday=3), home=tmp_path))
         assert pl["StartCalendarInterval"]["Weekday"] == 3
 
     def test_systemd_oncalendar_daily(self, tmp_path):
@@ -119,7 +117,6 @@ class TestSystemdQuoting:
         line = self._exec_start_line(tmp_path, ["a\\b"])
         assert '"a\\\\b"' in line
 
-
     def test_dollar_doubled_against_env_expansion(self):
         from tycoon.schedule import _systemd_quote
 
@@ -138,8 +135,10 @@ class TestControlCharRejection:
     @pytest.mark.parametrize("evil", ["run\nExecStartPre=/bin/evil", "run\rx", "run\0x"])
     def test_control_char_in_arg_raises_before_writing(self, tmp_path, plat, evil):
         spec = _spec(tmp_path, args=["data", evil])
-        with patch("tycoon.schedule.current_platform", return_value=plat), \
-             patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)) as run:
+        with (
+            patch("tycoon.schedule.current_platform", return_value=plat),
+            patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)) as run,
+        ):
             with pytest.raises(sched.ScheduleError, match="must not contain"):
                 sched.add(spec, home=tmp_path)
         run.assert_not_called()
@@ -148,8 +147,10 @@ class TestControlCharRejection:
 
     def test_newline_in_project_root_raises(self, tmp_path):
         spec = _spec(tmp_path, project_root=tmp_path / "pro\nj\nExecStart=/bin/evil")
-        with patch("tycoon.schedule.current_platform", return_value="linux"), \
-             patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)):
+        with (
+            patch("tycoon.schedule.current_platform", return_value="linux"),
+            patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)),
+        ):
             with pytest.raises(sched.ScheduleError, match="must not contain"):
                 sched.add(spec, home=tmp_path)
         assert not sched.systemd_user_dir(tmp_path).exists()
@@ -169,8 +170,10 @@ class TestControlCharRejection:
 
 class TestLaunchdBackend:
     def test_add_writes_plist_and_loads(self, tmp_path):
-        with patch("tycoon.schedule.current_platform", return_value="darwin"), \
-             patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)) as run:
+        with (
+            patch("tycoon.schedule.current_platform", return_value="darwin"),
+            patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)) as run,
+        ):
             msg = sched.add(_spec(tmp_path), home=tmp_path)
 
         plist = sched.launchd_plist_path("daily-refresh", tmp_path)
@@ -182,8 +185,10 @@ class TestLaunchdBackend:
         assert loaded
 
     def test_list_globs_managed_plists(self, tmp_path):
-        with patch("tycoon.schedule.current_platform", return_value="darwin"), \
-             patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)):
+        with (
+            patch("tycoon.schedule.current_platform", return_value="darwin"),
+            patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)),
+        ):
             sched.add(_spec(tmp_path, name="a"), home=tmp_path)
             sched.add(_spec(tmp_path, name="b"), home=tmp_path)
             # An unrelated plist must not show up.
@@ -192,8 +197,10 @@ class TestLaunchdBackend:
         assert names == ["a", "b"]
 
     def test_remove_unloads_and_deletes(self, tmp_path):
-        with patch("tycoon.schedule.current_platform", return_value="darwin"), \
-             patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)):
+        with (
+            patch("tycoon.schedule.current_platform", return_value="darwin"),
+            patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)),
+        ):
             sched.add(_spec(tmp_path), home=tmp_path)
             plist = sched.launchd_plist_path("daily-refresh", tmp_path)
             assert plist.exists()
@@ -206,8 +213,10 @@ class TestLaunchdBackend:
                 sched.remove("ghost", home=tmp_path)
 
     def test_add_scheduler_failure_raises(self, tmp_path):
-        with patch("tycoon.schedule.current_platform", return_value="darwin"), \
-             patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=1, stderr="boom", stdout="")):
+        with (
+            patch("tycoon.schedule.current_platform", return_value="darwin"),
+            patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=1, stderr="boom", stdout="")),
+        ):
             with pytest.raises(sched.ScheduleError):
                 sched.add(_spec(tmp_path), home=tmp_path)
 
@@ -219,8 +228,10 @@ class TestLaunchdBackend:
 
 class TestSystemdBackend:
     def test_add_writes_timer_and_service(self, tmp_path):
-        with patch("tycoon.schedule.current_platform", return_value="linux"), \
-             patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)) as run:
+        with (
+            patch("tycoon.schedule.current_platform", return_value="linux"),
+            patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)) as run,
+        ):
             sched.add(_spec(tmp_path), home=tmp_path)
         unit_dir = sched.systemd_user_dir(tmp_path)
         assert (unit_dir / "tycoon-daily-refresh.timer").exists()
@@ -229,8 +240,10 @@ class TestSystemdBackend:
         assert enabled
 
     def test_list_and_remove_round_trip(self, tmp_path):
-        with patch("tycoon.schedule.current_platform", return_value="linux"), \
-             patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)):
+        with (
+            patch("tycoon.schedule.current_platform", return_value="linux"),
+            patch("tycoon.schedule.subprocess.run", return_value=MagicMock(returncode=0)),
+        ):
             sched.add(_spec(tmp_path), home=tmp_path)
             assert sched.list_schedules(home=tmp_path) == ["daily-refresh"]
             sched.remove("daily-refresh", home=tmp_path)
@@ -290,8 +303,10 @@ class TestScheduleCommand:
 
     def test_add_happy_path(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
-        with patch("tycoon.schedule.list_schedules", return_value=[]), \
-             patch("tycoon.schedule.add", return_value="Scheduled 'nightly' via launchd.") as add:
+        with (
+            patch("tycoon.schedule.list_schedules", return_value=[]),
+            patch("tycoon.schedule.add", return_value="Scheduled 'nightly' via launchd.") as add,
+        ):
             result = cli_runner.invoke(
                 app,
                 ["schedule", "add", "nightly", "--command", "data run-all", "--at", "02:15", "--notify"],
@@ -356,14 +371,14 @@ class TestAddCommandPrefixStrip:
             captured["args"] = spec.args
             return "installed"
 
-        with patch("tycoon.commands.schedule.config") as cfg, \
-             patch("tycoon.commands.schedule.sched.list_schedules", return_value=[]), \
-             patch("tycoon.commands.schedule.sched.add", side_effect=fake_add):
+        with (
+            patch("tycoon.commands.schedule.config") as cfg,
+            patch("tycoon.commands.schedule.sched.list_schedules", return_value=[]),
+            patch("tycoon.commands.schedule.sched.add", side_effect=fake_add),
+        ):
             cfg.has_project_file = True
             cfg.root = tmp_path
-            result = cli_runner.invoke(
-                app, ["schedule", "add", "daily-refresh", "--command", "tycoon data run-all"]
-            )
+            result = cli_runner.invoke(app, ["schedule", "add", "daily-refresh", "--command", "tycoon data run-all"])
 
         assert result.exit_code == 0, result.output
         assert captured["args"] == ["data", "run-all"]
@@ -371,14 +386,14 @@ class TestAddCommandPrefixStrip:
     def test_empty_command_after_strip_exits_2(self, cli_runner, tmp_path):
         # "--command tycoon" strips to [] — must be rejected, not scheduled as
         # a bare `tycoon` that just prints help on a timer.
-        with patch("tycoon.commands.schedule.config") as cfg, \
-             patch("tycoon.commands.schedule.sched.list_schedules", return_value=[]), \
-             patch("tycoon.commands.schedule.sched.add") as add:
+        with (
+            patch("tycoon.commands.schedule.config") as cfg,
+            patch("tycoon.commands.schedule.sched.list_schedules", return_value=[]),
+            patch("tycoon.commands.schedule.sched.add") as add,
+        ):
             cfg.has_project_file = True
             cfg.root = tmp_path
-            result = cli_runner.invoke(
-                app, ["schedule", "add", "daily-refresh", "--command", "tycoon"]
-            )
+            result = cli_runner.invoke(app, ["schedule", "add", "daily-refresh", "--command", "tycoon"])
         assert result.exit_code == 2, result.output
         assert "cannot be empty" in (result.stderr or result.output)
         add.assert_not_called()
@@ -390,14 +405,14 @@ class TestAddCommandPrefixStrip:
             captured["args"] = spec.args
             return "installed"
 
-        with patch("tycoon.commands.schedule.config") as cfg, \
-             patch("tycoon.commands.schedule.sched.list_schedules", return_value=[]), \
-             patch("tycoon.commands.schedule.sched.add", side_effect=fake_add):
+        with (
+            patch("tycoon.commands.schedule.config") as cfg,
+            patch("tycoon.commands.schedule.sched.list_schedules", return_value=[]),
+            patch("tycoon.commands.schedule.sched.add", side_effect=fake_add),
+        ):
             cfg.has_project_file = True
             cfg.root = tmp_path
-            result = cli_runner.invoke(
-                app, ["schedule", "add", "daily-refresh", "--command", "data run-all"]
-            )
+            result = cli_runner.invoke(app, ["schedule", "add", "daily-refresh", "--command", "data run-all"])
 
         assert result.exit_code == 0, result.output
         assert captured["args"] == ["data", "run-all"]

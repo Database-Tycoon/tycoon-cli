@@ -17,7 +17,6 @@ from tycoon.cli import app
 from tycoon.project import SyncSourceSpec
 from tycoon.sync import sync_to_local
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -224,17 +223,13 @@ class TestSyncToLocal:
             ph.execute("INSERT INTO other VALUES (99)")
             ph.close()
             src.execute(f"ATTACH '{phantom}' AS phantom")
-            src.execute(
-                "CREATE VIEW mart.broken AS SELECT * FROM phantom.main.other"
-            )
+            src.execute("CREATE VIEW mart.broken AS SELECT * FROM phantom.main.other")
             src.execute("DETACH phantom")
         finally:
             src.close()
 
         dest = tmp_path / "snap.duckdb"
-        result = sync_to_local(
-            [SyncSourceSpec(from_=str(src_path))], dest, mode="replace"
-        )
+        result = sync_to_local([SyncSourceSpec(from_=str(src_path))], dest, mode="replace")
 
         copied = {(t.schema, t.table) for t in result.tables}
         skipped = {(s.schema, s.table) for s in result.skipped}
@@ -257,9 +252,7 @@ class TestSyncCli:
         assert "Nothing to sync" in combined
 
     def test_no_destination_errors(self, project, cli_runner, source_db):
-        result = cli_runner.invoke(
-            app, ["data", "sync", "--from", str(source_db)]
-        )
+        result = cli_runner.invoke(app, ["data", "sync", "--from", str(source_db)])
         assert result.exit_code == 1
         combined = (result.stdout or "") + (result.stderr or "")
         assert "No destination" in combined
@@ -271,9 +264,12 @@ class TestSyncCli:
             [
                 "data",
                 "sync",
-                "--from", str(source_db),
-                "--to", str(dest),
-                "--mode", "rebase",
+                "--from",
+                str(source_db),
+                "--to",
+                str(dest),
+                "--mode",
+                "rebase",
             ],
         )
         assert result.exit_code == 1
@@ -301,19 +297,25 @@ class TestSyncCli:
             [
                 "data",
                 "sync",
-                "--from", str(source_db),
-                "--to", str(dest),
-                "--schema", "mart",
+                "--from",
+                str(source_db),
+                "--to",
+                str(dest),
+                "--schema",
+                "mart",
             ],
         )
         assert result.exit_code == 0
         con = duckdb.connect(str(dest))
         try:
-            schemas = [r[0] for r in con.execute(
-                "SELECT DISTINCT table_schema FROM information_schema.tables "
-                "WHERE table_schema NOT IN ('information_schema','pg_catalog','main') "
-                "AND table_type = 'BASE TABLE'"
-            ).fetchall()]
+            schemas = [
+                r[0]
+                for r in con.execute(
+                    "SELECT DISTINCT table_schema FROM information_schema.tables "
+                    "WHERE table_schema NOT IN ('information_schema','pg_catalog','main') "
+                    "AND table_type = 'BASE TABLE'"
+                ).fetchall()
+            ]
             # Only mart should be present (plus any system schemas filtered above)
             assert "mart" in schemas
             assert "raw" not in schemas
@@ -340,6 +342,7 @@ class TestSyncCli:
         # Re-rebind config to pick up the new tycoon.yml
         from tycoon.commands import sync_cmd as sync_mod
         from tycoon.config import TycoonConfig
+
         sync_mod.config = TycoonConfig(project_root=project)
 
         result = cli_runner.invoke(app, ["data", "sync"])

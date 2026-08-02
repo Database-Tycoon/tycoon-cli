@@ -31,8 +31,8 @@ SEVERITIES: tuple[str, ...] = ("success", "error", "info")
 # Slack attachment colours per severity (also surfaced in the generic payload).
 _COLORS: dict[str, str] = {
     "success": "#36a64f",  # green
-    "error": "#d00000",    # red
-    "info": "#2196f3",     # blue
+    "error": "#d00000",  # red
+    "info": "#2196f3",  # blue
 }
 
 
@@ -66,9 +66,7 @@ def build_payload(
             "color": _COLORS.get(severity, _COLORS["info"]),
             "title": f"tycoon: {severity}",
             "text": message,
-            "fields": [
-                {"title": k, "value": v, "short": True} for k, v in fields.items()
-            ],
+            "fields": [{"title": k, "value": v, "short": True} for k, v in fields.items()],
         }
         if label:
             attachment["footer"] = label
@@ -106,9 +104,7 @@ def send(
     if not resolved:
         return False
 
-    payload = build_payload(
-        severity, message, fields, label=label, slack=is_slack_url(resolved)
-    )
+    payload = build_payload(severity, message, fields, label=label, slack=is_slack_url(resolved))
     try:
         response = httpx.post(resolved, json=payload, timeout=timeout)
     except (httpx.HTTPError, httpx.InvalidURL):

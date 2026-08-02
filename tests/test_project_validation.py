@@ -65,9 +65,7 @@ class TestInterpolationAllowlist:
         monkeypatch.setenv("TYCOON_TEST_CATALOG", "md:prod_catalog")
         _write_yml(
             tmp_path,
-            "sync:\n"
-            "  sources:\n"
-            "    - from: ${TYCOON_TEST_CATALOG}\n",
+            "sync:\n  sources:\n    - from: ${TYCOON_TEST_CATALOG}\n",
         )
         loaded = load_project(tmp_path)
         assert loaded is not None
@@ -138,23 +136,16 @@ class TestSourceNameValidation:
     )
     def test_malicious_source_names_rejected(self, bad_name):
         with pytest.raises(ValidationError, match="source name"):
-            TycoonProject(
-                sources={bad_name: SourceConfig(type="rest_api", schema="raw_x")}
-            )
+            TycoonProject(sources={bad_name: SourceConfig(type="rest_api", schema="raw_x")})
 
     def test_error_names_offending_key(self):
         with pytest.raises(ValidationError, match=r"\.\./evil"):
-            TycoonProject(
-                sources={"../evil": SourceConfig(type="rest_api", schema="raw_x")}
-            )
+            TycoonProject(sources={"../evil": SourceConfig(type="rest_api", schema="raw_x")})
 
     def test_rejected_at_load_time(self, tmp_path):
         _write_yml(
             tmp_path,
-            "sources:\n"
-            "  ../escape:\n"
-            "    type: rest_api\n"
-            "    schema: raw_x\n",
+            "sources:\n  ../escape:\n    type: rest_api\n    schema: raw_x\n",
         )
         with pytest.raises(ValidationError, match="source name"):
             load_project(tmp_path)

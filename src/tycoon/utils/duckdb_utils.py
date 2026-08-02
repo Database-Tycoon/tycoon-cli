@@ -24,9 +24,7 @@ def get_row_count(db_path: Path, schema: str, table: str) -> int | None:
         return None
     try:
         con = duckdb.connect(str(db_path), read_only=True)
-        result = con.execute(
-            f"SELECT count(*) FROM {quote_identifier(schema)}.{quote_identifier(table)}"
-        ).fetchone()
+        result = con.execute(f"SELECT count(*) FROM {quote_identifier(schema)}.{quote_identifier(table)}").fetchone()
         con.close()
         return result[0] if result else None
     except duckdb.Error:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shutil
 import time
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -14,7 +14,7 @@ from tycoon.utils.console import console, error, header, info, next_steps, succe
 
 def run_all_cmd(
     max_records: Annotated[
-        Optional[int],
+        int | None,
         typer.Option(
             "--max-records",
             "-n",
@@ -116,6 +116,7 @@ def run_all_cmd(
             warn(f"dbt project not found at {project_dir} — skipping transform.")
         else:
             import subprocess
+
             console.rule("[bold cyan]dbt build")
             cmd = [dbt, "build", "--target", target, "--profiles-dir", str(project_dir)]
             console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-
-from tycoon.project import TycoonProject, SourceConfig, DatabaseConfig, load_project, save_project
+from tycoon.project import DatabaseConfig, SourceConfig, TycoonProject, load_project, save_project
 
 
 class TestTycoonProject:
-
     def test_default_project(self):
         p = TycoonProject()
         assert p.name == "my-project"
@@ -36,7 +34,6 @@ class TestTycoonProject:
 
 
 class TestLoadSave:
-
     def test_load_missing_file_returns_none(self, tmp_path):
         assert load_project(tmp_path) is None
 
@@ -57,12 +54,7 @@ class TestLoadSave:
     def test_env_var_interpolation(self, tmp_path, monkeypatch):
         monkeypatch.setenv("TEST_DB_PATH", "custom/my.duckdb")
         yml = tmp_path / "tycoon.yml"
-        yml.write_text(
-            "name: env-test\n"
-            "database:\n"
-            "  raw: ${TEST_DB_PATH}\n"
-            "  warehouse: data/wh.duckdb\n"
-        )
+        yml.write_text("name: env-test\ndatabase:\n  raw: ${TEST_DB_PATH}\n  warehouse: data/wh.duckdb\n")
         loaded = load_project(tmp_path)
         assert loaded is not None
         assert loaded.database.raw == "custom/my.duckdb"
@@ -79,9 +71,7 @@ class TestLoadSave:
         assert loaded is not None
         assert loaded.database.raw == "fallback/raw.duckdb"
 
-    def test_save_does_not_leak_fivetran_secret_or_flatten_env_ref(
-        self, tmp_path, monkeypatch
-    ):
+    def test_save_does_not_leak_fivetran_secret_or_flatten_env_ref(self, tmp_path, monkeypatch):
         """save_project must never write the expanded Fivetran secret back to
         disk, nor mask it to ``**********`` — the hand-authored env-ref block
         is preserved verbatim (regression for #60)."""
@@ -100,10 +90,7 @@ class TestLoadSave:
         assert loaded is not None
         assert loaded.stack.ingestion_metadata is not None
         # In-memory the secret is expanded for use, but masked in any repr.
-        assert (
-            loaded.stack.ingestion_metadata.api_secret.get_secret_value()
-            == "super-secret-value"
-        )
+        assert loaded.stack.ingestion_metadata.api_secret.get_secret_value() == "super-secret-value"
         assert "super-secret-value" not in repr(loaded.stack.ingestion_metadata)
 
         # A subsequent save (e.g. triggered by `sources add`) must keep the
@@ -116,17 +103,13 @@ class TestLoadSave:
 
 
 class TestConfigIntegration:
-
     def test_config_reads_tycoon_yml(self, tmp_path):
         from tycoon.config import TycoonConfig
 
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
         yml = tmp_path / "tycoon.yml"
         yml.write_text(
-            "name: integration-test\n"
-            "database:\n"
-            "  raw: data/custom_raw.duckdb\n"
-            "  warehouse: data/custom_wh.duckdb\n"
+            "name: integration-test\ndatabase:\n  raw: data/custom_raw.duckdb\n  warehouse: data/custom_wh.duckdb\n"
         )
         cfg = TycoonConfig(project_root=tmp_path)
         assert cfg.has_project_file
@@ -153,11 +136,7 @@ class TestConfigIntegration:
 
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
         (tmp_path / "tycoon.yml").write_text(
-            "name: src-test\n"
-            "sources:\n"
-            "  my-api:\n"
-            "    type: rest_api\n"
-            "    schema: raw_api\n"
+            "name: src-test\nsources:\n  my-api:\n    type: rest_api\n    schema: raw_api\n"
         )
         cfg = TycoonConfig(project_root=tmp_path)
         assert "my-api" in cfg.sources

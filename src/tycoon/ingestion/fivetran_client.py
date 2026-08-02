@@ -92,7 +92,7 @@ class FivetranClient:
     def __enter__(self) -> FivetranClient:
         return self
 
-    def __exit__(self, *_args: Any) -> None:
+    def __exit__(self, *_args: object) -> None:
         self.close()
 
     def close(self) -> None:
@@ -110,10 +110,7 @@ class FivetranClient:
             raise FivetranAPIError(f"Fivetran request failed: {exc}") from exc
 
         if response.status_code >= 400:
-            raise FivetranAPIError(
-                f"Fivetran API {response.status_code} on {path}: "
-                f"{response.text[:200]}"
-            )
+            raise FivetranAPIError(f"Fivetran API {response.status_code} on {path}: {response.text[:200]}")
 
         try:
             payload = response.json()
@@ -121,9 +118,7 @@ class FivetranClient:
             raise FivetranAPIError("Fivetran response was not JSON.") from exc
 
         if not isinstance(payload, dict) or "data" not in payload:
-            raise FivetranAPIError(
-                f"Unexpected Fivetran payload shape: {payload!r}"
-            )
+            raise FivetranAPIError(f"Unexpected Fivetran payload shape: {payload!r}")
         return payload
 
     # ----- public API ---------------------------------------------------
@@ -172,9 +167,7 @@ class FivetranClient:
         """Fetch one connector by id. Reserved for future use — list_connectors
         no longer hits this endpoint after the N+1 cleanup."""
         payload = self._get(f"/connectors/{connector_id}")
-        return self._parse_connector_body(
-            payload.get("data") or {}, fallback_id=connector_id
-        )
+        return self._parse_connector_body(payload.get("data") or {}, fallback_id=connector_id)
 
     def _parse_connector_body(
         self,
@@ -211,7 +204,7 @@ def _parse_iso(raw: Any) -> datetime.datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=datetime.timezone.utc)
+        dt = dt.replace(tzinfo=datetime.UTC)
     return dt
 
 

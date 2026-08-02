@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 
 from tycoon.core.events import DbtRunCompleted, RunCompleted, RunStarted
@@ -10,6 +12,7 @@ from tycoon.core.metadata import EventFilter
 def backend(request, tmp_path):
     if request.param == "duckdb_file":
         from tycoon.metadata_backends.duckdb_file import DuckDBFileBackend
+
         with DuckDBFileBackend(tmp_path / ".tycoon" / "metadata.duckdb") as b:
             yield b
 
@@ -75,29 +78,29 @@ def test_read_nonexistent_snapshot_returns_none(backend):
 
 
 def test_since_filter_tz_aware_excludes_earlier_events(backend):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     early = RunStarted(source_id="early", runtime_id="dlt-managed")
-    early = early.model_copy(update={"timestamp": datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc)})
+    early = early.model_copy(update={"timestamp": datetime(2024, 1, 1, 10, 0, tzinfo=UTC)})
     late = RunStarted(source_id="late", runtime_id="dlt-managed")
-    late = late.model_copy(update={"timestamp": datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)})
+    late = late.model_copy(update={"timestamp": datetime(2024, 1, 1, 12, 0, tzinfo=UTC)})
 
     backend.append_event(early)
     backend.append_event(late)
 
-    cutoff = datetime(2024, 1, 1, 11, 0, tzinfo=timezone.utc)
+    cutoff = datetime(2024, 1, 1, 11, 0, tzinfo=UTC)
     results = backend.query_events(EventFilter(since=cutoff))
     assert len(results) == 1
     assert results[0].source_id == "late"
 
 
 def test_since_filter_naive_datetime_coerced_to_utc(backend):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     early = RunStarted(source_id="early", runtime_id="dlt-managed")
-    early = early.model_copy(update={"timestamp": datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc)})
+    early = early.model_copy(update={"timestamp": datetime(2024, 1, 1, 10, 0, tzinfo=UTC)})
     late = RunStarted(source_id="late", runtime_id="dlt-managed")
-    late = late.model_copy(update={"timestamp": datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)})
+    late = late.model_copy(update={"timestamp": datetime(2024, 1, 1, 12, 0, tzinfo=UTC)})
 
     backend.append_event(early)
     backend.append_event(late)

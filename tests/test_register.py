@@ -33,9 +33,7 @@ def _scaffold_tycoon_project(root: Path, name: str = "proj") -> Path:
 
 def _make_dbt_project(dbt_dir: Path, profile: str, duckdb_path: str) -> None:
     dbt_dir.mkdir(parents=True, exist_ok=True)
-    (dbt_dir / "dbt_project.yml").write_text(
-        yaml.dump({"name": profile, "profile": profile, "config-version": 2})
-    )
+    (dbt_dir / "dbt_project.yml").write_text(yaml.dump({"name": profile, "profile": profile, "config-version": 2}))
     (dbt_dir / "profiles.yml").write_text(
         yaml.dump(
             {
@@ -56,9 +54,7 @@ def _make_snowflake_dbt_project(
     schema: str = "public",
 ) -> None:
     dbt_dir.mkdir(parents=True, exist_ok=True)
-    (dbt_dir / "dbt_project.yml").write_text(
-        yaml.dump({"name": profile, "profile": profile, "config-version": 2})
-    )
+    (dbt_dir / "dbt_project.yml").write_text(yaml.dump({"name": profile, "profile": profile, "config-version": 2}))
     (dbt_dir / "profiles.yml").write_text(
         yaml.dump(
             {
@@ -89,9 +85,7 @@ def _make_bigquery_dbt_project(
     dataset: str = "analytics",
 ) -> None:
     dbt_dir.mkdir(parents=True, exist_ok=True)
-    (dbt_dir / "dbt_project.yml").write_text(
-        yaml.dump({"name": profile, "profile": profile, "config-version": 2})
-    )
+    (dbt_dir / "dbt_project.yml").write_text(yaml.dump({"name": profile, "profile": profile, "config-version": 2}))
     (dbt_dir / "profiles.yml").write_text(
         yaml.dump(
             {
@@ -122,7 +116,6 @@ def _reload_config(monkeypatch, project_root: Path) -> None:
 
 
 class TestRegisterDbt:
-
     def test_register_dbt_by_local_path(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         yml = _scaffold_tycoon_project(project, "proj")
@@ -226,10 +219,15 @@ class TestRegisterDbt:
         result = cli_runner.invoke(
             app,
             [
-                "register", "dbt", str(dbt_dir),
-                "--profiles-dir", str(external_profiles),
-                "--profile", "ci_profile",
-                "--target", "prod",
+                "register",
+                "dbt",
+                str(dbt_dir),
+                "--profiles-dir",
+                str(external_profiles),
+                "--profile",
+                "ci_profile",
+                "--target",
+                "prod",
             ],
             input="\n",
         )
@@ -242,9 +240,7 @@ class TestRegisterDbt:
         assert data["dbt_profile"] == "ci_profile"
         assert data["dbt_target"] == "prod"
 
-    def test_register_dbt_drops_stale_profile_keys_when_unspecified(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_register_dbt_drops_stale_profile_keys_when_unspecified(self, cli_runner, tmp_path, monkeypatch):
         """Re-registering without --profile should drop a previously-persisted value."""
         project = tmp_path / "proj"
         yml = _scaffold_tycoon_project(project, "proj")
@@ -267,9 +263,7 @@ class TestRegisterDbt:
         assert "dbt_profile" not in final
         assert "dbt_target" not in final
 
-    def test_register_dbt_refuses_missing_profiles_dir(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_register_dbt_refuses_missing_profiles_dir(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         _scaffold_tycoon_project(project, "proj")
         dbt_dir = tmp_path / "proj-dbt"
@@ -280,8 +274,11 @@ class TestRegisterDbt:
         result = cli_runner.invoke(
             app,
             [
-                "register", "dbt", str(dbt_dir),
-                "--profiles-dir", str(tmp_path / "does-not-exist"),
+                "register",
+                "dbt",
+                str(dbt_dir),
+                "--profiles-dir",
+                str(tmp_path / "does-not-exist"),
             ],
         )
         assert result.exit_code != 0
@@ -310,9 +307,7 @@ class TestRegisterDbtCreate:
     in one shot, the recovery path for users who picked Skip on the dbt
     prompt during `tycoon init`."""
 
-    def test_create_bootstraps_at_default_sibling_path(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_create_bootstraps_at_default_sibling_path(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         yml = _scaffold_tycoon_project(project, "proj")
 
@@ -332,25 +327,19 @@ class TestRegisterDbtCreate:
         # --create marks the project as tycoon-managed (we own it)
         assert data["stack"]["transformation_managed"] is True
 
-    def test_create_with_explicit_path_overrides_default(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_create_with_explicit_path_overrides_default(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         _scaffold_tycoon_project(project, "proj")
         custom = tmp_path / "custom-dbt-location"
 
         monkeypatch.chdir(project)
         _reload_config(monkeypatch, project)
-        result = cli_runner.invoke(
-            app, ["register", "dbt", "--create", str(custom)]
-        )
+        result = cli_runner.invoke(app, ["register", "dbt", "--create", str(custom)])
         assert result.exit_code == 0, result.stdout
         assert (custom / "dbt_project.yml").exists()
         assert not (tmp_path / "proj-dbt").exists()
 
-    def test_create_refuses_when_dbt_project_yml_already_exists(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_create_refuses_when_dbt_project_yml_already_exists(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         _scaffold_tycoon_project(project, "proj")
         existing = tmp_path / "proj-dbt"
@@ -362,13 +351,9 @@ class TestRegisterDbtCreate:
 
         assert result.exit_code != 0
         # Existing project survived — sentinel: dbt_project_dir not registered
-        assert "dbt_project_dir" not in yaml.safe_load(
-            (project / "tycoon.yml").read_text()
-        )
+        assert "dbt_project_dir" not in yaml.safe_load((project / "tycoon.yml").read_text())
 
-    def test_create_motherduck_warehouse_writes_md_profile(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_create_motherduck_warehouse_writes_md_profile(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         _scaffold_tycoon_project(project, "proj")
         # Flip the warehouse type to motherduck before registering.
@@ -390,9 +375,7 @@ class TestRegisterDbtCreate:
         dev = profile_block["outputs"]["dev"]
         assert dev["path"] == "md:proj"
 
-    def test_create_bails_on_unsupported_warehouse(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_create_bails_on_unsupported_warehouse(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         _scaffold_tycoon_project(project, "proj")
         yml_data = yaml.safe_load((project / "tycoon.yml").read_text())
@@ -406,9 +389,7 @@ class TestRegisterDbtCreate:
         # No sibling dbt project should have been written
         assert not (tmp_path / "proj-dbt").exists()
 
-    def test_register_without_create_or_source_errors(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_register_without_create_or_source_errors(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         _scaffold_tycoon_project(project, "proj")
         monkeypatch.chdir(project)
@@ -427,9 +408,7 @@ class TestRegisterDbtExternalE2E:
     by the transform runner.
     """
 
-    def test_external_dbt_project_runs_with_registered_profile(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_external_dbt_project_runs_with_registered_profile(self, cli_runner, tmp_path, monkeypatch):
         import duckdb
 
         # 1. Standalone dbt project at <tmp>/external_dbt with a custom
@@ -449,9 +428,7 @@ class TestRegisterDbtExternalE2E:
         )
         models_dir = external_dbt / "models"
         models_dir.mkdir()
-        (models_dir / "hello.sql").write_text(
-            "{{ config(materialized='table') }}\nselect 42 as the_answer\n"
-        )
+        (models_dir / "hello.sql").write_text("{{ config(materialized='table') }}\nselect 42 as the_answer\n")
 
         # 2. Profiles.yml in a sibling 'ci-profiles/' dir (proves
         #    --profiles-dir is honored, not the default lookup).
@@ -482,10 +459,15 @@ class TestRegisterDbtExternalE2E:
         result = cli_runner.invoke(
             app,
             [
-                "register", "dbt", str(external_dbt),
-                "--profiles-dir", str(external_profiles),
-                "--profile", "ci_profile",
-                "--target", "prod",
+                "register",
+                "dbt",
+                str(external_dbt),
+                "--profiles-dir",
+                str(external_profiles),
+                "--profile",
+                "ci_profile",
+                "--target",
+                "prod",
             ],
             input="\n",
         )
@@ -494,9 +476,8 @@ class TestRegisterDbtExternalE2E:
         # 4. Transform commands have their own config singleton — rebind.
         from tycoon.commands import transform as transform_mod
         from tycoon.config import TycoonConfig
-        monkeypatch.setattr(
-            transform_mod, "config", TycoonConfig(project_root=project)
-        )
+
+        monkeypatch.setattr(transform_mod, "config", TycoonConfig(project_root=project))
 
         # 5. Run transform — proves the persisted profile/target/profiles_dir
         #    are picked up by `_run_dbt`.
@@ -577,17 +558,13 @@ class TestExtractDbtWarehouseTarget:
 
         dbt_dir = tmp_path / "dbt"
         dbt_dir.mkdir()
-        (dbt_dir / "dbt_project.yml").write_text(
-            yaml.dump({"name": "p", "profile": "p", "config-version": 2})
-        )
+        (dbt_dir / "dbt_project.yml").write_text(yaml.dump({"name": "p", "profile": "p", "config-version": 2}))
         (dbt_dir / "profiles.yml").write_text(
             yaml.dump(
                 {
                     "p": {
                         "target": "dev",
-                        "outputs": {
-                            "dev": {"type": "databricks", "host": "x.databricks.com"}
-                        },
+                        "outputs": {"dev": {"type": "databricks", "host": "x.databricks.com"}},
                     }
                 }
             )
@@ -631,9 +608,7 @@ class TestExtractDbtWarehouseTarget:
         dbt_dir = tmp_path / "dbt"
         dbt_dir.mkdir()
         # dbt_project.yml says profile=primary
-        (dbt_dir / "dbt_project.yml").write_text(
-            yaml.dump({"name": "p", "profile": "primary", "config-version": 2})
-        )
+        (dbt_dir / "dbt_project.yml").write_text(yaml.dump({"name": "p", "profile": "primary", "config-version": 2}))
         # profiles.yml has BOTH primary and secondary
         (dbt_dir / "profiles.yml").write_text(
             yaml.dump(
@@ -660,9 +635,7 @@ class TestExtractDbtWarehouseTarget:
 
         dbt_dir = tmp_path / "dbt"
         dbt_dir.mkdir()
-        (dbt_dir / "dbt_project.yml").write_text(
-            yaml.dump({"name": "p", "profile": "p", "config-version": 2})
-        )
+        (dbt_dir / "dbt_project.yml").write_text(yaml.dump({"name": "p", "profile": "p", "config-version": 2}))
         (dbt_dir / "profiles.yml").write_text(
             yaml.dump(
                 {
@@ -694,9 +667,7 @@ class TestRegisterDbtCloudAlignment:
     """v0.1.3 theme #2: Snowflake / BigQuery alignment offers to update
     ``stack.warehouse`` but leaves ``database.warehouse`` alone."""
 
-    def test_snowflake_alignment_updates_stack_warehouse(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_snowflake_alignment_updates_stack_warehouse(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         _scaffold_tycoon_project(project, "proj")
 
@@ -714,9 +685,7 @@ class TestRegisterDbtCloudAlignment:
         # database.warehouse untouched — still the local DuckDB default
         assert data["database"]["warehouse"] == "data/warehouse.duckdb"
 
-    def test_bigquery_alignment_updates_stack_warehouse(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_bigquery_alignment_updates_stack_warehouse(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         _scaffold_tycoon_project(project, "proj")
 
@@ -733,9 +702,7 @@ class TestRegisterDbtCloudAlignment:
         assert data["stack"]["warehouse"] == "bigquery"
         assert data["database"]["warehouse"] == "data/warehouse.duckdb"
 
-    def test_snowflake_no_change_if_types_already_aligned(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_snowflake_no_change_if_types_already_aligned(self, cli_runner, tmp_path, monkeypatch):
         """When stack.warehouse is already snowflake, no prompt — the value stays."""
         project = tmp_path / "proj"
         yml_path = _scaffold_tycoon_project(project, "proj")
@@ -756,9 +723,7 @@ class TestRegisterDbtCloudAlignment:
         data = yaml.safe_load((project / "tycoon.yml").read_text())
         assert data["stack"]["warehouse"] == "snowflake"
 
-    def test_snowflake_account_mismatch_warns(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_snowflake_account_mismatch_warns(self, cli_runner, tmp_path, monkeypatch):
         """When tycoon.yml records a warehouse_connection.account that
         differs from the dbt profile's account, we warn (non-fatal)."""
         project = tmp_path / "proj"
@@ -780,7 +745,6 @@ class TestRegisterDbtCloudAlignment:
 
 
 class TestRegisterWarehouse:
-
     def test_register_warehouse_local(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         yml = _scaffold_tycoon_project(project, "proj")
@@ -833,9 +797,12 @@ class TestRegisterWarehouse:
         result = cli_runner.invoke(
             app,
             [
-                "register", "warehouse",
-                "--type", "duckdb",
-                "--path", "data/custom.duckdb",
+                "register",
+                "warehouse",
+                "--type",
+                "duckdb",
+                "--path",
+                "data/custom.duckdb",
                 "--no-prompt",
             ],
         )
@@ -856,9 +823,12 @@ class TestRegisterWarehouse:
         result = cli_runner.invoke(
             app,
             [
-                "register", "warehouse",
-                "--type", "motherduck",
-                "--catalog", "my_demo",
+                "register",
+                "warehouse",
+                "--type",
+                "motherduck",
+                "--catalog",
+                "my_demo",
                 "--no-prompt",
             ],
         )
@@ -875,9 +845,7 @@ class TestRegisterWarehouse:
         result = cli_runner.invoke(app, ["register", "warehouse", "--no-prompt"])
         assert result.exit_code != 0
 
-    def test_register_warehouse_no_prompt_motherduck_requires_catalog(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_register_warehouse_no_prompt_motherduck_requires_catalog(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         yml = _scaffold_tycoon_project(project, "proj")
         data = yaml.safe_load(yml.read_text())
@@ -904,9 +872,12 @@ class TestRegisterWarehouse:
         result = cli_runner.invoke(
             app,
             [
-                "register", "warehouse",
-                "--type", "duckdb",
-                "--path", "data/new.duckdb",
+                "register",
+                "warehouse",
+                "--type",
+                "duckdb",
+                "--path",
+                "data/new.duckdb",
                 "--force",
                 "--no-prompt",
             ],
@@ -943,7 +914,6 @@ class TestRegisterWarehouse:
 
 
 class TestRegisterRill:
-
     def test_register_rill_by_local_path(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "proj"
         yml = _scaffold_tycoon_project(project, "proj")

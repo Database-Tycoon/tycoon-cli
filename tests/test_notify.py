@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 from tycoon import notify
 from tycoon.cli import app
 
-
 # ---------------------------------------------------------------------------
 # Payload + URL helpers
 # ---------------------------------------------------------------------------
@@ -125,9 +124,7 @@ class TestNotifyCommand:
     def test_success_path_sends(self, cli_runner, monkeypatch):
         monkeypatch.setenv(notify.WEBHOOK_ENV_VAR, "https://example.com/h")
         with patch("tycoon.notify.send", return_value=True) as send:
-            result = cli_runner.invoke(
-                app, ["notify", "success", "done", "-f", "rows=10"]
-            )
+            result = cli_runner.invoke(app, ["notify", "success", "done", "-f", "rows=10"])
         assert result.exit_code == 0, result.output
         send.assert_called_once()
         # Fields parsed into a dict.
@@ -174,17 +171,13 @@ class TestRunAllNotify:
         self._bind(tmp_path, monkeypatch)
         monkeypatch.setenv(notify.WEBHOOK_ENV_VAR, "https://example.com/h")
         with patch("tycoon.notify.send", return_value=True) as send:
-            cli_runner.invoke(
-                app, ["data", "run-all", "--skip-ingest", "--skip-transform"]
-            )
+            cli_runner.invoke(app, ["data", "run-all", "--skip-ingest", "--skip-transform"])
         send.assert_not_called()
 
     def test_notify_without_webhook_warns_not_crashes(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
         monkeypatch.delenv(notify.WEBHOOK_ENV_VAR, raising=False)
-        result = cli_runner.invoke(
-            app, ["data", "run-all", "--skip-ingest", "--skip-transform", "--notify"]
-        )
+        result = cli_runner.invoke(app, ["data", "run-all", "--skip-ingest", "--skip-transform", "--notify"])
         # Pipeline still succeeds; just warns about the missing webhook.
         assert result.exit_code == 0, result.output
         assert notify.WEBHOOK_ENV_VAR in result.output

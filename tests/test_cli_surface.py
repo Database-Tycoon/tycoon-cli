@@ -24,7 +24,6 @@ import pytest
 
 from tycoon.cli import app
 
-
 # -- Stale-string registry ------------------------------------------------
 #
 # Every entry is a substring that should NOT appear anywhere in the
@@ -33,25 +32,17 @@ from tycoon.cli import app
 # addition then guards against regressions across the entire codebase.
 
 _STALE_SUBSTRINGS: tuple[tuple[str, str], ...] = (
-    ("ask install-model",
-        "removed in v0.1.5 — folded into `tycoon register llm`"),
+    ("ask install-model", "removed in v0.1.5 — folded into `tycoon register llm`"),
     # v0.1.10 dropped the entire ask/nao surface (PR #147): no `tycoon
     # ask`, no `tycoon register llm`, no Nao agent. Any source string
     # mentioning them points users at commands that no longer exist.
-    ("tycoon ask",
-        "removed in v0.1.10 — the ask/nao surface was dropped entirely"),
-    ("register llm",
-        "removed in v0.1.10 — the ask/nao surface was dropped entirely"),
-    ("nao",
-        "removed in v0.1.10 — the Nao agent integration was dropped"),
-    ("Nao",
-        "removed in v0.1.10 — the Nao agent integration was dropped"),
-    ("pip install tycoon[",
-        "wrong package name — use `pip install database-tycoon[...]`"),
-    ("pip install tycoon\\[",
-        "wrong package name — use `pip install database-tycoon[...]`"),
-    ("pip install 'tycoon[",
-        "wrong package name — use `pip install 'database-tycoon[...]'`"),
+    ("tycoon ask", "removed in v0.1.10 — the ask/nao surface was dropped entirely"),
+    ("register llm", "removed in v0.1.10 — the ask/nao surface was dropped entirely"),
+    ("nao", "removed in v0.1.10 — the Nao agent integration was dropped"),
+    ("Nao", "removed in v0.1.10 — the Nao agent integration was dropped"),
+    ("pip install tycoon[", "wrong package name — use `pip install database-tycoon[...]`"),
+    ("pip install tycoon\\[", "wrong package name — use `pip install database-tycoon[...]`"),
+    ("pip install 'tycoon[", "wrong package name — use `pip install 'database-tycoon[...]'`"),
 )
 
 
@@ -89,9 +80,7 @@ class TestStaleStringSentinel:
         return sorted(src.rglob("*.py"))
 
     @pytest.mark.parametrize("needle,reason", _STALE_SUBSTRINGS)
-    def test_substring_absent_from_src(
-        self, src_files: list[Path], needle: str, reason: str
-    ):
+    def test_substring_absent_from_src(self, src_files: list[Path], needle: str, reason: str):
         """Each needle must appear in zero source files."""
         offenders: list[tuple[Path, int, str]] = []
         for f in src_files:
@@ -102,12 +91,8 @@ class TestStaleStringSentinel:
             for i, line in enumerate(lines, start=1):
                 if needle in line:
                     offenders.append((f, i, line.strip()))
-        assert not offenders, (
-            f"Found stale substring {needle!r} ({reason}) in:\n"
-            + "\n".join(
-                f"  {f.relative_to(Path(__file__).parent.parent)}:{i}: {line}"
-                for f, i, line in offenders
-            )
+        assert not offenders, f"Found stale substring {needle!r} ({reason}) in:\n" + "\n".join(
+            f"  {f.relative_to(Path(__file__).parent.parent)}:{i}: {line}" for f, i, line in offenders
         )
 
 
@@ -122,7 +107,7 @@ class TestStaleStringSentinel:
 
 
 _KEY_HELP_PATHS = [
-    (),                                  # top-level
+    (),  # top-level
     ("init",),
     ("register",),
     ("register", "dbt"),
@@ -147,8 +132,7 @@ class TestHelpSurface:
     def test_help_exits_clean(self, path: tuple[str, ...], cli_runner):
         result = cli_runner.invoke(app, list(path) + ["--help"])
         assert result.exit_code == 0, (
-            f"`tycoon {' '.join(path)} --help` exited {result.exit_code}\n"
-            f"--- stdout ---\n{result.stdout}"
+            f"`tycoon {' '.join(path)} --help` exited {result.exit_code}\n--- stdout ---\n{result.stdout}"
         )
 
     @pytest.mark.parametrize("path", _KEY_HELP_PATHS, ids=lambda p: " ".join(p) or "tycoon")
@@ -218,13 +202,12 @@ class TestExtrasNamesRenderLiterally:
                     continue
                 line_start = text.rfind("\n", 0, match.start()) + 1
                 line_end = text.find("\n", match.start())
-                line = text[line_start:line_end if line_end != -1 else None]
+                line = text[line_start : line_end if line_end != -1 else None]
                 offenders.append(f"{src_file.name}: {line.strip()}")
 
         assert not offenders, (
             "Unescaped `database-tycoon[<extra>]` found — Rich will strip "
-            "the brackets. Use `database-tycoon\\\\[<extra>]` instead.\n"
-            + "\n".join(offenders)
+            "the brackets. Use `database-tycoon\\\\[<extra>]` instead.\n" + "\n".join(offenders)
         )
 
 
@@ -234,15 +217,13 @@ class TestExtrasNamesRenderLiterally:
 
 
 class TestVersionString:
-
     def test_version_matches_init_module(self, cli_runner):
         from tycoon import __version__
 
         result = cli_runner.invoke(app, ["--version"])
         assert result.exit_code == 0
         assert __version__ in result.stdout, (
-            f"`tycoon --version` printed {result.stdout!r}, expected substring "
-            f"{__version__!r}"
+            f"`tycoon --version` printed {result.stdout!r}, expected substring {__version__!r}"
         )
 
     def test_version_matches_pyproject(self):
@@ -270,6 +251,5 @@ class TestVersionString:
                 pin = line.split("=", 1)[1].strip().strip('"').strip("'")
                 break
         assert pin == __version__, (
-            f"pyproject.toml [project].version={pin!r} but "
-            f"src/tycoon/__init__.py __version__={__version__!r}"
+            f"pyproject.toml [project].version={pin!r} but src/tycoon/__init__.py __version__={__version__!r}"
         )

@@ -8,12 +8,10 @@ marker (not present yet; will be added when we add network e2e infra).
 
 from __future__ import annotations
 
-
 import pytest
 import yaml
 
 from tycoon.cli import app
-
 
 TEMPLATES = ["csv-import", "nyc-transit"]
 
@@ -30,7 +28,6 @@ def _init_args(template: str) -> list[str]:
 
 @pytest.mark.parametrize("template", TEMPLATES)
 class TestTemplateSmoke:
-
     def test_init_creates_tycoon_yml(self, template, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / template
         project.mkdir()
@@ -74,9 +71,7 @@ class TestTemplateSmoke:
         monkeypatch.setattr(doctor_mod, "config", TycoonConfig(project_root=project))
 
         doctor_result = cli_runner.invoke(app, ["doctor"])
-        assert doctor_result.exit_code == 0, (
-            f"doctor failed for template {template}:\n{doctor_result.stdout}"
-        )
+        assert doctor_result.exit_code == 0, f"doctor failed for template {template}:\n{doctor_result.stdout}"
 
     def test_no_unresolved_placeholders(self, template, cli_runner, tmp_path, monkeypatch):
         """After init, no `{{ param }}` placeholders should remain in tycoon.yml."""

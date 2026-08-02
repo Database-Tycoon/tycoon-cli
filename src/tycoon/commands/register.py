@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 import yaml
@@ -15,13 +15,12 @@ from tycoon.commands.init import (
 )
 from tycoon.config import config
 from tycoon.project import (
-    BITool,
     PROJECT_FILENAME,
+    BITool,
     TransformationTool,
     WarehouseType,
 )
 from tycoon.utils.console import console, error, header, info, success, warn
-
 
 app = typer.Typer(
     help="Attach existing dbt, Rill, or warehouse components to the current tycoon.yml.",
@@ -38,9 +37,11 @@ def _resolve_path_or_url(source: str, default_clone_dest: Path) -> Path | None:
         )
         dest = default_clone_dest
         if not clone_here:
-            dest = Path(
-                typer.prompt("Where should the project be cloned?", default=str(default_clone_dest))
-            ).expanduser().resolve()
+            dest = (
+                Path(typer.prompt("Where should the project be cloned?", default=str(default_clone_dest)))
+                .expanduser()
+                .resolve()
+            )
         if not _clone_repo(source, dest):
             return None
         return dest
@@ -71,14 +72,11 @@ def _create_new_dbt_project(
     """
     from tycoon.scaffolding.templates import _scaffold_dbt_project
 
-    target = (
-        Path(source).expanduser().resolve() if source else default_target.resolve()
-    )
+    target = Path(source).expanduser().resolve() if source else default_target.resolve()
 
     if (target / "dbt_project.yml").exists():
         error(
-            f"{target} already contains a dbt_project.yml. "
-            f"Use `tycoon register dbt {target}` to register it instead."
+            f"{target} already contains a dbt_project.yml. Use `tycoon register dbt {target}` to register it instead."
         )
         return None
 
@@ -141,7 +139,7 @@ def _write_raw_tycoon_yml(path: Path, data: dict) -> None:
 @app.command(name="dbt")
 def register_dbt(
     source: Annotated[
-        Optional[str],
+        str | None,
         typer.Argument(
             help=(
                 "Local path or GitHub URL of an existing dbt project. "
@@ -164,7 +162,7 @@ def register_dbt(
         ),
     ] = False,
     profiles_dir: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             "--profiles-dir",
             help=(
@@ -174,14 +172,14 @@ def register_dbt(
         ),
     ] = None,
     profile: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--profile",
             help="Profile name within profiles.yml. Default: the `profile:` field in dbt_project.yml.",
         ),
     ] = None,
     target: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--target",
             help="Target within the profile (dev / prod / ...). Default: the profile's `target:` field, then 'dev'.",
@@ -352,18 +350,13 @@ def _align_duckdb_warehouse(raw: dict, stack: dict, dbt_warehouse: str) -> None:
         return
 
     console.print()
-    warn(
-        f"Your dbt project targets {dbt_warehouse}, "
-        f"but tycoon.yml has warehouse = {current_warehouse!r}."
-    )
+    warn(f"Your dbt project targets {dbt_warehouse}, but tycoon.yml has warehouse = {current_warehouse!r}.")
     if typer.confirm(f"Update warehouse to {dbt_warehouse}?", default=True):
         raw.setdefault("database", {})["warehouse"] = dbt_warehouse
         if raw["database"].get("raw", "") == current_warehouse:
             raw["database"]["raw"] = dbt_warehouse
         stack["warehouse"] = (
-            WarehouseType.motherduck.value
-            if dbt_warehouse.startswith("md:")
-            else WarehouseType.duckdb.value
+            WarehouseType.motherduck.value if dbt_warehouse.startswith("md:") else WarehouseType.duckdb.value
         )
 
 
@@ -400,9 +393,7 @@ def _align_cloud_warehouse(raw: dict, stack: dict, dbt_target) -> None:
             "MotherDuck, so it won't be touched. Only stack.warehouse is "
             "adjusted for cloud adapters."
         )
-        if typer.confirm(
-            f"Update stack.warehouse to {desired_type!r}?", default=True
-        ):
+        if typer.confirm(f"Update stack.warehouse to {desired_type!r}?", default=True):
             stack["warehouse"] = desired_type
 
     # Snowflake: surface an account-mismatch hint when the user previously
@@ -429,7 +420,7 @@ _CLOUD_TYPE_ALIASES = {"cloud", "c", "motherduck", "md"}
 @app.command(name="warehouse")
 def register_warehouse(
     warehouse_type: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--type",
             help=(
@@ -440,14 +431,14 @@ def register_warehouse(
         ),
     ] = None,
     path: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--path",
             help="For --type duckdb: path to the local .duckdb file. Default: data/warehouse.duckdb.",
         ),
     ] = None,
     catalog: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--catalog",
             help="For --type motherduck: catalog name. Becomes md:<catalog> in tycoon.yml.",
@@ -514,10 +505,14 @@ def register_warehouse(
         error("--type is required when --no-prompt is set.")
         raise typer.Exit(1)
     else:
-        choice = typer.prompt(
-            "Cloud (MotherDuck) or local DuckDB? [cloud/local]",
-            default="local",
-        ).strip().lower()
+        choice = (
+            typer.prompt(
+                "Cloud (MotherDuck) or local DuckDB? [cloud/local]",
+                default="local",
+            )
+            .strip()
+            .lower()
+        )
         if choice in _CLOUD_TYPE_ALIASES:
             choice = "cloud"
         elif choice in _LOCAL_TYPE_ALIASES:
@@ -609,6 +604,7 @@ def register_rill(
         raise typer.Exit(1)
 
     import os
+
     try:
         rel = os.path.relpath(resolved, config.root)
         raw["rill_dir"] = rel

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 import yaml
 
 from tycoon.cli import app
@@ -220,14 +219,10 @@ class TestTemplateParameterization:
     def test_substitute_params_leaves_unknown_placeholders_alone(self):
         from tycoon.scaffolding.templates import _substitute_params
 
-        out = _substitute_params(
-            "{{ known }} vs {{ unknown }}", {"known": "yes"}
-        )
+        out = _substitute_params("{{ known }} vs {{ unknown }}", {"known": "yes"})
         assert out == "yes vs {{ unknown }}"
 
-    def test_scaffold_with_params_substitutes_in_tycoon_yml(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_scaffold_with_params_substitutes_in_tycoon_yml(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(
             app,
@@ -265,15 +260,11 @@ class TestTemplateParameterization:
         )
         assert not (tmp_path / "template.yml").exists()
 
-    def test_missing_required_param_errors_out_in_noninteractive(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_missing_required_param_errors_out_in_noninteractive(self, cli_runner, tmp_path, monkeypatch):
         """When no --param is supplied and stdin is empty (CliRunner default),
         typer.prompt fails. We just need it to not silently succeed."""
         monkeypatch.chdir(tmp_path)
-        result = cli_runner.invoke(
-            app, ["init", "--template", "github-analytics"]
-        )
+        result = cli_runner.invoke(app, ["init", "--template", "github-analytics"])
         assert result.exit_code != 0
 
     def test_param_malformed_is_rejected(self, cli_runner, tmp_path, monkeypatch):
@@ -284,9 +275,7 @@ class TestTemplateParameterization:
         )
         assert result.exit_code != 0
 
-    def test_unknown_param_is_warned_but_not_fatal(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_unknown_param_is_warned_but_not_fatal(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(
             app,

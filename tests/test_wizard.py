@@ -14,7 +14,6 @@ from tycoon.commands.init import (
     _extract_dbt_duckdb_path,
 )
 
-
 # ---------------------------------------------------------------------------
 # _detect_existing
 # ---------------------------------------------------------------------------
@@ -104,7 +103,6 @@ class TestDetectExisting:
 
 
 class TestWizardGreenfield:
-
     def test_default_all_managed(self, cli_runner, tmp_path, monkeypatch):
         project = tmp_path / "green"
         project.mkdir()
@@ -162,7 +160,6 @@ class TestWizardGreenfield:
 
 
 class TestWizardDetection:
-
     def test_detected_dbt_listed_as_first_option(self, cli_runner, tmp_path, monkeypatch):
         """When a dbt project exists at a canonical location, wizard offers it as option 1."""
         project = tmp_path / "myproj"
@@ -193,9 +190,7 @@ class TestExtractDbtDuckdbPath:
 
     def _make_dbt_project(self, dbt_dir: Path, profile: str, duckdb_path: str) -> None:
         dbt_dir.mkdir(parents=True, exist_ok=True)
-        (dbt_dir / "dbt_project.yml").write_text(
-            yaml.dump({"name": profile, "profile": profile, "config-version": 2})
-        )
+        (dbt_dir / "dbt_project.yml").write_text(yaml.dump({"name": profile, "profile": profile, "config-version": 2}))
         (dbt_dir / "profiles.yml").write_text(
             yaml.dump(
                 {
@@ -224,9 +219,7 @@ class TestExtractDbtDuckdbPath:
     def test_returns_none_for_non_duckdb_target(self, tmp_path: Path) -> None:
         dbt_dir = tmp_path / "mydbt"
         dbt_dir.mkdir()
-        (dbt_dir / "dbt_project.yml").write_text(
-            yaml.dump({"name": "mine", "profile": "mine", "config-version": 2})
-        )
+        (dbt_dir / "dbt_project.yml").write_text(yaml.dump({"name": "mine", "profile": "mine", "config-version": 2}))
         (dbt_dir / "profiles.yml").write_text(
             yaml.dump(
                 {
@@ -242,9 +235,7 @@ class TestExtractDbtDuckdbPath:
     def test_returns_none_when_profiles_missing(self, tmp_path: Path) -> None:
         dbt_dir = tmp_path / "mydbt"
         dbt_dir.mkdir()
-        (dbt_dir / "dbt_project.yml").write_text(
-            yaml.dump({"name": "mine", "profile": "mine"})
-        )
+        (dbt_dir / "dbt_project.yml").write_text(yaml.dump({"name": "mine", "profile": "mine"}))
         # Don't write profiles.yml; and ensure ~/.dbt/profiles.yml doesn't exist here
         # (test may spuriously pass if user has one — but that's orthogonal)
         # We just assert *this* dir's check returns None given no local profiles.yml.
@@ -262,7 +253,6 @@ class TestExtractDbtDuckdbPath:
 
 
 class TestWizardSkipSemantics:
-
     def test_doctor_reports_skipped_components(self, cli_runner, tmp_path, monkeypatch):
         """After skipping dbt + rill + orch, `tycoon doctor` should say 'skipped by choice'."""
         project = tmp_path / "skippy"

@@ -26,10 +26,11 @@ what it has an opinion about.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 
 class Layer(str, Enum):
@@ -269,8 +270,6 @@ def classify_fivetran_sources(
 # -- Convenience accessors -----------------------------------------------------
 
 
-def filter_by_layer(
-    classifications: Iterable[LayerClassification], layer: Layer
-) -> list[LayerClassification]:
+def filter_by_layer(classifications: Iterable[LayerClassification], layer: Layer) -> list[LayerClassification]:
     """Return every classification matching ``layer``. Stable order."""
     return [c for c in classifications if c.layer == layer]

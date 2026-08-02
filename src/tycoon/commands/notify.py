@@ -49,10 +49,7 @@ def notify_cmd(
     --notify`` wires the same surface into pipeline runs.
     """
     if severity not in notify_mod.SEVERITIES:
-        error(
-            f"Unknown severity '{severity}'. Choose one of: "
-            f"{', '.join(notify_mod.SEVERITIES)}."
-        )
+        error(f"Unknown severity '{severity}'. Choose one of: {', '.join(notify_mod.SEVERITIES)}.")
         raise typer.Exit(2)
 
     fields = _parse_fields(field)

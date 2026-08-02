@@ -15,6 +15,7 @@ template is the canonical "demo works offline" arc.
 
 [40]: https://github.com/Database-Tycoon/tycoon-cli/issues/40
 """
+
 from __future__ import annotations
 
 import os
@@ -42,10 +43,8 @@ def _tycoon_bin() -> str:
     return binary
 
 
-def _run(
-    args: list[str], *, cwd: Path, env: dict[str, str], timeout: int = 90
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - intentional subprocess for CLI surface test
+def _run(args: list[str], *, cwd: Path, env: dict[str, str], timeout: int = 90) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
         args,
         cwd=cwd,
         env=env,
@@ -56,14 +55,10 @@ def _run(
     )
 
 
-def _assert_ok(
-    label: str, result: subprocess.CompletedProcess[str]
-) -> None:
+def _assert_ok(label: str, result: subprocess.CompletedProcess[str]) -> None:
     if result.returncode != 0:
         pytest.fail(
-            f"{label} exited {result.returncode}\n"
-            f"--- stdout ---\n{result.stdout}\n"
-            f"--- stderr ---\n{result.stderr}\n"
+            f"{label} exited {result.returncode}\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}\n"
         )
 
 
@@ -96,12 +91,8 @@ def test_demo_arc_csv_import(tmp_path: Path) -> None:
         ),
     )
     assert (project / "tycoon.yml").exists(), "tycoon.yml not scaffolded"
-    assert (project / "dbt_project" / "dbt_project.yml").exists(), (
-        "dbt_project/ not scaffolded by csv-import template"
-    )
-    assert (project / "data" / "input" / "widgets.csv").exists(), (
-        "sample widgets.csv not seeded by csv-import template"
-    )
+    assert (project / "dbt_project" / "dbt_project.yml").exists(), "dbt_project/ not scaffolded by csv-import template"
+    assert (project / "data" / "input" / "widgets.csv").exists(), "sample widgets.csv not seeded by csv-import template"
 
     # 2. ingest the bundled CSV
     _assert_ok(
@@ -136,6 +127,4 @@ def test_demo_arc_csv_import(tmp_path: Path) -> None:
         ),
     )
     warehouse_db = project / "data" / "files_warehouse.duckdb"
-    assert warehouse_db.exists(), (
-        f"warehouse db missing after transform: {warehouse_db}"
-    )
+    assert warehouse_db.exists(), f"warehouse db missing after transform: {warehouse_db}"

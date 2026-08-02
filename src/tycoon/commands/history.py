@@ -23,7 +23,6 @@ from tycoon.core.history import HistoryRepository, RunSummary
 from tycoon.observability import metadata_db_path
 from tycoon.utils.console import console, error, header, info
 
-
 app = typer.Typer(
     help="Show dlt + dbt run history captured in .tycoon/metadata.duckdb.",
     invoke_without_command=True,
@@ -88,11 +87,7 @@ def _render_history_table(runs: list[RunSummary]) -> Table:
 
     for s in runs:
         is_dbt = s.runtime_id == "dbt"
-        tool_style = (
-            "[bold magenta]dbt[/bold magenta]"
-            if is_dbt
-            else "[bold cyan]dlt[/bold cyan]"
-        )
+        tool_style = "[bold magenta]dbt[/bold magenta]" if is_dbt else "[bold cyan]dlt[/bold cyan]"
         status_str = "[green]✓[/green]" if s.status == "success" else "[red]✗[/red]"
 
         if is_dbt:
@@ -186,10 +181,7 @@ def _list_history(
 
     if not runs:
         if layer_models is not None:
-            info(
-                f"No dbt invocations captured for the [bold]{layer}[/bold] "
-                "layer yet."
-            )
+            info(f"No dbt invocations captured for the [bold]{layer}[/bold] layer yet.")
         elif source is not None:
             info(f"No dlt runs captured for source [bold]{source}[/bold].")
         else:
@@ -229,10 +221,7 @@ def _show_run(id_prefix: str) -> None:
         detail = None
 
     if detail is None:
-        error(
-            f"No run found matching prefix '{id_prefix}'. "
-            "Try [bold]tycoon data history[/bold] to list."
-        )
+        error(f"No run found matching prefix '{id_prefix}'. Try [bold]tycoon data history[/bold] to list.")
         raise typer.Exit(1)
 
     s = detail.summary
@@ -275,12 +264,8 @@ def _show_run(id_prefix: str) -> None:
 @app.callback()
 def history_default(
     ctx: typer.Context,
-    tool: str = typer.Option(
-        "all", "--tool", "-t", help="Filter by tool: all, dlt, or dbt."
-    ),
-    limit: int = typer.Option(
-        20, "--limit", "-n", help="Max rows to display (default 20)."
-    ),
+    tool: str = typer.Option("all", "--tool", "-t", help="Filter by tool: all, dlt, or dbt."),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max rows to display (default 20)."),
     source: str = typer.Option(
         None,
         "--source",
@@ -318,9 +303,7 @@ def history_default(
 
 @app.command("show")
 def history_show(
-    run_id: str = typer.Argument(
-        ..., help="Load id (dlt) or event id (dbt). Short prefix OK."
-    ),
+    run_id: str = typer.Argument(..., help="Load id (dlt) or event id (dbt). Short prefix OK."),
 ) -> None:
     """Show per-table detail for a specific run."""
     _show_run(run_id)

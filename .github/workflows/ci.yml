@@ -73,9 +73,16 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Sync dev deps
+        # ruff is in [dependency-groups].dev, not an optional extra.
+        run: uv sync --group dev
+
       - name: Ruff lint
-        # Use uvx so we don't need to add ruff to project deps.
-        run: uvx ruff check src tests
+        # ruff is pinned in dev group so CI and local dev use the same version.
+        run: uv run ruff check src tests
+
+      - name: Ruff format check
+        run: uv run ruff format --check src tests
 
   secret-scan:
     # Scans the full git history for committed secrets. Runs the

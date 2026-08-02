@@ -57,7 +57,7 @@ def _bucket_root(catalog_path: str) -> str:
         # -> "s3://my-bucket"
     """
     if catalog_path.startswith("s3://"):
-        parts = catalog_path[len("s3://"):].split("/", 1)
+        parts = catalog_path[len("s3://") :].split("/", 1)
         return f"s3://{parts[0]}"
     # Local path fallback — return parent directory
     return str(Path(catalog_path).parent)

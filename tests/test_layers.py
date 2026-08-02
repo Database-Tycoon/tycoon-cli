@@ -16,7 +16,6 @@ from tycoon.layers import (
     load_manifest,
 )
 
-
 # -- helpers --------------------------------------------------------------------
 
 
@@ -49,13 +48,7 @@ class TestClassifyDbtModelsFolderConvention:
     """Folder convention is the default — no overrides needed."""
 
     def test_staging_folder_maps_to_staging_layer(self) -> None:
-        m = _manifest(
-            {
-                "model.p.stg_orders": _node(
-                    "stg_orders", file_path="models/staging/stg_orders.sql"
-                )
-            }
-        )
+        m = _manifest({"model.p.stg_orders": _node("stg_orders", file_path="models/staging/stg_orders.sql")})
         [c] = classify_dbt_models(m)
         assert c.layer is Layer.STAGING
         assert c.vendor is Vendor.DBT
@@ -63,20 +56,12 @@ class TestClassifyDbtModelsFolderConvention:
         assert c.identifier == "dbt:model.p.stg_orders"
 
     def test_intermediate_folder(self) -> None:
-        m = _manifest(
-            {
-                "model.p.int_x": _node(
-                    "int_x", file_path="models/intermediate/int_x.sql"
-                )
-            }
-        )
+        m = _manifest({"model.p.int_x": _node("int_x", file_path="models/intermediate/int_x.sql")})
         [c] = classify_dbt_models(m)
         assert c.layer is Layer.INTERMEDIATE
 
     def test_marts_folder(self) -> None:
-        m = _manifest(
-            {"model.p.fct_o": _node("fct_o", file_path="models/marts/fct_o.sql")}
-        )
+        m = _manifest({"model.p.fct_o": _node("fct_o", file_path="models/marts/fct_o.sql")})
         [c] = classify_dbt_models(m)
         assert c.layer is Layer.MART
 
@@ -84,12 +69,8 @@ class TestClassifyDbtModelsFolderConvention:
         """`core/` and `published/` are common aliases for marts."""
         m = _manifest(
             {
-                "model.p.fct_a": _node(
-                    "fct_a", file_path="models/core/fct_a.sql"
-                ),
-                "model.p.fct_b": _node(
-                    "fct_b", file_path="models/published/fct_b.sql"
-                ),
+                "model.p.fct_a": _node("fct_a", file_path="models/core/fct_a.sql"),
+                "model.p.fct_b": _node("fct_b", file_path="models/published/fct_b.sql"),
             }
         )
         layers = {c.name: c.layer for c in classify_dbt_models(m)}
@@ -110,9 +91,7 @@ class TestClassifyDbtModelsFolderConvention:
 
     def test_unknown_folder_is_unclassified(self) -> None:
         """A model in `models/scratch/` falls through to UNCLASSIFIED."""
-        m = _manifest(
-            {"model.p.x": _node("x", file_path="models/scratch/x.sql")}
-        )
+        m = _manifest({"model.p.x": _node("x", file_path="models/scratch/x.sql")})
         [c] = classify_dbt_models(m)
         assert c.layer is Layer.UNCLASSIFIED
 
@@ -140,13 +119,7 @@ class TestClassifyDbtModelsMetaOverride:
         assert c.layer is Layer.MART
 
     def test_meta_is_case_insensitive(self) -> None:
-        m = _manifest(
-            {
-                "model.p.x": _node(
-                    "x", file_path="", meta={"tycoon_layer": "STAGING"}
-                )
-            }
-        )
+        m = _manifest({"model.p.x": _node("x", file_path="", meta={"tycoon_layer": "STAGING"})})
         [c] = classify_dbt_models(m)
         assert c.layer is Layer.STAGING
 
@@ -169,24 +142,12 @@ class TestClassifyDbtModelsResourceTypes:
     """Snapshots and seeds get their own layer regardless of folder."""
 
     def test_snapshot_classified_as_snapshot(self) -> None:
-        m = _manifest(
-            {
-                "snapshot.p.snap_x": _node(
-                    "snap_x", rtype="snapshot", file_path="snapshots/snap_x.sql"
-                )
-            }
-        )
+        m = _manifest({"snapshot.p.snap_x": _node("snap_x", rtype="snapshot", file_path="snapshots/snap_x.sql")})
         [c] = classify_dbt_models(m)
         assert c.layer is Layer.SNAPSHOT
 
     def test_seed_classified_as_seed(self) -> None:
-        m = _manifest(
-            {
-                "seed.p.zip_codes": _node(
-                    "zip_codes", rtype="seed", file_path="seeds/zip_codes.csv"
-                )
-            }
-        )
+        m = _manifest({"seed.p.zip_codes": _node("zip_codes", rtype="seed", file_path="seeds/zip_codes.csv")})
         [c] = classify_dbt_models(m)
         assert c.layer is Layer.SEED
 
@@ -196,9 +157,7 @@ class TestClassifyDbtModelsResourceTypes:
             {
                 "test.p.t": _node("t", rtype="test"),
                 "exposure.p.e": _node("e", rtype="exposure"),
-                "model.p.stg_x": _node(
-                    "stg_x", file_path="models/staging/stg_x.sql"
-                ),
+                "model.p.stg_x": _node("stg_x", file_path="models/staging/stg_x.sql"),
             }
         )
         out = classify_dbt_models(m)
@@ -222,13 +181,7 @@ class TestLoadManifest:
     def test_round_trip(self, tmp_path: Path) -> None:
         target = tmp_path / "target"
         target.mkdir()
-        m = _manifest(
-            {
-                "model.p.stg_x": _node(
-                    "stg_x", file_path="models/staging/stg_x.sql"
-                )
-            }
-        )
+        m = _manifest({"model.p.stg_x": _node("stg_x", file_path="models/staging/stg_x.sql")})
         (target / "manifest.json").write_text(json.dumps(m))
         loaded = load_manifest(tmp_path)
         assert loaded is not None

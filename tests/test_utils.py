@@ -7,16 +7,15 @@ from pathlib import Path
 import duckdb
 from rich.table import Table
 
-from tycoon.utils.process import is_port_in_use, command_exists
+from tycoon.utils.console import error, info, status_table, success, warn
 from tycoon.utils.duckdb_utils import (
     db_file_size_mb,
-    get_tables,
     get_row_count,
+    get_tables,
     quote_identifier,
     remove_wal,
 )
-from tycoon.utils.console import status_table, success, warn, error, info
-
+from tycoon.utils.process import command_exists, is_port_in_use
 
 # ---------------------------------------------------------------------------
 # Port checking
@@ -24,7 +23,6 @@ from tycoon.utils.console import status_table, success, warn, error, info
 
 
 class TestPortChecking:
-
     def test_is_port_in_use_returns_bool(self):
         result = is_port_in_use(59999)
         assert isinstance(result, bool)
@@ -46,7 +44,6 @@ class TestPortChecking:
 
 
 class TestDuckDBUtils:
-
     def test_db_file_size_mb_missing_file(self, tmp_path: Path):
         assert db_file_size_mb(tmp_path / "missing.duckdb") is None
 
@@ -132,7 +129,6 @@ class TestDuckDBUtils:
 
 
 class TestConsoleHelpers:
-
     def test_status_table_returns_table(self):
         rows = [("Component", "OK", "detail")]
         result = status_table(rows)

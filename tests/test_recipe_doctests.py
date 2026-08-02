@@ -33,6 +33,7 @@ blocks.
 
 [32]: https://github.com/Database-Tycoon/tycoon-cli/issues/32
 """
+
 from __future__ import annotations
 
 import os
@@ -74,9 +75,7 @@ def _parse_marker_args(raw: str, source: Path, line: int) -> dict[str, str]:
     out: dict[str, str] = {}
     for token in raw.split():
         if "=" not in token:
-            raise ValueError(
-                f"{source}:{line}: tycoon-test marker token missing '=': {token!r}"
-            )
+            raise ValueError(f"{source}:{line}: tycoon-test marker token missing '=': {token!r}")
         k, v = token.split("=", 1)
         out[k] = v
     return out
@@ -102,10 +101,7 @@ def _collect_blocks() -> list[RecipeBlock]:
             args = _parse_marker_args(match.group("args"), doc, line)
             mode = args.get("mode", "offline")
             if mode not in _VALID_MODES:
-                raise ValueError(
-                    f"{doc}:{line}: invalid mode={mode!r} "
-                    f"(expected one of {sorted(_VALID_MODES)})"
-                )
+                raise ValueError(f"{doc}:{line}: invalid mode={mode!r} (expected one of {sorted(_VALID_MODES)})")
             blocks.append(
                 RecipeBlock(
                     source=doc,
@@ -129,9 +125,7 @@ def pytest_configure(config: pytest.Config) -> None:  # pragma: no cover - regis
 
 @pytest.mark.recipe
 @pytest.mark.parametrize("block", _BLOCKS, ids=[b.id for b in _BLOCKS])
-def test_recipe_block(
-    block: RecipeBlock, tmp_path: Path, request: pytest.FixtureRequest
-) -> None:
+def test_recipe_block(block: RecipeBlock, tmp_path: Path, request: pytest.FixtureRequest) -> None:
     if block.mode == "online" and not request.config.getoption("--run-online"):
         pytest.skip("online block; pass --run-online to enable (nightly only)")
 
@@ -150,7 +144,7 @@ def test_recipe_block(
     # doesn't hang waiting on a port that isn't listening in CI.
     env["TYCOON_DISABLE_LLM_PROBE"] = "1"
 
-    result = subprocess.run(  # noqa: S603 - intentional subprocess for CLI surface test
+    result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", block.body],
         cwd=tmp_path,
         env=env,

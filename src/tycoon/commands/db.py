@@ -10,8 +10,8 @@ import typer
 from rich.table import Table
 
 from tycoon.config import config
-from tycoon.utils.console import console, header, info, success, error, warn, status_table
-from tycoon.utils.duckdb_utils import db_file_size_mb, get_tables, get_row_count
+from tycoon.utils.console import console, error, header, info, status_table, success, warn
+from tycoon.utils.duckdb_utils import db_file_size_mb, get_row_count, get_tables
 
 
 def _resolve_source_db(source_name: str) -> Path | None:
@@ -51,10 +51,7 @@ def _has_schema(db_path: Path, schema_name: str) -> bool:
         con = duckdb.connect(str(db_path), read_only=True)
         try:
             schemas = [
-                r[0]
-                for r in con.execute(
-                    "SELECT DISTINCT schema_name FROM information_schema.schemata"
-                ).fetchall()
+                r[0] for r in con.execute("SELECT DISTINCT schema_name FROM information_schema.schemata").fetchall()
             ]
         finally:
             con.close()
@@ -82,11 +79,13 @@ def schema() -> None:
             rows.append(("  Tables", "", f"{len(tables)}"))
             for s, table in tables:
                 count = get_row_count(db_path, s, table)
-                rows.append((
-                    f"  {s}.{table}",
-                    "",
-                    f"{count:,} rows" if count is not None else "empty",
-                ))
+                rows.append(
+                    (
+                        f"  {s}.{table}",
+                        "",
+                        f"{count:,} rows" if count is not None else "empty",
+                    )
+                )
         else:
             rows.append((f"{label} database", "WARN", "not found"))
 
@@ -105,11 +104,13 @@ def schema() -> None:
                 rows.append(("  Tables", "", f"{len(tables)}"))
                 for s, table in tables:
                     count = get_row_count(db_file, s, table)
-                    rows.append((
-                        f"  {s}.{table}",
-                        "",
-                        f"{count:,} rows" if count is not None else "empty",
-                    ))
+                    rows.append(
+                        (
+                            f"  {s}.{table}",
+                            "",
+                            f"{count:,} rows" if count is not None else "empty",
+                        )
+                    )
 
     console.print(status_table(rows, title="Database Schema"))
 
