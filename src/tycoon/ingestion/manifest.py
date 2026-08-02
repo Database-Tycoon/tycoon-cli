@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,7 @@ class SourceSpec(BaseModel):
 _MANIFEST_PATH = Path(__file__).parent / "data" / "verified_sources.json"
 
 
+@functools.lru_cache()
 def load_manifest() -> dict[str, SourceSpec]:
     """Load and validate verified_sources.json from the package data directory."""
     raw: dict[str, Any] = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))

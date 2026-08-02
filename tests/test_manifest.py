@@ -38,6 +38,8 @@ class TestLoadManifest:
         owner_field = gh.config_fields[0]
         assert owner_field.key == "owner"
         assert owner_field.required is True
+        assert gh.docs_url == "https://dlthub.com/docs/dlt-ecosystem/verified-sources/github"
+        assert gh.resources == ["issues", "pull_requests", "commits"]
 
     def test_rest_api_no_dlt_init(self):
         m = load_manifest()
