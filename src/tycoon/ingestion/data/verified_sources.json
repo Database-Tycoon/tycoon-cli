@@ -1,0 +1,635 @@
+{
+  "github": {
+    "display_name": "GitHub",
+    "category": "Developer Tools",
+    "description": "Issues, pull requests, and commits from a repository",
+    "resources": ["issues", "pull_requests", "commits"],
+    "credentials": [
+      {
+        "key": "access_token",
+        "env_var": "GITHUB_TOKEN",
+        "label": "Personal Access Token",
+        "secret": true,
+        "hint": "Create at https://github.com/settings/tokens (needs repo scope)"
+      }
+    ],
+    "config_fields": [
+      {"key": "owner", "label": "Repository owner (user or org)", "required": true, "hint": "e.g. dlt-hub", "default": null},
+      {"key": "repo", "label": "Repository name", "required": true, "hint": "e.g. dlt", "default": null}
+    ],
+    "dlt_source": "github.github_reactions",
+    "dlt_init_name": "github",
+    "requires_dlt_init": true,
+    "default_schema": "raw_github",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/github"
+  },
+  "slack": {
+    "display_name": "Slack",
+    "category": "Communication",
+    "description": "Channels, users, and message history",
+    "resources": ["channels", "users", "messages"],
+    "credentials": [
+      {
+        "key": "access_token",
+        "env_var": "SLACK_ACCESS_TOKEN",
+        "label": "Bot/User OAuth Token",
+        "secret": true,
+        "hint": "Create a Slack app at https://api.slack.com/apps with channels:read, users:read, channels:history scopes"
+      }
+    ],
+    "config_fields": [
+      {
+        "key": "channel_ids",
+        "label": "Channel IDs (comma-separated, leave blank for all public channels)",
+        "required": false,
+        "hint": "e.g. \"C01234567,C89012345\" — copy from channel URL",
+        "default": ""
+      }
+    ],
+    "dlt_source": "slack.slack_source",
+    "dlt_init_name": "slack",
+    "requires_dlt_init": true,
+    "default_schema": "raw_slack",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/slack"
+  },
+  "stripe": {
+    "display_name": "Stripe",
+    "category": "Payments",
+    "description": "Customers, subscriptions, invoices, charges, and products",
+    "resources": ["customers", "subscriptions", "invoices", "charges", "products"],
+    "credentials": [
+      {
+        "key": "stripe_secret_key",
+        "env_var": "STRIPE_SECRET_KEY",
+        "label": "Secret Key",
+        "secret": true,
+        "hint": "Found at https://dashboard.stripe.com/apikeys — use sk_live_... or sk_test_..."
+      }
+    ],
+    "config_fields": [],
+    "dlt_source": "stripe_analytics.stripe_source",
+    "dlt_init_name": "stripe_analytics",
+    "requires_dlt_init": true,
+    "default_schema": "raw_stripe",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/stripe_analytics"
+  },
+  "hubspot": {
+    "display_name": "HubSpot",
+    "category": "CRM",
+    "description": "Contacts, companies, deals, and tickets",
+    "resources": ["contacts", "companies", "deals", "tickets"],
+    "credentials": [
+      {
+        "key": "api_key",
+        "env_var": "HUBSPOT_API_KEY",
+        "label": "Private App Access Token",
+        "secret": true,
+        "hint": "Create at https://app.hubspot.com under Settings > Integrations > Private Apps"
+      }
+    ],
+    "config_fields": [],
+    "dlt_source": "hubspot.hubspot",
+    "dlt_init_name": "hubspot",
+    "requires_dlt_init": true,
+    "default_schema": "raw_hubspot",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/hubspot"
+  },
+  "notion": {
+    "display_name": "Notion",
+    "category": "Productivity",
+    "description": "Databases, pages, and workspace users",
+    "resources": ["databases", "pages", "users"],
+    "credentials": [
+      {
+        "key": "api_key",
+        "env_var": "NOTION_API_KEY",
+        "label": "Integration Token",
+        "secret": true,
+        "hint": "Create at https://www.notion.so/my-integrations — then share your databases with the integration"
+      }
+    ],
+    "config_fields": [
+      {
+        "key": "database_ids",
+        "label": "Database IDs (comma-separated, leave blank to sync all)",
+        "required": false,
+        "hint": "Copy the ID from your Notion database URL: notion.so/<workspace>/<database-id>",
+        "default": ""
+      }
+    ],
+    "dlt_source": "notion.notion_databases",
+    "dlt_init_name": "notion",
+    "requires_dlt_init": true,
+    "default_schema": "raw_notion",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/notion"
+  },
+  "google_sheets": {
+    "display_name": "Google Sheets",
+    "category": "Spreadsheets",
+    "description": "Tabs/ranges from a Google spreadsheet (header row → typed columns)",
+    "resources": ["sheets"],
+    "credentials": [
+      {
+        "key": "credentials_path",
+        "env_var": "GOOGLE_APPLICATION_CREDENTIALS",
+        "label": "Service-account JSON key path",
+        "secret": false,
+        "hint": "Path to a Google service-account .json key. Create one at https://console.cloud.google.com/iam-admin/serviceaccounts, enable the Google Sheets API, and share the spreadsheet with the service-account email. Leave the ${GOOGLE_APPLICATION_CREDENTIALS} default to read it from that env var."
+      }
+    ],
+    "config_fields": [
+      {
+        "key": "spreadsheet_url_or_id",
+        "label": "Spreadsheet URL or ID",
+        "required": true,
+        "hint": "Full share URL or just the ID from docs.google.com/spreadsheets/d/<ID>/edit",
+        "default": null
+      },
+      {
+        "key": "range_names",
+        "label": "Tab/range names (comma-separated, blank for all sheets)",
+        "required": false,
+        "hint": "e.g. \"Sheet1,Q1 2026!A1:F\" — blank loads every sheet in the spreadsheet",
+        "default": ""
+      }
+    ],
+    "dlt_source": "google_sheets.google_spreadsheet",
+    "dlt_init_name": "google_sheets",
+    "requires_dlt_init": true,
+    "default_schema": "raw_google_sheets",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/google_sheets"
+  },
+  "rest_api": {
+    "display_name": "REST API",
+    "category": "Generic",
+    "description": "Any REST API — defaults to the PokéAPI demo (no auth needed)",
+    "resources": ["pokemon", "berry", "type"],
+    "credentials": [],
+    "config_fields": [
+      {
+        "key": "base_url",
+        "label": "API base URL",
+        "required": false,
+        "hint": "e.g. \"https://pokeapi.co/api/v2/\" — leave blank to use the PokéAPI demo",
+        "default": "https://pokeapi.co/api/v2/"
+      },
+      {
+        "key": "resources",
+        "label": "Resource names (comma-separated)",
+        "required": false,
+        "hint": "e.g. \"pokemon,berry,type\" — each becomes a DuckDB table",
+        "default": "pokemon,berry,type"
+      }
+    ],
+    "dlt_source": null,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
+    "default_schema": "raw_rest",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/rest_api"
+  },
+  "filesystem": {
+    "display_name": "CSV / Local Files",
+    "category": "Generic",
+    "description": "Load CSV files from a local directory into DuckDB",
+    "resources": ["files"],
+    "credentials": [],
+    "config_fields": [
+      {
+        "key": "path",
+        "label": "Directory or file path (glob supported)",
+        "required": true,
+        "hint": "e.g. \"~/data/exports/\" or \"/tmp/sales*.csv\"",
+        "default": null
+      }
+    ],
+    "dlt_source": null,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
+    "default_schema": "raw_files",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/filesystem"
+  },
+  "sql_database": {
+    "display_name": "SQL Database",
+    "category": "Databases",
+    "description": "Tables from any SQL database via a SQLAlchemy connection string",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [
+      {
+        "key": "connection_string",
+        "label": "Connection string",
+        "required": true,
+        "hint": "e.g. \"postgresql://user:${DB_PASS}@host/db\" — use ${ENV_VAR} for secrets",
+        "default": null
+      }
+    ],
+    "dlt_source": null,
+    "dlt_init_name": null,
+    "requires_dlt_init": false,
+    "default_schema": "raw_db",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/sql_database"
+  },
+  "airtable": {
+    "display_name": "Airtable",
+    "category": "Productivity",
+    "description": "Tables and records from an Airtable base",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "airtable",
+    "requires_dlt_init": true,
+    "default_schema": "raw_airtable",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/airtable"
+  },
+  "asana": {
+    "display_name": "Asana",
+    "category": "Project Management",
+    "description": "Tasks, projects, and workspaces from Asana",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "asana",
+    "requires_dlt_init": true,
+    "default_schema": "raw_asana",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/asana"
+  },
+  "chess": {
+    "display_name": "Chess.com",
+    "category": "Gaming",
+    "description": "Player profiles, game archives, and club data from Chess.com",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "chess",
+    "requires_dlt_init": true,
+    "default_schema": "raw_chess",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/chess"
+  },
+  "confluence": {
+    "display_name": "Confluence",
+    "category": "Documentation",
+    "description": "Spaces, pages, and blog posts from Confluence",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "confluence",
+    "requires_dlt_init": true,
+    "default_schema": "raw_confluence",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/confluence"
+  },
+  "facebook_ads": {
+    "display_name": "Facebook Ads",
+    "category": "Advertising",
+    "description": "Ads, campaigns, ad sets, and insights from Facebook Ads",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "facebook_ads",
+    "requires_dlt_init": true,
+    "default_schema": "raw_facebook_ads",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/facebook_ads"
+  },
+  "freshdesk": {
+    "display_name": "Freshdesk",
+    "category": "Customer Support",
+    "description": "Tickets, contacts, and agents from Freshdesk",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "freshdesk",
+    "requires_dlt_init": true,
+    "default_schema": "raw_freshdesk",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/freshdesk"
+  },
+  "google_analytics": {
+    "display_name": "Google Analytics",
+    "category": "Analytics",
+    "description": "Website metrics, sessions, and events from Google Analytics 4",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "google_analytics",
+    "requires_dlt_init": true,
+    "default_schema": "raw_google_analytics",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/google_analytics"
+  },
+  "hackernews": {
+    "display_name": "Hacker News",
+    "category": "News",
+    "description": "Stories, comments, and users from Hacker News",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "hackernews",
+    "requires_dlt_init": true,
+    "default_schema": "raw_hackernews",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/hacker_news"
+  },
+  "jira": {
+    "display_name": "Jira",
+    "category": "Project Management",
+    "description": "Issues, projects, sprints, and workflows from Jira",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "jira",
+    "requires_dlt_init": true,
+    "default_schema": "raw_jira",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/jira"
+  },
+  "kinesis": {
+    "display_name": "Amazon Kinesis",
+    "category": "Streaming",
+    "description": "Records from an Amazon Kinesis data stream",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "kinesis",
+    "requires_dlt_init": true,
+    "default_schema": "raw_kinesis",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/kinesis"
+  },
+  "linkedin_ads": {
+    "display_name": "LinkedIn Ads",
+    "category": "Advertising",
+    "description": "Ads, campaigns, and analytics from LinkedIn Campaign Manager",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "linkedin_ads",
+    "requires_dlt_init": true,
+    "default_schema": "raw_linkedin_ads",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/linkedin_ads"
+  },
+  "matomo": {
+    "display_name": "Matomo",
+    "category": "Analytics",
+    "description": "Web analytics visits, events, and goals from Matomo",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "matomo",
+    "requires_dlt_init": true,
+    "default_schema": "raw_matomo",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/matomo"
+  },
+  "mongodb": {
+    "display_name": "MongoDB",
+    "category": "Databases",
+    "description": "Collections and documents from MongoDB",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "mongodb",
+    "requires_dlt_init": true,
+    "default_schema": "raw_mongodb",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/mongodb"
+  },
+  "mux": {
+    "display_name": "Mux",
+    "category": "Media",
+    "description": "Video data, playback metrics, and assets from Mux",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "mux",
+    "requires_dlt_init": true,
+    "default_schema": "raw_mux",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/mux"
+  },
+  "persio": {
+    "display_name": "Persio",
+    "category": "CRM",
+    "description": "Customer engagement and deal data from Persio",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "persio",
+    "requires_dlt_init": true,
+    "default_schema": "raw_persio",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/persio"
+  },
+  "piano": {
+    "display_name": "Piano",
+    "category": "Media Analytics",
+    "description": "Subscriber and analytics data from Piano",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "piano",
+    "requires_dlt_init": true,
+    "default_schema": "raw_piano",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/piano"
+  },
+  "pipedrive": {
+    "display_name": "Pipedrive",
+    "category": "CRM",
+    "description": "Deals, contacts, and pipeline data from Pipedrive",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "pipedrive",
+    "requires_dlt_init": true,
+    "default_schema": "raw_pipedrive",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/pipedrive"
+  },
+  "postgres": {
+    "display_name": "PostgreSQL",
+    "category": "Databases",
+    "description": "Tables from a PostgreSQL database via the dlt postgres source",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "postgres",
+    "requires_dlt_init": true,
+    "default_schema": "raw_postgres",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/postgres"
+  },
+  "salesforce": {
+    "display_name": "Salesforce",
+    "category": "CRM",
+    "description": "Objects, opportunities, and cases from Salesforce",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "salesforce",
+    "requires_dlt_init": true,
+    "default_schema": "raw_salesforce",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/salesforce"
+  },
+  "sendgrid": {
+    "display_name": "SendGrid",
+    "category": "Email",
+    "description": "Email activity, stats, and contact lists from SendGrid",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "sendgrid",
+    "requires_dlt_init": true,
+    "default_schema": "raw_sendgrid",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/sendgrid"
+  },
+  "shopify": {
+    "display_name": "Shopify",
+    "category": "E-commerce",
+    "description": "Orders, products, and customers from Shopify",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "shopify_dlt",
+    "requires_dlt_init": true,
+    "default_schema": "raw_shopify",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/shopify"
+  },
+  "strapi": {
+    "display_name": "Strapi",
+    "category": "CMS",
+    "description": "Content collections and entries from a Strapi CMS instance",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "strapi",
+    "requires_dlt_init": true,
+    "default_schema": "raw_strapi",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/strapi"
+  },
+  "twilio": {
+    "display_name": "Twilio",
+    "category": "Communications",
+    "description": "Messages, calls, and account data from Twilio",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "twilio",
+    "requires_dlt_init": true,
+    "default_schema": "raw_twilio",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/twilio"
+  },
+  "twitter": {
+    "display_name": "Twitter / X",
+    "category": "Social Media",
+    "description": "Tweets, user profiles, and public metrics from Twitter/X",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "twitter",
+    "requires_dlt_init": true,
+    "default_schema": "raw_twitter",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/twitter"
+  },
+  "workable": {
+    "display_name": "Workable",
+    "category": "HR",
+    "description": "Jobs, candidates, and hiring pipeline from Workable",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "workable",
+    "requires_dlt_init": true,
+    "default_schema": "raw_workable",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/workable"
+  },
+  "zendesk": {
+    "display_name": "Zendesk",
+    "category": "Customer Support",
+    "description": "Tickets, users, organizations, and macros from Zendesk",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "zendesk",
+    "requires_dlt_init": true,
+    "default_schema": "raw_zendesk",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/zendesk"
+  },
+  "chargebee": {
+    "display_name": "Chargebee",
+    "category": "Billing",
+    "description": "Subscriptions, invoices, and customers from Chargebee",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "chargebee",
+    "requires_dlt_init": true,
+    "default_schema": "raw_chargebee",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/chargebee"
+  },
+  "google_cloud_storage": {
+    "display_name": "Google Cloud Storage",
+    "category": "Cloud Storage",
+    "description": "Files and objects from a Google Cloud Storage bucket",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "google_cloud_storage",
+    "requires_dlt_init": true,
+    "default_schema": "raw_gcs",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/filesystem"
+  },
+  "dremio": {
+    "display_name": "Dremio",
+    "category": "Data Lakehouse",
+    "description": "Queries and tables from a Dremio data lakehouse",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "dremio",
+    "requires_dlt_init": true,
+    "default_schema": "raw_dremio",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/dremio"
+  },
+  "inbox": {
+    "display_name": "Email Inbox",
+    "category": "Email",
+    "description": "Emails, attachments, and metadata via IMAP",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "inbox",
+    "requires_dlt_init": true,
+    "default_schema": "raw_inbox",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/inbox"
+  },
+  "google_ads": {
+    "display_name": "Google Ads",
+    "category": "Advertising",
+    "description": "Campaigns, ad groups, and performance metrics from Google Ads",
+    "resources": [],
+    "credentials": [],
+    "config_fields": [],
+    "dlt_source": null,
+    "dlt_init_name": "google_ads",
+    "requires_dlt_init": true,
+    "default_schema": "raw_google_ads",
+    "docs_url": "https://dlthub.com/docs/dlt-ecosystem/verified-sources/google_ads"
+  }
+}
