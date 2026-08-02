@@ -51,8 +51,12 @@ both mechanisms are idempotent and skip work that is already present.
 
 ## Hardening in this repository
 
-- GitHub Actions are pinned to full commit SHAs and updated via Dependabot;
+- GitHub Actions are pinned to full commit SHAs and refreshed during the
+  dependency review at each release-branch cut (see CONTRIBUTING.md);
   workflows run with least-privilege `permissions:` blocks.
+- Dependabot alerts remain enabled, so newly disclosed vulnerabilities in
+  our dependencies still surface. Routine version bumps are handled by the
+  release-time review rather than continuous automated pull requests.
 - CI runs gitleaks (secret scanning) on the full git history; contributors
   can opt into the same scan locally via `uvx pre-commit install` (gitleaks +
   bandit hooks in `.pre-commit-config.yaml`).
