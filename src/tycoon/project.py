@@ -405,13 +405,7 @@ def load_project(project_root: Path) -> TycoonProject | None:
     if raw is None:
         return TycoonProject()
     raw = _interpolate_allowed_fields(raw)
-    project = TycoonProject.model_validate(raw)
-    if project.schema_version is not None and project.schema_version > SCHEMA_VERSION:
-        raise ValueError(
-            f"tycoon.yml schema_version {project.schema_version} is newer than this tycoon supports "
-            f"({SCHEMA_VERSION}). Upgrade tycoon-cli to use this project."
-        )
-    return project
+    return TycoonProject.model_validate(raw)
 
 
 def save_project(project: TycoonProject, project_root: Path) -> None:
@@ -427,7 +421,8 @@ def save_project(project: TycoonProject, project_root: Path) -> None:
     """
     path = project_root / PROJECT_FILENAME
     data = project.model_dump(by_alias=True, exclude_none=True, mode="json")
-    data["schema_version"] = SCHEMA_VERSION
+    if project.schema_version is not None:
+        data["schema_version"] = project.schema_version
     if path.exists():
         existing = yaml.safe_load(path.read_text())
         if isinstance(existing, dict):

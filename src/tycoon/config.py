@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tycoon.project import PROJECT_FILENAME, SCHEMA_VERSION, TycoonProject, load_project
-from tycoon.utils.console import warn as _warn_console
+from tycoon.utils.console import error as _error_console, warn as _warn_console
 
 # v0.1 defaults (used when no tycoon.yml exists)
 _DEFAULT_RAW_DB = "data/raw.duckdb"
@@ -130,6 +130,12 @@ def load_config() -> TycoonConfig:
     cfg = TycoonConfig(project_root=_find_project_root())
     if cfg.project is not None:
         sv = cfg.project.schema_version
+        if sv is not None and sv > SCHEMA_VERSION:
+            _error_console(
+                f"tycoon.yml schema_version {sv} is newer than this tycoon supports "
+                f"({SCHEMA_VERSION}). Upgrade tycoon-cli to use this project."
+            )
+            raise SystemExit(1)
         if sv is None or sv < SCHEMA_VERSION:
             current = sv if sv is not None else "none"
             _warn_console(

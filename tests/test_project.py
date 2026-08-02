@@ -196,24 +196,37 @@ class TestRuntimesAndMetadata:
 
 
 class TestSchemaVersionEnforcement:
-    """T2-4: load_project raises on future schema_version; save_project stamps it."""
+    """T2-4: load_project is permissive; save_project preserves schema_version."""
 
-    def test_future_schema_version_raises_in_load(self, tmp_path):
-        import pytest
-
+    def test_future_schema_version_loads_without_raise(self, tmp_path):
+        """load_project must not raise for a future schema_version — the gate
+        lives in load_config() so the import-time singleton never trips it."""
         (tmp_path / "tycoon.yml").write_text(f"name: future\nschema_version: {SCHEMA_VERSION + 1}\n")
+        p = load_project(tmp_path)
+        assert p is not None
+        assert p.schema_version == SCHEMA_VERSION + 1
 
-        with pytest.raises(ValueError, match="newer than this tycoon supports"):
-            load_project(tmp_path)
-
-    def test_save_project_stamps_schema_version(self, tmp_path):
-        (tmp_path / "tycoon.yml").write_text("name: old-project\n")
+    def test_save_project_preserves_schema_version(self, tmp_path):
+        """save_project preserves whatever schema_version is in the model;
+        only migrate_project (via init --upgrade) advances the stamp."""
+        (tmp_path / "tycoon.yml").write_text(f"name: old\nschema_version: {SCHEMA_VERSION}\n")
         p = load_project(tmp_path)
         assert p is not None
         save_project(p, tmp_path)
         reloaded = load_project(tmp_path)
         assert reloaded is not None
         assert reloaded.schema_version == SCHEMA_VERSION
+
+    def test_save_project_does_not_stamp_when_absent(self, tmp_path):
+        """A project with no schema_version on disk stays unstamped after save_project."""
+        (tmp_path / "tycoon.yml").write_text("name: old-project\n")
+        p = load_project(tmp_path)
+        assert p is not None
+        assert p.schema_version is None
+        save_project(p, tmp_path)
+        reloaded = load_project(tmp_path)
+        assert reloaded is not None
+        assert reloaded.schema_version is None
 
 
 class TestMigrateProject:

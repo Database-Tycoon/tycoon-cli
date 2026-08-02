@@ -86,3 +86,24 @@ class TestLoadConfigSchemaWarning:
         load_config()
 
         assert calls == []
+
+    def test_errors_and_exits_when_schema_version_future(self, tmp_path, monkeypatch):
+        """load_config must error and exit for a schema_version newer than SCHEMA_VERSION.
+
+        The gate lives here (not in load_project) so the import-time singleton
+        never raises and --help / init --upgrade remain reachable.
+        """
+        import pytest
+
+        (tmp_path / "tycoon.yml").write_text(f"name: future\nschema_version: {SCHEMA_VERSION + 1}\n")
+        monkeypatch.chdir(tmp_path)
+
+        errors = []
+        monkeypatch.setattr("tycoon.config._error_console", lambda msg: errors.append(msg))
+
+        with pytest.raises(SystemExit) as exc_info:
+            load_config()
+
+        assert exc_info.value.code == 1
+        assert len(errors) == 1
+        assert "newer than this tycoon supports" in errors[0]
