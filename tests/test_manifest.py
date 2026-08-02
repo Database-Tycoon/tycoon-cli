@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from tycoon.ingestion.manifest import ConfigField, CredentialField, SourceSpec, load_manifest
+import pytest
+
+from tycoon.ingestion.manifest import ConfigField, CredentialField, DltBackend, SourceSpec, load_manifest
 
 
 class TestLoadManifest:
@@ -21,15 +23,23 @@ class TestLoadManifest:
         for key, spec in m.items():
             assert spec.id == key, f"spec.id {spec.id!r} != key {key!r}"
 
+    def test_all_entries_have_provider_dlt(self):
+        m = load_manifest()
+        for key, spec in m.items():
+            assert spec.provider == "dlt", f"{key} missing provider"
+
+    def test_all_entries_have_backend_dict(self):
+        m = load_manifest()
+        for key, spec in m.items():
+            assert isinstance(spec.backend, dict), f"{key} backend is not a dict"
+
     def test_github_full_entry(self):
         m = load_manifest()
         assert "github" in m
         gh = m["github"]
         assert gh.display_name == "GitHub"
         assert gh.category == "Developer Tools"
-        assert gh.requires_dlt_init is True
-        assert gh.dlt_init_name == "github"
-        assert gh.dlt_source == "github.github_reactions"
+        assert gh.provider == "dlt"
         assert gh.default_schema == "raw_github"
         assert len(gh.credentials) == 1
         assert gh.credentials[0].env_var == "GITHUB_TOKEN"
@@ -40,36 +50,39 @@ class TestLoadManifest:
         assert owner_field.required is True
         assert gh.docs_url == "https://dlthub.com/docs/dlt-ecosystem/verified-sources/github"
         assert gh.resources == ["issues", "pull_requests", "commits"]
+        dlt = gh.as_dlt()
+        assert dlt.requires_dlt_init is True
+        assert dlt.dlt_init_name == "github"
+        assert dlt.dlt_source == "github.github_reactions"
 
     def test_rest_api_no_dlt_init(self):
         m = load_manifest()
         ra = m["rest_api"]
-        assert ra.requires_dlt_init is False
-        assert ra.dlt_source is None
-        assert ra.dlt_init_name is None
         assert len(ra.credentials) == 0
+        dlt = ra.as_dlt()
+        assert dlt.requires_dlt_init is False
+        assert dlt.dlt_source is None
+        assert dlt.dlt_init_name is None
 
     def test_filesystem_no_dlt_init(self):
         m = load_manifest()
-        fs = m["filesystem"]
-        assert fs.requires_dlt_init is False
+        assert m["filesystem"].as_dlt().requires_dlt_init is False
 
     def test_sql_database_no_dlt_init(self):
         m = load_manifest()
-        sql = m["sql_database"]
-        assert sql.requires_dlt_init is False
+        assert m["sql_database"].as_dlt().requires_dlt_init is False
 
     def test_slack_full_entry(self):
         m = load_manifest()
         sl = m["slack"]
         assert sl.credentials[0].env_var == "SLACK_ACCESS_TOKEN"
-        assert sl.requires_dlt_init is True
+        assert sl.as_dlt().requires_dlt_init is True
 
     def test_stripe_maps_to_stripe_analytics_dlt(self):
         m = load_manifest()
-        st = m["stripe"]
-        assert st.dlt_init_name == "stripe_analytics"
-        assert st.dlt_source == "stripe_analytics.stripe_source"
+        dlt = m["stripe"].as_dlt()
+        assert dlt.dlt_init_name == "stripe_analytics"
+        assert dlt.dlt_source == "stripe_analytics.stripe_source"
 
     def test_all_minimal_entries_have_required_fields(self):
         m = load_manifest()
@@ -96,6 +109,8 @@ class TestSourceSpec:
     def test_multiple_credentials_all_appear_in_defaults(self):
         spec = SourceSpec(
             id="test",
+            provider="test",
+            backend={},
             display_name="Test",
             category="Test",
             description="Test source",
@@ -107,15 +122,34 @@ class TestSourceSpec:
         defaults = spec.credential_defaults()
         assert defaults == {"api_key": "${TEST_KEY}", "api_secret": "${TEST_SECRET}"}
 
+    def test_as_dlt_returns_dlt_backend(self):
+        spec = load_manifest()["github"]
+        dlt = spec.as_dlt()
+        assert isinstance(dlt, DltBackend)
+
+    def test_as_dlt_raises_for_non_dlt_provider(self):
+        spec = SourceSpec(
+            id="test",
+            provider="airbyte",
+            backend={"connector": "source-github"},
+            display_name="Test",
+            category="Test",
+            description="desc",
+        )
+        with pytest.raises(ValueError, match="not a dlt source"):
+            spec.as_dlt()
+
 
 class TestSourceSpecModel:
     def test_minimal_construction(self):
-        spec = SourceSpec(id="x", display_name="X", category="Test", description="desc")
+        spec = SourceSpec(
+            id="x", provider="test", backend={},
+            display_name="X", category="Test", description="desc"
+        )
         assert spec.resources == []
         assert spec.credentials == []
         assert spec.config_fields == []
-        assert spec.requires_dlt_init is False
-        assert spec.dlt_source is None
+        assert spec.backend == {}
 
     def test_credential_field_defaults(self):
         cred = CredentialField(key="token", env_var="MY_TOKEN", label="Token")

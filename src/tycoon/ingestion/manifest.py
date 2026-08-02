@@ -1,9 +1,4 @@
-"""Loader and Pydantic models for the verified_sources.json manifest.
-
-``load_manifest()`` is the single entry point: it reads the bundled
-``data/verified_sources.json`` and returns a validated dict of
-:class:`SourceSpec` objects keyed by source id.
-"""
+"""Loader and Pydantic models for the verified_sources.json manifest."""
 
 from __future__ import annotations
 
@@ -31,23 +26,34 @@ class ConfigField(BaseModel):
     default: str | None = None
 
 
+class DltBackend(BaseModel):
+    dlt_source: str | None = None
+    dlt_init_name: str | None = None
+    requires_dlt_init: bool = False
+
+
 class SourceSpec(BaseModel):
     id: str
+    provider: str
+    backend: dict[str, Any]
     display_name: str
     category: str
     description: str
     resources: list[str] = []
     credentials: list[CredentialField] = []
     config_fields: list[ConfigField] = []
-    dlt_source: str | None = None
-    dlt_init_name: str | None = None
-    requires_dlt_init: bool = False
     default_schema: str = ""
     docs_url: str = ""
 
     def credential_defaults(self) -> dict[str, str]:
         """Return {key: "${ENV_VAR}"} for every credential field."""
         return {c.key: f"${{{c.env_var}}}" for c in self.credentials}
+
+    def as_dlt(self) -> DltBackend:
+        """Parse backend as DltBackend; raises if provider is not 'dlt'."""
+        if self.provider != "dlt":
+            raise ValueError(f"{self.id!r} is not a dlt source (provider={self.provider!r})")
+        return DltBackend(**self.backend)
 
 
 _MANIFEST_PATH = Path(__file__).parent / "data" / "verified_sources.json"
