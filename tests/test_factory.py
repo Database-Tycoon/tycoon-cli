@@ -10,7 +10,7 @@ from tycoon.ingestion.manifest import ConfigField, CredentialField, SourceSpec, 
 
 
 def _spec_with(**overrides) -> SourceSpec:
-    defaults = dict(id="test", display_name="Test", category="Test", description="desc")
+    defaults = dict(id="test", provider="test", backend={}, display_name="Test", category="Test", description="desc")
     defaults.update(overrides)
     return SourceSpec(**defaults)
 
