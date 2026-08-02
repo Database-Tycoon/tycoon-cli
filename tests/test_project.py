@@ -256,9 +256,7 @@ class TestMigrateProject:
         """A yml with schema_version newer than SCHEMA_VERSION raises ValueError."""
         import pytest
 
-        (tmp_path / "tycoon.yml").write_text(
-            f"name: future-project\nschema_version: {SCHEMA_VERSION + 1}\n"
-        )
+        (tmp_path / "tycoon.yml").write_text(f"name: future-project\nschema_version: {SCHEMA_VERSION + 1}\n")
 
         with pytest.raises(ValueError, match="newer than this tycoon supports"):
             migrate_project(tmp_path)

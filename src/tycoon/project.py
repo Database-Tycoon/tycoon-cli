@@ -457,9 +457,7 @@ def migrate_project(project_root: Path) -> bool:
 
     existing = raw.get("schema_version")
     if existing is not None and not isinstance(existing, int):
-        raise ValueError(
-            f"tycoon.yml schema_version must be an integer, got {type(existing).__name__}: {existing!r}"
-        )
+        raise ValueError(f"tycoon.yml schema_version must be an integer, got {type(existing).__name__}: {existing!r}")
     if existing is not None and existing > SCHEMA_VERSION:
         raise ValueError(
             f"tycoon.yml schema_version {existing} is newer than this tycoon supports ({SCHEMA_VERSION}). "
