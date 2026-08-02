@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import typer
 
 from tycoon.ingestion.factory import SourceFactory
 from tycoon.ingestion.manifest import ConfigField, CredentialField, SourceSpec, load_manifest
@@ -40,15 +41,21 @@ class TestCollectConfigNonInteractive:
 
     def test_missing_required_config_field_raises_exit(self):
         spec = load_manifest()["github"]
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(typer.Exit) as exc_info:
             SourceFactory(spec).collect_config(no_prompt=True, flags={})
-        assert exc_info.value.code == 1
+        assert exc_info.value.exit_code == 1
 
     def test_missing_one_required_field_raises_exit(self):
         spec = load_manifest()["github"]
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(typer.Exit) as exc_info:
             SourceFactory(spec).collect_config(no_prompt=True, flags={"owner": "acme"})
-        assert exc_info.value.code == 1
+        assert exc_info.value.exit_code == 1
+
+    def test_all_missing_required_fields_reported_before_exit(self):
+        spec = load_manifest()["github"]
+        with pytest.raises(typer.Exit) as exc_info:
+            SourceFactory(spec).collect_config(no_prompt=True, flags={})
+        assert exc_info.value.exit_code == 1
 
     def test_optional_field_absent_keeps_default(self):
         spec = load_manifest()["slack"]

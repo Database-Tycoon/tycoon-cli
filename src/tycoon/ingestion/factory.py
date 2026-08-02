@@ -1,8 +1,4 @@
-"""SourceFactory — spec-driven config collection for dlt sources.
-
-All behaviour is driven by SourceSpec fields; there is no
-``if source_type == "github"`` branching here.
-"""
+"""SourceFactory — spec-driven config collection for dlt sources."""
 
 from __future__ import annotations
 
@@ -11,7 +7,7 @@ from typing import Any
 import typer
 
 from tycoon.ingestion.manifest import SourceSpec
-from tycoon.utils.console import console, info
+from tycoon.utils.console import console, error, info
 
 
 class SourceFactory:
@@ -28,6 +24,11 @@ class SourceFactory:
         flags = flags or {}
         cfg: dict[str, Any] = {}
 
+        if not self.spec.credentials and not self.spec.config_fields and not no_prompt:
+            console.print("  [dim]No fields to configure — setup is handled by dlt init.[/dim]")
+
+        if self.spec.credentials and not no_prompt:
+            console.print("[bold]Credentials[/bold]")
         for cred in self.spec.credentials:
             default = f"${{{cred.env_var}}}"
             if no_prompt:
@@ -43,27 +44,36 @@ class SourceFactory:
                 )
                 cfg[cred.key] = value
 
-        for field in self.spec.config_fields:
-            if no_prompt:
+        if self.spec.config_fields and self.spec.credentials and not no_prompt:
+            console.print("[bold]Configuration[/bold]")
+
+        if no_prompt:
+            missing: list[str] = []
+            for field in self.spec.config_fields:
                 if field.key in flags:
                     cfg[field.key] = flags[field.key]
                 elif field.required:
-                    info(
-                        f"--config {field.key}=<value> is required for "
-                        f"[bold]{self.spec.id}[/bold] under --no-prompt."
-                    )
-                    raise SystemExit(1)
+                    missing.append(field.key)
                 elif field.default is not None and field.default != "":
                     cfg[field.key] = field.default
-            else:
+            if missing:
+                for key in missing:
+                    error(
+                        f"--config {key}=<value> is required for "
+                        f"[bold]{self.spec.id}[/bold] under --no-prompt."
+                    )
+                raise typer.Exit(1)
+        else:
+            for field in self.spec.config_fields:
                 if field.hint:
                     console.print(f"  [dim]{field.hint}[/dim]")
+                label = f"  {field.label}" + ("" if field.required else " (optional)")
                 if field.required:
-                    value = typer.prompt(f"  {field.label}")
+                    value = typer.prompt(label)
                     cfg[field.key] = value
                 else:
                     value = typer.prompt(
-                        f"  {field.label}",
+                        label,
                         default=field.default if field.default is not None else "",
                         show_default=bool(field.default),
                     )
