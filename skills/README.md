@@ -36,6 +36,28 @@ setup. Note for whoever implements it: `scaffold_from_template()` applies
 `tycoon-test:` gets executed by the recipe doctest harness — route around
 both.
 
+## Command → skill coverage index (users tier)
+
+Skills align 1:1 with command *families* (the CLI's sub-app groupings /
+user jobs), not individual commands — the valuable knowledge sits between
+the commands of a family, and `--help` already covers single-command
+mechanics. This index is the completeness audit: every command maps to its
+owning skill, or explicitly to none.
+
+| Command | Owning skill |
+|---|---|
+| `data sources *` (catalog/add/list/run/run-all/remove) | adding-data-sources |
+| `register dbt` / `register warehouse` / `register rill` | building-models-and-dashboards |
+| `data analyze`, `data transform *`, `start` / `stop` | building-models-and-dashboards |
+| `data status` / `history` / `schema` / `query`, `data observability scaffold` | reading-project-state |
+| `doctor`, `profiles *`, `setup`, `init --upgrade` | diagnosing-projects |
+| `data run-all`, `schedule *`, `notify`, `data sync`, `data clean` | operating-pipelines |
+| `init` (new projects), `run <tool>`, `docs *` | none — `--help` and the docs site suffice |
+| `semantics *` (OSI), `data fivetran *` | none yet — add a skill when these grow traps worth teaching |
+
+When adding or renaming a command, update this table in the same PR — an
+unmapped command is an undocumented one.
+
 ## Authoring conventions
 
 - One directory per skill: `skills/<tier>/<skill-name>/SKILL.md`; the
