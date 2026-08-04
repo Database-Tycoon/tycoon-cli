@@ -17,7 +17,8 @@
         "./skills/users/adding-data-sources",
         "./skills/users/diagnosing-projects",
         "./skills/users/reading-project-state",
-        "./skills/users/building-models-and-dashboards"
+        "./skills/users/building-models-and-dashboards",
+        "./skills/users/operating-pipelines"
       ]
     },
     {
