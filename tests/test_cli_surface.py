@@ -18,6 +18,9 @@ themselves. This file fixes that.
 
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -208,6 +211,61 @@ class TestExtrasNamesRenderLiterally:
         assert not offenders, (
             "Unescaped `database-tycoon[<extra>]` found — Rich will strip "
             "the brackets. Use `database-tycoon\\\\[<extra>]` instead.\n" + "\n".join(offenders)
+        )
+
+
+# -- 4. Import-time safety: a hostile tycoon.yml must never brick the CLI
+#
+#         Regression class from the T2-4 review (#187): a future
+#         schema_version raised inside the module-level
+#         `config = TycoonConfig()` — and because Typer imports every
+#         command module to build the CLI, the raise landed before
+#         argument parsing. `--help`, `--version`, and `init --upgrade`
+#         (the documented remedy!) all died with a traceback.
+#
+#         CliRunner cannot observe this failure mode by construction:
+#         `tycoon.config` is already imported in pytest's own process
+#         before any tmp_path project exists. Only a subprocess sees the
+#         real import sequence.
+
+
+class TestImportTimeSafety:
+    @pytest.fixture
+    def hostile_project(self, tmp_path: Path) -> Path:
+        (tmp_path / "tycoon.yml").write_text("name: hostile\nversion: 0.1.0\nschema_version: 99\n")
+        return tmp_path
+
+    # (args, expected_rc): --help/--version must succeed regardless of the
+    # project file; `init --upgrade` on a future version must fail *cleanly*
+    # (rc 1, no traceback) — it can't downgrade, but it must stay reachable.
+    @pytest.mark.parametrize(
+        "args,expected_rc",
+        [(["--help"], 0), (["--version"], 0), (["init", "--upgrade"], 1)],
+        ids=lambda v: " ".join(v) if isinstance(v, list) else str(v),
+    )
+    def test_cli_survives_future_schema_version(self, hostile_project: Path, args: list[str], expected_rc: int):
+        binary = shutil.which("tycoon")
+        if not binary:
+            pytest.skip(
+                "`tycoon` binary not on PATH. Run via `uv run pytest` so the "
+                "venv's bin dir is active (or `pip install -e .` first)."
+            )
+        result = subprocess.run(
+            [binary, *args],
+            cwd=hostile_project,
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        combined = result.stdout + result.stderr
+        assert "Traceback" not in combined, (
+            f"`tycoon {' '.join(args)}` tracebacked with schema_version: 99 in cwd:\n{combined}"
+        )
+        assert result.returncode == expected_rc, (
+            f"`tycoon {' '.join(args)}` exited {result.returncode} (expected {expected_rc}) with "
+            f"schema_version: 99 in cwd\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
         )
 
 
