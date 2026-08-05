@@ -12,6 +12,7 @@ Options:
   -n, --name TEXT          Project name (default: current directory name)
   --list-templates         List available templates and exit
   -p, --param TEXT         Template parameter in 'name=value' form (repeatable)
+  --upgrade                Migrate tycoon.yml to the current schema version and exit
   -h, --help               Show this message and exit
 ```
 
@@ -90,6 +91,34 @@ tycoon start --only rill             # serve dashboards
 ```
 
 See [Your first project](../getting-started/first-project.md) for a 10-minute walkthrough.
+
+## Upgrading an existing project: `--upgrade`
+
+When tycoon's `tycoon.yml` schema gains new fields, existing projects
+keep working — but commands will warn:
+
+```
+tycoon.yml is at schema version 1, current is 2. Run 'tycoon init --upgrade' to migrate.
+```
+
+`tycoon init --upgrade` is that migration:
+
+```bash
+cd my-project
+tycoon init --upgrade
+```
+
+It edits `tycoon.yml` in place — adding any missing blocks with their
+defaults (currently `metadata:`) and stamping
+[`schema_version`](../reference/tycoon-yml.md#schema_version) to the
+current value. Your comments, blank lines, and the project's own
+`version:` field are left untouched. It is idempotent: run it twice and
+the second run reports the file is already up to date and writes
+nothing.
+
+If `tycoon.yml` declares a `schema_version` *newer* than the installed
+tycoon supports, `--upgrade` (and any data command) exits with an error
+asking you to upgrade tycoon-cli instead — it never downgrades a file.
 
 ## Re-running `init`
 
