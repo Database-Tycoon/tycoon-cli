@@ -14,7 +14,7 @@ from pathlib import Path
 import typer
 import yaml
 
-from tycoon.project import SCHEMA_VERSION, StackConfig
+from tycoon.project import SCHEMA_VERSION, StackConfig, migrate_project
 from tycoon.utils.console import info, success, warn
 
 
@@ -538,9 +538,10 @@ def scaffold_from_template(
         warn("tycoon.yml already exists, skipping")
     else:
         shutil.copy2(src_yml, dst_yml)
-        _raw = yaml.safe_load(dst_yml.read_text()) or {}
-        _raw["schema_version"] = SCHEMA_VERSION
-        dst_yml.write_text(yaml.dump(_raw, default_flow_style=False, sort_keys=False))
+        # Stamp schema_version (and metadata: defaults) via migrate_project,
+        # which round-trips through ruamel.yaml — the template's comments and
+        # blank-line separators survive, unlike a yaml.safe_load/dump pass.
+        migrate_project(target)
         success(f"Created tycoon.yml from template '{template_name}'")
 
     # Copy any subdirectories from the template (e.g. dbt_project/, rill/)

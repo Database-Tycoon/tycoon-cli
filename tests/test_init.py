@@ -151,6 +151,28 @@ class TestTemplateScaffold:
         cli_runner.invoke(app, ["init", "--template", "nyc-transit"])
         assert (tmp_path / "data").is_dir()
 
+    def test_template_scaffold_preserves_template_formatting(self, tmp_path, monkeypatch):
+        """Stamping schema_version must not flatten the template's layout (#185)."""
+        monkeypatch.chdir(tmp_path)
+        from tycoon.scaffolding.templates import get_template_path, scaffold_from_template
+
+        template_text = (get_template_path("nyc-transit") / "tycoon.yml").read_text()
+        scaffold_from_template(tmp_path, "nyc-transit")
+        scaffolded = (tmp_path / "tycoon.yml").read_text()
+
+        # ruamel may re-indent sequence items, so compare stripped lines —
+        # the point is that no content, comment, or blank separator is lost.
+        scaffolded_lines = [line.strip() for line in scaffolded.splitlines()]
+        for line in template_text.splitlines():
+            assert line.strip() in scaffolded_lines
+
+        assert scaffolded.count("\n\n") >= template_text.count("\n\n")
+
+        data = yaml.safe_load(scaffolded)
+        assert data["schema_version"] == SCHEMA_VERSION
+        assert data["version"] == "0.1.0"
+        assert "metadata" in data
+
 
 class TestInitRefusesOverwrite:
     """Verify init refuses to overwrite existing tycoon.yml."""
