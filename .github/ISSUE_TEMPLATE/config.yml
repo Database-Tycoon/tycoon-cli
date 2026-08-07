@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions & discussion
+    url: https://github.com/Database-Tycoon/tycoon-cli/discussions
+    about: Have a question, want setup help, or want to share what you're building? Start a discussion — we read every post.
