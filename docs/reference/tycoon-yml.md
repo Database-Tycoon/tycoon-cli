@@ -22,6 +22,7 @@ Anything not declared falls back to the defaults below.
 |---|---|---|---|
 | `name` | string | `my-project` | Used in dlt pipeline names |
 | `version` | string | `0.1.0` | Project's own version, free-form |
+| `schema_version` | int | unset | Managed by tycoon — see [`schema_version`](#schema_version) below. Don't edit by hand. |
 | `database` | block | see below | Where data lives |
 | `sources` | map[name → source] | `{}` | Registered ingestion sources |
 | `dbt_project_dir` | string | `dbt_project` | Path to dbt project root |
@@ -31,6 +32,34 @@ Anything not declared falls back to the defaults below.
 | `rill_dir` | string | `rill` | Path to Rill project dir |
 | `sync` | block | unset | `tycoon data sync` defaults |
 | `stack` | block | see below | Tool-by-tool stack toggle |
+
+## `schema_version`
+
+```yaml
+schema_version: 2
+```
+
+An integer marking which revision of the `tycoon.yml` *format* the file
+was written against. **Tycoon manages this field** — `tycoon init`
+stamps it on new projects, and `tycoon init --upgrade` advances it when
+migrating an older file. You never need to set or edit it.
+
+Not to be confused with `version`, which is *yours*: a free-form label
+for your project that tycoon never touches.
+
+| | `version` | `schema_version` |
+|---|---|---|
+| Owned by | you | tycoon |
+| Type | free-form string | integer |
+| Meaning | your project's version | the `tycoon.yml` format revision |
+
+Files without `schema_version` (or with an older one) still load — data
+commands print a warning pointing at
+[`tycoon init --upgrade`](../commands/init.md#upgrading-an-existing-project-upgrade),
+which migrates the file in place while preserving comments and blank
+lines. A `schema_version` *newer* than the installed tycoon supports is
+an error: commands exit and ask you to upgrade tycoon-cli rather than
+risk misreading a future format.
 
 ## `database`
 

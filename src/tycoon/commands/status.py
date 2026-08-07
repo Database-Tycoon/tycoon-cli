@@ -19,8 +19,8 @@ existing per-source freshness + row-count detail.
 from __future__ import annotations
 
 import datetime
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
 
 import typer
 from rich.panel import Panel
@@ -40,7 +40,6 @@ from tycoon.layers import (
 from tycoon.observability import metadata_db_path
 from tycoon.project import TransformationTool
 from tycoon.utils.console import console, error, header, info, warn
-
 
 # -- Freshness helpers ---------------------------------------------------------
 
@@ -84,22 +83,20 @@ def _query_run_counts(metadata_db: Path) -> dict[str, int]:
         return {}
     try:
         with duckdb.connect(str(metadata_db), read_only=True) as con:
-            rows = con.execute(
-                "SELECT source_schema, COUNT(*) FROM dlt_runs GROUP BY source_schema"
-            ).fetchall()
+            rows = con.execute("SELECT source_schema, COUNT(*) FROM dlt_runs GROUP BY source_schema").fetchall()
         return {schema: count for schema, count in rows}
     except Exception:
         return {}
 
 
-def _freshness_label(last_sync: Optional[datetime.datetime]) -> tuple[str, str]:
+def _freshness_label(last_sync: datetime.datetime | None) -> tuple[str, str]:
     """Return (label, style) describing how fresh a sync is."""
     if last_sync is None:
         return "never", "red"
 
-    now = datetime.datetime.now(tz=datetime.timezone.utc)
+    now = datetime.datetime.now(tz=datetime.UTC)
     if last_sync.tzinfo is None:
-        last_sync = last_sync.replace(tzinfo=datetime.timezone.utc)
+        last_sync = last_sync.replace(tzinfo=datetime.UTC)
 
     age = now - last_sync
     hours = age.total_seconds() / 3600
@@ -117,9 +114,7 @@ def _freshness_label(last_sync: Optional[datetime.datetime]) -> tuple[str, str]:
 # -- Layer-build freshness ------------------------------------------------------
 
 
-def _query_layer_last_build(
-    metadata_db: Path, model_names: list[str]
-) -> Optional[datetime.datetime]:
+def _query_layer_last_build(metadata_db: Path, model_names: list[str]) -> datetime.datetime | None:
     """Latest successful build start time across ``model_names``."""
     import duckdb
 
@@ -206,7 +201,7 @@ def _render_sources_panel(
     console.print(table)
 
 
-def _live_refresh_fivetran(client, metadata_db: Path) -> tuple[bool, Optional[str]]:
+def _live_refresh_fivetran(client, metadata_db: Path) -> tuple[bool, str | None]:
     """Pull connectors live and write them through to the metadata cache.
 
     Returns ``(refreshed, warning)``. ``refreshed`` is True when the live
@@ -260,15 +255,14 @@ def _render_fivetran_detail() -> None:
     """Service / sync-state detail on top of the unified Sources panel."""
     from tycoon.ingestion.fivetran_sync import (
         freshness_label as fv_freshness_label,
+    )
+    from tycoon.ingestion.fivetran_sync import (
         latest_connector_snapshot,
     )
 
     rows = latest_connector_snapshot(metadata_db_path(config.root))
     if not rows:
-        info(
-            "Fivetran detail: no metadata captured yet. Run "
-            "[bold]tycoon data fivetran sync[/bold] to populate."
-        )
+        info("Fivetran detail: no metadata captured yet. Run [bold]tycoon data fivetran sync[/bold] to populate.")
         return
 
     table = Table(show_header=True, header_style="bold cyan")
@@ -318,10 +312,7 @@ def _render_layer_panel(
     for m in listed:
         table.add_row(m.name, m.schema or "—")
 
-    summary = (
-        f"{len(listed)} model(s) — last build "
-        f"[{fresh_style}]{fresh_label}[/{fresh_style}]"
-    )
+    summary = f"{len(listed)} model(s) — last build [{fresh_style}]{fresh_label}[/{fresh_style}]"
     console.print(table)
     console.print(summary)
 
@@ -350,9 +341,7 @@ def status_cmd() -> None:
         # Live API read with write-through to the cache; falls back to the
         # last snapshot (with a warning) on auth/network failure.
         _refresh_fivetran_cache(project)
-        fivetran_sources = classify_fivetran_sources(
-            latest_connector_snapshot(metadata_db_path(config.root))
-        )
+        fivetran_sources = classify_fivetran_sources(latest_connector_snapshot(metadata_db_path(config.root)))
 
     all_sources = [*dlt_sources, *fivetran_sources]
     _meta_db = metadata_db_path(config.root)
@@ -391,19 +380,13 @@ def status_cmd() -> None:
         "Staging",
         filter_by_layer(models, Layer.STAGING),
         metadata_db,
-        empty_hint=(
-            "No staging models. Scaffold one with "
-            "[bold]tycoon data analyze <source>[/bold]."
-        ),
+        empty_hint=("No staging models. Scaffold one with [bold]tycoon data analyze <source>[/bold]."),
     )
     _render_layer_panel(
         "Intermediate",
         filter_by_layer(models, Layer.INTERMEDIATE),
         metadata_db,
-        empty_hint=(
-            "No intermediate models. Optional layer — typically used to "
-            "combine staging models before marts."
-        ),
+        empty_hint=("No intermediate models. Optional layer — typically used to combine staging models before marts."),
     )
     _render_layer_panel(
         "Marts",

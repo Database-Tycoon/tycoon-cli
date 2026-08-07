@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
 import socket
 import subprocess
-import shutil
 
 
 def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:

@@ -10,7 +10,6 @@ import yaml
 
 from tycoon.cli import app
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
@@ -34,10 +33,7 @@ def test_db(tmp_path: Path) -> Path:
         )
         """
     )
-    con.execute(
-        "INSERT INTO test_schema.my_table VALUES "
-        "(1, 'test', 99.5, '2024-01-01', 'x', 'y')"
-    )
+    con.execute("INSERT INTO test_schema.my_table VALUES (1, 'test', 99.5, '2024-01-01', 'x', 'y')")
     con.close()
     return db_path
 
@@ -687,9 +683,7 @@ class TestAnalyzeCLIErrors:
 
     def test_analyze_fails_for_unknown_source(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        (tmp_path / "tycoon.yml").write_text(
-            "name: test\nversion: 0.1.0\nsources: {}\n"
-        )
+        (tmp_path / "tycoon.yml").write_text("name: test\nversion: 0.1.0\nsources: {}\n")
         result = cli_runner.invoke(app, ["data", "analyze", "nonexistent-source"])
         assert result.exit_code != 0
 
@@ -713,13 +707,7 @@ class TestAnalyzeCLIErrors:
 
     def test_analyze_all_with_source_name_errors(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        (tmp_path / "tycoon.yml").write_text(
-            "name: test\nversion: 0.1.0\nsources: {}\n"
-        )
-        from tycoon.commands import explore as explore_mod
-        from tycoon.config import TycoonConfig
-        monkeypatch.setattr(explore_mod, "config", TycoonConfig(project_root=tmp_path))
-
+        (tmp_path / "tycoon.yml").write_text("name: test\nversion: 0.1.0\nsources: {}\n")
         result = cli_runner.invoke(app, ["data", "analyze", "my-source", "--all"])
         assert result.exit_code != 0
         combined = (result.stdout or "") + (result.stderr or "")
@@ -754,20 +742,13 @@ class TestAnalyzeCLIErrors:
         # Need a dbt project dir so output_dir parent is valid.
         (tmp_path / "dbt_project" / "models").mkdir(parents=True)
 
-        from tycoon.commands import explore as explore_mod
-        from tycoon.config import TycoonConfig
-        monkeypatch.setattr(explore_mod, "config", TycoonConfig(project_root=tmp_path))
-
         result = cli_runner.invoke(app, ["data", "analyze", "--all"])
         assert result.exit_code == 0, result.stdout
 
         # src_a generated; src_b skipped (raw DB has no schema for it but
         # the DB file exists, so the path is "no eligible tables" — still
         # a soft-skip in --all mode).
-        assert (
-            tmp_path / "dbt_project" / "models" / "staging" / "src_a"
-            / "stg_src_a__items.sql"
-        ).exists()
+        assert (tmp_path / "dbt_project" / "models" / "staging" / "src_a" / "stg_src_a__items.sql").exists()
         assert "src_a" in result.stdout
         assert "src_b" in result.stdout
 
@@ -793,11 +774,6 @@ class TestAnalyzeCLIErrors:
         con.execute("CREATE SCHEMA raw_src_a")
         con.execute("CREATE TABLE raw_src_a.items (id INTEGER)")
         con.close()
-
-        # Reload config for the analyze command
-        from tycoon.commands import explore as explore_mod
-        from tycoon.config import TycoonConfig
-        monkeypatch.setattr(explore_mod, "config", TycoonConfig(project_root=tmp_path))
 
         # Supply "src_a" as the interactive choice
         result = cli_runner.invoke(app, ["data", "analyze", "--no-dbt"], input="src_a\n")
@@ -840,18 +816,12 @@ def _make_dlt_db(
             load_id = f"load-{i + 1}"
             svh_val = ", 'hash-v1'" if include_schema_version_hash else ""
             con.execute(
-                f'INSERT INTO "{schema}"."_dlt_loads" VALUES '
-                f"('{load_id}', 0, '2026-04-01 10:00:00'{svh_val})"
+                f"INSERT INTO \"{schema}\".\"_dlt_loads\" VALUES ('{load_id}', 0, '2026-04-01 10:00:00'{svh_val})"
             )
             for table, rows in tables:
-                con.execute(
-                    f'CREATE TABLE "{schema}"."{table}" '
-                    f"(id INTEGER, _dlt_load_id VARCHAR)"
-                )
+                con.execute(f'CREATE TABLE "{schema}"."{table}" (id INTEGER, _dlt_load_id VARCHAR)')
                 for r in range(rows):
-                    con.execute(
-                        f'INSERT INTO "{schema}"."{table}" VALUES ({r}, \'{load_id}\')'
-                    )
+                    con.execute(f'INSERT INTO "{schema}"."{table}" VALUES ({r}, \'{load_id}\')')
     finally:
         con.close()
     return db_path
@@ -958,9 +928,7 @@ class TestCaptureDlt:
 
         con = duckdb.connect(str(meta), read_only=True)
         try:
-            runs = con.execute(
-                "SELECT source_schema, load_id, status FROM dlt_runs ORDER BY source_schema"
-            ).fetchall()
+            runs = con.execute("SELECT source_schema, load_id, status FROM dlt_runs ORDER BY source_schema").fetchall()
             assert runs == [
                 ("raw_src_a", "load-1", 0),
                 ("raw_src_b", "load-2", 0),
@@ -1009,9 +977,7 @@ class TestCaptureDlt:
 
         con = duckdb.connect(str(meta), read_only=True)
         try:
-            row = con.execute(
-                "SELECT schema_version_hash FROM dlt_runs"
-            ).fetchone()
+            row = con.execute("SELECT schema_version_hash FROM dlt_runs").fetchone()
             assert row is not None and row[0] is None
         finally:
             con.close()
@@ -1042,14 +1008,12 @@ class TestCaptureDbt:
         con = duckdb.connect(str(meta), read_only=True)
         try:
             run = con.execute(
-                "SELECT invocation_id, command, success, models_ok, tests_passed "
-                "FROM dbt_runs"
+                "SELECT invocation_id, command, success, models_ok, tests_passed FROM dbt_runs"
             ).fetchone()
             assert run == ("abc-123", "build", True, 1, 1)
 
             nodes = con.execute(
-                "SELECT node_name, resource_type, status, rows_affected "
-                "FROM dbt_nodes ORDER BY node_name"
+                "SELECT node_name, resource_type, status, rows_affected FROM dbt_nodes ORDER BY node_name"
             ).fetchall()
             assert nodes == [
                 ("model.demo.stg_orders", "model", "success", 1000),
@@ -1135,9 +1099,7 @@ class TestRefreshUsageDashboards:
         # seed metadata
         capture_dlt(tmp_path / ".tycoon" / "metadata.duckdb", raw)
 
-        result = refresh_usage_dashboards(
-            project_root=tmp_path, rill_dir=tmp_path / "does_not_exist"
-        )
+        result = refresh_usage_dashboards(project_root=tmp_path, rill_dir=tmp_path / "does_not_exist")
         assert result == []
 
     def test_no_op_when_metadata_db_missing(self, tmp_path: Path):

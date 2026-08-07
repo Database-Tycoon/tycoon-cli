@@ -34,9 +34,7 @@ def _init_template(
         args.extend(["--param", f"{k}={v}"])
     result = cli_runner.invoke(app, args)
     assert result.exit_code == 0, (
-        f"init --template {template} failed:\n"
-        f"--- stdout ---\n{result.stdout}\n"
-        f"--- exception ---\n{result.exception!r}"
+        f"init --template {template} failed:\n--- stdout ---\n{result.stdout}\n--- exception ---\n{result.exception!r}"
     )
 
 
@@ -54,12 +52,10 @@ def _rebind_config(monkeypatch, project: Path) -> None:
     this patch they pick up the parent-tmpdir root pytest started in.
     """
     import tycoon.config as cfg_mod
-    from tycoon.commands import sources as sources_mod
     from tycoon.commands import transform as transform_mod
     from tycoon.config import TycoonConfig
 
     cfg = TycoonConfig(project_root=project)
-    monkeypatch.setattr(sources_mod, "config", cfg)
     monkeypatch.setattr(transform_mod, "config", cfg)
     monkeypatch.setattr(cfg_mod, "config", cfg)
 
@@ -73,7 +69,7 @@ def test_csv_import_e2e(cli_runner, tmp_path, monkeypatch):
     project = tmp_path / "csv-import"
     project.mkdir()
     monkeypatch.chdir(project)
-    _init_template(cli_runner,"csv-import")
+    _init_template(cli_runner, "csv-import")
 
     input_dir = project / "data" / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
@@ -105,8 +101,7 @@ def test_csv_import_e2e(cli_runner, tmp_path, monkeypatch):
         tables = [
             r[0]
             for r in con.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = 'raw_files'"
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'raw_files'"
             ).fetchall()
         ]
         assert tables, "no tables materialized under raw_files schema"
@@ -147,13 +142,9 @@ def test_csv_import_e2e(cli_runner, tmp_path, monkeypatch):
 
         # widget_id has not_null + unique tests in schema.yml — assert the
         # invariant holds in the data, not just at the test layer.
-        nulls = con.execute(
-            "SELECT count(*) FROM main.stg_widgets WHERE widget_id IS NULL"
-        ).fetchone()
+        nulls = con.execute("SELECT count(*) FROM main.stg_widgets WHERE widget_id IS NULL").fetchone()
         assert nulls is not None and nulls[0] == 0, "widget_id has nulls"
-        distinct_ids = con.execute(
-            "SELECT count(distinct widget_id) FROM main.stg_widgets"
-        ).fetchone()
+        distinct_ids = con.execute("SELECT count(distinct widget_id) FROM main.stg_widgets").fetchone()
         assert distinct_ids is not None and distinct_ids[0] == 5, (
             f"widget_id should be unique (expected 5 distinct, got {distinct_ids})"
         )
@@ -193,9 +184,7 @@ def test_csv_import_e2e(cli_runner, tmp_path, monkeypatch):
     result = cli_runner.invoke(app, ["data", "transform", "test"])
     stderr = result.stderr if result.stderr_bytes else ""
     assert result.exit_code == 0, (
-        f"dbt test failed (exit {result.exit_code}):\n"
-        f"--- stdout ---\n{result.stdout}\n"
-        f"--- stderr ---\n{stderr}"
+        f"dbt test failed (exit {result.exit_code}):\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{stderr}"
     )
 
     # Observability: the invocation should have been captured.
@@ -203,19 +192,12 @@ def test_csv_import_e2e(cli_runner, tmp_path, monkeypatch):
     assert metadata_db.exists(), "observability metadata DB was not created"
     con = duckdb.connect(str(metadata_db), read_only=True)
     try:
+        row = con.execute("SELECT count(*) FROM dbt_runs WHERE command = 'run'").fetchone()
+        assert row is not None and row[0] >= 1, f"dbt_runs should contain at least one 'run' invocation; got {row}"
         row = con.execute(
-            "SELECT count(*) FROM dbt_runs WHERE command = 'run'"
+            "SELECT count(*) FROM dbt_nodes WHERE status = 'success' AND node_name LIKE '%stg_widgets%'"
         ).fetchone()
-        assert row is not None and row[0] >= 1, (
-            f"dbt_runs should contain at least one 'run' invocation; got {row}"
-        )
-        row = con.execute(
-            "SELECT count(*) FROM dbt_nodes "
-            "WHERE status = 'success' AND node_name LIKE '%stg_widgets%'"
-        ).fetchone()
-        assert row is not None and row[0] >= 1, (
-            "dbt_nodes should record the successful stg_widgets run"
-        )
+        assert row is not None and row[0] >= 1, "dbt_nodes should record the successful stg_widgets run"
     finally:
         con.close()
 
@@ -248,24 +230,17 @@ def test_csv_import_rerun_idempotent(cli_runner, tmp_path, monkeypatch):
     # Run the full pipeline twice.
     for pass_num in (1, 2):
         result = cli_runner.invoke(app, ["data", "sources", "run", "files"])
-        assert result.exit_code == 0, (
-            f"sources run pass {pass_num} failed:\n{result.stdout}"
-        )
+        assert result.exit_code == 0, f"sources run pass {pass_num} failed:\n{result.stdout}"
         result = cli_runner.invoke(app, ["data", "transform", "run"])
-        assert result.exit_code == 0, (
-            f"transform run pass {pass_num} failed:\n{result.stdout}"
-        )
+        assert result.exit_code == 0, f"transform run pass {pass_num} failed:\n{result.stdout}"
 
     # Raw table: same 5 rows after two ingests (replace semantics).
     raw_db = project / "data" / "files_raw.duckdb"
     con = duckdb.connect(str(raw_db), read_only=True)
     try:
-        rows = con.execute(
-            'SELECT count(*) FROM raw_files."_read_csv"'
-        ).fetchone()
+        rows = con.execute('SELECT count(*) FROM raw_files."_read_csv"').fetchone()
         assert rows is not None and rows[0] == 5, (
-            f"raw row count drifted across reruns; got {rows[0]} "
-            "(default write_disposition should be `replace`)"
+            f"raw row count drifted across reruns; got {rows[0]} (default write_disposition should be `replace`)"
         )
     finally:
         con.close()
@@ -276,12 +251,8 @@ def test_csv_import_rerun_idempotent(cli_runner, tmp_path, monkeypatch):
     try:
         stg = con.execute("SELECT count(*) FROM main.stg_widgets").fetchone()
         assert stg is not None and stg[0] == 5
-        mart = con.execute(
-            "SELECT widget_count, total_quantity FROM main.fct_widget_summary"
-        ).fetchone()
-        assert mart == (5, 150), (
-            f"mart aggregates drifted across reruns; got {mart}, expected (5, 150)"
-        )
+        mart = con.execute("SELECT widget_count, total_quantity FROM main.fct_widget_summary").fetchone()
+        assert mart == (5, 150), f"mart aggregates drifted across reruns; got {mart}, expected (5, 150)"
     finally:
         con.close()
 
@@ -290,15 +261,9 @@ def test_csv_import_rerun_idempotent(cli_runner, tmp_path, monkeypatch):
     con = duckdb.connect(str(metadata_db), read_only=True)
     try:
         dlt_runs = con.execute("SELECT count(*) FROM dlt_runs").fetchone()
-        dbt_runs = con.execute(
-            "SELECT count(*) FROM dbt_runs WHERE command = 'run'"
-        ).fetchone()
-        assert dlt_runs is not None and dlt_runs[0] == 2, (
-            f"expected 2 dlt loads captured, got {dlt_runs}"
-        )
-        assert dbt_runs is not None and dbt_runs[0] == 2, (
-            f"expected 2 dbt 'run' invocations captured, got {dbt_runs}"
-        )
+        dbt_runs = con.execute("SELECT count(*) FROM dbt_runs WHERE command = 'run'").fetchone()
+        assert dlt_runs is not None and dlt_runs[0] == 2, f"expected 2 dlt loads captured, got {dlt_runs}"
+        assert dbt_runs is not None and dbt_runs[0] == 2, f"expected 2 dbt 'run' invocations captured, got {dbt_runs}"
     finally:
         con.close()
 
@@ -333,13 +298,8 @@ def test_csv_import_transform_ingest_transform(cli_runner, tmp_path, monkeypatch
     warehouse_db = project / "data" / "files_warehouse.duckdb"
     con = duckdb.connect(str(warehouse_db), read_only=True)
     try:
-        mart = con.execute(
-            "SELECT widget_count, total_quantity FROM main.fct_widget_summary"
-        ).fetchone()
-        assert mart == (5, 150), (
-            f"final mart state wrong after transform-then-ingest-then-transform: "
-            f"got {mart}"
-        )
+        mart = con.execute("SELECT widget_count, total_quantity FROM main.fct_widget_summary").fetchone()
+        assert mart == (5, 150), f"final mart state wrong after transform-then-ingest-then-transform: got {mart}"
     finally:
         con.close()
 
@@ -360,11 +320,6 @@ def test_csv_import_then_data_sync(cli_runner, tmp_path, monkeypatch):
     _seed_widgets_csv(project / "data" / "input", count=5)
     _rebind_config(monkeypatch, project)
 
-    # Bind sync_cmd's config too, since it imports separately.
-    from tycoon.commands import sync_cmd as sync_mod
-    from tycoon.config import TycoonConfig
-    monkeypatch.setattr(sync_mod, "config", TycoonConfig(project_root=project))
-
     # ingest + transform
     assert cli_runner.invoke(app, ["data", "sources", "run", "files"]).exit_code == 0
     assert cli_runner.invoke(app, ["data", "transform", "run"]).exit_code == 0
@@ -384,16 +339,12 @@ def test_csv_import_then_data_sync(cli_runner, tmp_path, monkeypatch):
     # skipped with a warning (asserted via stdout contents).
     assert "stg_widgets" in result.stdout
     assert "fct_widget_summary" in result.stdout
-    assert "Skipped" in result.stdout, (
-        f"expected sync to surface skipped views; stdout:\n{result.stdout}"
-    )
+    assert "Skipped" in result.stdout, f"expected sync to surface skipped views; stdout:\n{result.stdout}"
 
     # The snapshot should carry the mart and stg tables built by dbt.
     con = duckdb.connect(str(snapshot), read_only=True)
     try:
-        mart = con.execute(
-            "SELECT widget_count, total_quantity FROM main.fct_widget_summary"
-        ).fetchone()
+        mart = con.execute("SELECT widget_count, total_quantity FROM main.fct_widget_summary").fetchone()
         assert mart == (5, 150), f"snapshot mart mismatched: {mart}"
         stg = con.execute("SELECT count(*) FROM main.stg_widgets").fetchone()
         assert stg is not None and stg[0] == 5
@@ -416,24 +367,17 @@ def test_nyc_transit_e2e(cli_runner, tmp_path, monkeypatch):
 
     _rebind_config(monkeypatch, project)
     # Cap records to keep the test under a minute.
-    result = cli_runner.invoke(
-        app, ["data", "sources", "run", "nyc-dot", "--max-records", "50"]
-    )
+    result = cli_runner.invoke(app, ["data", "sources", "run", "nyc-dot", "--max-records", "50"])
     # Live HTTP can flake — treat non-zero as xfail rather than hard fail.
     if result.exit_code != 0:
-        pytest.xfail(
-            f"nyc-dot ingest returned {result.exit_code}; upstream API may be down:\n"
-            f"{result.stdout}"
-        )
+        pytest.xfail(f"nyc-dot ingest returned {result.exit_code}; upstream API may be down:\n{result.stdout}")
 
     raw_db = project / "data" / "nyc_open_data_raw.duckdb"
     assert raw_db.exists(), "raw db was not created"
 
     # Auto-scaffold should have written staging models for nyc-dot.
     staging_dir = project / "dbt_project" / "models" / "staging" / "nyc-dot"
-    assert staging_dir.exists(), (
-        f"auto-scaffold did not create staging dir; sources run output:\n{result.stdout}"
-    )
+    assert staging_dir.exists(), f"auto-scaffold did not create staging dir; sources run output:\n{result.stdout}"
     sql_files = list(staging_dir.glob("stg_nyc-dot__*.sql"))
     assert sql_files, f"no staging .sql files generated under {staging_dir}"
 
@@ -451,8 +395,7 @@ def test_nyc_transit_e2e(cli_runner, tmp_path, monkeypatch):
     con = duckdb.connect(str(warehouse_db), read_only=True)
     try:
         rows = con.execute(
-            "SELECT count(*) FROM information_schema.tables "
-            "WHERE table_name LIKE 'stg_nyc-dot__%'"
+            "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'stg_nyc-dot__%'"
         ).fetchone()
         assert rows is not None and rows[0] >= 1, (
             f"expected at least one stg_nyc-dot__* table in warehouse DB; got {rows}"
@@ -509,13 +452,13 @@ def test_register_dbt_create_e2e(cli_runner, tmp_path, monkeypatch):
     # register.py also imports config at module scope — rebind that too.
     from tycoon.commands import register as register_mod
     from tycoon.config import TycoonConfig
+
     monkeypatch.setattr(register_mod, "config", TycoonConfig(project_root=project))
 
     # The marquee v0.1.6 command — bootstrap dbt from scratch.
     result = cli_runner.invoke(app, ["register", "dbt", "--create"])
     assert result.exit_code == 0, (
-        f"register dbt --create failed:\n--- stdout ---\n{result.stdout}\n"
-        f"--- exception ---\n{result.exception!r}"
+        f"register dbt --create failed:\n--- stdout ---\n{result.stdout}\n--- exception ---\n{result.exception!r}"
     )
 
     # Sibling dbt project landed at the default path.
@@ -527,9 +470,7 @@ def test_register_dbt_create_e2e(cli_runner, tmp_path, monkeypatch):
     yml = yaml.safe_load((project / "tycoon.yml").read_text())
     assert yml["dbt_project_dir"], "dbt_project_dir not written to tycoon.yml"
     assert yml["stack"]["transformation"] == "dbt"
-    assert yml["stack"]["transformation_managed"] is True, (
-        "--create should mark project as tycoon-managed"
-    )
+    assert yml["stack"]["transformation_managed"] is True, "--create should mark project as tycoon-managed"
 
     # In real CLI use each command is a fresh process and re-reads
     # tycoon.yml. In-process tests share the singleton, so we rebind

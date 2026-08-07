@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -11,27 +11,15 @@ import pytest
 from tycoon.cli import app
 from tycoon.core.events import DbtRunCompleted, RunCompleted
 
-
 # ---------------------------------------------------------------------------
 # Fixtures and seeding helpers
 # ---------------------------------------------------------------------------
 
 
 def _write_tycoon_yml(root: Path, with_sources: bool = False) -> None:
-    body = (
-        "name: test\n"
-        "version: 0.1.0\n"
-        "database:\n"
-        "  raw: data/raw.duckdb\n"
-        "  warehouse: data/warehouse.duckdb\n"
-    )
+    body = "name: test\nversion: 0.1.0\ndatabase:\n  raw: data/raw.duckdb\n  warehouse: data/warehouse.duckdb\n"
     if with_sources:
-        body += (
-            "sources:\n"
-            "  src_a:\n"
-            "    type: rest_api\n"
-            "    schema: raw_src_a\n"
-        )
+        body += "sources:\n  src_a:\n    type: rest_api\n    schema: raw_src_a\n"
     else:
         body += "sources: {}\n"
     (root / "tycoon.yml").write_text(body)
@@ -55,7 +43,7 @@ def _seed_metadata(
     meta = metadata_db_path(root)
     ensure_schema(meta)
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     con = duckdb.connect(str(meta))
     try:
         for row in dlt_runs or []:
@@ -74,9 +62,7 @@ def _seed_metadata(
                 [*row, now],
             )
         for row in dbt_nodes or []:
-            con.execute(
-                "INSERT INTO dbt_nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", list(row)
-            )
+            con.execute("INSERT INTO dbt_nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", list(row))
     finally:
         con.close()
     return meta
@@ -130,7 +116,7 @@ class TestHistoryList:
                     runtime_id="dlt-managed",
                     load_id="load-aaaaaaaa-001",
                     rows_loaded={"items": 100, "orders": 50},
-                    timestamp=datetime(2026, 4, 19, 15, 30, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 15, 30, tzinfo=UTC),
                 ),
             ],
         )
@@ -154,7 +140,7 @@ class TestHistoryList:
                     models_passed=12,
                     models_errored=0,
                     duration_seconds=38.1,
-                    timestamp=datetime(2026, 4, 19, 16, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 16, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -172,7 +158,7 @@ class TestHistoryList:
                     source_id="s",
                     runtime_id="dlt-managed",
                     load_id="load-1",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
                 DbtRunCompleted(
                     event_id="inv-1",
@@ -180,7 +166,7 @@ class TestHistoryList:
                     runtime_id="dbt",
                     command="run",
                     target="dev",
-                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -202,7 +188,7 @@ class TestHistoryList:
                 source_id="s",
                 runtime_id="dlt-managed",
                 load_id=f"{p}-{i:03d}",
-                timestamp=datetime(2026, 4, 19, 10, i, tzinfo=timezone.utc),
+                timestamp=datetime(2026, 4, 19, 10, i, tzinfo=UTC),
             )
             for i, p in enumerate(prefixes)
         ]
@@ -226,19 +212,17 @@ class TestHistorySourceFilter:
                     source_id="raw_apples",
                     runtime_id="dlt-managed",
                     load_id="apple-load-1",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
                 RunCompleted(
                     source_id="raw_bananas",
                     runtime_id="dlt-managed",
                     load_id="banana-load-1",
-                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=UTC),
                 ),
             ],
         )
-        result = cli_runner.invoke(
-            app, ["data", "history", "--source", "raw_apples"]
-        )
+        result = cli_runner.invoke(app, ["data", "history", "--source", "raw_apples"])
         assert result.exit_code == 0
         # _short() truncates load_id to 8 chars → "apple-lo"
         assert "apple-lo" in result.stdout
@@ -271,13 +255,13 @@ class TestHistorySourceFilter:
                     source_id="pokeapi",
                     runtime_id="dlt-managed",
                     load_id="poke-load-1",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
                 RunCompleted(
                     source_id="other",
                     runtime_id="dlt-managed",
                     load_id="other-load-1",
-                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -295,7 +279,7 @@ class TestHistorySourceFilter:
                     source_id="raw_apples",
                     runtime_id="dlt-managed",
                     load_id="apple-load-1",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
                 DbtRunCompleted(
                     event_id="inv-xyz",
@@ -303,13 +287,11 @@ class TestHistorySourceFilter:
                     runtime_id="dbt",
                     command="build",
                     target="dev",
-                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=UTC),
                 ),
             ],
         )
-        result = cli_runner.invoke(
-            app, ["data", "history", "--source", "raw_apples"]
-        )
+        result = cli_runner.invoke(app, ["data", "history", "--source", "raw_apples"])
         assert result.exit_code == 0
         assert "apple-lo" in result.stdout
         assert "inv-xyz" not in result.stdout
@@ -322,13 +304,11 @@ class TestHistorySourceFilter:
                     source_id="raw_apples",
                     runtime_id="dlt-managed",
                     load_id="apple-load-1",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
             ],
         )
-        result = cli_runner.invoke(
-            app, ["data", "history", "--source", "raw_nonexistent"]
-        )
+        result = cli_runner.invoke(app, ["data", "history", "--source", "raw_nonexistent"])
         assert result.exit_code == 0
         assert "No dlt runs captured" in result.stdout
 
@@ -349,7 +329,7 @@ class TestHistoryShow:
                     load_id="load-xyz-123456",
                     rows_loaded={"items": 42},
                     tables_created=["items"],
-                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -373,7 +353,7 @@ class TestHistoryShow:
                     models_passed=1,
                     models_errored=0,
                     duration_seconds=5.0,
-                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -392,7 +372,7 @@ class TestHistoryShow:
                     load_id="load-dur-001",
                     rows_loaded={"widgets": 42},
                     duration_seconds=3.0,
-                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -414,13 +394,11 @@ class TestHistoryShow:
                     models_run=2,
                     models_errored=0,
                     duration_seconds=3.0,
-                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 12, 0, tzinfo=UTC),
                 ),
             ],
         )
-        result = cli_runner.invoke(
-            app, ["data", "history", "show", "inv-schema-change"]
-        )
+        result = cli_runner.invoke(app, ["data", "history", "show", "inv-schema-change"])
         assert result.exit_code == 0
         assert "build" in result.stdout
 
@@ -432,7 +410,7 @@ class TestHistoryShow:
                     source_id="s",
                     runtime_id="dlt-managed",
                     load_id="load-1",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -447,13 +425,13 @@ class TestHistoryShow:
                     source_id="s1",
                     runtime_id="dlt-managed",
                     load_id="shared-prefix-aaa",
-                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 10, 0, tzinfo=UTC),
                 ),
                 RunCompleted(
                     source_id="s2",
                     runtime_id="dlt-managed",
                     load_id="shared-prefix-bbb",
-                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 4, 19, 11, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -579,9 +557,7 @@ class TestHistoryLayerFilter:
         )
         return cfg
 
-    def test_layer_filter_shows_all_dbt_runs_m1_limitation(
-        self, history_project, cli_runner, monkeypatch
-    ):
+    def test_layer_filter_shows_all_dbt_runs_m1_limitation(self, history_project, cli_runner, monkeypatch):
         self._setup(history_project, monkeypatch)
         _seed_events(
             history_project,
@@ -593,7 +569,7 @@ class TestHistoryLayerFilter:
                     command="run",
                     target="dev",
                     models_run=1,
-                    timestamp=datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 5, 1, 10, 0, tzinfo=UTC),
                 ),
                 DbtRunCompleted(
                     event_id="inv-marts00",
@@ -602,7 +578,7 @@ class TestHistoryLayerFilter:
                     command="build",
                     target="dev",
                     models_run=1,
-                    timestamp=datetime(2026, 5, 1, 11, 0, tzinfo=timezone.utc),
+                    timestamp=datetime(2026, 5, 1, 11, 0, tzinfo=UTC),
                 ),
             ],
         )
@@ -611,9 +587,7 @@ class TestHistoryLayerFilter:
         # M1: --layer shows all dbt runs; per-model filtering added in a later milestone.
         assert "build" in result.stdout
 
-    def test_layer_filter_with_no_manifest_errors_out(
-        self, history_project, cli_runner, monkeypatch
-    ):
+    def test_layer_filter_with_no_manifest_errors_out(self, history_project, cli_runner, monkeypatch):
         # No manifest written — _resolve_layer_models errors before reaching DB
         _write_tycoon_yml(history_project, with_sources=False)
         from tycoon.commands import history as history_mod
@@ -626,17 +600,13 @@ class TestHistoryLayerFilter:
         assert result.exit_code == 1
         assert "No dbt manifest" in (result.stderr or result.output)
 
-    def test_invalid_layer_errors_out(
-        self, history_project, cli_runner, monkeypatch
-    ):
+    def test_invalid_layer_errors_out(self, history_project, cli_runner, monkeypatch):
         self._setup(history_project, monkeypatch)
         result = cli_runner.invoke(app, ["data", "history", "--layer", "nonsense"])
         assert result.exit_code == 1
         assert "Invalid --layer" in (result.stderr or result.output)
 
-    def test_layer_and_source_are_mutually_exclusive(
-        self, history_project, cli_runner, monkeypatch
-    ):
+    def test_layer_and_source_are_mutually_exclusive(self, history_project, cli_runner, monkeypatch):
         self._setup(history_project, monkeypatch)
         result = cli_runner.invoke(
             app,

@@ -16,33 +16,32 @@ local-first development:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
-from tycoon.config import config
+from tycoon.config import load_config
 from tycoon.project import SyncSourceSpec
 from tycoon.sync import sync_to_local
 from tycoon.utils.console import console, error, info, next_steps, success, warn
 
 
 def sync_cmd(
-    from_: Optional[list[str]] = typer.Option(
+    from_: list[str] | None = typer.Option(
         None,
         "--from",
         help="Source URL — repeatable. md:<catalog>, /path/to/other.duckdb, etc.",
     ),
-    to: Optional[Path] = typer.Option(
+    to: Path | None = typer.Option(
         None,
         "--to",
         help="Destination DuckDB file. Defaults to tycoon.yml's sync.to.",
     ),
-    schema: Optional[str] = typer.Option(
+    schema: str | None = typer.Option(
         None,
         "--schema",
         help="Filter to one schema (applied to every --from source).",
     ),
-    tables: Optional[str] = typer.Option(
+    tables: str | None = typer.Option(
         None,
         "--tables",
         help="Glob filter for table names within selected schemas (e.g. 'mart.*,dim_*').",
@@ -60,7 +59,8 @@ def sync_cmd(
     the local snapshot is intentionally allowed to go stale until you
     re-run it.
     """
-    sync_cfg = config.project.sync if config.project else None
+    cfg = load_config()
+    sync_cfg = cfg.project.sync if cfg.project else None
 
     # Resolve source specs.
     if from_:
@@ -98,12 +98,9 @@ def sync_cmd(
     # Resolve destination.
     if to is None:
         if sync_cfg and sync_cfg.to:
-            to = config.root / sync_cfg.to
+            to = cfg.root / sync_cfg.to
         else:
-            error(
-                "No destination. Pass [bold]--to <path>[/bold] or add "
-                "[bold]sync.to[/bold] to tycoon.yml."
-            )
+            error("No destination. Pass [bold]--to <path>[/bold] or add [bold]sync.to[/bold] to tycoon.yml.")
             raise typer.Exit(1)
 
     # Mode validation up front so we don't half-attach before failing.
@@ -112,10 +109,7 @@ def sync_cmd(
         error(f"Unknown --mode {mode!r}. Expected one of: {', '.join(sorted(valid_modes))}.")
         raise typer.Exit(1)
 
-    info(
-        f"Syncing {len(sources)} source(s) → [bold]{to}[/bold] "
-        f"([dim]mode: {mode}[/dim])"
-    )
+    info(f"Syncing {len(sources)} source(s) → [bold]{to}[/bold] ([dim]mode: {mode}[/dim])")
 
     try:
         result = sync_to_local(sources, to, mode=mode)
@@ -129,10 +123,7 @@ def sync_cmd(
 
     # Summary table — keep it terse but show enough to spot misalignment.
     for t in result.tables:
-        console.print(
-            f"  [cyan]{t.schema}.{t.table}[/cyan]  "
-            f"[dim]{t.rows:,} rows from {t.source}[/dim]"
-        )
+        console.print(f"  [cyan]{t.schema}.{t.table}[/cyan]  [dim]{t.rows:,} rows from {t.source}[/dim]")
 
     if result.skipped:
         warn(
@@ -140,15 +131,10 @@ def sync_cmd(
             f"(usually views referencing unattached catalogs):"
         )
         for s in result.skipped:
-            console.print(
-                f"  [yellow]{s.schema}.{s.table}[/yellow]  [dim]{s.reason}[/dim]"
-            )
+            console.print(f"  [yellow]{s.schema}.{s.table}[/yellow]  [dim]{s.reason}[/dim]")
 
-    success(
-        f"Synced {result.total_rows:,} rows across {len(result.tables)} "
-        f"table(s) to [bold]{to}[/bold]"
-    )
+    success(f"Synced {result.total_rows:,} rows across {len(result.tables)} table(s) to [bold]{to}[/bold]")
     next_steps(
-        ("tycoon data query \"SELECT ...\"", f"query the local snapshot ({to.name})"),
+        ('tycoon data query "SELECT ..."', f"query the local snapshot ({to.name})"),
         ("tycoon data sync --mode skip-existing", "re-run later, only fill in new tables"),
     )

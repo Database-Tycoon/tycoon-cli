@@ -12,8 +12,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tycoon.cli import app
 from tycoon import venv as venv_mod
+from tycoon.cli import app
 
 
 def _ok(returncode: int = 0, stdout: str = "", stderr: str = "") -> MagicMock:
@@ -66,8 +66,7 @@ class TestCreateVenv:
         run.assert_not_called()
 
     def test_errors_when_uv_missing(self, tmp_path):
-        with patch("tycoon.venv.find_uv", return_value=None), \
-             patch("tycoon.venv.subprocess.run") as run:
+        with patch("tycoon.venv.find_uv", return_value=None), patch("tycoon.venv.subprocess.run") as run:
             result = venv_mod.create_venv(tmp_path, "3.13")
         assert result.ok is False
         assert "uv is not installed" in result.message
@@ -75,16 +74,17 @@ class TestCreateVenv:
 
     def test_refuses_to_clobber_existing_venv(self, tmp_path):
         (tmp_path / ".venv").mkdir()
-        with patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"), \
-             patch("tycoon.venv.subprocess.run") as run:
+        with patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"), patch("tycoon.venv.subprocess.run") as run:
             result = venv_mod.create_venv(tmp_path, "3.13")
         assert result.ok is False
         assert "--force" in result.message
         run.assert_not_called()
 
     def test_happy_path_creates_pins_and_installs(self, tmp_path):
-        with patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"), \
-             patch("tycoon.venv.subprocess.run", side_effect=[_ok(), _ok()]) as run:
+        with (
+            patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.venv.subprocess.run", side_effect=[_ok(), _ok()]) as run,
+        ):
             result = venv_mod.create_venv(tmp_path, "3.13")
 
         assert result.ok is True, result.message
@@ -101,15 +101,19 @@ class TestCreateVenv:
         assert "database-tycoon" in install_cmd
 
     def test_no_install_skips_pip(self, tmp_path):
-        with patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"), \
-             patch("tycoon.venv.subprocess.run", side_effect=[_ok()]) as run:
+        with (
+            patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.venv.subprocess.run", side_effect=[_ok()]) as run,
+        ):
             result = venv_mod.create_venv(tmp_path, "3.13", install_spec=None)
         assert result.ok is True
         assert run.call_count == 1  # only `uv venv`
 
     def test_uv_venv_failure_surfaces_stderr(self, tmp_path):
-        with patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"), \
-             patch("tycoon.venv.subprocess.run", side_effect=[_ok(1, stderr="no such python")]):
+        with (
+            patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.venv.subprocess.run", side_effect=[_ok(1, stderr="no such python")]),
+        ):
             result = venv_mod.create_venv(tmp_path, "3.13")
         assert result.ok is False
         assert "no such python" in result.message
@@ -117,8 +121,10 @@ class TestCreateVenv:
         assert not (tmp_path / ".python-version").exists()
 
     def test_install_failure_keeps_venv_but_reports(self, tmp_path):
-        with patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"), \
-             patch("tycoon.venv.subprocess.run", side_effect=[_ok(), _ok(1, stderr="resolution impossible")]):
+        with (
+            patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.venv.subprocess.run", side_effect=[_ok(), _ok(1, stderr="resolution impossible")]),
+        ):
             result = venv_mod.create_venv(tmp_path, "3.13")
         assert result.ok is False
         assert "installing" in result.message
@@ -128,8 +134,10 @@ class TestCreateVenv:
 
     def test_force_recreates_existing(self, tmp_path):
         (tmp_path / ".venv").mkdir()
-        with patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"), \
-             patch("tycoon.venv.subprocess.run", side_effect=[_ok(), _ok()]) as run:
+        with (
+            patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.venv.subprocess.run", side_effect=[_ok(), _ok()]) as run,
+        ):
             result = venv_mod.create_venv(tmp_path, "3.13", force=True)
         assert result.ok is True
         assert run.call_count == 2
@@ -172,8 +180,10 @@ class TestSetupCommand:
     def test_happy_path_invokes_create_venv(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
         fake = venv_mod.VenvResult(ok=True, message="Created .venv", venv_path=tmp_path / ".venv")
-        with patch("tycoon.commands.setup.find_uv", return_value="/usr/bin/uv"), \
-             patch("tycoon.commands.setup.create_venv", return_value=fake) as cv:
+        with (
+            patch("tycoon.commands.setup.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.commands.setup.create_venv", return_value=fake) as cv,
+        ):
             result = cli_runner.invoke(app, ["setup", "--no-prompt", "--python", "3.12"])
         assert result.exit_code == 0, result.output
         cv.assert_called_once()
@@ -184,16 +194,20 @@ class TestSetupCommand:
     def test_no_install_threads_through(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
         fake = venv_mod.VenvResult(ok=True, message="ok", venv_path=tmp_path / ".venv")
-        with patch("tycoon.commands.setup.find_uv", return_value="/usr/bin/uv"), \
-             patch("tycoon.commands.setup.create_venv", return_value=fake) as cv:
+        with (
+            patch("tycoon.commands.setup.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.commands.setup.create_venv", return_value=fake) as cv,
+        ):
             cli_runner.invoke(app, ["setup", "--no-prompt", "--no-install"])
         assert cv.call_args.kwargs["install_spec"] is None
 
     def test_failure_exits_nonzero(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
         fake = venv_mod.VenvResult(ok=False, message="uv venv failed")
-        with patch("tycoon.commands.setup.find_uv", return_value="/usr/bin/uv"), \
-             patch("tycoon.commands.setup.create_venv", return_value=fake):
+        with (
+            patch("tycoon.commands.setup.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.commands.setup.create_venv", return_value=fake),
+        ):
             result = cli_runner.invoke(app, ["setup", "--no-prompt"])
         assert result.exit_code == 1
         assert "uv venv failed" in (result.stderr or result.output)
@@ -217,8 +231,10 @@ class TestDoctorFix:
         from tycoon.commands import doctor
 
         fake = venv_mod.VenvResult(ok=True, message="Created /x/.venv on Python 3.13.")
-        with patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"), \
-             patch("tycoon.venv.create_venv", return_value=fake) as cv:
+        with (
+            patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.venv.create_venv", return_value=fake) as cv,
+        ):
             doctor._fix_python_env()
         cv.assert_called_once()
         out = capsys.readouterr().out

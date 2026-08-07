@@ -225,9 +225,7 @@ def generate_staging_models(
     raw_table_names = [
         row[0]
         for row in table_rows
-        if row[0] not in _DLT_INTERNAL_TABLES
-        and "__" not in row[0]
-        and not row[0].startswith("_")
+        if row[0] not in _DLT_INTERNAL_TABLES and "__" not in row[0] and not row[0].startswith("_")
     ]
 
     if not raw_table_names:
@@ -249,9 +247,7 @@ def generate_staging_models(
             ).fetchall()
             # Filter dlt internal columns
             filtered = [
-                (col_name, data_type)
-                for col_name, data_type in col_rows
-                if col_name not in _DLT_INTERNAL_COLUMNS
+                (col_name, data_type) for col_name, data_type in col_rows if col_name not in _DLT_INTERNAL_COLUMNS
             ]
             if filtered:
                 tables[table_name] = filtered

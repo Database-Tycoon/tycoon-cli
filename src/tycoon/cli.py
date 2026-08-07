@@ -7,22 +7,36 @@ from typer.core import TyperGroup
 
 import tycoon
 
-_COMMAND_ORDER = ["init", "setup", "register", "profiles", "semantics", "data", "start", "stop", "run", "notify", "schedule", "doctor", "docs"]
+_COMMAND_ORDER = [
+    "init",
+    "setup",
+    "register",
+    "profiles",
+    "semantics",
+    "data",
+    "start",
+    "stop",
+    "run",
+    "notify",
+    "schedule",
+    "doctor",
+    "docs",
+]
 
 _SECTIONS = {
-    "init":  "Project",
+    "init": "Project",
     "setup": "Project",
     "register": "Project",
     "profiles": "Project",
     "semantics": "Project",
-    "data":  "Data Pipeline",
+    "data": "Data Pipeline",
     "start": "Services",
-    "stop":  "Services",
-    "run":   "Tools",
+    "stop": "Services",
+    "run": "Tools",
     "notify": "Utilities",
     "schedule": "Utilities",
     "doctor": "Utilities",
-    "docs":  "Utilities",
+    "docs": "Utilities",
 }
 
 
@@ -38,9 +52,7 @@ class _OrderedGroup(TyperGroup):
             if cmd is None or getattr(cmd, "hidden", False):
                 continue
             section = _SECTIONS.get(name, "Commands")
-            seen.setdefault(section, []).append(
-                (name, cmd.get_short_help_str(limit=formatter.width))
-            )
+            seen.setdefault(section, []).append((name, cmd.get_short_help_str(limit=formatter.width)))
         for section, rows in seen.items():
             with formatter.section(section):
                 formatter.write_dl(rows)
@@ -79,7 +91,8 @@ def _root(
     pass
 
 
-from tycoon.commands import data, docs as docs_cmd_mod, profiles, register, semantics
+from tycoon.commands import data, profiles, register, semantics
+from tycoon.commands import docs as docs_cmd_mod
 from tycoon.commands.doctor import doctor_cmd
 from tycoon.commands.init import init_cmd
 from tycoon.commands.notify import notify_cmd

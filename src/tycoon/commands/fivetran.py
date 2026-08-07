@@ -72,19 +72,10 @@ def sync() -> None:
         error(f"Fivetran sync failed: {exc}")
         raise typer.Exit(1) from exc
 
-    success(
-        f"Captured {result.connectors_seen} connector(s) at "
-        f"{result.captured_at.isoformat(timespec='seconds')}."
-    )
-    info(
-        f"  Healthy: {result.healthy} · Failing: {result.failing} · "
-        f"Paused: {result.paused} · New: {result.new}"
-    )
+    success(f"Captured {result.connectors_seen} connector(s) at {result.captured_at.isoformat(timespec='seconds')}.")
+    info(f"  Healthy: {result.healthy} · Failing: {result.failing} · Paused: {result.paused} · New: {result.new}")
     if result.connectors_seen == 0:
-        warn(
-            "No connectors found in this group. Check `group_id` in "
-            "tycoon.yml's stack.ingestion_metadata block."
-        )
+        warn("No connectors found in this group. Check `group_id` in tycoon.yml's stack.ingestion_metadata block.")
 
 
 @app.command(name="list")
@@ -95,10 +86,7 @@ def list_cmd() -> None:
 
     rows = latest_connector_snapshot(metadata_db_path(config.root))
     if not rows:
-        info(
-            "No snapshots yet. Run [bold]tycoon data fivetran sync[/bold] to "
-            "fetch the current state."
-        )
+        info("No snapshots yet. Run [bold]tycoon data fivetran sync[/bold] to fetch the current state.")
         return
 
     table = Table(show_header=True, header_style="bold cyan")
@@ -127,6 +115,5 @@ def list_cmd() -> None:
     console.print(table)
     console.print()
     info(
-        "Snapshot history accumulates in `.tycoon/metadata.duckdb` — "
-        "every `fivetran sync` adds one row per connector."
+        "Snapshot history accumulates in `.tycoon/metadata.duckdb` — every `fivetran sync` adds one row per connector."
     )

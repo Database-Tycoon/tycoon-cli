@@ -39,11 +39,11 @@ class ScheduleSpec:
     """A scheduled tycoon run."""
 
     name: str
-    args: list[str]              # tycoon args, e.g. ["data", "run-all", "--notify"]
+    args: list[str]  # tycoon args, e.g. ["data", "run-all", "--notify"]
     hour: int = 4
     minute: int = 0
-    cadence: str = "daily"       # daily | hourly | weekly
-    weekday: int = 1             # 1=Mon .. 7=Sun (weekly only)
+    cadence: str = "daily"  # daily | hourly | weekly
+    weekday: int = 1  # 1=Mon .. 7=Sun (weekly only)
     project_root: Path = field(default_factory=Path.cwd)
 
 
@@ -55,8 +55,7 @@ class ScheduleSpec:
 def validate_name(name: str) -> None:
     if not _NAME_RE.match(name):
         raise ScheduleError(
-            f"Invalid schedule name '{name}'. Use lowercase letters, digits, and "
-            "hyphens (e.g. 'daily-refresh')."
+            f"Invalid schedule name '{name}'. Use lowercase letters, digits, and hyphens (e.g. 'daily-refresh')."
         )
 
 
@@ -262,9 +261,7 @@ def add(spec: ScheduleSpec, home: Path | None = None) -> str:
 
     raise ScheduleError(
         f"Scheduling isn't supported on this platform ({plat}). On Windows, use "
-        "Task Scheduler to run `tycoon "
-        + " ".join(spec.args)
-        + "` — see the docs."
+        "Task Scheduler to run `tycoon " + " ".join(spec.args) + "` — see the docs."
     )
 
 
@@ -276,19 +273,13 @@ def list_schedules(home: Path | None = None) -> list[str]:
         d = launch_agents_dir(home)
         if not d.exists():
             return []
-        names = [
-            p.stem[len(LAUNCHD_PREFIX):]
-            for p in sorted(d.glob(f"{LAUNCHD_PREFIX}*.plist"))
-        ]
+        names = [p.stem[len(LAUNCHD_PREFIX) :] for p in sorted(d.glob(f"{LAUNCHD_PREFIX}*.plist"))]
         return names
     if plat == "linux":
         d = systemd_user_dir(home)
         if not d.exists():
             return []
-        return [
-            p.stem[len(SYSTEMD_PREFIX):]
-            for p in sorted(d.glob(f"{SYSTEMD_PREFIX}*.timer"))
-        ]
+        return [p.stem[len(SYSTEMD_PREFIX) :] for p in sorted(d.glob(f"{SYSTEMD_PREFIX}*.timer"))]
     return []
 
 
@@ -343,7 +334,6 @@ def _run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
         raise ScheduleError(f"Failed to run {cmd[0]}: {exc}") from exc
     if check and result.returncode != 0:
         raise ScheduleError(
-            f"`{' '.join(cmd)}` failed (exit {result.returncode}):\n"
-            f"{result.stderr.strip() or result.stdout.strip()}"
+            f"`{' '.join(cmd)}` failed (exit {result.returncode}):\n{result.stderr.strip() or result.stdout.strip()}"
         )
     return result

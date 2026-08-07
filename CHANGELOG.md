@@ -1,5 +1,44 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-08-07
+
+_Headline: `tycoon.yml` learns its own schema version. The ingestion rewrite's M2 lands ([#83][], PR [#190][]) — `runtimes:` and `metadata:` blocks on the project model, an integer `schema_version` with comment-preserving in-place migration via `tycoon init --upgrade`, and the config singleton replaced across the ingestion commands. Plus a pinned, fully-formatted codebase (PR [#174][]) and the first release-time dependency review (PR [#180][], replacing the Dependabot PR pile)._
+
+### Added
+
+- **`runtimes:` and `metadata:` blocks in `tycoon.yml`** ([#90][], PR [#190][]). New `RuntimeEntry` and `MetadataConfig` models on `TycoonProject`, both defaulted — every existing `tycoon.yml` loads unchanged. This is the schema surface the rest of the ingestion rewrite ([#81][]) configures runtimes and metadata backends through.
+- **`schema_version` + `migrate_project()`** ([#92][], PR [#190][]). `tycoon.yml` now carries an integer `schema_version` (currently `2`), stamped on new projects and advanced by an in-place, idempotent migration that also writes `metadata:` defaults. The migration uses ruamel.yaml so comments and blank lines survive the round-trip; `ruamel-yaml` joins the runtime dependencies. Integer rather than semver-string because string comparison ordered `"0.10.0" < "0.2.0"`.
+- **`tycoon init --upgrade`** ([#96][], PR [#190][]). Runs the migration and reports whether the file changed. Loading a project with a stale `schema_version` warns and names this command as the remedy; a future `schema_version` makes gated data commands exit 1 cleanly instead of tracebacking. Enforcement is staged — it lives in `load_config()` and currently covers the ingestion commands; full-surface coverage is tracked in [#189][].
+- **Docs for the schema surface** ([#188][]). `schema_version` in the `tycoon.yml` reference — including the `version` (yours) vs `schema_version` (tycoon's) split — and an "Upgrading an existing project" section on the init page.
+- **Subprocess import-safety guard** ([#187][]). A `tests/test_cli_surface.py` regression test runs the real `tycoon` binary against a hostile `schema_version: 99` project: `--help`/`--version` must exit 0 and `init --upgrade` must fail cleanly. In-process `CliRunner` tests cannot observe import-time breakage by construction.
+
+### Changed
+
+- **Ingestion commands construct config locally** ([#94][], PR [#190][]). `sources`, `run-all`, `sync`, and `explore` build `TycoonConfig` at invocation through a new `load_config()` factory instead of importing the module-level singleton, keeping `--help` and `tycoon init --upgrade` import-safe no matter what a project's `tycoon.yml` says. Remaining singleton users (`transform`, `db`, `status`) are tracked in [#175][].
+- **ruff pinned, formatting enforced in CI** (PR [#174][]). CI previously ran `uvx ruff` (always latest) against an unpinned project, so new ruff releases broke CI without a code change. ruff is now pinned in the dev group, `ruff format --check` joins the lint job, and the one-time repo-wide format pass (~75 files) clears all pre-existing violations.
+- **Dependencies reviewed at release time** (PR [#180][], replacing Dependabot PRs #161–#168). `dbt-core` 1.11.8 → 1.12.0, `typer` 0.25.0 → 0.27.0; SHA-pinned actions `actions/checkout` → v7.0.1 and `astral-sh/setup-uv` → v9.0.0. dbt-core 1.12 reshapes the dependency tree (adds metricflow, drops dbt-semantic-interfaces; lockfile 109 → 113 packages).
+
+### Fixed
+
+- **Template scaffolding no longer flattens `tycoon.yml`** ([#185][]). `tycoon init --template` stamped `schema_version` through a `yaml.safe_load`/`dump` round-trip that stripped the template's blank-line separators — the first file a new user opens. Stamping now goes through `migrate_project()` (ruamel-based), which also writes the `metadata:` defaults in the same pass.
+- **Dead code from the T2-4 review dropped** ([#186][]). `save_project` carried a two-line conditional that duplicated what `model_dump` already does.
+
+[#81]: https://github.com/Database-Tycoon/tycoon-cli/issues/81
+[#83]: https://github.com/Database-Tycoon/tycoon-cli/issues/83
+[#90]: https://github.com/Database-Tycoon/tycoon-cli/issues/90
+[#92]: https://github.com/Database-Tycoon/tycoon-cli/issues/92
+[#94]: https://github.com/Database-Tycoon/tycoon-cli/issues/94
+[#96]: https://github.com/Database-Tycoon/tycoon-cli/issues/96
+[#174]: https://github.com/Database-Tycoon/tycoon-cli/pull/174
+[#175]: https://github.com/Database-Tycoon/tycoon-cli/issues/175
+[#180]: https://github.com/Database-Tycoon/tycoon-cli/pull/180
+[#185]: https://github.com/Database-Tycoon/tycoon-cli/issues/185
+[#186]: https://github.com/Database-Tycoon/tycoon-cli/issues/186
+[#187]: https://github.com/Database-Tycoon/tycoon-cli/issues/187
+[#188]: https://github.com/Database-Tycoon/tycoon-cli/issues/188
+[#189]: https://github.com/Database-Tycoon/tycoon-cli/issues/189
+[#190]: https://github.com/Database-Tycoon/tycoon-cli/pull/190
+
 ## [0.1.10] - 2026-07-21
 
 _Headline: the codebase gets dramatically smaller and more focused. The ingestion rewrite's M1 metadata backend lands ([#82][], PRs [#136][]/[#137][]), and the FastAPI server, Dagster orchestration, and Nao/ask AI-agent extras are removed outright ([#139][], PR [#147][]) — the lockfile drops from 174 to 109 packages. Cycle plan in [`docs/proposals/v0.1.10-scope.md`](docs/proposals/v0.1.10-scope.md)._

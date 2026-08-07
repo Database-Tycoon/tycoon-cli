@@ -6,7 +6,6 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -95,9 +94,7 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str, *, started_at: float) -> None:
         target = args.get("target", "dev") or "dev"
         results = run_results.get("results") or []
         models_run = len(results)
-        models_errored = sum(
-            1 for r in results if r.get("status") not in ("success", "pass", "warn", "skipped")
-        )
+        models_errored = sum(1 for r in results if r.get("status") not in ("success", "pass", "warn", "skipped"))
         models_passed = models_run - models_errored
 
         event = DbtRunCompleted(
@@ -141,9 +138,9 @@ def _auto_osi_scaffold_safe() -> None:
 
 
 def _resolve_for_run(
-    profile: Optional[str],
-    profiles_dir: Optional[Path],
-    target: Optional[str],
+    profile: str | None,
+    profiles_dir: Path | None,
+    target: str | None,
 ) -> tuple[Path | None, str | None, str]:
     """Resolve profile/profiles_dir/target via the central resolver.
 
@@ -176,20 +173,16 @@ def _resolve_for_run(
     # Resolver couldn't find a profile; fall back to whatever the user
     # passed on the CLI / had in tycoon.yml so dbt's own discovery still
     # has a chance.
-    fallback_target = (
-        target
-        or (project.dbt_target if project else None)
-        or "dev"
-    )
+    fallback_target = target or (project.dbt_target if project else None) or "dev"
     return profiles_dir, profile, fallback_target
 
 
 def _run_dbt(
     dbt_cmd: str,
-    profile: Optional[str],
-    profiles_dir: Optional[Path],
-    target: Optional[str],
-    select: Optional[str],
+    profile: str | None,
+    profiles_dir: Path | None,
+    target: str | None,
+    select: str | None,
     full_refresh: bool,
     extra: list[str] | None = None,
 ) -> int:
@@ -225,10 +218,10 @@ def _run_dbt(
 
 @app.command()
 def run(
-    target: Optional[str] = _TARGET_OPTION,
-    profile: Optional[str] = _PROFILE_OPTION,
-    profiles_dir: Optional[Path] = _PROFILES_DIR_OPTION,
-    select: Optional[str] = _SELECT_OPTION,
+    target: str | None = _TARGET_OPTION,
+    profile: str | None = _PROFILE_OPTION,
+    profiles_dir: Path | None = _PROFILES_DIR_OPTION,
+    select: str | None = _SELECT_OPTION,
     full_refresh: bool = _FULL_REFRESH_FLAG,
 ) -> None:
     """Execute dbt run — build all models (or a selection) in the warehouse."""
@@ -260,10 +253,10 @@ def run(
 
 @app.command()
 def test(
-    target: Optional[str] = _TARGET_OPTION,
-    profile: Optional[str] = _PROFILE_OPTION,
-    profiles_dir: Optional[Path] = _PROFILES_DIR_OPTION,
-    select: Optional[str] = _SELECT_OPTION,
+    target: str | None = _TARGET_OPTION,
+    profile: str | None = _PROFILE_OPTION,
+    profiles_dir: Path | None = _PROFILES_DIR_OPTION,
+    select: str | None = _SELECT_OPTION,
 ) -> None:
     """Execute dbt test — run data quality tests against built models."""
     header("dbt test")
@@ -290,10 +283,10 @@ def test(
 
 @app.command()
 def build(
-    target: Optional[str] = _TARGET_OPTION,
-    profile: Optional[str] = _PROFILE_OPTION,
-    profiles_dir: Optional[Path] = _PROFILES_DIR_OPTION,
-    select: Optional[str] = _SELECT_OPTION,
+    target: str | None = _TARGET_OPTION,
+    profile: str | None = _PROFILE_OPTION,
+    profiles_dir: Path | None = _PROFILES_DIR_OPTION,
+    select: str | None = _SELECT_OPTION,
     full_refresh: bool = _FULL_REFRESH_FLAG,
 ) -> None:
     """Execute dbt build — run + test all models (or a selection)."""
@@ -321,9 +314,9 @@ def build(
 
 @app.command()
 def docs(
-    target: Optional[str] = _TARGET_OPTION,
-    profile: Optional[str] = _PROFILE_OPTION,
-    profiles_dir: Optional[Path] = _PROFILES_DIR_OPTION,
+    target: str | None = _TARGET_OPTION,
+    profile: str | None = _PROFILE_OPTION,
+    profiles_dir: Path | None = _PROFILES_DIR_OPTION,
     port: int = typer.Option(8080, "--port", "-p", help="Port for dbt docs serve."),
 ) -> None:
     """Generate and serve dbt documentation in the browser."""
@@ -352,9 +345,7 @@ def docs(
     dbt = _dbt_executable()
     project_dir = config.dbt_project_dir
     cmd = [dbt, "docs", "serve", "--port", str(port)]
-    resolved_dir, resolved_profile, _ = _resolve_for_run(
-        profile=profile, profiles_dir=profiles_dir, target=target
-    )
+    resolved_dir, resolved_profile, _ = _resolve_for_run(profile=profile, profiles_dir=profiles_dir, target=target)
     if resolved_dir is not None:
         cmd += ["--profiles-dir", str(resolved_dir)]
     if resolved_profile:

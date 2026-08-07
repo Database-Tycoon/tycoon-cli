@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import click
 import typer
 
-from tycoon.config import config
+from tycoon.config import TycoonConfig, load_config
 from tycoon.utils.console import error, header, info, success, warn
 
 
 def analyze_cmd(
     source_name: Annotated[
-        Optional[str],
+        str | None,
         typer.Argument(help="Name of the registered source to analyze."),
     ] = None,
     no_dbt: Annotated[
@@ -75,12 +75,13 @@ def analyze_cmd(
     from tycoon.utils.duckdb_utils import get_tables
 
     # 1. Verify tycoon.yml exists
-    if not config.has_project_file:
+    cfg = load_config()
+    if not cfg.has_project_file:
         error("No tycoon.yml found. Run 'tycoon init' first.")
         raise typer.Exit(1)
 
     # 2. Resolve which source(s) we're analyzing.
-    sources = config.sources
+    sources = cfg.sources
     if all_sources:
         if source_name:
             error("Pass either a source name or --all, not both.")
@@ -88,7 +89,7 @@ def analyze_cmd(
         if not sources:
             error("No sources registered in tycoon.yml. Run 'tycoon data sources add' first.")
             raise typer.Exit(1)
-        _analyze_all(force=force, no_dbt=no_dbt, rill=rill, build=build)
+        _analyze_all(cfg=cfg, force=force, no_dbt=no_dbt, rill=rill, build=build)
         return
 
     if not source_name:
@@ -102,10 +103,7 @@ def analyze_cmd(
         )
 
     if source_name not in sources:
-        error(
-            f"Source '{source_name}' not found in tycoon.yml. "
-            f"Available: {', '.join(sources.keys()) or '(none)'}"
-        )
+        error(f"Source '{source_name}' not found in tycoon.yml. Available: {', '.join(sources.keys()) or '(none)'}")
         raise typer.Exit(1)
 
     source_cfg = sources[source_name]
@@ -115,12 +113,9 @@ def analyze_cmd(
     info(f"Schema: {schema_name}")
 
     # 3. Verify raw database exists and has data for this schema
-    raw_db = config.raw_db
+    raw_db = cfg.raw_db
     if not raw_db.exists():
-        error(
-            f"Raw database not found at {raw_db}. "
-            f"Run 'tycoon data sources run {source_name}' first."
-        )
+        error(f"Raw database not found at {raw_db}. Run 'tycoon data sources run {source_name}' first.")
         raise typer.Exit(1)
 
     all_tables = get_tables(raw_db)
@@ -139,7 +134,7 @@ def analyze_cmd(
     # 4. Generate dbt staging models
     if not no_dbt:
         info("Generating dbt staging models...")
-        staging_dir = config.dbt_project_dir / "models" / "staging" / source_name
+        staging_dir = cfg.dbt_project_dir / "models" / "staging" / source_name
         try:
             result = generate_staging_models(
                 raw_db_path=raw_db,
@@ -173,7 +168,7 @@ def analyze_cmd(
         from tycoon.scaffolding.rill_generator import generate_rill_config
         from tycoon.scaffolding.templates import scaffold_rill_dir
 
-        rill_dir = config.rill_dir
+        rill_dir = cfg.rill_dir
         if not rill_dir.exists():
             info(f"Rill project not found; scaffolding at {rill_dir}")
             scaffold_rill_dir(rill_dir)
@@ -203,10 +198,7 @@ def analyze_cmd(
     from tycoon.utils.console import console
 
     console.print()
-    success(
-        f"Explore scaffolding complete — "
-        f"{len(all_generated)} file(s) generated for source '{source_name}'"
-    )
+    success(f"Explore scaffolding complete — {len(all_generated)} file(s) generated for source '{source_name}'")
     # 7. Optionally run dbt build — route through transform's _run_dbt so
     # profile resolution honors tycoon.yml + $DBT_PROFILES_DIR + ~/.dbt
     # exactly like a standalone `tycoon data transform build`.
@@ -231,8 +223,7 @@ def analyze_cmd(
             success("dbt build completed successfully.")
 
 
-
-def _analyze_all(*, force: bool, no_dbt: bool, rill: bool, build: bool) -> None:
+def _analyze_all(*, cfg: TycoonConfig, force: bool, no_dbt: bool, rill: bool, build: bool) -> None:
     """Iterate every registered source and analyze each.
 
     Soft-skips sources whose raw DB doesn't exist yet. ``--rill`` and
@@ -240,7 +231,7 @@ def _analyze_all(*, force: bool, no_dbt: bool, rill: bool, build: bool) -> None:
     """
     from tycoon.scaffolding.dbt_generator import generate_staging_models
 
-    sources = config.sources
+    sources = cfg.sources
     header(f"Analyzing all sources ({len(sources)})")
 
     total_generated: list[str] = []
@@ -249,7 +240,7 @@ def _analyze_all(*, force: bool, no_dbt: bool, rill: bool, build: bool) -> None:
 
     for src_name, src_cfg in sources.items():
         info(f"  → {src_name} (schema: {src_cfg.schema_name})")
-        raw_db = config.raw_db
+        raw_db = cfg.raw_db
         if not raw_db.exists():
             warn(
                 f"    Skipping {src_name} — raw DB not found at {raw_db}. "
@@ -261,7 +252,7 @@ def _analyze_all(*, force: bool, no_dbt: bool, rill: bool, build: bool) -> None:
         if no_dbt:
             continue
 
-        staging_dir = config.dbt_project_dir / "models" / "staging" / src_name
+        staging_dir = cfg.dbt_project_dir / "models" / "staging" / src_name
         try:
             result = generate_staging_models(
                 raw_db_path=raw_db,
@@ -287,10 +278,7 @@ def _analyze_all(*, force: bool, no_dbt: bool, rill: bool, build: bool) -> None:
         f"generated {len(total_generated)} dbt file(s) total"
     )
     if total_skipped:
-        warn(
-            f"Skipped {len(total_skipped)} hand-edited file(s) (sentinel removed). "
-            f"Re-run with --force to overwrite."
-        )
+        warn(f"Skipped {len(total_skipped)} hand-edited file(s) (sentinel removed). Re-run with --force to overwrite.")
 
     # Note: --rill and --build aren't yet wired for --all to keep the
     # initial surface small. File a follow-up issue if needed.

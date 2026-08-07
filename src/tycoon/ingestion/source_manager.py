@@ -246,11 +246,7 @@ def is_source_installed(source_type: str) -> bool:
         return (SOURCES_DIR / source_type / "_run.py").exists()
     dlt_name = _DLT_INIT_NAME.get(source_type, source_type)
     source_pkg = SOURCES_DIR / dlt_name
-    return (
-        source_pkg.is_dir()
-        and (source_pkg / "__init__.py").exists()
-        and (source_pkg / "_run.py").exists()
-    )
+    return source_pkg.is_dir() and (source_pkg / "__init__.py").exists() and (source_pkg / "_run.py").exists()
 
 
 def install_source(source_type: str) -> bool:

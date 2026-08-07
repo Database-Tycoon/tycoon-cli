@@ -14,7 +14,7 @@ from pathlib import Path
 import typer
 import yaml
 
-from tycoon.project import StackConfig
+from tycoon.project import SCHEMA_VERSION, StackConfig, migrate_project
 from tycoon.utils.console import info, success, warn
 
 
@@ -50,11 +50,7 @@ def list_templates(*, include_demoted: bool = False) -> list[str]:
     """
     if not _TEMPLATES_DIR.is_dir():
         return []
-    names = (
-        d.name
-        for d in _TEMPLATES_DIR.iterdir()
-        if d.is_dir() and (d / "tycoon.yml").exists()
-    )
+    names = (d.name for d in _TEMPLATES_DIR.iterdir() if d.is_dir() and (d / "tycoon.yml").exists())
     if not include_demoted:
         names = (n for n in names if n not in _DEMOTED_TEMPLATES)
     return sorted(names)
@@ -69,10 +65,7 @@ def get_template_path(name: str) -> Path:
     path = _TEMPLATES_DIR / name
     if not path.is_dir() or not (path / "tycoon.yml").exists():
         available = list_templates()
-        raise FileNotFoundError(
-            f"Template '{name}' not found. "
-            f"Available templates: {', '.join(available) or '(none)'}"
-        )
+        raise FileNotFoundError(f"Template '{name}' not found. Available templates: {', '.join(available) or '(none)'}")
     return path
 
 
@@ -166,6 +159,7 @@ def scaffold_blank_project(
     project_data: dict = {
         "name": name,
         "version": "0.1.0",
+        "schema_version": SCHEMA_VERSION,
         "database": {
             "raw": raw_db_path,
             "warehouse": warehouse_db_path,
@@ -271,6 +265,7 @@ def _scaffold_dbt_project(
     metadata_rel_for_dbt = os.path.relpath(metadata_abs, start=dbt_dir)
     try:
         from tycoon.observability import ensure_schema
+
         ensure_schema(metadata_abs)
     except Exception:
         # Best-effort — observability scaffolding shouldn't block project setup.
@@ -313,6 +308,7 @@ def _scaffold_dbt_project(
             raw_abs.parent.mkdir(parents=True, exist_ok=True)
             try:
                 import duckdb
+
                 duckdb.connect(str(raw_abs)).close()
             except Exception:
                 # Best-effort — if it fails the user gets the clearer
@@ -334,15 +330,14 @@ def _scaffold_dbt_project(
             }
         }
 
-    (dbt_dir / "profiles.yml").write_text(
-        yaml.dump(profiles_data, default_flow_style=False, sort_keys=False)
-    )
+    (dbt_dir / "profiles.yml").write_text(yaml.dump(profiles_data, default_flow_style=False, sort_keys=False))
     info(f"Created dbt project at {dbt_dir} with dbt_project.yml and profiles.yml")
 
     # Generate the _tycoon staging models so users have a working dbt
     # surface over the metadata from the very first run.
     try:
         from tycoon.scaffolding.observability_dbt import scaffold_observability_models
+
         scaffold_observability_models(dbt_dir)
     except Exception:
         # Best-effort — observability scaffolding shouldn't block project setup.
@@ -397,16 +392,12 @@ def load_template_parameters(template_name: str) -> list[dict]:
 
     params = data.get("parameters", []) or []
     if not isinstance(params, list):
-        raise ValueError(
-            f"{meta_path}: 'parameters' must be a list, got {type(params).__name__}"
-        )
+        raise ValueError(f"{meta_path}: 'parameters' must be a list, got {type(params).__name__}")
 
     normalized: list[dict] = []
     for i, entry in enumerate(params):
         if not isinstance(entry, dict) or "name" not in entry:
-            raise ValueError(
-                f"{meta_path}: parameters[{i}] must be a dict with a 'name' key"
-            )
+            raise ValueError(f"{meta_path}: parameters[{i}] must be a dict with a 'name' key")
         normalized.append(
             {
                 "name": entry["name"],
@@ -474,10 +465,7 @@ def _resolve_template_parameters(
     declared = load_template_parameters(template_name)
     if not declared:
         if supplied:
-            warn(
-                f"Template '{template_name}' does not declare any parameters; "
-                f"ignoring --param: {', '.join(supplied)}"
-            )
+            warn(f"Template '{template_name}' does not declare any parameters; ignoring --param: {', '.join(supplied)}")
         return {}
 
     supplied = dict(supplied or {})
@@ -550,6 +538,10 @@ def scaffold_from_template(
         warn("tycoon.yml already exists, skipping")
     else:
         shutil.copy2(src_yml, dst_yml)
+        # Stamp schema_version (and metadata: defaults) via migrate_project,
+        # which round-trips through ruamel.yaml — the template's comments and
+        # blank-line separators survive, unlike a yaml.safe_load/dump pass.
+        migrate_project(target)
         success(f"Created tycoon.yml from template '{template_name}'")
 
     # Copy any subdirectories from the template (e.g. dbt_project/, rill/)
@@ -592,6 +584,7 @@ def scaffold_from_template(
     # observability bookkeeping should never block project setup.
     try:
         from tycoon.observability import ensure_schema
+
         ensure_schema(target / ".tycoon" / "metadata.duckdb")
     except Exception:
         pass
@@ -628,6 +621,7 @@ def scaffold_from_template(
     if template_dbt.exists() and (template_dbt / "dbt_project.yml").exists():
         try:
             from tycoon.scaffolding.observability_dbt import scaffold_observability_models
+
             scaffold_observability_models(template_dbt)
         except Exception:
             pass

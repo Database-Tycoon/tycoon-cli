@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "database-tycoon"
-version = "0.1.10"
+version = "0.1.11"
 description = "Tycoon CLI — local-first analytics CLI that adapts to your existing data stack"
 readme = "README.md"
 license = {text = "MIT"}
@@ -21,9 +21,9 @@ classifiers = [
     "Topic :: Database",
 ]
 dependencies = [
-    "typer==0.25.0",
+    "typer==0.27.0",
     "rich==15.0.0",
-    "dbt-core==1.11.8",
+    "dbt-core==1.12.0",
     "dbt-duckdb==1.10.1",
     "dlt[duckdb]==1.26.0",
     # Nothing in src/ imports pandas, but dlt's filesystem source
@@ -35,6 +35,7 @@ dependencies = [
     "httpx==0.28.1",
     "pyyaml==6.0.3",
     "pydantic==2.13.3",
+    "ruamel-yaml==0.19.1",
 ]
 
 [project.optional-dependencies]
@@ -53,6 +54,7 @@ dev = [
     "pytest==9.0.3",
     "pytest-cov>=7.1.0",
     "syrupy==5.2.0",
+    "ruff==0.15.20",
 ]
 
 [project.scripts]
@@ -81,6 +83,9 @@ target-version = "py312"
 # cli.py intentionally registers subcommands after the Typer app is
 # constructed, which ruff flags as E402. The alternative is circular imports.
 "src/tycoon/cli.py" = ["E402"]
+# init.py re-exports moved symbols at the bottom of the file for backwards
+# compatibility; they are intentionally placed after the module body.
+"src/tycoon/commands/init.py" = ["E402"]
 # Forward-reference string literals in type annotations trip F821 when the
 # referenced name is imported inside the method body to avoid circular imports.
 "tests/test_ingestion.py" = ["F821"]

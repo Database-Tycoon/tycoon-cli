@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import click
 import typer
 from rich.table import Table
 
-from tycoon.config import config
+from tycoon.config import TycoonConfig, load_config
 from tycoon.ingestion.catalog import CATALOG, CatalogEntry
 from tycoon.project import SourceConfig, load_project, save_project
 from tycoon.utils.console import console, error, header, info, next_steps, success, warn
@@ -32,11 +32,13 @@ app.add_typer(catalog_app, name="catalog")
 app.add_typer(list_app, name="list")
 
 
-def _require_project() -> None:
-    """Abort if no tycoon.yml exists."""
-    if not config.has_project_file:
+def _require_project() -> TycoonConfig:
+    """Return a fresh TycoonConfig, aborting if no tycoon.yml exists."""
+    cfg = load_config()
+    if not cfg.has_project_file:
         error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
         raise typer.Exit(1)
+    return cfg
 
 
 # ---------------------------------------------------------------------------
@@ -79,9 +81,9 @@ def catalog_default(ctx: typer.Context) -> None:
 
 def _list_sources() -> None:
     """Print registered sources table."""
-    _require_project()
+    cfg = _require_project()
 
-    sources = config.sources
+    sources = cfg.sources
     if not sources:
         info("No sources registered yet.")
         info("Browse available sources with [bold]tycoon data sources catalog[/bold]")
@@ -110,9 +112,9 @@ def show_source(
     name: str = typer.Argument(help="Name of the source to show"),
 ) -> None:
     """Show detailed configuration for a specific source."""
-    _require_project()
+    cfg = _require_project()
 
-    sources = config.sources
+    sources = cfg.sources
     if name not in sources:
         error(f"Source [bold]{name}[/bold] not found.")
         info(f"Available sources: {', '.join(sources.keys()) if sources else '(none)'}")
@@ -264,12 +266,12 @@ def _parse_config_pairs(pairs: list[str]) -> dict[str, Any]:
 def _build_source_config_from_flags(
     source_type: str,
     *,
-    base_url: Optional[str],
-    resources: Optional[str],
-    connection_string: Optional[str],
-    path: Optional[str],
+    base_url: str | None,
+    resources: str | None,
+    connection_string: str | None,
+    path: str | None,
     config_pairs: list[str],
-    catalog_entry: Optional[CatalogEntry],
+    catalog_entry: CatalogEntry | None,
 ) -> dict[str, Any]:
     """Assemble a source's ``config:`` dict from non-interactive flags.
 
@@ -304,9 +306,7 @@ def _build_source_config_from_flags(
         cfg["connection_string"] = connection_string
     elif source_type == "filesystem":
         if path is None:
-            error(
-                "--path is required for `filesystem` sources with --no-prompt."
-            )
+            error("--path is required for `filesystem` sources with --no-prompt.")
             raise typer.Exit(1)
         cfg["path"] = path
 
@@ -317,11 +317,11 @@ def _build_source_config_from_flags(
 
 @app.command("add")
 def add_source(
-    source_type: Optional[str] = typer.Argument(
+    source_type: str | None = typer.Argument(
         None,
         help="Source type — run `tycoon data sources catalog` to see all options.",
     ),
-    name: Optional[str] = typer.Option(
+    name: str | None = typer.Option(
         None,
         "--name",
         help=(
@@ -330,27 +330,27 @@ def add_source(
             "for other types under --no-prompt."
         ),
     ),
-    schema: Optional[str] = typer.Option(
+    schema: str | None = typer.Option(
         None,
         "--schema",
         help="Raw schema name in DuckDB. Auto-derived when omitted.",
     ),
-    base_url: Optional[str] = typer.Option(
+    base_url: str | None = typer.Option(
         None,
         "--base-url",
         help="Base URL for `rest_api` sources (e.g. `https://api.example.com`).",
     ),
-    resources: Optional[str] = typer.Option(
+    resources: str | None = typer.Option(
         None,
         "--resources",
         help="Comma-separated resource list for `rest_api` (e.g. `pokemon,berry,type`).",
     ),
-    connection_string: Optional[str] = typer.Option(
+    connection_string: str | None = typer.Option(
         None,
         "--connection-string",
         help="Connection string for `sql_database`. Use ${ENV_VAR} for secrets.",
     ),
-    path: Optional[str] = typer.Option(
+    path: str | None = typer.Option(
         None,
         "--path",
         help="File path or URL for `filesystem` sources.",
@@ -358,10 +358,7 @@ def add_source(
     config_pairs: list[str] = typer.Option(
         [],
         "--config",
-        help=(
-            "Extra `key=value` pairs to merge into the source config. "
-            "Repeatable. Overrides type-specific flags."
-        ),
+        help=("Extra `key=value` pairs to merge into the source config. Repeatable. Overrides type-specific flags."),
     ),
     no_prompt: bool = typer.Option(
         False,
@@ -386,7 +383,7 @@ def add_source(
     credentials default to ``${ENV_VAR}`` references in both modes —
     set the env var separately.
     """
-    _require_project()
+    cfg = _require_project()
 
     if not source_type:
         if no_prompt:
@@ -418,17 +415,12 @@ def add_source(
             catalog_entry=catalog_entry,
         )
         if source_type in _AUTO_NAMED_SOURCES and not name:
-            source_name, derived_schema = _derive_source_identity(
-                source_type, source_config
-            )
+            source_name, derived_schema = _derive_source_identity(source_type, source_config)
         elif name:
             source_name = name
             derived_schema = f"raw_{source_name.replace('-', '_')}"
         else:
-            error(
-                f"--name is required under --no-prompt for `{source_type}` "
-                "(no auto-naming rule). Pass --name <id>."
-            )
+            error(f"--name is required under --no-prompt for `{source_type}` (no auto-naming rule). Pass --name <id>.")
             raise typer.Exit(1)
         schema_name = schema or derived_schema
     elif catalog_entry and source_type in _AUTO_NAMED_SOURCES:
@@ -442,20 +434,11 @@ def add_source(
         info(f"Schema:      [bold]{schema_name}[/bold]")
     else:
         default_name = name or (f"my-{source_type}" if catalog_entry else source_type)
-        source_name = (
-            name
-            if name
-            else typer.prompt("Source name", default=default_name)
+        source_name = name if name else typer.prompt("Source name", default=default_name)
+        default_schema = schema or (
+            catalog_entry.default_schema if catalog_entry else f"raw_{source_name.replace('-', '_')}"
         )
-        default_schema = (
-            schema
-            or (catalog_entry.default_schema if catalog_entry else f"raw_{source_name.replace('-', '_')}")
-        )
-        schema_name = (
-            schema
-            if schema
-            else typer.prompt("Schema name", default=default_schema)
-        )
+        schema_name = schema if schema else typer.prompt("Schema name", default=default_schema)
         if catalog_entry:
             source_config = _prompt_catalog_config(catalog_entry)
         else:
@@ -468,28 +451,22 @@ def add_source(
         config=source_config,
     )
 
-    project = load_project(config.root)
+    project = load_project(cfg.root)
     assert project is not None  # guarded by _require_project
 
     if source_name in project.sources:
         if force or no_prompt:
             if not force:
-                error(
-                    f"Source '{source_name}' already exists. Pass --force to "
-                    "overwrite under --no-prompt."
-                )
+                error(f"Source '{source_name}' already exists. Pass --force to overwrite under --no-prompt.")
                 raise typer.Exit(1)
         else:
-            overwrite = typer.confirm(
-                f"Source '{source_name}' already exists. Overwrite?", default=False
-            )
+            overwrite = typer.confirm(f"Source '{source_name}' already exists. Overwrite?", default=False)
             if not overwrite:
                 info("Cancelled.")
                 raise typer.Exit(0)
 
     project.sources[source_name] = new_source
-    save_project(project, config.root)
-    config.reload()
+    save_project(project, cfg.root)
 
     success(f"Source [bold]{source_name}[/bold] added to tycoon.yml")
 
@@ -543,9 +520,7 @@ def _maybe_install_dlt_extra(source_type: str) -> None:
     if is_dlt_extra_available(source_type):
         return
 
-    install = typer.confirm(
-        f"dlt[{source_type}] is not installed. Install it now?", default=True
-    )
+    install = typer.confirm(f"dlt[{source_type}] is not installed. Install it now?", default=True)
     if install:
         if install_dlt_extra(source_type):
             success(f"dlt[{source_type}] installed successfully.")
@@ -560,9 +535,9 @@ def remove_source(
     name: str = typer.Argument(help="Name of the source to remove"),
 ) -> None:
     """Remove a registered data source."""
-    _require_project()
+    cfg = _require_project()
 
-    project = load_project(config.root)
+    project = load_project(cfg.root)
     assert project is not None
 
     if name not in project.sources:
@@ -573,8 +548,7 @@ def remove_source(
     typer.confirm(f"Remove source '{name}'?", abort=True)
 
     del project.sources[name]
-    save_project(project, config.root)
-    config.reload()
+    save_project(project, cfg.root)
 
     success(f"Source [bold]{name}[/bold] removed from tycoon.yml")
 
@@ -611,7 +585,7 @@ def _source_already_referenced(dbt_dir: Path, source_name: str) -> bool:
     return False
 
 
-def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, scaffold: bool) -> None:
+def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, cfg: TycoonConfig, scaffold: bool) -> None:
     """Auto-run the analyze flow if a dbt project exists and no staging
     models are present for this source yet.
 
@@ -621,10 +595,10 @@ def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, scaff
     """
     if not scaffold:
         return
-    project = config.project
+    project = cfg.project
     if project is not None and not project.transform.auto_scaffold:
         return
-    dbt_dir = config.dbt_project_dir
+    dbt_dir = cfg.dbt_project_dir
     if not dbt_dir.exists():
         return  # No dbt project to scaffold into.
 
@@ -637,7 +611,7 @@ def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, scaff
         from tycoon.scaffolding.dbt_generator import generate_staging_models
 
         result = generate_staging_models(
-            raw_db_path=config.raw_db,
+            raw_db_path=cfg.raw_db,
             schema_name=source_config.schema_name,
             source_name=source_name,
             output_dir=staging_dir,
@@ -654,8 +628,8 @@ def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, scaff
 
 @app.command(name="run")
 def run_source(
-    source_name: Optional[str] = typer.Argument(None, help="Name of the registered source to ingest."),
-    max_records: Optional[int] = _MaxRecordsOption,
+    source_name: str | None = typer.Argument(None, help="Name of the registered source to ingest."),
+    max_records: int | None = _MaxRecordsOption,
     no_scaffold: bool = typer.Option(
         False,
         "--no-scaffold",
@@ -670,9 +644,9 @@ def run_source(
     """Ingest data from a registered source by name."""
     from tycoon.ingestion.runner import run_source as _run_source
 
-    _require_project()
+    cfg = _require_project()
 
-    sources = config.sources
+    sources = cfg.sources
     if not source_name:
         if not sources:
             error("No sources registered. Run 'tycoon data sources add' first.")
@@ -693,30 +667,31 @@ def run_source(
     if max_records is not None:
         info(f"Record cap: {max_records:,}")
 
-    config.ensure_data_dir()
+    cfg.ensure_data_dir()
 
     try:
         _pipeline, load_info = _run_source(
             name=source_name,
             source_config=source_config,
-            raw_db_path=config.raw_db,
+            raw_db_path=cfg.raw_db,
             max_records=max_records,
         )
         success(f"{source_name} load complete. {load_info}")
-        _maybe_auto_scaffold(source_name, source_config, scaffold=not no_scaffold)
+        _maybe_auto_scaffold(source_name, source_config, cfg=cfg, scaffold=not no_scaffold)
         next_steps(
             ("tycoon data transform run", "run dbt models on the ingested data"),
             ("tycoon start --only rill", "open the Rill dashboard"),
         )
     except Exception as exc:
         from tycoon.ingestion.runner import IngestionError
+
         error(str(exc) if isinstance(exc, IngestionError) else f"{source_name} pipeline failed: {exc}")
         raise typer.Exit(1) from exc
 
 
 @app.command(name="run-all")
 def run_all(
-    max_records: Optional[int] = _MaxRecordsOption,
+    max_records: int | None = _MaxRecordsOption,
     no_scaffold: bool = typer.Option(
         False,
         "--no-scaffold",
@@ -729,9 +704,9 @@ def run_all(
     """Run all registered source pipelines sequentially."""
     from tycoon.ingestion.runner import run_source as _run_source
 
-    _require_project()
+    cfg = _require_project()
 
-    sources = config.sources
+    sources = cfg.sources
     if not sources:
         error("No sources registered. Run 'tycoon data sources add' first.")
         raise typer.Exit(1)
@@ -741,7 +716,7 @@ def run_all(
     if max_records is not None:
         info(f"Record cap per resource: {max_records:,}")
 
-    config.ensure_data_dir()
+    cfg.ensure_data_dir()
 
     for i, (name, source_config) in enumerate(sources.items(), 1):
         info(f"Step {i}/{total} — {name} ({source_config.type})...")
@@ -749,11 +724,11 @@ def run_all(
             _pipeline, load_info = _run_source(
                 name=name,
                 source_config=source_config,
-                raw_db_path=config.raw_db,
+                raw_db_path=cfg.raw_db,
                 max_records=max_records,
             )
             success(f"{name} complete. {load_info}")
-            _maybe_auto_scaffold(name, source_config, scaffold=not no_scaffold)
+            _maybe_auto_scaffold(name, source_config, cfg=cfg, scaffold=not no_scaffold)
         except Exception as exc:
             error(f"{name} pipeline failed: {exc}")
             raise typer.Exit(1) from exc

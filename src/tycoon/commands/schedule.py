@@ -20,7 +20,7 @@ def add_schedule(
         "data run-all",
         "--command",
         "-c",
-        help="The tycoon command to run, e.g. \"data run-all --notify\".",
+        help='The tycoon command to run, e.g. "data run-all --notify".',
     ),
     at: str = typer.Option("04:00", "--at", help="Time of day (24h HH:MM)."),
     cadence: str = typer.Option(
@@ -29,9 +29,7 @@ def add_schedule(
         help="daily (at --at), hourly (at --at's minute), or weekly (--weekday at --at).",
     ),
     weekday: int = typer.Option(1, "--weekday", help="Weekly cadence: 1=Mon .. 7=Sun."),
-    notify: bool = typer.Option(
-        False, "--notify", help="Append --notify to the scheduled command."
-    ),
+    notify: bool = typer.Option(False, "--notify", help="Append --notify to the scheduled command."),
     force: bool = typer.Option(False, "--force", help="Replace an existing schedule of the same name."),
 ) -> None:
     """Install a scheduled run of a tycoon command.

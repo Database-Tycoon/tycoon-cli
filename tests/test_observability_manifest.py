@@ -138,9 +138,7 @@ class TestDiffFingerprints:
         assert types["column_type_changed"]["old_value"] == "INTEGER"
         assert types["column_type_changed"]["new_value"] == "BIGINT"
 
-    def test_first_snapshot_captures_but_records_no_changes(
-        self, tmp_path: Path
-    ) -> None:
+    def test_first_snapshot_captures_but_records_no_changes(self, tmp_path: Path) -> None:
         """Round-trip: writing a manifest.json with no prior snapshot should
         insert the snapshot row and zero change rows."""
         meta = metadata_db_path(tmp_path)
@@ -154,13 +152,9 @@ class TestDiffFingerprints:
 
         con = duckdb.connect(str(meta), read_only=True)
         try:
-            snap = con.execute(
-                "SELECT invocation_id FROM dbt_manifest_snapshots"
-            ).fetchall()
+            snap = con.execute("SELECT invocation_id FROM dbt_manifest_snapshots").fetchall()
             assert snap == [("inv-001",)]
-            changes = con.execute(
-                "SELECT count(*) FROM dbt_schema_changes"
-            ).fetchone()
+            changes = con.execute("SELECT count(*) FROM dbt_schema_changes").fetchone()
             assert changes == (0,)
         finally:
             con.close()
@@ -209,14 +203,12 @@ class TestCaptureDbtManifestRoundTrip:
             types = [
                 r[0]
                 for r in con.execute(
-                    "SELECT change_type FROM dbt_schema_changes "
-                    "WHERE invocation_id = 'inv-002' ORDER BY change_type"
+                    "SELECT change_type FROM dbt_schema_changes WHERE invocation_id = 'inv-002' ORDER BY change_type"
                 ).fetchall()
             ]
             assert types == ["column_added", "column_removed", "sql_changed"]
             prev = con.execute(
-                "SELECT DISTINCT prev_invocation_id FROM dbt_schema_changes "
-                "WHERE invocation_id = 'inv-002'"
+                "SELECT DISTINCT prev_invocation_id FROM dbt_schema_changes WHERE invocation_id = 'inv-002'"
             ).fetchall()
             assert prev == [("inv-001",)]
         finally:

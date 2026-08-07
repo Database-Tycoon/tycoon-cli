@@ -30,7 +30,6 @@ from typing import Any
 
 import yaml
 
-
 # --------------------------------------------------------------------------
 # Data containers
 # --------------------------------------------------------------------------
@@ -280,11 +279,7 @@ def resolve_profile(
     if data is None:
         return None
 
-    profile_name = (
-        overrides.profile
-        or project_dbt_profile
-        or _read_dbt_project_profile_name(dbt_project_dir)
-    )
+    profile_name = overrides.profile or project_dbt_profile or _read_dbt_project_profile_name(dbt_project_dir)
     if not profile_name:
         return None
 
@@ -345,11 +340,7 @@ def discover_profiles(profiles_yml: Path) -> list[DiscoveredProfile]:
         if not isinstance(outputs, dict):
             continue
         targets = list(outputs.keys())
-        adapters = {
-            t: str((outputs[t] or {}).get("type") or "")
-            for t in targets
-            if isinstance(outputs[t], dict)
-        }
+        adapters = {t: str((outputs[t] or {}).get("type") or "") for t in targets if isinstance(outputs[t], dict)}
         default_target = body.get("target") or (targets[0] if targets else "")
         out.append(
             DiscoveredProfile(
@@ -404,10 +395,7 @@ _SECRET_KEYS = {
 def redact_secrets(value: Any) -> Any:
     """Recursively redact common secret-bearing fields. Used by ``profiles show``."""
     if isinstance(value, dict):
-        return {
-            k: ("***redacted***" if k.lower() in _SECRET_KEYS else redact_secrets(v))
-            for k, v in value.items()
-        }
+        return {k: ("***redacted***" if k.lower() in _SECRET_KEYS else redact_secrets(v)) for k, v in value.items()}
     if isinstance(value, list):
         return [redact_secrets(v) for v in value]
     return value

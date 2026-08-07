@@ -36,36 +36,42 @@ class HistoryRepository:
         summaries: list[RunSummary] = []
         for e in events:
             if isinstance(e, RunCompleted):
-                summaries.append(RunSummary(
-                    run_id=e.load_id or e.event_id,
-                    source_id=e.source_id,
-                    runtime_id=e.runtime_id,
-                    status="success",
-                    started_at=e.timestamp,
-                    duration_seconds=e.duration_seconds,
-                    rows_total=sum((e.rows_loaded or {}).values()),
-                ))
+                summaries.append(
+                    RunSummary(
+                        run_id=e.load_id or e.event_id,
+                        source_id=e.source_id,
+                        runtime_id=e.runtime_id,
+                        status="success",
+                        started_at=e.timestamp,
+                        duration_seconds=e.duration_seconds,
+                        rows_total=sum((e.rows_loaded or {}).values()),
+                    )
+                )
             elif isinstance(e, RunFailed):
-                summaries.append(RunSummary(
-                    run_id=e.event_id,
-                    source_id=e.source_id,
-                    runtime_id=e.runtime_id,
-                    status="failed",
-                    started_at=e.timestamp,
-                    duration_seconds=0.0,
-                    rows_total=0,
-                ))
+                summaries.append(
+                    RunSummary(
+                        run_id=e.event_id,
+                        source_id=e.source_id,
+                        runtime_id=e.runtime_id,
+                        status="failed",
+                        started_at=e.timestamp,
+                        duration_seconds=0.0,
+                        rows_total=0,
+                    )
+                )
             elif isinstance(e, DbtRunCompleted):
-                summaries.append(RunSummary(
-                    run_id=e.event_id,
-                    source_id=e.source_id,
-                    runtime_id=e.runtime_id,
-                    status="success" if e.models_errored == 0 else "failed",
-                    started_at=e.timestamp,
-                    duration_seconds=e.duration_seconds,
-                    rows_total=e.models_run,
-                    command=e.command,
-                ))
+                summaries.append(
+                    RunSummary(
+                        run_id=e.event_id,
+                        source_id=e.source_id,
+                        runtime_id=e.runtime_id,
+                        status="success" if e.models_errored == 0 else "failed",
+                        started_at=e.timestamp,
+                        duration_seconds=e.duration_seconds,
+                        rows_total=e.models_run,
+                        command=e.command,
+                    )
+                )
         summaries.sort(key=lambda s: s.started_at, reverse=True)
         if limit is not None:
             return summaries[:limit]
@@ -81,38 +87,53 @@ class HistoryRepository:
             if isinstance(e, RunCompleted):
                 eid = e.load_id or e.event_id
                 if eid.startswith(run_id_prefix):
-                    matches.append((RunSummary(
-                        run_id=eid,
-                        source_id=e.source_id,
-                        runtime_id=e.runtime_id,
-                        status="success",
-                        started_at=e.timestamp,
-                        duration_seconds=e.duration_seconds,
-                        rows_total=sum((e.rows_loaded or {}).values()),
-                    ), e))
+                    matches.append(
+                        (
+                            RunSummary(
+                                run_id=eid,
+                                source_id=e.source_id,
+                                runtime_id=e.runtime_id,
+                                status="success",
+                                started_at=e.timestamp,
+                                duration_seconds=e.duration_seconds,
+                                rows_total=sum((e.rows_loaded or {}).values()),
+                            ),
+                            e,
+                        )
+                    )
             elif isinstance(e, RunFailed):
                 if e.event_id.startswith(run_id_prefix):
-                    matches.append((RunSummary(
-                        run_id=e.event_id,
-                        source_id=e.source_id,
-                        runtime_id=e.runtime_id,
-                        status="failed",
-                        started_at=e.timestamp,
-                        duration_seconds=0.0,
-                        rows_total=0,
-                    ), e))
+                    matches.append(
+                        (
+                            RunSummary(
+                                run_id=e.event_id,
+                                source_id=e.source_id,
+                                runtime_id=e.runtime_id,
+                                status="failed",
+                                started_at=e.timestamp,
+                                duration_seconds=0.0,
+                                rows_total=0,
+                            ),
+                            e,
+                        )
+                    )
             elif isinstance(e, DbtRunCompleted):
                 if e.event_id.startswith(run_id_prefix):
-                    matches.append((RunSummary(
-                        run_id=e.event_id,
-                        source_id=e.source_id,
-                        runtime_id=e.runtime_id,
-                        status="success" if e.models_errored == 0 else "failed",
-                        started_at=e.timestamp,
-                        duration_seconds=e.duration_seconds,
-                        rows_total=e.models_run,
-                        command=e.command,
-                    ), e))
+                    matches.append(
+                        (
+                            RunSummary(
+                                run_id=e.event_id,
+                                source_id=e.source_id,
+                                runtime_id=e.runtime_id,
+                                status="success" if e.models_errored == 0 else "failed",
+                                started_at=e.timestamp,
+                                duration_seconds=e.duration_seconds,
+                                rows_total=e.models_run,
+                                command=e.command,
+                            ),
+                            e,
+                        )
+                    )
 
         if len(matches) == 0:
             return None

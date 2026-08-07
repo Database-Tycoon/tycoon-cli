@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 
 from tycoon.cli import app
 
 
 class TestDoctorCommand:
-
     def test_doctor_runs_without_crash(self, cli_runner):
         """doctor should run and produce output (may exit 0 or 1 depending on env)."""
         result = cli_runner.invoke(app, ["doctor"])
@@ -158,7 +158,7 @@ class TestDoctorObservabilityCheck:
         assert "no runs captured yet" in out
 
     def test_populated_metadata_db_reports_counts(self, monkeypatch, tmp_path, capsys):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         import duckdb
 
@@ -169,7 +169,7 @@ class TestDoctorObservabilityCheck:
         meta = metadata_db_path(cfg.root)
         ensure_schema(meta)
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         con = duckdb.connect(str(meta))
         try:
             con.execute(
@@ -251,9 +251,7 @@ class TestDoctorLayerCoverage:
         doctor._check_layer_coverage()
         assert capsys.readouterr().out == ""
 
-    def test_reports_success_when_every_source_has_staging(
-        self, monkeypatch, tmp_path, capsys
-    ):
+    def test_reports_success_when_every_source_has_staging(self, monkeypatch, tmp_path, capsys):
         from tycoon.commands import doctor
 
         cfg = self._patch_config(

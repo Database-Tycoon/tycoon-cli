@@ -10,7 +10,6 @@ import importlib
 
 
 class TestNYCDotPipeline:
-
     def test_module_imports(self):
         mod = importlib.import_module("tycoon.ingestion.nyc_dot_pipeline")
         assert mod is not None
@@ -35,7 +34,6 @@ class TestNYCDotPipeline:
 
 
 class TestMTAPipeline:
-
     def test_module_imports(self):
         mod = importlib.import_module("tycoon.ingestion.mta_pipeline")
         assert mod is not None
@@ -59,7 +57,6 @@ class TestMTAPipeline:
 
 
 class TestMTABusSpeedsPipeline:
-
     def test_module_imports(self):
         mod = importlib.import_module("tycoon.ingestion.mta_bus_speeds_pipeline")
         assert mod is not None
@@ -122,18 +119,14 @@ class TestBuildRestApiSource:
         """Resources arriving as a list (hand-authored) stay a list."""
         from tycoon.ingestion.runner import _normalize_rest_api_config
 
-        out = _normalize_rest_api_config(
-            {"base_url": "https://x", "resources": ["a", "b"]}
-        )
+        out = _normalize_rest_api_config({"base_url": "https://x", "resources": ["a", "b"]})
         assert out["resources"] == ["a", "b"]
 
     def test_normalize_drops_empty_resource_entries(self):
         """`resources: 'a,,b, ,'` shouldn't produce empty strings."""
         from tycoon.ingestion.runner import _normalize_rest_api_config
 
-        out = _normalize_rest_api_config(
-            {"base_url": "https://x", "resources": "a,,b, ,"}
-        )
+        out = _normalize_rest_api_config({"base_url": "https://x", "resources": "a,,b, ,"})
         assert out["resources"] == ["a", "b"]
 
     def test_build_rest_api_source_constructs_dlt_source(self):
@@ -159,7 +152,7 @@ class TestBuildRestApiSource:
 class TestBuildFilesystemSource:
     """Unit tests for _build_filesystem_source glob-based dispatch."""
 
-    def _make_source_config(self, file_glob: str) -> "SourceConfig":
+    def _make_source_config(self, file_glob: str) -> SourceConfig:
         from tycoon.project import SourceConfig
 
         return SourceConfig(
@@ -236,9 +229,7 @@ class TestRunSourceDispatch:
         from tycoon.ingestion.catalog import CATALOG
 
         for native in ("rest_api", "filesystem"):
-            assert native in CATALOG, (
-                f"{native} should still appear in the catalog for browsing"
-            )
+            assert native in CATALOG, f"{native} should still appear in the catalog for browsing"
 
 
 # ---------------------------------------------------------------------------
@@ -319,9 +310,7 @@ class TestWriteDispositionContract:
         assert rows == [(1, "a"), (2, "B-updated"), (2, "b"), (3, "c")], rows
 
     def test_merge_upserts_on_primary_key(self, tmp_path):
-        rows = self._run_two_loads(
-            tmp_path, write_disposition="merge", primary_key="id"
-        )
+        rows = self._run_two_loads(tmp_path, write_disposition="merge", primary_key="id")
         # id=1 carries from batch 1; id=2 wins from batch 2; id=3 added.
         assert rows == [(1, "a"), (2, "B-updated"), (3, "c")], rows
 
@@ -368,9 +357,7 @@ class TestGoogleSheetsShim:
 
         fake_dlt = types.ModuleType("dlt")
         fake_dlt.pipeline = lambda **kw: _FakePipeline()
-        fake_dlt.destinations = types.SimpleNamespace(
-            duckdb=lambda path: ("duckdb", path)
-        )
+        fake_dlt.destinations = types.SimpleNamespace(duckdb=lambda path: ("duckdb", path))
 
         monkeypatch.setitem(sys.modules, "google_sheets", fake_gs)
         monkeypatch.setitem(sys.modules, "dlt", fake_dlt)
@@ -381,9 +368,7 @@ class TestGoogleSheetsShim:
         exec(_SHIMS["google_sheets"], ns)
 
         source_config = types.SimpleNamespace(config=config, schema_name="raw_google_sheets")
-        pipeline, load_info = ns["run_pipeline"](
-            "my-sheet", source_config, "/tmp/raw.duckdb", max_records=max_records
-        )
+        pipeline, load_info = ns["run_pipeline"]("my-sheet", source_config, "/tmp/raw.duckdb", max_records=max_records)
         return captured, fake_source, load_info
 
     def test_passes_spreadsheet_and_range_subset(self, monkeypatch):

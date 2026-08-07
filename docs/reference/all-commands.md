@@ -24,6 +24,8 @@ Options:
   -n, --name TEXT          Project name (default: current directory name)
   --list-templates         List available templates and exit
   -p, --param TEXT         Template parameter in 'name=value' form (repeatable)
+  --upgrade                Migrate tycoon.yml to the current schema version
+                           and exit
 ```
 
 ### [`tycoon register dbt`](../commands/register.md#tycoon-register-dbt)

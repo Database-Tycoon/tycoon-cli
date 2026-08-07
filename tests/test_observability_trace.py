@@ -8,7 +8,7 @@ pickle format in the test fixtures.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -29,10 +29,10 @@ def _sample_trace(
     step_exception: str | None = None,
 ) -> dict:
     """Hand-built trace dict in the shape of ``PipelineTrace.asdict()``."""
-    started = datetime(2026, 4, 19, 10, 0, 0, tzinfo=timezone.utc)
-    extract_end = datetime(2026, 4, 19, 10, 0, 5, tzinfo=timezone.utc)
-    normalize_end = datetime(2026, 4, 19, 10, 0, 6, tzinfo=timezone.utc)
-    load_end = datetime(2026, 4, 19, 10, 0, 8, tzinfo=timezone.utc)
+    started = datetime(2026, 4, 19, 10, 0, 0, tzinfo=UTC)
+    extract_end = datetime(2026, 4, 19, 10, 0, 5, tzinfo=UTC)
+    normalize_end = datetime(2026, 4, 19, 10, 0, 6, tzinfo=UTC)
+    load_end = datetime(2026, 4, 19, 10, 0, 8, tzinfo=UTC)
 
     load_packages = [
         {
@@ -105,14 +105,12 @@ class TestCaptureDltTraceFromDict:
         con = duckdb.connect(str(meta), read_only=True)
         try:
             runs = con.execute(
-                "SELECT transaction_id, pipeline_name, duration_s, success "
-                "FROM dlt_trace_runs"
+                "SELECT transaction_id, pipeline_name, duration_s, success FROM dlt_trace_runs"
             ).fetchall()
             assert runs == [("txn-001", "sample_pipeline", 8.0, True)]
 
             steps = con.execute(
-                "SELECT step FROM dlt_trace_steps "
-                "WHERE transaction_id = 'txn-001' ORDER BY started_at"
+                "SELECT step FROM dlt_trace_steps WHERE transaction_id = 'txn-001' ORDER BY started_at"
             ).fetchall()
             assert [s[0] for s in steps] == ["extract", "normalize", "load"]
 
@@ -139,13 +137,9 @@ class TestCaptureDltTraceFromDict:
 
         con = duckdb.connect(str(meta), read_only=True)
         try:
-            count = con.execute(
-                "SELECT COUNT(*) FROM dlt_trace_runs"
-            ).fetchone()
+            count = con.execute("SELECT COUNT(*) FROM dlt_trace_runs").fetchone()
             assert count == (1,)
-            job_count = con.execute(
-                "SELECT COUNT(*) FROM dlt_trace_jobs"
-            ).fetchone()
+            job_count = con.execute("SELECT COUNT(*) FROM dlt_trace_jobs").fetchone()
             assert job_count == (2,)
         finally:
             con.close()
@@ -175,13 +169,9 @@ class TestCaptureDltTraceFromDict:
 
         con = duckdb.connect(str(meta), read_only=True)
         try:
-            row = con.execute(
-                "SELECT success, exception FROM dlt_trace_runs"
-            ).fetchone()
+            row = con.execute("SELECT success, exception FROM dlt_trace_runs").fetchone()
             assert row == (False, "429 rate-limited")
-            exc_step = con.execute(
-                "SELECT step_exception FROM dlt_trace_steps WHERE step = 'load'"
-            ).fetchone()
+            exc_step = con.execute("SELECT step_exception FROM dlt_trace_steps WHERE step = 'load'").fetchone()
             assert exc_step == ("429 rate-limited",)
         finally:
             con.close()

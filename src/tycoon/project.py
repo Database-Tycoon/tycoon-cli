@@ -6,7 +6,7 @@ import os
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -60,8 +60,7 @@ class FivetranIngestionMetadata(BaseModel):
 
     api_key: SecretStr = Field(
         description=(
-            "Fivetran API key (Basic Auth username). Recommended: "
-            "${FIVETRAN_API_KEY} rather than a literal value."
+            "Fivetran API key (Basic Auth username). Recommended: ${FIVETRAN_API_KEY} rather than a literal value."
         )
     )
     api_secret: SecretStr = Field(
@@ -95,6 +94,7 @@ class StackConfig(BaseModel):
 
 def _interpolate_env(value: str) -> str:
     """Replace ${ENV_VAR} and ${ENV_VAR:-default} patterns with env values."""
+
     def _replace(match: re.Match) -> str:
         var = match.group(1)
         if ":-" in var:
@@ -131,17 +131,14 @@ _INTERPOLATED_SUBTREES: tuple[tuple[str, ...], ...] = (
 
 
 def _path_matches(path: tuple[str, ...], pattern: tuple[str, ...]) -> bool:
-    return len(path) == len(pattern) and all(
-        p in ("*", segment) for segment, p in zip(path, pattern)
-    )
+    return len(path) == len(pattern) and all(p in ("*", segment) for segment, p in zip(path, pattern))
 
 
 def _is_interpolated_field(path: tuple[str, ...]) -> bool:
     if any(_path_matches(path, leaf) for leaf in _INTERPOLATED_LEAVES):
         return True
     return any(
-        len(path) > len(prefix) and _path_matches(path[: len(prefix)], prefix)
-        for prefix in _INTERPOLATED_SUBTREES
+        len(path) > len(prefix) and _path_matches(path[: len(prefix)], prefix) for prefix in _INTERPOLATED_SUBTREES
     )
 
 
@@ -282,6 +279,25 @@ class TransformConfig(BaseModel):
     )
 
 
+class RuntimeEntry(BaseModel):
+    """One named ingestion runtime declared under ``runtimes:``."""
+
+    type: Literal["dlt-managed", "dlt-project", "fivetran", "airbyte", "estuary"]
+    # only meaningful for dlt-project; ignored for cloud-managed runtimes
+    path: str | None = None
+
+
+class MetadataConfig(BaseModel):
+    """Where tycoon stores its internal state (run history, source records).
+
+    ``backend: duckdb_file`` is the only supported backend in v0.1.x.
+    ``path`` is relative to the project root.
+    """
+
+    backend: str = "duckdb_file"
+    path: str = ".tycoon/metadata.duckdb"
+
+
 class NotifyConfig(BaseModel):
     """Optional ``notify:`` block — non-secret notification prefs (#46).
 
@@ -307,6 +323,7 @@ class TycoonProject(BaseModel):
 
     name: str = Field(default="my-project", description="Project name")
     version: str = Field(default="0.1.0", description="Project version")
+    schema_version: int | None = Field(default=None, description="Tycoon schema version (managed by tycoon)")
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     sources: dict[str, SourceConfig] = Field(default_factory=dict, description="Registered data sources")
     dbt_project_dir: str = Field(default="dbt_project", description="Path to dbt project")
@@ -320,16 +337,12 @@ class TycoonProject(BaseModel):
     )
     dbt_profile: str | None = Field(
         default=None,
-        description=(
-            "Profile name within profiles.yml. Defaults to the `profile:` "
-            "field in dbt_project.yml."
-        ),
+        description=("Profile name within profiles.yml. Defaults to the `profile:` field in dbt_project.yml."),
     )
     dbt_target: str | None = Field(
         default=None,
         description=(
-            "Target within the profile (dev / prod / ...). Defaults to the "
-            "profile's `target:` field, then 'dev'."
+            "Target within the profile (dev / prod / ...). Defaults to the profile's `target:` field, then 'dev'."
         ),
     )
     rill_dir: str = Field(default="rill", description="Path to Rill dashboards")
@@ -339,6 +352,21 @@ class TycoonProject(BaseModel):
         description="Defaults for transform-side commands (`data analyze`, `data sources run`).",
     )
     stack: StackConfig = Field(default_factory=StackConfig)
+    runtimes: dict[str, RuntimeEntry] = Field(
+        default_factory=dict,
+        description=(
+            "Named ingestion runtimes. Keys are arbitrary labels (e.g. 'shopify', "
+            "'custom_pipeline'); each entry declares which ingestion tool owns that "
+            "pipeline and, for dlt-project runtimes, where the project lives."
+        ),
+    )
+    metadata: MetadataConfig = Field(
+        default_factory=MetadataConfig,
+        description=(
+            "Where tycoon stores internal state (run history, source records). "
+            "Defaults to a local DuckDB file at .tycoon/metadata.duckdb."
+        ),
+    )
     notify: NotifyConfig = Field(
         default_factory=lambda: NotifyConfig(),
         description="Notification preferences for `--notify` runs and `tycoon notify`.",
@@ -365,6 +393,7 @@ class TycoonProject(BaseModel):
 
 
 PROJECT_FILENAME = "tycoon.yml"
+SCHEMA_VERSION = 2
 
 
 def load_project(project_root: Path) -> TycoonProject | None:
@@ -399,3 +428,55 @@ def save_project(project: TycoonProject, project_root: Path) -> None:
             if existing_meta is not None and isinstance(data.get("stack"), dict):
                 data["stack"]["ingestion_metadata"] = existing_meta
     path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+
+
+def migrate_project(project_root: Path) -> bool:
+    """Upgrade tycoon.yml to SCHEMA_VERSION in place.
+
+    Adds ``metadata:`` with defaults if the key is absent, then stamps
+    ``schema_version`` when it is absent or older than SCHEMA_VERSION.
+    The user's ``version`` field is never touched. Writes back only when
+    a change is needed. Returns True if the file was modified, False if
+    already up to date (idempotent). Comments and blank lines are
+    preserved via ruamel.yaml.
+    """
+    from ruamel.yaml import YAML
+
+    path = project_root / PROJECT_FILENAME
+    if not path.exists():
+        return False
+
+    ryaml = YAML()
+    ryaml.preserve_quotes = True
+
+    with path.open() as f:
+        raw = ryaml.load(f)
+
+    if not isinstance(raw, dict):
+        return False
+
+    existing = raw.get("schema_version")
+    if existing is not None and (isinstance(existing, bool) or not isinstance(existing, int)):
+        raise ValueError(f"tycoon.yml schema_version must be an integer, got {type(existing).__name__}: {existing!r}")
+    if existing is not None and existing > SCHEMA_VERSION:
+        raise ValueError(
+            f"tycoon.yml schema_version {existing} is newer than this tycoon supports ({SCHEMA_VERSION}). "
+            "Upgrade tycoon-cli to use this project."
+        )
+
+    changed = False
+
+    if "metadata" not in raw:
+        defaults = MetadataConfig()
+        raw["metadata"] = {"backend": defaults.backend, "path": defaults.path}
+        changed = True
+
+    if existing is None or existing < SCHEMA_VERSION:
+        raw["schema_version"] = SCHEMA_VERSION
+        changed = True
+
+    if changed:
+        with path.open("w") as f:
+            ryaml.dump(raw, f)
+
+    return changed

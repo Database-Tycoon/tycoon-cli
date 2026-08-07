@@ -11,10 +11,10 @@ from dataclasses import dataclass, field
 
 @dataclass
 class CredentialField:
-    key: str        # Key stored in tycoon.yml config dict
-    label: str      # Human-readable prompt label
-    hint: str       # Where to get the credential
-    env_var: str    # Suggested environment variable name
+    key: str  # Key stored in tycoon.yml config dict
+    label: str  # Human-readable prompt label
+    hint: str  # Where to get the credential
+    env_var: str  # Suggested environment variable name
     secret: bool = True
 
 
@@ -140,7 +140,7 @@ CATALOG: dict[str, CatalogEntry] = {
             ConfigField(
                 key="database_ids",
                 label="Database IDs (comma-separated, leave blank to sync all)",
-                hint='Copy the ID from your Notion database URL: notion.so/<workspace>/<database-id>',
+                hint="Copy the ID from your Notion database URL: notion.so/<workspace>/<database-id>",
                 required=False,
                 default="",
             ),
@@ -172,7 +172,7 @@ CATALOG: dict[str, CatalogEntry] = {
             ConfigField(
                 key="spreadsheet_url_or_id",
                 label="Spreadsheet URL or ID",
-                hint='Full share URL or just the ID from docs.google.com/spreadsheets/d/<ID>/edit',
+                hint="Full share URL or just the ID from docs.google.com/spreadsheets/d/<ID>/edit",
                 required=True,
             ),
             ConfigField(

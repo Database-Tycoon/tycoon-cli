@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-
 import yaml
 
 from tycoon.cli import app
-from tycoon.project import load_project
+from tycoon.project import SCHEMA_VERSION, load_project
 from tycoon.scaffolding.templates import list_templates, scaffold_blank_project
 
 
@@ -19,6 +18,7 @@ class TestInitHelp:
         assert "--template" in result.stdout
         assert "--name" in result.stdout
         assert "--list-templates" in result.stdout
+        assert "--upgrade" in result.stdout
 
     def test_init_appears_in_top_level_help(self, cli_runner):
         result = cli_runner.invoke(app, ["--help"])
@@ -151,6 +151,28 @@ class TestTemplateScaffold:
         cli_runner.invoke(app, ["init", "--template", "nyc-transit"])
         assert (tmp_path / "data").is_dir()
 
+    def test_template_scaffold_preserves_template_formatting(self, tmp_path, monkeypatch):
+        """Stamping schema_version must not flatten the template's layout (#185)."""
+        monkeypatch.chdir(tmp_path)
+        from tycoon.scaffolding.templates import get_template_path, scaffold_from_template
+
+        template_text = (get_template_path("nyc-transit") / "tycoon.yml").read_text()
+        scaffold_from_template(tmp_path, "nyc-transit")
+        scaffolded = (tmp_path / "tycoon.yml").read_text()
+
+        # ruamel may re-indent sequence items, so compare stripped lines —
+        # the point is that no content, comment, or blank separator is lost.
+        scaffolded_lines = [line.strip() for line in scaffolded.splitlines()]
+        for line in template_text.splitlines():
+            assert line.strip() in scaffolded_lines
+
+        assert scaffolded.count("\n\n") >= template_text.count("\n\n")
+
+        data = yaml.safe_load(scaffolded)
+        assert data["schema_version"] == SCHEMA_VERSION
+        assert data["version"] == "0.1.0"
+        assert "metadata" in data
+
 
 class TestInitRefusesOverwrite:
     """Verify init refuses to overwrite existing tycoon.yml."""
@@ -220,14 +242,10 @@ class TestTemplateParameterization:
     def test_substitute_params_leaves_unknown_placeholders_alone(self):
         from tycoon.scaffolding.templates import _substitute_params
 
-        out = _substitute_params(
-            "{{ known }} vs {{ unknown }}", {"known": "yes"}
-        )
+        out = _substitute_params("{{ known }} vs {{ unknown }}", {"known": "yes"})
         assert out == "yes vs {{ unknown }}"
 
-    def test_scaffold_with_params_substitutes_in_tycoon_yml(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_scaffold_with_params_substitutes_in_tycoon_yml(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(
             app,
@@ -265,15 +283,11 @@ class TestTemplateParameterization:
         )
         assert not (tmp_path / "template.yml").exists()
 
-    def test_missing_required_param_errors_out_in_noninteractive(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_missing_required_param_errors_out_in_noninteractive(self, cli_runner, tmp_path, monkeypatch):
         """When no --param is supplied and stdin is empty (CliRunner default),
         typer.prompt fails. We just need it to not silently succeed."""
         monkeypatch.chdir(tmp_path)
-        result = cli_runner.invoke(
-            app, ["init", "--template", "github-analytics"]
-        )
+        result = cli_runner.invoke(app, ["init", "--template", "github-analytics"])
         assert result.exit_code != 0
 
     def test_param_malformed_is_rejected(self, cli_runner, tmp_path, monkeypatch):
@@ -284,9 +298,7 @@ class TestTemplateParameterization:
         )
         assert result.exit_code != 0
 
-    def test_unknown_param_is_warned_but_not_fatal(
-        self, cli_runner, tmp_path, monkeypatch
-    ):
+    def test_unknown_param_is_warned_but_not_fatal(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(
             app,
@@ -305,3 +317,44 @@ class TestTemplateParameterization:
         assert result.exit_code == 0
         # The unknown-param warning goes to stdout via the console helper
         assert "bogus" in result.stdout.lower() or "unknown parameter" in result.stdout.lower()
+
+
+class TestUpgrade:
+    """tycoon init --upgrade migrates tycoon.yml to the current schema version."""
+
+    def test_upgrade_no_tycoon_yml_exits_nonzero(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = cli_runner.invoke(app, ["init", "--upgrade"])
+        assert result.exit_code != 0
+
+    def test_upgrade_migrates_outdated_yml(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "tycoon.yml").write_text("name: old-project\nversion: 1.0.0\n")
+
+        result = cli_runner.invoke(app, ["init", "--upgrade"])
+
+        assert result.exit_code == 0
+        p = load_project(tmp_path)
+        assert p is not None
+        assert p.schema_version == SCHEMA_VERSION
+
+    def test_upgrade_already_current_reports_up_to_date(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "tycoon.yml").write_text(
+            f"name: current\nschema_version: {SCHEMA_VERSION}\n"
+            "metadata:\n  backend: duckdb_file\n  path: .tycoon/metadata.duckdb\n"
+        )
+
+        result = cli_runner.invoke(app, ["init", "--upgrade"])
+
+        assert result.exit_code == 0
+        assert "up to date" in result.stdout
+
+    def test_upgrade_future_schema_version_exits_nonzero_cleanly(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "tycoon.yml").write_text(f"name: future\nschema_version: {SCHEMA_VERSION + 1}\n")
+
+        result = cli_runner.invoke(app, ["init", "--upgrade"])
+
+        assert result.exit_code != 0
+        assert "newer than this tycoon supports" in result.output
