@@ -46,6 +46,7 @@ every flag listed, see [Reference: All commands](../reference/all-commands.md).
 | [`tycoon start`](start.md) | Start the Rill dashboards and the Quack warehouse server. |
 | [`tycoon start --only <svc>`](start.md) | Start one specific service. |
 | `tycoon stop` | Stop all services started by `tycoon start`. |
+| [`tycoon city`](city.md) | Serve the catalog as an interactive 3D city in the browser. |
 
 ## Tool passthrough
 

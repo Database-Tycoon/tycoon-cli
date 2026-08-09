@@ -1,0 +1,142 @@
+# The demo project's Apache Ossie (OSI) semantic model — hand-written, and the
+# first real OSI file in this repository. `make_demo_tycoon.py` copies it to
+# `demo-tycoon/semantic.yml`, where the loader finds it by the project-root
+# convention (no `semantic_model:` key needed in tycoon.yml).
+#
+# It is written to be ILLUSTRATIVE of every case the join-street rendering has
+# to handle, so keep all four when editing:
+#
+#   1. a join whose pair ALSO has lineage       -> revenue_to_staged_customer
+#      (mart__revenue is built from stg_customers, so the street already
+#       exists and the renderer marks it rather than laying a parallel road)
+#   2. a join whose pair has NO lineage         -> revenue_to_customer_dim
+#      (the dimension joined in every query and never a build input — the
+#       case that is the whole argument for a separate `joins[]` array)
+#   3. a composite key                          -> revenue_to_customer_status
+#   4. ai_context on a couple of objects        -> revenue, customer_dim
+#
+# Every declaration here is correct on purpose: the typo case (a declaration
+# naming an object that is not in the catalog) belongs in a test fixture, not
+# in the shipped demo. See tests/catalog/test_osi.py.
+
+osi_version: "0.1"
+name: fx_demo
+
+ai_context:
+  instructions: >-
+    The demo warehouse. `mart` holds the reporting layer; `staging` holds
+    typed, deduplicated copies of the raw feeds. Prefer mart objects for
+    anything customer-facing.
+
+datasets:
+  - name: revenue
+    schema: mart
+    table: mart__revenue
+    primary_key: [id]
+    unique_keys:
+      - [customer_id, recognised_on]
+    fields:
+      - name: amount
+        type: number
+        ai_context:
+          instructions: Recognised amount in USD, not invoiced amount.
+      - name: recognised_on
+        type: date
+      - name: customer_id
+        type: number
+    ai_context:
+      instructions: >-
+        One row per recognised revenue line. Revenue is recognised on
+        `recognised_on`, which is deliberately not the invoice date — never
+        aggregate this table by `created_at`.
+      synonyms: [revenue, recognised revenue, sales]
+      example_queries:
+        - Revenue by month for the last four quarters
+        - Revenue by customer segment this year
+
+  - name: customer_dim
+    schema: mart
+    table: dim__customers
+    primary_key: [id]
+    ai_context:
+      instructions: >-
+        The customer dimension. Joined by almost every report and built from
+        staging, never from the fact — it has no lineage to `revenue`.
+      synonyms: [customers, accounts, clients]
+      example_queries:
+        - How many customers placed an order this month
+
+  - name: customer_status
+    schema: mart
+    table: dim__customer_status
+    # A slowly-changing dimension: one row per customer per status window, so
+    # the natural key needs both columns. This is what makes the join below
+    # composite.
+    primary_key: [id, created_at]
+
+  - name: staged_customer
+    schema: staging
+    table: stg_customers
+    primary_key: [id]
+
+  - name: staged_order
+    schema: staging
+    table: stg_orders
+    primary_key: [id]
+
+relationships:
+  # 1. The pair that ALSO has lineage. mart.mart__revenue is built from
+  #    staging.stg_customers, so a street already runs between these two
+  #    buildings — in the opposite direction to the join, because the
+  #    dimension flows INTO the fact while the join points AT the dimension.
+  - name: revenue_to_staged_customer
+    type: many_to_one
+    from: revenue
+    to: staged_customer
+    keys:
+      - from: customer_id
+        to: id
+    ai_context:
+      instructions: The pre-mart join, kept for reconciliation queries only.
+
+  # 2. The dim-joined-but-never-built case: no build ever moved data between
+  #    these two, and this is still the join every report uses.
+  - name: revenue_to_customer_dim
+    type: many_to_one
+    from: revenue
+    to: customer_dim
+    keys:
+      - from: customer_id
+        to: id
+
+  # 3. Composite: a slowly-changing dimension needs the customer AND the date
+  #    to land on one row.
+  - name: revenue_to_customer_status
+    type: many_to_one
+    from: revenue
+    to: customer_status
+    keys:
+      - from: customer_id
+        to: id
+      - from: recognised_on
+        to: created_at
+
+  # 4. Inside staging: an order belongs to one customer. No lineage either —
+  #    the two staging tables are built from different raw feeds.
+  - name: order_to_staged_customer
+    type: many_to_one
+    from: staged_order
+    to: staged_customer
+    keys:
+      - from: id
+        to: id
+
+metrics:
+  - name: total_revenue
+    datasets: [revenue]
+    expression: sum(amount)
+    ai_context:
+      instructions: >-
+        Sum of recognised amount. Always filter on `recognised_on`; filtering
+        on `created_at` double-counts amended lines.
+      synonyms: [revenue, top line]

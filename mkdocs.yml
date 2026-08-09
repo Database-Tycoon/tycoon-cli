@@ -100,6 +100,7 @@ nav:
       - "tycoon data run-all": commands/data/run-all.md
     - Services:
       - "tycoon start / stop": commands/start.md
+      - "tycoon city": commands/city.md
     - Tools:
       - "tycoon run": commands/run.md
       - "tycoon notify": commands/notify.md

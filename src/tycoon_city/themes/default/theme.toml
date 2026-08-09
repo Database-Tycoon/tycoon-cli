@@ -1,0 +1,63 @@
+name = "default"
+logo_text = "DATABASE TYCOON"
+
+[sprites]
+grass = [0, 0, 16, 16]
+grass_alt = [16, 0, 16, 16]
+road = [32, 0, 16, 16]
+power_line = [48, 0, 16, 16]
+plant = [64, 0, 16, 16]
+water = [80, 0, 16, 16]
+vehicle = [96, 0, 16, 16]
+lot_industrial_1 = [112, 0, 16, 16]
+lot_industrial_2 = [128, 0, 16, 16]
+lot_industrial_3 = [144, 0, 16, 16]
+lot_industrial_4 = [160, 0, 16, 16]
+lot_industrial_5 = [176, 0, 16, 16]
+lot_industrial_6 = [192, 0, 16, 16]
+lot_industrial_7 = [208, 0, 16, 16]
+lot_industrial_8 = [224, 0, 16, 16]
+lot_commercial_1 = [240, 0, 16, 16]
+lot_commercial_2 = [256, 0, 16, 16]
+lot_commercial_3 = [272, 0, 16, 16]
+lot_commercial_4 = [288, 0, 16, 16]
+lot_commercial_5 = [304, 0, 16, 16]
+lot_commercial_6 = [320, 0, 16, 16]
+lot_commercial_7 = [336, 0, 16, 16]
+lot_commercial_8 = [352, 0, 16, 16]
+lot_residential_1 = [368, 0, 16, 16]
+lot_residential_2 = [384, 0, 16, 16]
+lot_residential_3 = [400, 0, 16, 16]
+lot_residential_4 = [416, 0, 16, 16]
+lot_residential_5 = [432, 0, 16, 16]
+lot_residential_6 = [448, 0, 16, 16]
+lot_residential_7 = [464, 0, 16, 16]
+lot_residential_8 = [480, 0, 16, 16]
+
+[labels]
+schema = "schema"
+table = "table"
+view = "view"
+rows = "rows"
+database = "database"
+
+[colors]
+banner = [40, 30, 90]
+sidebar = [70, 60, 130]
+button = [120, 110, 180]
+button_light = [180, 170, 230]
+button_dark = [50, 40, 90]
+status = [20, 15, 50]
+text = [240, 240, 255]
+
+[[style_rules]]
+pattern = "raw|source|land"
+style = "INDUSTRIAL"
+
+[[style_rules]]
+pattern = "stag|int"
+style = "COMMERCIAL"
+
+[[style_rules]]
+pattern = "mart|serve|analytics|main"
+style = "RESIDENTIAL"
