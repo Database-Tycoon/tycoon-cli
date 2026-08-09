@@ -15,6 +15,10 @@ venv/
 *.duckdb
 *.duckdb.wal
 /data/
+# ...except the renderer's test fixture. Nothing regenerates it — the
+# contract golden beside it (demo.city.json) is derived *from* this file, so
+# `*.duckdb` would have silently dropped an irreplaceable input.
+!contract/fixtures/demo.duckdb
 !/data/README.md
 # Template-bundled sample data is shipped with the package — exempt
 # from the repo-level /data/ ignore rule.

@@ -70,6 +70,13 @@ tycoon run identically on a laptop and on a cloud VM.
 
     Per-release narrative notes — what shipped, what didn't, and why.
 
+-   :material-city: **[City renderer](city/index.md)**
+
+    ---
+
+    Internals of the 3D catalog renderer behind `tycoon city` — the
+    `city.json` / `runs.json` contracts, road grammar, and its design log.
+
 </div>
 
 ## A note on this site

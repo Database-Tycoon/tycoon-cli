@@ -1,11 +1,15 @@
 import json
-from pathlib import Path
+from importlib import resources
 from typing import Any
 
-# Load schemas once at module level
-BASE_DIR = Path(__file__).parent.parent.parent.parent / "contract" / "fixtures"
-REQUEST_SCHEMA = json.loads((BASE_DIR / "request_schema.json").read_text())
-SHIPMENT_SCHEMA = json.loads((BASE_DIR / "shipment_schema.json").read_text())
+# Read through importlib.resources, not a path relative to __file__. These were
+# loaded from `<repo>/contract/fixtures/` — four `.parent` hops out of the
+# package and into the checkout — so they were never in the wheel at all and
+# importing this module raised FileNotFoundError anywhere but a source tree.
+# As package data they ship with the code that parses them.
+_SCHEMAS = resources.files(__package__) / "schemas"
+REQUEST_SCHEMA = json.loads((_SCHEMAS / "request_schema.json").read_text())
+SHIPMENT_SCHEMA = json.loads((_SCHEMAS / "shipment_schema.json").read_text())
 
 
 def _validate(obj: Any, schema: dict) -> tuple[bool, list[str]]:
