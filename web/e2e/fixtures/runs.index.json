@@ -1,0 +1,34 @@
+{
+  "format": "database-tycoon.runs",
+  "version": 1,
+  "database": "demo",
+  "runs": [
+    {
+      "id": "2f1c6b40-0000-4000-8000-00000000000a",
+      "command": "build",
+      "started_at": "2026-08-06T07:30:00",
+      "target": "dev",
+      "ok": true,
+      "models_error": 0,
+      "tests_failed": 0,
+      "elapsed_s": 9.25,
+      "step_count": 9,
+      "unmapped_count": 2,
+      "failed_count": 0
+    },
+    {
+      "id": "8b4d19e2-0000-4000-8000-00000000000b",
+      "command": "build",
+      "started_at": "2026-08-05T09:15:00",
+      "target": "dev",
+      "ok": false,
+      "models_error": 1,
+      "tests_failed": 0,
+      "elapsed_s": 12.5,
+      "step_count": 9,
+      "unmapped_count": 2,
+      "failed_count": 1
+    }
+  ],
+  "notes": []
+}

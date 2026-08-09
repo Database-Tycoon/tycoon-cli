@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "shipment_id": { "type": "string", "format": "uuid" },
+    "route_id": { "type": "string" },
+    "payload_size": { "type": "integer", "description": "Size in MB" },
+    "arrival_time": { "type": "string", "format": "date-time" },
+    "is_contaminated": { "type": "boolean", "description": "True if validation failed at Customs" }
+  },
+  "required": ["shipment_id", "route_id", "payload_size", "arrival_time"]
+}

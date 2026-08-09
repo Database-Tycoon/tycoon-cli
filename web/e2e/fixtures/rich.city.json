@@ -1,0 +1,1711 @@
+{
+  "format": "database-tycoon.city",
+  "version": 1,
+  "database": {
+    "name": "fx",
+    "object_count": 10,
+    "total_rows": 123242,
+    "has_known_edges": true,
+    "notes": [
+      "no column lineage for 2 dbt models (unresolvable jinja or SQL)",
+      "run history from target 'dev'"
+    ]
+  },
+  "grid": {
+    "width": 30,
+    "height": 17,
+    "tile_kinds": [
+      "grass",
+      "road",
+      "power_line",
+      "plant",
+      "lot",
+      "water"
+    ],
+    "tiles_rle": [0,91,3,1,2,3,4,1,1,4,4,1,1,8,0,14,2,1,0,7,1,8,0,14,2,2,4,2,1,3,4,1,1,11,4,1,0,12,4,2,1,1,0,3,1,11,4,1,0,14,1,1,0,8,1,6,4,1,0,14,1,1,0,8,1,6,4,1,0,9,1,6,0,10,1,4,4,1,0,100,4,1,0,116]
+  },
+  "plant": {
+    "x": 1,
+    "y": 3
+  },
+  "library": {
+    "x": 1,
+    "y": 6
+  },
+  "firehouse": {
+    "x": 1,
+    "y": 9
+  },
+  "focus": {
+    "min_x": 1,
+    "min_y": 3,
+    "max_x": 22,
+    "max_y": 13
+  },
+  "districts": [
+    {
+      "schema": "mart",
+      "x": 21,
+      "y": 4,
+      "w": 3,
+      "h": 7
+    },
+    {
+      "schema": "raw",
+      "x": 4,
+      "y": 2,
+      "w": 4,
+      "h": 6
+    },
+    {
+      "schema": "scratch",
+      "x": 2,
+      "y": 12,
+      "w": 3,
+      "h": 3
+    },
+    {
+      "schema": "staging",
+      "x": 9,
+      "y": 2,
+      "w": 3,
+      "h": 5
+    }
+  ],
+  "street_features": [
+    {
+      "kind": "apron",
+      "x": 9,
+      "y": 3,
+      "facing": "e",
+      "w": 1,
+      "h": 1
+    },
+    {
+      "kind": "apron",
+      "x": 9,
+      "y": 5,
+      "facing": "e",
+      "w": 1,
+      "h": 1
+    },
+    {
+      "kind": "apron",
+      "x": 11,
+      "y": 3,
+      "facing": "w",
+      "w": 1,
+      "h": 1
+    },
+    {
+      "kind": "apron",
+      "x": 11,
+      "y": 5,
+      "facing": "w",
+      "w": 1,
+      "h": 1
+    },
+    {
+      "kind": "apron",
+      "x": 21,
+      "y": 5,
+      "facing": "e",
+      "w": 1,
+      "h": 1
+    },
+    {
+      "kind": "apron",
+      "x": 21,
+      "y": 6,
+      "facing": "e",
+      "w": 1,
+      "h": 1
+    },
+    {
+      "kind": "apron",
+      "x": 21,
+      "y": 7,
+      "facing": "e",
+      "w": 1,
+      "h": 1
+    },
+    {
+      "kind": "apron",
+      "x": 21,
+      "y": 8,
+      "facing": "e",
+      "w": 1,
+      "h": 1
+    },
+    {
+      "kind": "apron",
+      "x": 21,
+      "y": 9,
+      "facing": "e",
+      "w": 1,
+      "h": 1
+    },
+    {
+      "kind": "dock",
+      "x": 6,
+      "y": 3,
+      "facing": "w",
+      "w": 1,
+      "h": 1
+    },
+    {
+      "kind": "plaza",
+      "x": 2,
+      "y": 9,
+      "facing": "w",
+      "w": 1,
+      "h": 1
+    },
+    {
+      "kind": "plaza",
+      "x": 7,
+      "y": 5,
+      "facing": "w",
+      "w": 1,
+      "h": 2
+    }
+  ],
+  "lots": [
+    {
+      "object_key": "mart.dim__customer_status",
+      "x": 22,
+      "y": 7,
+      "w": 1,
+      "h": 1,
+      "zone_style": "residential",
+      "target_density": 3,
+      "powered": true,
+      "last_build_age_s": null,
+      "build_status": null,
+      "test_status": null,
+      "freshness_status": null,
+      "schema_drift_age_s": null
+    },
+    {
+      "object_key": "mart.dim__customers",
+      "x": 22,
+      "y": 6,
+      "w": 1,
+      "h": 1,
+      "zone_style": "residential",
+      "target_density": 4,
+      "powered": true,
+      "last_build_age_s": null,
+      "build_status": null,
+      "test_status": null,
+      "freshness_status": null,
+      "schema_drift_age_s": null
+    },
+    {
+      "object_key": "mart.mart__broken",
+      "x": 22,
+      "y": 8,
+      "w": 1,
+      "h": 1,
+      "zone_style": "residential",
+      "target_density": 1,
+      "powered": true,
+      "last_build_age_s": 1201,
+      "build_status": "error",
+      "test_status": null,
+      "freshness_status": null,
+      "schema_drift_age_s": null
+    },
+    {
+      "object_key": "mart.mart__forgotten",
+      "x": 22,
+      "y": 9,
+      "w": 1,
+      "h": 1,
+      "zone_style": "residential",
+      "target_density": 3,
+      "powered": true,
+      "last_build_age_s": 1814401,
+      "build_status": "success",
+      "test_status": null,
+      "freshness_status": null,
+      "schema_drift_age_s": null
+    },
+    {
+      "object_key": "mart.mart__revenue",
+      "x": 22,
+      "y": 5,
+      "w": 1,
+      "h": 1,
+      "zone_style": "residential",
+      "target_density": 4,
+      "powered": true,
+      "last_build_age_s": 1201,
+      "build_status": "success",
+      "test_status": "fail",
+      "freshness_status": null,
+      "schema_drift_age_s": null
+    },
+    {
+      "object_key": "raw.customers",
+      "x": 5,
+      "y": 3,
+      "w": 1,
+      "h": 1,
+      "zone_style": "industrial",
+      "target_density": 4,
+      "powered": true,
+      "last_build_age_s": 93601,
+      "build_status": null,
+      "test_status": null,
+      "freshness_status": "error",
+      "schema_drift_age_s": null
+    },
+    {
+      "object_key": "raw.orders",
+      "x": 5,
+      "y": 5,
+      "w": 2,
+      "h": 2,
+      "zone_style": "industrial",
+      "target_density": 5,
+      "powered": true,
+      "last_build_age_s": 3601,
+      "build_status": null,
+      "test_status": null,
+      "freshness_status": "pass",
+      "schema_drift_age_s": null
+    },
+    {
+      "object_key": "scratch.experiment",
+      "x": 3,
+      "y": 13,
+      "w": 1,
+      "h": 1,
+      "zone_style": "residential",
+      "target_density": 2,
+      "powered": false,
+      "last_build_age_s": null,
+      "build_status": null,
+      "test_status": null,
+      "freshness_status": null,
+      "schema_drift_age_s": null
+    },
+    {
+      "object_key": "staging.stg_customers",
+      "x": 10,
+      "y": 3,
+      "w": 1,
+      "h": 1,
+      "zone_style": "commercial",
+      "target_density": 4,
+      "powered": true,
+      "last_build_age_s": 1201,
+      "build_status": "success",
+      "test_status": "pass",
+      "freshness_status": null,
+      "schema_drift_age_s": 172801
+    },
+    {
+      "object_key": "staging.stg_orders",
+      "x": 10,
+      "y": 5,
+      "w": 1,
+      "h": 1,
+      "zone_style": "commercial",
+      "target_density": 5,
+      "powered": true,
+      "last_build_age_s": 1201,
+      "build_status": "success",
+      "test_status": "warn",
+      "freshness_status": null,
+      "schema_drift_age_s": null
+    }
+  ],
+  "objects": [
+    {
+      "key": "mart.dim__customer_status",
+      "schema": "mart",
+      "name": "dim__customer_status",
+      "kind": "table",
+      "row_count": 400,
+      "dbt": {
+        "description": "Status rollup dimension.",
+        "materialized": "table",
+        "tags": [],
+        "owner": "data-eng",
+        "tests": []
+      },
+      "usage": null,
+      "semantic": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "amount",
+          "type": "DOUBLE",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMP",
+          "description": null,
+          "test_status": null
+        }
+      ]
+    },
+    {
+      "key": "mart.dim__customers",
+      "schema": "mart",
+      "name": "dim__customers",
+      "kind": "table",
+      "row_count": 1200,
+      "dbt": {
+        "description": "Customer dimension.",
+        "materialized": "table",
+        "tags": [],
+        "owner": "data-eng",
+        "tests": []
+      },
+      "usage": null,
+      "semantic": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "amount",
+          "type": "DOUBLE",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMP",
+          "description": null,
+          "test_status": null
+        }
+      ]
+    },
+    {
+      "key": "mart.mart__broken",
+      "schema": "mart",
+      "name": "mart__broken",
+      "kind": "table",
+      "row_count": 0,
+      "dbt": {
+        "description": "",
+        "materialized": "table",
+        "tags": [],
+        "owner": null,
+        "tests": []
+      },
+      "usage": null,
+      "semantic": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "amount",
+          "type": "DOUBLE",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMP",
+          "description": null,
+          "test_status": null
+        }
+      ]
+    },
+    {
+      "key": "mart.mart__forgotten",
+      "schema": "mart",
+      "name": "mart__forgotten",
+      "kind": "table",
+      "row_count": 900,
+      "dbt": {
+        "description": "A legacy rollup nobody has rebuilt in weeks.",
+        "materialized": "table",
+        "tags": [
+          "deprecated"
+        ],
+        "owner": null,
+        "tests": []
+      },
+      "usage": {
+        "source": "runs",
+        "runs_seen": 1,
+        "window_days": 0.0,
+        "rate_per_day": null
+      },
+      "semantic": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "amount",
+          "type": "DOUBLE",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMP",
+          "description": null,
+          "test_status": null
+        }
+      ]
+    },
+    {
+      "key": "mart.mart__revenue",
+      "schema": "mart",
+      "name": "mart__revenue",
+      "kind": "table",
+      "row_count": 8000,
+      "dbt": {
+        "description": "Recognised revenue by day and customer. Feeds the CEO dashboard.",
+        "materialized": "table",
+        "tags": [
+          "daily",
+          "finance"
+        ],
+        "owner": "stephen",
+        "tests": [
+          {
+            "name": "not_null_revenue_amount",
+            "column": "amount",
+            "status": "fail"
+          }
+        ]
+      },
+      "usage": {
+        "source": "runs",
+        "runs_seen": 8,
+        "window_days": 6.111111,
+        "rate_per_day": 1.145455
+      },
+      "semantic": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "customer_id",
+          "type": "BIGINT",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "amount",
+          "type": "DECIMAL(12,2)",
+          "description": "Recognised amount in USD.",
+          "test_status": "fail"
+        },
+        {
+          "name": "recognised_on",
+          "type": "DATE",
+          "description": "Revenue recognition date, not invoice date.",
+          "test_status": null
+        },
+        {
+          "name": "channel",
+          "type": "VARCHAR",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "metadata",
+          "type": "JSON",
+          "description": null,
+          "test_status": null
+        }
+      ]
+    },
+    {
+      "key": "raw.customers",
+      "schema": "raw",
+      "name": "customers",
+      "kind": "table",
+      "row_count": 1500,
+      "dbt": {
+        "description": "",
+        "materialized": "",
+        "tags": [],
+        "owner": null,
+        "tests": []
+      },
+      "usage": null,
+      "semantic": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "payload",
+          "type": "JSON",
+          "description": null,
+          "test_status": null
+        }
+      ]
+    },
+    {
+      "key": "raw.orders",
+      "schema": "raw",
+      "name": "orders",
+      "kind": "table",
+      "row_count": 60000,
+      "dbt": {
+        "description": "",
+        "materialized": "",
+        "tags": [],
+        "owner": null,
+        "tests": []
+      },
+      "usage": null,
+      "semantic": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "payload",
+          "type": "JSON",
+          "description": null,
+          "test_status": null
+        }
+      ]
+    },
+    {
+      "key": "scratch.experiment",
+      "schema": "scratch",
+      "name": "experiment",
+      "kind": "table",
+      "row_count": 42,
+      "dbt": {
+        "description": "",
+        "materialized": "table",
+        "tags": [],
+        "owner": null,
+        "tests": []
+      },
+      "usage": null,
+      "semantic": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "amount",
+          "type": "DOUBLE",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMP",
+          "description": null,
+          "test_status": null
+        }
+      ]
+    },
+    {
+      "key": "staging.stg_customers",
+      "schema": "staging",
+      "name": "stg_customers",
+      "kind": "table",
+      "row_count": 1200,
+      "dbt": {
+        "description": "Current customer dimension staging.",
+        "materialized": "table",
+        "tags": [
+          "hourly"
+        ],
+        "owner": "data-eng",
+        "tests": [
+          {
+            "name": "unique_stg_customers_id",
+            "column": "id",
+            "status": "pass"
+          }
+        ]
+      },
+      "usage": {
+        "source": "runs",
+        "runs_seen": 8,
+        "window_days": 6.111111,
+        "rate_per_day": 1.145455
+      },
+      "semantic": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "description": null,
+          "test_status": "pass"
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "amount",
+          "type": "DOUBLE",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMP",
+          "description": null,
+          "test_status": null
+        }
+      ]
+    },
+    {
+      "key": "staging.stg_orders",
+      "schema": "staging",
+      "name": "stg_orders",
+      "kind": "table",
+      "row_count": 50000,
+      "dbt": {
+        "description": "One row per order, deduplicated and typed from the raw feed.",
+        "materialized": "table",
+        "tags": [
+          "hourly",
+          "core"
+        ],
+        "owner": "data-eng",
+        "tests": [
+          {
+            "name": "accepted_values_order_status",
+            "column": "status",
+            "status": "warn"
+          }
+        ]
+      },
+      "usage": {
+        "source": "runs",
+        "runs_seen": 29,
+        "window_days": 6.861111,
+        "rate_per_day": 4.080972
+      },
+      "semantic": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "amount",
+          "type": "DOUBLE",
+          "description": null,
+          "test_status": null
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMP",
+          "description": null,
+          "test_status": null
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "src": "raw.customers",
+      "dst": "staging.stg_customers",
+      "rate": 0.025,
+      "provenance": "manifest",
+      "route": [
+        [
+          5,
+          3
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          7,
+          3
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          9,
+          3
+        ],
+        [
+          10,
+          3
+        ]
+      ],
+      "columns": [
+        [
+          "id",
+          "id"
+        ],
+        [
+          "payload",
+          "name"
+        ]
+      ],
+      "daily_load_s": 0.92
+    },
+    {
+      "src": "raw.orders",
+      "dst": "staging.stg_orders",
+      "rate": 1.0,
+      "provenance": "manifest",
+      "route": [
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          8,
+          5
+        ],
+        [
+          9,
+          5
+        ],
+        [
+          10,
+          5
+        ]
+      ],
+      "columns": [
+        [
+          "id",
+          "id"
+        ],
+        [
+          "payload",
+          "amount"
+        ],
+        [
+          "payload",
+          "name"
+        ]
+      ],
+      "daily_load_s": 8.57
+    },
+    {
+      "src": "staging.stg_customers",
+      "dst": "mart.dim__customer_status",
+      "rate": 0.02,
+      "provenance": "manifest",
+      "route": [
+        [
+          10,
+          3
+        ],
+        [
+          11,
+          3
+        ],
+        [
+          12,
+          3
+        ],
+        [
+          13,
+          3
+        ],
+        [
+          14,
+          3
+        ],
+        [
+          15,
+          3
+        ],
+        [
+          16,
+          3
+        ],
+        [
+          16,
+          4
+        ],
+        [
+          16,
+          5
+        ],
+        [
+          16,
+          6
+        ],
+        [
+          16,
+          7
+        ],
+        [
+          17,
+          7
+        ],
+        [
+          18,
+          7
+        ],
+        [
+          19,
+          7
+        ],
+        [
+          20,
+          7
+        ],
+        [
+          21,
+          7
+        ],
+        [
+          22,
+          7
+        ]
+      ],
+      "columns": [
+        [
+          "amount",
+          "amount"
+        ],
+        [
+          "created_at",
+          "created_at"
+        ],
+        [
+          "id",
+          "id"
+        ],
+        [
+          "name",
+          "name"
+        ]
+      ],
+      "daily_load_s": null
+    },
+    {
+      "src": "staging.stg_customers",
+      "dst": "mart.dim__customers",
+      "rate": 0.02,
+      "provenance": "manifest",
+      "route": [
+        [
+          10,
+          3
+        ],
+        [
+          11,
+          3
+        ],
+        [
+          12,
+          3
+        ],
+        [
+          13,
+          3
+        ],
+        [
+          14,
+          3
+        ],
+        [
+          15,
+          3
+        ],
+        [
+          16,
+          3
+        ],
+        [
+          16,
+          4
+        ],
+        [
+          16,
+          5
+        ],
+        [
+          16,
+          6
+        ],
+        [
+          17,
+          6
+        ],
+        [
+          18,
+          6
+        ],
+        [
+          19,
+          6
+        ],
+        [
+          20,
+          6
+        ],
+        [
+          21,
+          6
+        ],
+        [
+          22,
+          6
+        ]
+      ],
+      "columns": [
+        [
+          "amount",
+          "amount"
+        ],
+        [
+          "created_at",
+          "created_at"
+        ],
+        [
+          "id",
+          "id"
+        ],
+        [
+          "name",
+          "name"
+        ]
+      ],
+      "daily_load_s": null
+    },
+    {
+      "src": "staging.stg_customers",
+      "dst": "mart.mart__broken",
+      "rate": 0.02,
+      "provenance": "manifest",
+      "route": [
+        [
+          10,
+          3
+        ],
+        [
+          11,
+          3
+        ],
+        [
+          12,
+          3
+        ],
+        [
+          13,
+          3
+        ],
+        [
+          14,
+          3
+        ],
+        [
+          15,
+          3
+        ],
+        [
+          16,
+          3
+        ],
+        [
+          16,
+          4
+        ],
+        [
+          16,
+          5
+        ],
+        [
+          16,
+          6
+        ],
+        [
+          16,
+          7
+        ],
+        [
+          16,
+          8
+        ],
+        [
+          17,
+          8
+        ],
+        [
+          18,
+          8
+        ],
+        [
+          19,
+          8
+        ],
+        [
+          20,
+          8
+        ],
+        [
+          21,
+          8
+        ],
+        [
+          22,
+          8
+        ]
+      ],
+      "columns": [
+        [
+          "amount",
+          "amount"
+        ],
+        [
+          "created_at",
+          "created_at"
+        ],
+        [
+          "id",
+          "id"
+        ],
+        [
+          "name",
+          "name"
+        ]
+      ],
+      "daily_load_s": null
+    },
+    {
+      "src": "staging.stg_customers",
+      "dst": "mart.mart__revenue",
+      "rate": 0.02,
+      "provenance": "manifest",
+      "route": [
+        [
+          10,
+          3
+        ],
+        [
+          11,
+          3
+        ],
+        [
+          12,
+          3
+        ],
+        [
+          13,
+          3
+        ],
+        [
+          13,
+          4
+        ],
+        [
+          13,
+          5
+        ],
+        [
+          14,
+          5
+        ],
+        [
+          15,
+          5
+        ],
+        [
+          16,
+          5
+        ],
+        [
+          17,
+          5
+        ],
+        [
+          18,
+          5
+        ],
+        [
+          19,
+          5
+        ],
+        [
+          20,
+          5
+        ],
+        [
+          21,
+          5
+        ],
+        [
+          22,
+          5
+        ]
+      ],
+      "columns": [
+        [
+          "id",
+          "customer_id"
+        ]
+      ],
+      "daily_load_s": 15.18
+    },
+    {
+      "src": "staging.stg_orders",
+      "dst": "mart.mart__forgotten",
+      "rate": 0.833333,
+      "provenance": "manifest",
+      "route": [
+        [
+          10,
+          5
+        ],
+        [
+          11,
+          5
+        ],
+        [
+          12,
+          5
+        ],
+        [
+          13,
+          5
+        ],
+        [
+          14,
+          5
+        ],
+        [
+          15,
+          5
+        ],
+        [
+          16,
+          5
+        ],
+        [
+          17,
+          5
+        ],
+        [
+          18,
+          5
+        ],
+        [
+          18,
+          6
+        ],
+        [
+          18,
+          7
+        ],
+        [
+          18,
+          8
+        ],
+        [
+          18,
+          9
+        ],
+        [
+          19,
+          9
+        ],
+        [
+          20,
+          9
+        ],
+        [
+          21,
+          9
+        ],
+        [
+          22,
+          9
+        ]
+      ],
+      "columns": [],
+      "daily_load_s": null
+    },
+    {
+      "src": "staging.stg_orders",
+      "dst": "mart.mart__revenue",
+      "rate": 0.833333,
+      "provenance": "manifest",
+      "route": [
+        [
+          10,
+          5
+        ],
+        [
+          11,
+          5
+        ],
+        [
+          12,
+          5
+        ],
+        [
+          13,
+          5
+        ],
+        [
+          14,
+          5
+        ],
+        [
+          15,
+          5
+        ],
+        [
+          16,
+          5
+        ],
+        [
+          17,
+          5
+        ],
+        [
+          18,
+          5
+        ],
+        [
+          19,
+          5
+        ],
+        [
+          20,
+          5
+        ],
+        [
+          21,
+          5
+        ],
+        [
+          22,
+          5
+        ]
+      ],
+      "columns": [
+        [
+          "amount",
+          "amount"
+        ],
+        [
+          "created_at",
+          "recognised_on"
+        ],
+        [
+          "id",
+          "id"
+        ],
+        [
+          "name",
+          "channel"
+        ]
+      ],
+      "daily_load_s": 15.18
+    }
+  ],
+  "joins": [],
+  "replay": {
+    "span_ticks": 300,
+    "note": "durations measured, ordering reconstructed",
+    "steps": [
+      {
+        "object_key": "staging.stg_customers",
+        "start": 0,
+        "duration": 36
+      },
+      {
+        "object_key": "staging.stg_orders",
+        "start": 0,
+        "duration": 95
+      },
+      {
+        "object_key": "mart.mart__broken",
+        "start": 36,
+        "duration": 14
+      },
+      {
+        "object_key": "mart.mart__forgotten",
+        "start": 95,
+        "duration": 145
+      },
+      {
+        "object_key": "mart.mart__revenue",
+        "start": 95,
+        "duration": 205
+      }
+    ]
+  },
+  "budget": {
+    "engine": "duckdb",
+    "currency": "USD",
+    "unit_price_per_s": 0.0,
+    "price_source": "built-in price table (local DuckDB is free)",
+    "daily_load_s": 24.66,
+    "daily_cost": 0.0,
+    "priced_objects": 3,
+    "unpriced_objects": 7,
+    "by_object": [
+      {
+        "object_key": "mart.mart__revenue",
+        "daily_load_s": 15.18,
+        "daily_cost": 0.0
+      },
+      {
+        "object_key": "staging.stg_customers",
+        "daily_load_s": 0.92,
+        "daily_cost": 0.0
+      },
+      {
+        "object_key": "staging.stg_orders",
+        "daily_load_s": 8.57,
+        "daily_cost": 0.0
+      }
+    ],
+    "note": "local DuckDB is free — the load is measured, the bill is zero; priced 3 of 10 objects — 7 have too little run history to measure a cadence"
+  },
+  "weather": {
+    "cells": [
+      {
+        "schema": "mart",
+        "condition": "fog",
+        "worst_source": "raw.customers",
+        "verdict": "error",
+        "hops": 2
+      },
+      {
+        "schema": "raw",
+        "condition": "clear",
+        "worst_source": null,
+        "verdict": null,
+        "hops": null
+      },
+      {
+        "schema": "staging",
+        "condition": "fog",
+        "worst_source": "raw.customers",
+        "verdict": "error",
+        "hops": 1
+      }
+    ],
+    "note": "weather from dbt source freshness: 2 judged sources, 1 late; fog covers the districts a late source feeds, not its own; 1 district has no judged source upstream — no weather shown there"
+  },
+  "theme": {
+    "name": "default",
+    "logo_text": "DATABASE TYCOON",
+    "labels": {
+      "database": "database",
+      "rows": "rows",
+      "schema": "schema",
+      "table": "table",
+      "view": "view"
+    },
+    "colors": {
+      "banner": [
+        40,
+        30,
+        90
+      ],
+      "button": [
+        120,
+        110,
+        180
+      ],
+      "button_dark": [
+        50,
+        40,
+        90
+      ],
+      "button_light": [
+        180,
+        170,
+        230
+      ],
+      "sidebar": [
+        70,
+        60,
+        130
+      ],
+      "status": [
+        20,
+        15,
+        50
+      ],
+      "text": [
+        240,
+        240,
+        255
+      ]
+    },
+    "sprites": {
+      "grass": [
+        0,
+        0,
+        16,
+        16
+      ],
+      "grass_alt": [
+        16,
+        0,
+        16,
+        16
+      ],
+      "lot_commercial_1": [
+        240,
+        0,
+        16,
+        16
+      ],
+      "lot_commercial_2": [
+        256,
+        0,
+        16,
+        16
+      ],
+      "lot_commercial_3": [
+        272,
+        0,
+        16,
+        16
+      ],
+      "lot_commercial_4": [
+        288,
+        0,
+        16,
+        16
+      ],
+      "lot_commercial_5": [
+        304,
+        0,
+        16,
+        16
+      ],
+      "lot_commercial_6": [
+        320,
+        0,
+        16,
+        16
+      ],
+      "lot_commercial_7": [
+        336,
+        0,
+        16,
+        16
+      ],
+      "lot_commercial_8": [
+        352,
+        0,
+        16,
+        16
+      ],
+      "lot_industrial_1": [
+        112,
+        0,
+        16,
+        16
+      ],
+      "lot_industrial_2": [
+        128,
+        0,
+        16,
+        16
+      ],
+      "lot_industrial_3": [
+        144,
+        0,
+        16,
+        16
+      ],
+      "lot_industrial_4": [
+        160,
+        0,
+        16,
+        16
+      ],
+      "lot_industrial_5": [
+        176,
+        0,
+        16,
+        16
+      ],
+      "lot_industrial_6": [
+        192,
+        0,
+        16,
+        16
+      ],
+      "lot_industrial_7": [
+        208,
+        0,
+        16,
+        16
+      ],
+      "lot_industrial_8": [
+        224,
+        0,
+        16,
+        16
+      ],
+      "lot_residential_1": [
+        368,
+        0,
+        16,
+        16
+      ],
+      "lot_residential_2": [
+        384,
+        0,
+        16,
+        16
+      ],
+      "lot_residential_3": [
+        400,
+        0,
+        16,
+        16
+      ],
+      "lot_residential_4": [
+        416,
+        0,
+        16,
+        16
+      ],
+      "lot_residential_5": [
+        432,
+        0,
+        16,
+        16
+      ],
+      "lot_residential_6": [
+        448,
+        0,
+        16,
+        16
+      ],
+      "lot_residential_7": [
+        464,
+        0,
+        16,
+        16
+      ],
+      "lot_residential_8": [
+        480,
+        0,
+        16,
+        16
+      ],
+      "plant": [
+        64,
+        0,
+        16,
+        16
+      ],
+      "power_line": [
+        48,
+        0,
+        16,
+        16
+      ],
+      "road": [
+        32,
+        0,
+        16,
+        16
+      ],
+      "vehicle": [
+        96,
+        0,
+        16,
+        16
+      ],
+      "water": [
+        80,
+        0,
+        16,
+        16
+      ]
+    },
+    "spritesheet": "spritesheet.png"
+  }
+}

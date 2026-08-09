@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "properties": {
+    "request_id": { "type": "string", "format": "uuid" },
+    "citizen_id": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "priority": { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+    "request_type": { 
+      "enum": ["DATA_SOURCE", "SCHEMA_CHANGE", "QUALITY_FIX", "PERFORMANCE"] 
+    },
+    "description": { "type": "string" },
+    "status": { "enum": ["PENDING", "IN_PROGRESS", "FULFILLED", "EXPIRED"] },
+    "complexity": { "type": "integer", "minimum": 1, "maximum": 10 }
+  },
+  "required": ["request_id", "citizen_id", "timestamp", "priority", "request_type", "status"]
+}
