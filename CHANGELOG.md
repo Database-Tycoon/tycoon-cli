@@ -1,5 +1,12 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`tycoon city` — the catalog as an interactive 3D city.** Schemas become districts, tables become buildings, lineage becomes roads. The renderer ships with tycoon — the pre-built web bundle is in the wheel and there is nothing extra to install. With no arguments the command walks up to the project root and serves it on `http://127.0.0.1:8000`; `--path` also accepts a DuckDB file or an `md:` catalog, and `--port`, `--host`, `--theme`, `--dist` and `--pricing` are forwarded to the renderer. Binding stays on localhost by default — the city names real schemas, tables and columns, so publishing it is opt-in.
+- **The renderer costs nothing until you run it.** `tycoon_city` is imported inside the command body, never at module scope, so registering `city` does not pull duckdb and sqlglot into every other command's startup. `sqlglot` moves to a declared dependency at `>=30.15.0`; it was already arriving transitively via `dbt-core` and `dlt`, so this pins the version the renderer needs rather than adding an install.
+
 ## [0.1.11] - 2026-08-07
 
 _Headline: `tycoon.yml` learns its own schema version. The ingestion rewrite's M2 lands ([#83][], PR [#190][]) — `runtimes:` and `metadata:` blocks on the project model, an integer `schema_version` with comment-preserving in-place migration via `tycoon init --upgrade`, and the config singleton replaced across the ingestion commands. Plus a pinned, fully-formatted codebase (PR [#174][]) and the first release-time dependency review (PR [#180][], replacing the Dependabot PR pile)._

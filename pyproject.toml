@@ -36,6 +36,15 @@ dependencies = [
     "pyyaml==6.0.3",
     "pydantic==2.13.3",
     "ruamel-yaml==0.19.1",
+    # The city renderer's SQL lineage. This is a floor, not a new install:
+    # dbt-core (via metricflow) and dlt both depend on sqlglot already, so
+    # every install has carried it regardless. Declaring it here states the
+    # version the renderer needs instead of inheriting whatever those two
+    # happen to resolve to. It is deliberately not an extra -- an extra can
+    # only add *distributions*, never gate files out of this wheel, and
+    # tycoon_city ships inside it, so `[city]` would have installed nothing
+    # and advertised a choice the user does not actually have.
+    "sqlglot>=30.15.0",
 ]
 
 [project.optional-dependencies]
@@ -61,7 +70,11 @@ dev = [
 tycoon = "tycoon.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/tycoon"]
+# Non-Python files inside tycoon_city ship too, and three things depend on it:
+# the built web bundle (`web_dist/`), the themes (`themes/*` — spritesheet plus
+# theme.toml) and the demo's OSI model (`demo/semantic.yml`). A data file that
+# does not ship is the classic version of this bug.
+packages = ["src/tycoon", "src/tycoon_city"]
 
 [tool.uv]
 prerelease = "if-necessary-or-explicit"
