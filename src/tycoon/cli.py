@@ -14,9 +14,10 @@ _COMMAND_ORDER = [
     "profiles",
     "semantics",
     "data",
+    "fire",
+    "city",
     "start",
     "stop",
-    "city",
     "run",
     "notify",
     "schedule",
@@ -31,9 +32,10 @@ _SECTIONS = {
     "profiles": "Project",
     "semantics": "Project",
     "data": "Data Pipeline",
+    "fire": "Fire & Response",
+    "city": "Services",
     "start": "Services",
     "stop": "Services",
-    "city": "Services",
     "run": "Tools",
     "notify": "Utilities",
     "schedule": "Utilities",
@@ -95,8 +97,9 @@ def _root(
 
 from tycoon.commands import data, profiles, register, semantics
 from tycoon.commands import docs as docs_cmd_mod
-from tycoon.commands.city import city_cmd
 from tycoon.commands.doctor import doctor_cmd
+from tycoon.commands.city import city_cmd
+from tycoon.commands.fire import app as fire_app
 from tycoon.commands.init import init_cmd
 from tycoon.commands.notify import notify_cmd
 from tycoon.commands.run import run_cmd
@@ -112,9 +115,10 @@ app.add_typer(profiles.app, name="profiles")
 app.add_typer(semantics.app, name="semantics")
 app.add_typer(data.app, name="data")
 app.add_typer(docs_cmd_mod.app, name="docs")
+app.add_typer(fire_app, name="fire")
+app.command(name="city")(city_cmd)
 app.command(name="start")(start_cmd)
 app.command(name="stop")(stop_cmd)
-app.command(name="city")(city_cmd)
 app.command(
     name="run",
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},

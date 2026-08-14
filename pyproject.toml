@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "database-tycoon"
-version = "0.1.11"
+version = "0.2.0"
 description = "Tycoon CLI — local-first analytics CLI that adapts to your existing data stack"
 readme = "README.md"
 license = {text = "MIT"}
@@ -86,13 +86,13 @@ markers = [
     "recipe: marker for recipe doctest blocks parsed from README / docs/recipes (`tests/test_recipe_doctests.py`). `mode=offline` blocks run by default; `mode=online` blocks gate on `--run-online`.",
     "subprocess_e2e: subprocess-driven end-to-end tests that shell out to the installed `tycoon` binary (catches PATH / Rich rendering / packaging bugs that in-process tests can't see). Included in the default run.",
 ]
-# tests/tycoon_city is the renderer's suite, carried over intact from the
-# pipeline-city repo before that repo is deleted. It is not collected yet: its
-# paths are anchored with `Path(__file__).parents[N]` against the old repo root,
-# so nesting it one level deeper here shifts every one of them. Carrying it
-# un-run beats losing it. Wiring it up is tracked separately; until then CI
-# gates the CLI, not the renderer.
-addopts = "-m 'not e2e' --ignore=tests/tycoon_city"
+# tests/tycoon_city is the renderer's suite, carried over from the
+# pipeline-city repo and REWIRED 2026-08-10 (import paths and parents[N]
+# anchors re-pointed at this repo's root): CI now gates the renderer too.
+# The only skips are the demo.duckdb-dependent golden tests — that fixture
+# was never carried over, and regenerating the golden is a deliberate
+# contract change tracked in docs/city/handover.md.
+addopts = "-m 'not e2e'"
 
 [tool.ruff]
 line-length = 120

@@ -53,7 +53,7 @@ from typing import Any
 import duckdb
 import yaml
 
-from tycoon.layers import (
+from tycoon.districts import (
     Layer,
     classify_dbt_models,
     filter_by_layer,
