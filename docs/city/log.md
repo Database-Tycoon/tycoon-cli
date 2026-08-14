@@ -8,6 +8,25 @@ updated: '2026-08-14'
 
 # Log
 
+- 2026-08-14 — **Radial inversion: gold downtown, sources on the periphery**
+  (Stephen's directive, same day: "density should generally radiate outward…
+  core/gold models central… surrounded by the major int models… fan out to
+  the smaller source neighborhoods"). The ring index is now the schema's
+  longest-chain depth over the CROSS-SCHEMA edge graph
+  (`layout.longest_chain_depths`, extracted from `compute_depths`), inverted —
+  mean member depth could not express the directive (it banded dogfood's
+  `mart` and `int` together). Within-ring ties (the real conflict: an 18-way
+  tie of depth-0 source schemas on dogfood) break decisively on cross-schema
+  fan-out desc, then member count desc, then name. Observed on dogfood:
+  routing IMPROVED — median route 229 → 36 tiles (total 11,249 → 2,795),
+  congestion halved (worst tile 47 → 22 routes), map 99×161 → 96×135 —
+  because consumers are now central, producers reach them radially. Two
+  fixture-truth updates: S8 now HOLDS under the fan-in fixture (flipped per
+  the old test's own instruction), and the plaza-forecourt "starts as grass"
+  precondition is no longer constructible (downtown kerbs are through-streets;
+  the paved-on-map assertion stays). Golden regenerated again — same review
+  process as the morning's contract change. Suite: 563 passed, 6 skipped.
+
 - 2026-08-14 — **Ring-planner promotion reconciled with the contract.** The
   working tree makes the ring planner (`town_plan.py`, v5 lineage) the sole
   default — the `DATABASE_TYCOON_PLANNER` switch and the v4 depth-column path

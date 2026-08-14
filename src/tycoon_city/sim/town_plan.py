@@ -12,10 +12,10 @@ asked for."*
 How it satisfies them: the precinct -> lattice -> slots -> frontage chain
 produces streets as lattice lines, so a contiguous paved area cannot occur —
 the defect that made the old city read as a plaza with junction markings on
-every square. Precincts are keyed by SCHEMA; depth only ORDERS the
-neighbourhoods west to east, so a schema spanning three depths becomes ONE
-blob. Stephen chose that from the mockups knowing some streets then run
-westward.
+every square. Precincts are keyed by SCHEMA; the cross-schema chain depth
+only ORDERS the neighbourhoods radially (2026-08-14: gold downtown, sources
+on the periphery — see `schema_precincts`), so a schema spanning three
+depths becomes ONE blob.
 
 Division of labour:
 
@@ -38,10 +38,9 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, replace
 from fractions import Fraction
-from math import isqrt
 
 from ..catalog.models import PipelineContext
-from .layout import _known_edges, compute_depths
+from .layout import _known_edges, compute_depths, longest_chain_depths
 from .town_blocks import (
     Precinct,
     TileMap,
@@ -128,15 +127,28 @@ class DagPlan:
 def schema_precincts(ctx: PipelineContext, gap: int = NEIGHBOURHOOD_GAP) -> tuple[Precinct, ...]:
     """One placed precinct per schema, in RINGS radiating from the town centre.
 
-    Stephen, 2026-08-10: the pipeline order (seeds/staging -> int -> mart)
-    should read as layers radiating out from the centre, the civic buildings
-    should cluster downtown, and the heavy aggregation buildings should stand
-    apart — "a higher center of gravity". So: a reserved civic core in the
-    middle, then one ring per depth band, each band's precincts placed flush
-    against the previous band's bounding box (flush is what keeps their
-    frames on shared lattice lines — the streets that connect the rings),
-    with a LATERAL gap between neighbours that grows with the precinct's
-    heaviest fan-in.
+    Stephen, 2026-08-14, inverting his 2026-08-10 order: density radiates
+    OUTWARD. The gold/mart neighbourhoods are downtown — hugging the civic
+    core, premium regardless of table size — ringed by the major int
+    neighbourhoods, fanning out to the smaller source neighbourhoods on the
+    periphery. Longer routes (a source on the edge reaching a mart downtown
+    crosses every ring between) are the accepted price.
+
+    The ring index is the schema's LONGEST-CHAIN depth over the cross-schema
+    edge graph (`longest_chain_depths`, cycles condensed), inverted — NOT the
+    mean of its members' depths. Mean depth cannot express the directive: on
+    dogfood it lands `mart` and `int` in one band, and the whole point is
+    that mart sits inside int.
+
+    Within a ring the deal order decides who gets the side centres — the
+    kerbs nearest downtown's cross streets. Ties are broken decisively
+    (Stephen, same directive: no dwelling, no compromises), in order:
+
+    1. more distinct schemas fed (cross-schema fan-out) — the busiest
+       supplier gets the closest kerb;
+    2. more members — density tapers laterally as well as radially, so the
+       bigger neighbourhood holds the middle of its side;
+    3. schema name — determinism's last word.
 
     `town_blocks.plan_precincts` keys on `(depth, schema)`; this keys on schema
     alone. Kept here rather than as a parameter over there because
@@ -166,6 +178,17 @@ def schema_precincts(ctx: PipelineContext, gap: int = NEIGHBOURHOOD_GAP) -> tupl
     for src, dst in _known_edges(ctx):
         if src != dst and dst in in_deg:
             in_deg[dst] += 1
+
+    # The cross-schema graph: ring rank (longest chain, cycles condensed) and
+    # fan-out (distinct schemas fed — tiebreaker 1).
+    schemas = sorted(members_of)
+    cross = sorted(
+        {(schema_of[s], schema_of[d]) for s, d in _known_edges(ctx) if schema_of[s] != schema_of[d]}
+    )
+    rank = longest_chain_depths(schemas, cross)
+    feeds: dict[str, set[str]] = {s: set() for s in schemas}
+    for s, d in cross:
+        feeds[s].add(d)
 
     sized: list[Precinct] = []
     for schema in sorted(members_of, key=lambda s: (mean_depth(members_of[s]), s)):
@@ -211,9 +234,14 @@ def schema_precincts(ctx: PipelineContext, gap: int = NEIGHBOURHOOD_GAP) -> tupl
     placed: list[Precinct] = []
     bands: dict[int, list[Precinct]] = {}
     for p in sized:
-        bands.setdefault(p.depth, []).append(p)
+        bands.setdefault(rank[p.schema], []).append(p)
+    for band in bands.values():
+        # Deal order within a ring = the tiebreaker ladder in the docstring.
+        band.sort(key=lambda p: (-len(feeds[p.schema]), -len(p.members), p.schema))
 
-    for ring, depth in enumerate(sorted(bands)):
+    # reverse=True is the inversion: the deepest schemas take ring 0, flush
+    # against the civic core, and depth-0 sources land on the outermost ring.
+    for ring, depth in enumerate(sorted(bands, reverse=True)):
         frozen = (x0, y0, x1, y1)  # this ring rests on the bbox as it was
         cursors = {side: 0 for side in "nesw"}
         side_i = 0

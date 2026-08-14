@@ -156,11 +156,12 @@ def test_s8_violations_documented_for_small_catalogs():
     assert len(report.violations) > 0
 
 
-def test_s8_violations_under_fan_in_documented():
-    """S8 violations under heavy fan-in on small catalogs."""
+def test_s8_holds_under_fan_in_since_the_radial_inversion():
+    """Flipped 2026-08-14, per the old test's own instruction: the radial
+    inversion (gold downtown, sources outward) reshaped this fixture's roads
+    and S8 now HOLDS under heavy fan-in. Asserted so a regression is loud."""
     report = check_junctions(_all_road(plan_dag_layout(_fan_in_ctx())))
-    assert not report.ok, "S8 unexpectedly holds under fan-in — flip this test to assert ok"
-    assert len(report.violations) > 0
+    assert report.ok, f"S8 regressed under fan-in: {report.violations}"
 
 
 def test_s8_violations_on_chain_documented():
@@ -380,16 +381,72 @@ def test_schema_precincts_empty_for_no_objects():
     assert schema_precincts(_empty_ctx()) == ()
 
 
-def test_schema_precincts_sorted_by_mean_depth():
-    """Precincts are ordered west-to-east by the schema's mean depth, then
-    by schema name as a tie-break."""
+def test_rings_invert_depth_so_gold_sits_downtown():
+    """Stephen, 2026-08-14: density radiates outward. The deepest schema
+    (mart/gold) takes ring 0 against the civic core; each upstream layer is
+    one ring further out; the sources land on the outermost ring."""
     ctx = _ctx(
-        [_obj("raw", "a", 0), _obj("marts", "b", 5), _obj("staging", "c", 3)],
-        [Edge("raw.a", "staging.c"), Edge("staging.c", "marts.b")],
+        [_obj("raw", "a"), _obj("stg", "b"), _obj("int", "c"), _obj("mart", "d")],
+        [Edge("raw.a", "stg.b"), Edge("stg.b", "int.c"), Edge("int.c", "mart.d")],
+    )
+    bands = {p.schema: p.band for p in schema_precincts(ctx)}
+    assert bands == {"mart": 0, "int": 1, "stg": 2, "raw": 3}, bands
+
+
+def test_a_tiny_mart_is_still_downtown():
+    """Premium is position in the lineage, not table size: a one-table mart
+    outranks a huge source neighbourhood for the core ring."""
+    ctx = _ctx(
+        [_obj("mart", "kpi", 3)] + [_obj("raw", f"t{i}", 10_000) for i in range(12)],
+        [Edge("raw.t0", "mart.kpi")],
+    )
+    bands = {p.schema: p.band for p in schema_precincts(ctx)}
+    assert bands["mart"] == 0
+    assert bands["raw"] == 1
+
+
+def test_ring_rank_is_schema_chain_depth_not_mean_member_depth():
+    """The ring comes from the cross-schema longest chain. A schema whose
+    members average shallow but which consumes another schema's output must
+    still sit INSIDE its supplier — mean member depth would tie or invert
+    them (the dogfood mart/int collision that motivated the rule)."""
+    ctx = _ctx(
+        # int has many shallow members (mean depth pulled toward 1);
+        # mart's single member sits at depth 2. Mean-depth banding would
+        # put int (mean 1) and mart (2) adjacent but could not order two
+        # schemas landing in ONE truncated band; chain rank always can.
+        [_obj("raw", "a")]
+        + [_obj("int", f"i{k}") for k in range(4)]
+        + [_obj("mart", "m")],
+        [Edge("raw.a", "int.i0"), Edge("int.i0", "mart.m")],
+    )
+    bands = {p.schema: p.band for p in schema_precincts(ctx)}
+    assert bands == {"mart": 0, "int": 1, "raw": 2}, bands
+
+
+def test_ring_ties_break_on_fanout_then_size_then_name():
+    """Within one ring the deal order (who gets the side centres) is the
+    documented ladder: cross-schema fan-out desc, member count desc, name.
+    Decisive on the real conflict: dogfood's outer ring is an 18-way tie of
+    depth-0 source schemas."""
+    ctx = _ctx(
+        [_obj("m", "x"), _obj("n", "y")]
+        # a feeds two schemas; b feeds one but has three members;
+        # c and d are one-member single-feeders split by name alone.
+        + [_obj("a", "a1")]
+        + [_obj("b", f"b{k}") for k in range(3)]
+        + [_obj("c", "c1"), _obj("d", "d1")],
+        [
+            Edge("a.a1", "m.x"),
+            Edge("a.a1", "n.y"),
+            Edge("b.b0", "m.x"),
+            Edge("c.c1", "m.x"),
+            Edge("d.d1", "m.x"),
+        ],
     )
     precincts = schema_precincts(ctx)
-    depths = [p.depth for p in precincts]
-    assert depths == sorted(depths), "Precincts should be sorted by depth"
+    outer = [p.schema for p in precincts if p.band == 1]
+    assert outer == ["a", "b", "c", "d"], outer
 
 
 # ---------------------------------------------------------------------------

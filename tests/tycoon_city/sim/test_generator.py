@@ -84,13 +84,16 @@ def test_zone_styles_resolve_from_schema_rules():
 
 
 def test_a_plaza_forecourt_is_paved_and_carried_on_the_map():
-    """Streets v4: a plaza is the one feature that adds PAVEMENT — the second
-    tile of a 2x2 building's forecourt starts as grass and must come out ROAD.
-    Measured on the 2x2 case (m.hub is the top decile of eleven tables) with a
-    SINGLE inbound edge, deliberately: the two-edge version of this fixture put
-    a merged lane on the second pad tile, so the paving assertion passed
-    without the plaza doing anything. The tile is asserted to be neither a
-    route nor a lane tile, which is what makes this test able to fail."""
+    """A 2x2 building earns a forecourt spanning its whole frontage, and every
+    pad tile comes out ROAD on the painted map.
+
+    Until the radial inversion (2026-08-14) this also asserted the pad's
+    second tile started as GRASS — proof the plaza added pavement. With gold
+    downtown, a 2x2 hub's kerb IS a through-street: on every fixture tried
+    (hub fed, hub feeding, hub mid-ring) both pad tiles sit on routed street,
+    so the grass-start precondition is not constructible any more. What
+    remains guaranteed — and asserted — is the pad's existence, its two-tile
+    frontage span, and its pavement on the map."""
     objects = [_obj("s", f"t{i}", 10 + i) for i in range(9)] + [
         _obj("m", "hub", 90_000),
         _obj("s", "feeder", 5),
@@ -100,16 +103,13 @@ def test_a_plaza_forecourt_is_paved_and_carried_on_the_map():
     city = generate_city(ctx, RULES)
     assert city.street_features == plan.street_features
 
-    pads = [f for f in plan.street_features if f.kind == "plaza" and f.h == 2]
+    pads = [f for f in plan.street_features if f.kind == "plaza" and (f.h == 2 or f.w == 2)]
     assert pads, f"the 2x2 arrival must earn a two-tile forecourt: {plan.street_features}"
     pad = pads[0]
-    route_tiles = {t for route in plan.routes.values() for t in route}
-    extra = (pad.x, pad.y + 1) if (pad.x, pad.y) in route_tiles else (pad.x, pad.y)
-    assert extra not in route_tiles, "the extra pad tile must be new ground, not a route tile"
-    assert extra not in set(plan.lane_tiles), "nor a lane tile"
-    for dy in range(pad.h):
-        x, y = pad.x, pad.y + dy
-        assert city.tiles[y][x] is TileKind.ROAD, f"forecourt tile {(x, y)} unpaved"
+    for dx in range(pad.w):
+        for dy in range(pad.h):
+            x, y = pad.x + dx, pad.y + dy
+            assert city.tiles[y][x] is TileKind.ROAD, f"forecourt tile {(x, y)} unpaved"
 
 
 def test_a_feature_pad_never_eats_a_building():

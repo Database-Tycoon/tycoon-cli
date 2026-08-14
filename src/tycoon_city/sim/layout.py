@@ -115,8 +115,16 @@ def compute_depths(ctx: PipelineContext) -> dict[str, int]:
     at 0 rather than being pushed past the rest of the graph, and a chain
     hanging below a cycle steps up hop by hop from there.
     """
-    keys = sorted(obj.key for obj in ctx.objects)
-    edges = _known_edges(ctx)
+    return longest_chain_depths(sorted(obj.key for obj in ctx.objects), _known_edges(ctx))
+
+
+def longest_chain_depths(keys: list[str], edges: list[tuple[str, str]]) -> dict[str, int]:
+    """`compute_depths` over any node/edge set, not just a catalog's objects.
+
+    The town planner ranks whole SCHEMAS with the same longest-chain rule the
+    objects use (cross-schema edges in, ring index out), so the cycle
+    condensation and the Kahn pass live here once rather than twice.
+    """
     successors = _successor_map(keys, edges)
 
     components = _components(keys, successors)
@@ -203,5 +211,6 @@ __all__ = [
     "compute_depths",
     "has_known_edges",
     "isolated_keys",
+    "longest_chain_depths",
     "plan_dag_layout",  # noqa: F822
 ]
