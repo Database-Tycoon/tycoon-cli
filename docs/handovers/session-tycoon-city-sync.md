@@ -60,8 +60,17 @@ Skipped tests are from the old planner (e.g., `test_every_lot_has_frontage`, `te
 
 ## Running the App
 
+> **Correction (2026-08-14):** `python -m tycoon_city.demo.cli` exits silently —
+> the module has no `__main__` guard. Boot the demo with:
+>
+> ```bash
+> uv run python -c "import sys; from tycoon_city.demo.cli import main; sys.exit(main(sys.argv[1:]))"
+> ```
+>
+> (`uv run tycoon city` serves THIS project's catalog instead of the demo.)
+
 ```bash
-uv run python -m tycoon_city.demo.cli
+uv run python -m tycoon_city.demo.cli   # original note — does not work, see above
 ```
 
 Then visit **http://127.0.0.1:8000/?tour=1** in your browser.
