@@ -8,6 +8,20 @@ updated: '2026-08-14'
 
 # Log
 
+- 2026-08-14 — **Published to the tycoon-cli remote; PR stack repaired.**
+  `feat/city-addon` fast-forwarded with the day's commits (merge resolution,
+  radial inversion, ruff-format). The 8/12 stacked PRs #205/#206/#207 were
+  found mis-carved: #206 (`feat/city-sim`) and #207 (`feat/data-cli`) had
+  committed, unresolved conflict markers (nine and seven files), were based
+  on `main` while depending on each other's content, and #207 additionally
+  carried the abandoned `pipeline_city` rename plus Xcode user-state files.
+  Both heads were rebuilt as true stacks — #206 = `feat/city-engine` + one
+  sim-slice commit (resolved planner + radial inversion + suite fixes),
+  #207 = `feat/city-sim` + one data-cli commit (fire/layers/source_explorer,
+  layers→districts, 0.2.0, `pipeline city`→`tycoon city`, and re-registering
+  `city` in cli.py, which the old carve had dropped) — bases retargeted so
+  CI runs the stacked trees. Merge order: #205 → #206 → #207.
+
 - 2026-08-14 — **Radial inversion: gold downtown, sources on the periphery**
   (Stephen's directive, same day: "density should generally radiate outward…
   core/gold models central… surrounded by the major int models… fan out to
