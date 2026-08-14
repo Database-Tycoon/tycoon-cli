@@ -182,9 +182,7 @@ def schema_precincts(ctx: PipelineContext, gap: int = NEIGHBOURHOOD_GAP) -> tupl
     # The cross-schema graph: ring rank (longest chain, cycles condensed) and
     # fan-out (distinct schemas fed — tiebreaker 1).
     schemas = sorted(members_of)
-    cross = sorted(
-        {(schema_of[s], schema_of[d]) for s, d in _known_edges(ctx) if schema_of[s] != schema_of[d]}
-    )
+    cross = sorted({(schema_of[s], schema_of[d]) for s, d in _known_edges(ctx) if schema_of[s] != schema_of[d]})
     rank = longest_chain_depths(schemas, cross)
     feeds: dict[str, set[str]] = {s: set() for s in schemas}
     for s, d in cross:

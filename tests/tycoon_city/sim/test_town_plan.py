@@ -132,6 +132,8 @@ def test_s8_holds_on_chain():
     """A simple chain stays S8-clean."""
     report = check_junctions(_road_tiles(plan_dag_layout(_chain_ctx())))
     assert report.ok, f"S8 regressed on chain: {report.violations}"
+
+
 # Property: S8 (no consecutive intersection tiles) — KNOWN GAP on fixtures
 # ---------------------------------------------------------------------------
 # S8 holds by construction at real-catalog scale (dogfood, 42 objects:
@@ -415,9 +417,7 @@ def test_ring_rank_is_schema_chain_depth_not_mean_member_depth():
         # mart's single member sits at depth 2. Mean-depth banding would
         # put int (mean 1) and mart (2) adjacent but could not order two
         # schemas landing in ONE truncated band; chain rank always can.
-        [_obj("raw", "a")]
-        + [_obj("int", f"i{k}") for k in range(4)]
-        + [_obj("mart", "m")],
+        [_obj("raw", "a")] + [_obj("int", f"i{k}") for k in range(4)] + [_obj("mart", "m")],
         [Edge("raw.a", "int.i0"), Edge("int.i0", "mart.m")],
     )
     bands = {p.schema: p.band for p in schema_precincts(ctx)}

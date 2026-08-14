@@ -109,10 +109,12 @@ def _assert_sound(label: str, ctx: PipelineContext, *, complete_routes: bool = T
         # The city-sim planner routes door-to-door: doors are ROAD tiles
         # adjacent to (not on) the footprint. Check adjacency.
         src_adjacent = any(
-            (route[0][0] + dx, route[0][1] + dy) in footprint[src] for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1))
+            (route[0][0] + dx, route[0][1] + dy) in footprint[src]
+            for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1))
         )
         dst_adjacent = any(
-            (route[-1][0] + dx, route[-1][1] + dy) in footprint[dst] for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1))
+            (route[-1][0] + dx, route[-1][1] + dy) in footprint[dst]
+            for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1))
         )
         assert src_adjacent, f"{label}: {src}->{dst} starts off its lot"
         assert dst_adjacent, f"{label}: {src}->{dst} ends off its lot"
