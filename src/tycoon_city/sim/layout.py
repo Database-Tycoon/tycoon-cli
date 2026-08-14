@@ -178,38 +178,30 @@ def isolated_keys(ctx: PipelineContext) -> set[str]:
 
 
 # The DAG planner grew past the 500-line rule and moved to its own module;
-# these re-exports keep every existing import (`tycoon_city.sim.layout`) valid.
-from .town_plan import (  # noqa: E402
-    BAND_GAP,
-    GRID_MIN,
-    H_LANE_CAP,
-    LANE_CAP,
-    MARGIN,
-    NEIGHBOUR_PITCH,
-    ROW_PITCH,
-    SUBURB_PER_ROW,
-    TRACK_PITCH,
-    DagPlan,
-    DistrictPlan,
-    StreetFeature,
-    plan_dag_layout,
-)
+# these re-exports keep every existing import (`tycoon_city.sim.layout`)
+# valid. Lazy (PEP 562) because `town_plan` imports this module's helpers at
+# ITS top — an eager import here would read town_plan mid-initialization
+# whenever town_plan is imported first.
+_PLAN_EXPORTS = frozenset({"MARGIN", "DagPlan", "DistrictPlan", "StreetFeature", "plan_dag_layout"})
 
+
+def __getattr__(name: str):
+    if name in _PLAN_EXPORTS:
+        from . import town_plan
+
+        return getattr(town_plan, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# The F822 suppressions are the lazy re-export above: these five names are
+# served by module __getattr__, so ruff cannot see them statically.
 __all__ = [
-    "BAND_GAP",
-    "GRID_MIN",
-    "H_LANE_CAP",
-    "LANE_CAP",
-    "MARGIN",
-    "NEIGHBOUR_PITCH",
-    "ROW_PITCH",
-    "SUBURB_PER_ROW",
-    "TRACK_PITCH",
-    "DagPlan",
-    "DistrictPlan",
-    "StreetFeature",
+    "MARGIN",  # noqa: F822
+    "DagPlan",  # noqa: F822
+    "DistrictPlan",  # noqa: F822
+    "StreetFeature",  # noqa: F822
     "compute_depths",
     "has_known_edges",
     "isolated_keys",
-    "plan_dag_layout",
+    "plan_dag_layout",  # noqa: F822
 ]

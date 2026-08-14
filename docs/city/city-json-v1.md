@@ -3,7 +3,7 @@ title: city.json v1
 description: The normative wire format between Database Tycoon's Python side and any renderer, and why each decision was taken
 tags: [contract, format, export, renderer]
 related: [handover, superpowers/specs/2026-08-03-city-foundation-design]
-updated: '2026-08-06'
+updated: '2026-08-14'
 ---
 
 # `city.json` v1
@@ -50,7 +50,7 @@ the document says nothing about the machine that produced it.
 | `plant` | object | `x`, `y` — the database itself, one tile |
 | `library` / `firehouse` | object \| null | Civic buildings on the utility strip (context inventory / fire-response dispatch); null on hand-built maps |
 | `focus` | object | `min_x`, `min_y`, `max_x`, `max_y` — inclusive tile bbox |
-| `districts` | array | One per schema: `schema`, `x`, `y`, `w`, `h` — the bounding rect around its CONNECTED lots (suburb orphans excluded unless the schema is all-orphan; streets v2, 2026-08-05: replaced the ring-era `ring`/`size`; rects are ground tint, may overlap) |
+| `districts` | array | One per schema: `schema`, `x`, `y`, `w`, `h` — the schema's zoned precinct rect, housing EVERY member lot, orphans included (ring planner, 2026-08-14: replaced the streets-v2 connected-lots bounding box; there is no suburb, so a stray member can no longer stretch the rect; rects are ground tint, may overlap) |
 | `street_features` | array | How each road is allowed to END (streets v4, 2026-08-05; additive): `kind` (`apron`/`dock`/`plaza`), `x`, `y`, `facing` (`n`/`s`/`e`/`w`, or null if a future kind faces nothing), `w`, `h` — see below |
 | `lots` | array | One per placed object: `object_key`, `x`, `y`, `w`, `h` (ground plan in tiles, NW-anchored — big tables, the top decile of the catalog's row counts, are 2×2; added 2026-08-05), `zone_style`, `target_density`, `powered`, `last_build_age_s`, `build_status`, `test_status`, `freshness_status` (dbt's sources.json SLA verdict), `schema_drift_age_s` |
 | `objects` | array | Catalog facts plus `dbt` (nullable: `description`, `materialized`, `tags`, `owner`, `tests[]` with per-test `status`, null = never run), plus `usage` (measured run appearances, nullable) and `semantic` (the declared OSI model, nullable) — see below |

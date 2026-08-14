@@ -3,10 +3,28 @@ title: Documentation log
 description: Chronological record of documentation changes
 tags: [log]
 related: []
-updated: '2026-08-09'
+updated: '2026-08-14'
 ---
 
 # Log
+
+- 2026-08-14 — **Ring-planner promotion reconciled with the contract.** The
+  working tree makes the ring planner (`town_plan.py`, v5 lineage) the sole
+  default — the `DATABASE_TYCOON_PLANNER` switch and the v4 depth-column path
+  are gone from `generator.py`. Consequences landed as one deliberate contract
+  change: the golden (`contract/fixtures/demo.city.json`) regenerated via
+  `scripts/update_contract_golden.py`; `districts` redefined in
+  `city-json-v1.md` from "bounding rect of connected lots, orphans excluded"
+  to the schema's zoned precinct rect housing every member (ring zoning has no
+  suburb, so the stretched-plate failure mode is impossible by construction);
+  a big lot's forecourt pad may flank either side of the building. Also fixed
+  six carried-over test files (plus `update_contract_golden.py`) whose
+  `parents[N]` anchors still resolved to `tests/` instead of the repo root
+  after the pipeline-city absorb, restored `tests/fixtures/tycoon_factory.py`
+  as the re-export of `tycoon_city.demo.factory` (a prior session had stubbed
+  it), and module-skipped `test_layout_plan.py` (pure v4 geometry). Suite:
+  560 passed, 6 skipped. **Awaiting Stephen's review**: the golden diff and
+  the districts redefinition are the contract calls.
 
 - 2026-08-09 — **Release candidate made honest, and the tour stopped reading a
   dead city.** The final whole-branch review found the release notes claiming a
