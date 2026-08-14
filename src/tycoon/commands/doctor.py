@@ -321,7 +321,7 @@ def _check_layer_coverage() -> None:
     if not project.sources:
         return
 
-    from tycoon.districts import (
+    from tycoon.layers import (
         Layer,
         classify_dbt_models,
         classify_dlt_sources,

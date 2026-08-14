@@ -111,7 +111,7 @@ def _resolve_layer_models(layer: str) -> list[str]:
     Raises ``typer.Exit(1)`` on an unknown layer or when no dbt manifest is
     available. Returns the (possibly empty) list of model names otherwise.
     """
-    from tycoon.districts import (
+    from tycoon.layers import (
         Layer,
         classify_dbt_models,
         filter_by_layer,

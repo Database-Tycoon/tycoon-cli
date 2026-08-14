@@ -98,6 +98,9 @@ nav:
       - "tycoon data analyze": commands/data/analyze.md
       - "tycoon data status": commands/data/status.md
       - "tycoon data run-all": commands/data/run-all.md
+      - "tycoon data layers / health": commands/data/layers.md
+    - Fire & Response:
+      - "tycoon fire / firehouse / repair": commands/fire.md
     - Services:
       - "tycoon start / stop": commands/start.md
       - "tycoon city": commands/city.md

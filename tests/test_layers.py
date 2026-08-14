@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tycoon.districts import (
+from tycoon.layers import (
     Layer,
     LayerClassification,
     Vendor,

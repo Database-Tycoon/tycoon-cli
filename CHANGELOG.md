@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file. The format 
 
 - **`tycoon city` — the catalog as an interactive 3D city.** Schemas become districts, tables become buildings, lineage becomes roads. The renderer ships with tycoon — the pre-built web bundle is in the wheel and there is nothing extra to install. With no arguments the command walks up to the project root and serves it on `http://127.0.0.1:8000`; `--path` also accepts a DuckDB file or an `md:` catalog, and `--port`, `--host`, `--theme`, `--dist` and `--pricing` are forwarded to the renderer. Binding stays on localhost by default — the city names real schemas, tables and columns, so publishing it is opt-in.
 - **The renderer costs nothing until you run it.** `tycoon_city` is imported inside the command body, never at module scope, so registering `city` does not pull duckdb and sqlglot into every other command's startup. `sqlglot` moves to a declared dependency at `>=30.15.0`; it was already arriving transitively via `dbt-core` and `dlt`, so this pins the version the renderer needs rather than adding an install.
+- **Fire & Response in the terminal: `tycoon fire`, `tycoon repair`, `tycoon firehouse`.** The city's fire-and-dispatch system as text, reading the same data the renderer draws: one fire per failing test, one contractor van per source past its freshness SLA. A vehicle restates a measured, unresolved fact — it never means a fix is running.
+- **`tycoon data layers` and `tycoon data health`.** The layered architecture ring by ring (marts downtown, sources on the outskirts) with the vendor of every object (dlt / Fivetran / dbt), and the city UI's health strip as one count per problem class.
+- **`tycoon data sources explore`.** Inspect a source's schema, sample rows, and health without leaving the terminal.
 
 ## [0.1.11] - 2026-08-07
 

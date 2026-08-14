@@ -28,7 +28,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from tycoon.config import config
-from tycoon.districts import (
+from tycoon.layers import (
     Layer,
     LayerClassification,
     Vendor,
@@ -156,9 +156,12 @@ def _query_layer_freshness(metadata_db: Path, model_names: list[str]) -> object:
 def layers() -> None:
     """Show the layered architecture with vendor info.
 
-    Mirrors the city's district structure (source → staging → intermediate →
-    marts) and adds the vendor column that the 3D city derives from
-    ``city.json``: dlt sources, Fivetran connectors, and dbt models.
+    Layers are the city's RINGS: marts build downtown against the civic
+    core, intermediate and staging ring outward from it, and sources sit on
+    the outskirts. (Districts are a different thing on the map — one plate
+    per schema.) This command lists the same objects ring by ring and adds
+    the vendor each one comes from: dlt sources, Fivetran connectors, and
+    dbt models.
 
     This is the **same data** the 3D city renders — the CLI and the city
     show the same architecture, just in different formats.

@@ -27,7 +27,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from tycoon.config import config
-from tycoon.districts import (
+from tycoon.layers import (
     Layer,
     LayerClassification,
     Vendor,

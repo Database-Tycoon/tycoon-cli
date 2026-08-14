@@ -12,17 +12,21 @@ def _register() -> None:
     from tycoon.commands import db, fivetran, history, layers, observability, sources, transform
     from tycoon.commands.explore import analyze_cmd
     from tycoon.commands.run_all import run_all_cmd
+    from tycoon.commands.source_explorer import explore as explore_cmd
     from tycoon.commands.status import status_cmd
     from tycoon.commands.sync_cmd import sync_cmd
-    from tycoon.commands.source_explorer import app as explore_app
 
+    # `explore` rides inside the sources group (`tycoon data sources explore`),
+    # and layers/health are plain commands — a one-command sub-app would force
+    # the doubled `data layers layers` invocation.
+    sources.app.command(name="explore")(explore_cmd)
     app.add_typer(sources.app, name="sources")
-    app.add_typer(explore_app, name="explore")
     app.add_typer(transform.app, name="transform")
     app.add_typer(history.app, name="history")
     app.add_typer(observability.app, name="observability")
     app.add_typer(fivetran.app, name="fivetran")
-    app.add_typer(layers.app, name="layers")
+    app.command(name="layers")(layers.layers)
+    app.command(name="health")(layers.health)
     app.command(name="query")(db.query)
     app.command(name="schema")(db.schema)
     app.command(name="clean")(db.clean)
