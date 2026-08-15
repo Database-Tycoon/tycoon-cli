@@ -8,6 +8,10 @@ updated: '2026-08-14'
 
 # Session handovers
 
+- [session-city-publish-and-metaphors.md](session-city-publish-and-metaphors.md) —
+  2026-08-14/15: radial inversion shipped, PR stack #205–#207 repaired and
+  green on tycoon-cli, data-cli metaphor audit; open items include the
+  failing `assert_toggl_deel_hours_variance` test.
 - [session-tycoon-city-sync.md](session-tycoon-city-sync.md) — 2026-08-14: uv
   sync + Tycoon City boot; merge-conflict resolution, fixture stubs, and
   ring-planner test patches (superseded in part the same day — the stub

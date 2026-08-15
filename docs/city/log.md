@@ -8,6 +8,20 @@ updated: '2026-08-14'
 
 # Log
 
+- 2026-08-15 — **Data-cli metaphor audit** (`023a663` on `feat/data-cli`,
+  PR #207): every city claim in the fire/layers/explore commands checked
+  against what the renderer draws. Vocabulary aligned (fire trucks,
+  contractor vans, worn facades, district fog), the fleet honesty rule ("a
+  vehicle means a problem is awaiting response, never a running fix") stated
+  in every command, the fake `unreachable` stat removed (no contract field;
+  reachability is by construction), `tycoon.districts` renamed back to
+  `tycoon.layers` (district = schema plate; the layers are the RINGS). Bugs:
+  `fire --run` ignored its argument; statuses read from `manifest.json`
+  (they live in `run_results.json`); three groups wired as one-command
+  sub-apps forcing `tycoon fire fire`-style invocations. New docs:
+  `commands/fire.md`, `commands/data/layers.md`. Verified live on dogfood —
+  `tycoon fire` surfaced the failing `assert_toggl_deel_hours_variance`.
+
 - 2026-08-14 — **Published to the tycoon-cli remote; PR stack repaired.**
   `feat/city-addon` fast-forwarded with the day's commits (merge resolution,
   radial inversion, ruff-format). The 8/12 stacked PRs #205/#206/#207 were
