@@ -65,7 +65,9 @@ rill/metrics/stg_github__issues_mv.yaml   # type: metrics_view, model: stg_githu
 rill/dashboards/stg_github__issues.yaml   # type: explore, metrics_view: stg_github__issues_mv
 ```
 
-The Parquet bridge is intentional — see [Rill 0.86 architecture in the v0.1.3 release notes](../../releases/v0.1.3.md) for the full rationale (TL;DR: SQLite-backed DuckLake catalogs hold an exclusive lock that breaks Rill-while-ingesting).
+The Parquet bridge is intentional — it needs no DuckLake extension, no catalog attach, and no live warehouse connection, so `--rill` output works anywhere Rill does. See [Rill 0.86 architecture in the v0.1.3 release notes](../../releases/v0.1.3.md) for how it was chosen.
+
+> **Correction (2026-08-02).** This note previously said the bridge existed because "SQLite-backed DuckLake catalogs hold an exclusive lock that breaks Rill-while-ingesting." That named the wrong backend. The lock belongs to the catalog's **metadata database**, not to DuckLake or to SQLite: a DuckDB-backed catalog (`ducklake:foo.ducklake`, the default) is a DuckDB file, and DuckDB locks a database file to one process. A **SQLite-backed** catalog (`ducklake:sqlite:foo.sqlite`) is multi-process safe — Rill 0.86 was verified reading one live during ingest with zero lock conflicts. The bridge remains a reasonable default for the reasons above, but a DuckLake live connector is not blocked by locking. Evidence and full design in [issue #71](https://github.com/Database-Tycoon/tycoon-cli/issues/71) and [PR #74](https://github.com/Database-Tycoon/tycoon-cli/pull/74).
 
 The auto-generated metrics view picks dimensions and measures heuristically:
 
