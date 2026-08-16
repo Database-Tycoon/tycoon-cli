@@ -31,15 +31,22 @@ Every pull request (whatever branch it targets) and every push to `main` runs
   (live APIs, credentials) are excluded by default; see *Test markers* below.
 - **Coverage floor** — fails if overall coverage drops below 55%. Raise
   `[tool.coverage.report].fail_under` in `pyproject.toml` as coverage improves.
-- **`uvx ruff check src tests`** — lint. Auto-fix most issues with
-  `uvx ruff check src tests --fix`.
+- **`uv run ruff check src tests`** — lint, followed by
+  **`uv run ruff format --check src tests`**. Auto-fix most lint issues with
+  `uv run ruff check src tests --fix`.
 
 Before pushing, run the same locally:
 
 ```bash
 uv run pytest -q
-uvx ruff check src tests
+uv run ruff check src tests
+uv run ruff format --check src tests
 ```
+
+Use `uv run` rather than `uvx` for ruff. `uv run` honours the `ruff` version
+pinned in `[dependency-groups] dev`, which is what CI runs; `uvx ruff` resolves
+to the latest release instead and will report failures against rules this
+codebase has never been linted for (see #201).
 
 ## Test markers
 
