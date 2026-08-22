@@ -3,10 +3,30 @@ title: Documentation log
 description: Chronological record of documentation changes
 tags: [log]
 related: []
-updated: '2026-08-09'
+updated: '2026-08-22'
 ---
 
 # Log
+
+- 2026-08-22 — **Five ship blockers from the pre-release review, fixed
+  test-first.** (1) The animation loop ticked the traffic and guest sims but
+  never called `VehicleLayer.update()` / `GuestLayer.update()` — the only
+  writers of the instance matrices — so both meshes drew nothing; the hooks
+  counted the sim arrays and hid it, and now count the drawn mesh. (2) The
+  footer status line, notes popover, and legend were painted once at boot;
+  `applyChrome()` now owns all document-derived chrome — the same stale-boot-doc
+  class as the 2026-08-09 tour fix, closed out. (3) The client's zod schema was
+  a full block behind the producer: `achievements` was silently stripped, and
+  the problems gauges / library panel / library tour stop recomputed coverage
+  from raw fields, rendering the "0% documented" lie the block exists to
+  prevent; all three now honor `state: "unknown"`. (4) `tycoon-city` /
+  `tycoon-city-export` console scripts restored (lost in the absorb; the
+  contract quickstarts and `npm run demo-data` invoke them). (5) The gates
+  themselves: `tests/tycoon_city` re-enters the default pytest run (the
+  path-anchoring rationale on the ignore was stale), coverage counts
+  `src/tycoon_city`, and a new `web` CI job runs tsc, the build, a
+  bundle-freshness diff, and the Playwright suite — none of which ran in CI
+  before.
 
 - 2026-08-09 — **Release candidate made honest, and the tour stopped reading a
   dead city.** The final whole-branch review found the release notes claiming a
