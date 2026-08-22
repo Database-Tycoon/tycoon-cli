@@ -44,8 +44,8 @@ export function setupLoop(
           const factors = city().replay.tick();
           city().buildings.setReplayProgress(factors);
           if (factors === null) {
-            status.textContent = statusLine;
-            status.title = statusLine;
+            status.textContent = statusLine();
+            status.title = statusLine();
           }
         }
         accumulator -= TICK_SECONDS;
