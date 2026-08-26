@@ -22,6 +22,11 @@ All notable changes to this project will be documented in this file. The format 
 [#268]: https://github.com/Database-Tycoon/tycoon-cli/pull/268
 [#269]: https://github.com/Database-Tycoon/tycoon-cli/pull/269
 [#273]: https://github.com/Database-Tycoon/tycoon-cli/pull/273
+### Changed
+
+- **`tycoon-city` renders its help like every other tycoon command** ([#282][]). The renderer's own console script is now a Typer app with `serve` and `demo` subcommands, and `tycoon-city PATH` stays legal as shorthand for `serve`, so `tycoon-city demo --help` and `tycoon city --help` no longer look like two different tools. The argparse `python -m tycoon_city.webserve [demo]` path remains for Docker and CI; both surfaces share one implementation.
+
+[#282]: https://github.com/Database-Tycoon/tycoon-cli/issues/282
 
 ## [0.2.1] - 2026-09-16
 

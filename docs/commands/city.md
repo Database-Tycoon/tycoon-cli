@@ -84,16 +84,17 @@ tycoon city --pricing pricing.toml
 
 ## The renderer's own entry point
 
-`tycoon city` is the integrated entry point — it finds your project for you — but the renderer can be run directly when you want to render a catalog with no tycoon project around it at all. It carries a `demo` subcommand that generates and serves a sample catalog with nothing to set up:
+`tycoon city` is the integrated entry point — it finds your project for you — but the renderer also installs its own console script, `tycoon-city`, for rendering a catalog with no tycoon project around it (and for renderer development). It takes the same options and renders its `--help` the same way:
 
 ```bash
-python -m tycoon_city.webserve demo
-python -m tycoon_city.webserve path/to/some.duckdb
+tycoon-city path/to/some.duckdb          # shorthand for `tycoon-city serve path/to/some.duckdb`
+tycoon-city demo                         # a generated demo catalog, nothing to set up
+tycoon-city demo --help
 ```
 
-No `tycoon-city` console script is installed. Entry points are unconditional, so one would land on `$PATH` for base installs too and traceback on the missing extra — the opposite of the guarantee above.
+`tycoon-city demo` materialises a whole sample project — runs, tests, a failure cascade, freshness verdicts, a semantic model — into a temp directory and serves it exactly as an ordinary serve would. Nothing is written outside `$TMPDIR`; Ctrl-C removes it. `python -m tycoon_city.webserve [demo]` reaches the same server and the same demo for Docker and CI.
 
-> A project directory named `demo` is still served as your directory, not the sample catalog — `tycoon city` always hands the renderer an absolute path.
+> A project directory named `demo` is still served as your directory, not the sample catalog — `tycoon city` always hands the renderer an absolute path, and for the standalone script `tycoon-city serve ./demo` is the unambiguous form.
 
 ## Related
 
