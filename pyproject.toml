@@ -70,9 +70,11 @@ dev = [
 tycoon = "tycoon.cli:app"
 # The city addon's own entry points, carried over from pipeline-city. The
 # contract docs' quickstart and web/package.json's demo-data script invoke
-# tycoon-city-export; `tycoon city` wraps tycoon-city but the standalone
-# server stays invocable for renderer development without a project.
-tycoon-city = "tycoon_city.webserve:main"
+# tycoon-city-export; `tycoon city` wraps the server but the standalone
+# `tycoon-city` stays invocable for renderer development without a project.
+# tycoon-city is a Typer app (tycoon_city.cli) so its --help renders like
+# every other tycoon command; the argparse webserve.main stays for python -m.
+tycoon-city = "tycoon_city.cli:app"
 tycoon-city-export = "tycoon_city.export.cli:main"
 
 [tool.hatch.build.targets.wheel]
