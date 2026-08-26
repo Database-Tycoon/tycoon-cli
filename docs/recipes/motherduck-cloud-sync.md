@@ -143,7 +143,7 @@ tycoon data sync --from md:other_catalog --to ./snap2.duckdb   # one-off sync to
 - **Pull-only**: there's no `tycoon data sync --reverse` for local → cloud. Deliberate, prevents accidental prod mutation. Use dlt or your existing prod pipeline for that direction.
 - **Full replace per table**: no incremental sync in v1. Re-sync re-copies every matched table.
 - **`md:` and local DuckDB only** for sources today. Snowflake / BigQuery / Postgres come later.
-- **DuckLake catalogs**: only the `READ_ONLY` ATTACH path is verified. SQLite-backed DuckLake catalogs hold an exclusive lock that conflicts with concurrent Rill — see [Rill 0.86 architecture in the v0.1.3 release notes](../releases/v0.1.3.md).
+- **DuckLake catalogs**: only the `READ_ONLY` ATTACH path is verified. Note that a **DuckDB-backed** catalog (`ducklake:foo.ducklake`, the default) is locked to one process at a time, so a concurrent reader such as Rill will conflict; a **SQLite-backed** catalog (`ducklake:sqlite:foo.sqlite`) is multi-process safe and does not. This corrects an earlier note here that attributed the lock to SQLite — see [issue #71](https://github.com/Database-Tycoon/tycoon-cli/issues/71).
 
 ## Related
 
