@@ -16,6 +16,7 @@ _COMMAND_ORDER = [
     "data",
     "start",
     "stop",
+    "city",
     "run",
     "notify",
     "schedule",
@@ -32,6 +33,7 @@ _SECTIONS = {
     "data": "Data Pipeline",
     "start": "Services",
     "stop": "Services",
+    "city": "Services",
     "run": "Tools",
     "notify": "Utilities",
     "schedule": "Utilities",
@@ -93,6 +95,7 @@ def _root(
 
 from tycoon.commands import data, profiles, register, semantics
 from tycoon.commands import docs as docs_cmd_mod
+from tycoon.commands.city import city_cmd
 from tycoon.commands.doctor import doctor_cmd
 from tycoon.commands.init import init_cmd
 from tycoon.commands.notify import notify_cmd
@@ -111,6 +114,7 @@ app.add_typer(data.app, name="data")
 app.add_typer(docs_cmd_mod.app, name="docs")
 app.command(name="start")(start_cmd)
 app.command(name="stop")(stop_cmd)
+app.command(name="city")(city_cmd)
 app.command(
     name="run",
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},

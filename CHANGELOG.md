@@ -1,5 +1,25 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-08-28
+
+_Headline: **pipeline city**. The catalog becomes a place — `tycoon city` (PR [#205][]) serves your warehouse as an interactive 3D city, with schemas as districts, tables as buildings, and lineage as roads. The renderer ships inside the wheel, so there is nothing extra to install, and it costs nothing until you run the command._
+
+### Added
+
+- **`tycoon city` — the catalog as an interactive 3D city** (PR [#205][]). Schemas become districts, tables become buildings, lineage becomes roads. The renderer ships with tycoon — the pre-built web bundle is in the wheel and there is nothing extra to install. With no arguments the command walks up to the project root and serves it on `http://127.0.0.1:8000`; `--path` also accepts a DuckDB file or an `md:` catalog, and `--port`, `--host`, `--theme`, `--dist` and `--pricing` are forwarded to the renderer. Binding stays on localhost by default — the city names real schemas, tables and columns, so publishing it is opt-in.
+- **The renderer costs nothing until you run it** (PR [#205][]). `tycoon_city` is imported inside the command body, never at module scope, so registering `city` does not pull duckdb and sqlglot into every other command's startup. `sqlglot` moves to a declared dependency at `>=30.15.0`; it was already arriving transitively via `dbt-core` and `dlt`, so this pins the version the renderer needs rather than adding an install.
+
+### Fixed
+
+- **Docs: the DuckLake read-while-ingest lock was attributed to the wrong backend** ([#71][], PR [#195][]). `docs/commands/data/analyze.md` and `docs/recipes/motherduck-cloud-sync.md` both said SQLite-backed DuckLake catalogs hold an exclusive lock that breaks Rill-while-ingesting. The lock belongs to the catalog's metadata database, not to DuckLake or SQLite: a DuckDB-backed catalog (the default) is a DuckDB file and locks per-process, while a SQLite-backed catalog is multi-process safe — Rill 0.86 reads one live during ingest with zero conflicts. Both pages corrected; the v0.1.3 release note that originated the claim carries a dated correction rather than a rewrite.
+- **CONTRIBUTING's ruff commands point at the pinned version** ([#201][], PR [#208][]), matching the CI-enforced pin instead of `uvx ruff`'s floating latest.
+
+[#71]: https://github.com/Database-Tycoon/tycoon-cli/issues/71
+[#195]: https://github.com/Database-Tycoon/tycoon-cli/pull/195
+[#201]: https://github.com/Database-Tycoon/tycoon-cli/issues/201
+[#205]: https://github.com/Database-Tycoon/tycoon-cli/pull/205
+[#208]: https://github.com/Database-Tycoon/tycoon-cli/pull/208
+
 ## [0.1.11] - 2026-08-07
 
 _Headline: `tycoon.yml` learns its own schema version. The ingestion rewrite's M2 lands ([#83][], PR [#190][]) — `runtimes:` and `metadata:` blocks on the project model, an integer `schema_version` with comment-preserving in-place migration via `tycoon init --upgrade`, and the config singleton replaced across the ingestion commands. Plus a pinned, fully-formatted codebase (PR [#174][]) and the first release-time dependency review (PR [#180][], replacing the Dependabot PR pile)._
@@ -38,7 +58,6 @@ _Headline: `tycoon.yml` learns its own schema version. The ingestion rewrite's M
 [#188]: https://github.com/Database-Tycoon/tycoon-cli/issues/188
 [#189]: https://github.com/Database-Tycoon/tycoon-cli/issues/189
 [#190]: https://github.com/Database-Tycoon/tycoon-cli/pull/190
-
 ## [0.1.10] - 2026-07-21
 
 _Headline: the codebase gets dramatically smaller and more focused. The ingestion rewrite's M1 metadata backend lands ([#82][], PRs [#136][]/[#137][]), and the FastAPI server, Dagster orchestration, and Nao/ask AI-agent extras are removed outright ([#139][], PR [#147][]) — the lockfile drops from 174 to 109 packages. Cycle plan in [`docs/proposals/v0.1.10-scope.md`](docs/proposals/v0.1.10-scope.md)._

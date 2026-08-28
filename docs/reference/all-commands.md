@@ -336,6 +336,25 @@ Arguments:
                            (rill, quack).
 ```
 
+### [`tycoon city`](../commands/city.md)
+
+```
+tycoon city [OPTIONS]
+
+Options:
+  --path TEXT              Project directory, DuckDB file, or md: catalog to
+                           render (default: this project).
+  --port INTEGER           Port to serve on.  [default: 8000]
+  --host TEXT              Interface to bind.  [default: 127.0.0.1]
+  --theme TEXT             Visual theme to render with.  [default: default]
+  --dist PATH              Built web bundle directory (defaults to the one
+                           shipped with tycoon).
+  --pricing PATH           TOML file declaring the compute rate the budget
+                           block is billed at.
+```
+
+The renderer ships with tycoon; there is nothing extra to install.
+
 ---
 
 ## Tools
