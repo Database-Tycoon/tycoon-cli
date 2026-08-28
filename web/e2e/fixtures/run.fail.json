@@ -1,0 +1,128 @@
+{
+  "format": "database-tycoon.run",
+  "version": 1,
+  "run": {
+    "id": "8b4d19e2-0000-4000-8000-00000000000b",
+    "command": "build",
+    "started_at": "2026-08-05T09:15:00",
+    "target": "dev",
+    "ok": false,
+    "models_error": 1,
+    "tests_failed": 0,
+    "elapsed_s": 12.5,
+    "step_count": 9,
+    "unmapped_count": 2,
+    "failed_count": 1
+  },
+  "order_source": "reconstructed",
+  "note": "durations measured, ordering reconstructed",
+  "steps": [
+    {
+      "order": 0,
+      "object_key": "raw.customers",
+      "unique_id": "model.demo.customers",
+      "node_kind": "model",
+      "status": "success",
+      "execution_time_s": 0.41,
+      "depends_on": []
+    },
+    {
+      "order": 1,
+      "object_key": "raw.orders",
+      "unique_id": "model.demo.orders",
+      "node_kind": "model",
+      "status": "success",
+      "execution_time_s": 0.62,
+      "depends_on": []
+    },
+    {
+      "order": 2,
+      "object_key": "staging.stg_customers",
+      "unique_id": "model.demo.stg_customers",
+      "node_kind": "model",
+      "status": "error",
+      "execution_time_s": 1.18,
+      "depends_on": ["raw.customers"]
+    },
+    {
+      "order": 3,
+      "object_key": "staging.stg_orders",
+      "unique_id": "model.demo.stg_orders",
+      "node_kind": "model",
+      "status": "success",
+      "execution_time_s": 0.87,
+      "depends_on": ["raw.orders"]
+    },
+    {
+      "order": 4,
+      "object_key": "mart.dim__customer_status",
+      "unique_id": "model.demo.dim__customer_status",
+      "node_kind": "model",
+      "status": "skipped",
+      "execution_time_s": 0.0,
+      "depends_on": ["staging.stg_customers"]
+    },
+    {
+      "order": 5,
+      "object_key": "mart.dim__customers",
+      "unique_id": "model.demo.dim__customers",
+      "node_kind": "model",
+      "status": "skipped",
+      "execution_time_s": 0.0,
+      "depends_on": ["staging.stg_customers"]
+    },
+    {
+      "order": 6,
+      "object_key": "mart.mart__broken",
+      "unique_id": "model.demo.mart__broken",
+      "node_kind": "model",
+      "status": "skipped",
+      "execution_time_s": 0.0,
+      "depends_on": ["staging.stg_customers"]
+    },
+    {
+      "order": 7,
+      "object_key": "mart.mart__forgotten",
+      "unique_id": "model.demo.mart__forgotten",
+      "node_kind": "model",
+      "status": "success",
+      "execution_time_s": 0.53,
+      "depends_on": ["staging.stg_orders"]
+    },
+    {
+      "order": 8,
+      "object_key": "mart.mart__revenue",
+      "unique_id": "model.demo.mart__revenue",
+      "node_kind": "model",
+      "status": "skipped",
+      "execution_time_s": 0.0,
+      "depends_on": ["staging.stg_customers", "staging.stg_orders"]
+    }
+  ],
+  "unmapped": [
+    {
+      "unique_id": "test.demo.not_null_stg_customers_customer_id",
+      "node_kind": "test",
+      "status": "skipped",
+      "execution_time_s": 0.0
+    },
+    {
+      "unique_id": "seed.demo.country_codes",
+      "node_kind": "seed",
+      "status": "success",
+      "execution_time_s": 0.11
+    }
+  ],
+  "failure_cascade": [
+    {
+      "object_key": "staging.stg_customers",
+      "order": 2,
+      "skipped": [
+        "mart.dim__customer_status",
+        "mart.dim__customers",
+        "mart.mart__broken",
+        "mart.mart__revenue"
+      ]
+    }
+  ]
+}

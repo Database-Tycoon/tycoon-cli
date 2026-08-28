@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Database Tycoon</title>
+    <!-- Inline favicon: no /favicon.ico request, so a clean console stays a
+         meaningful signal for the e2e harness. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23281e5a'/%3E%3Crect x='3' y='7' width='3' height='6' fill='%2379c96e'/%3E%3Crect x='7' y='4' width='3' height='9' fill='%235b8dd9'/%3E%3Crect x='11' y='2' width='3' height='11' fill='%23d9c445'/%3E%3C/svg%3E" />
+    <style>
+      :root {
+        --banner: #281e5a;
+        --panel: #463c82;
+        --text: #f0f0ff;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+      body { display: flex; flex-direction: column; background: var(--banner); color: var(--text); }
+
+      header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 10px 18px; background: var(--banner);
+        font-weight: 700; letter-spacing: 2px; font-size: 18px;
+      }
+      #health {
+        display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+        padding: 5px 18px; background: #1d1545; min-height: 30px;
+      }
+      .chip-h {
+        font: inherit; font-size: 12px; letter-spacing: 0.5px;
+        border-radius: 11px; padding: 2px 11px; border: 1px solid transparent;
+        background: var(--panel); color: var(--text); cursor: pointer;
+      }
+      .chip-h.fail { background: #4a1815; border-color: #a03030; color: #ffb0aa; }
+      .chip-h.warn { background: #453410; border-color: #a07c20; color: #ffd98a; }
+      .chip-h.info { background: #2b2360; border-color: #5a4fa0; color: #cfc8f5; }
+      .chip-h.ok { background: none; color: #7ddc8d; cursor: default; }
+      .chip-h.fail:hover, .chip-h.warn:hover, .chip-h.info:hover { filter: brightness(1.25); }
+      /* ROLE LENSES: the chips a lens leads with are EMPHASISED, never the
+         only ones on the strip — every finding still renders, in every lens. */
+      .chip-h.lead { font-weight: 700; font-size: 13px; box-shadow: 0 0 0 1px #cfc8f5 inset; }
+      #stats-button, #replay-button {
+        font: inherit; font-size: 13px; letter-spacing: 1px;
+        color: var(--text); background: var(--panel);
+        border: 1px solid #6a60a8; border-radius: 3px;
+        padding: 4px 14px; cursor: pointer;
+      }
+      #stats-button:hover, #replay-button:hover { background: #574c9c; }
+
+      #stats {
+        position: absolute; inset: 0; z-index: 20;
+        background: rgba(10, 8, 30, 0.6);
+        display: flex; align-items: center; justify-content: center;
+      }
+      #stats[hidden] { display: none; }
+      .stats-card {
+        position: relative; background: rgba(40, 30, 90, 0.97); color: var(--text);
+        border-radius: 6px; padding: 18px 22px; max-height: 80%; max-width: 720px;
+        width: 90%; overflow-y: auto; font-size: 13px;
+      }
+      .stats-card h2 { margin: 0 0 12px; font-size: 15px; }
+      .stats-card table { width: 100%; border-collapse: collapse; }
+      .stats-card th, .stats-card td { text-align: left; padding: 4px 10px; }
+      .stats-card th { opacity: 0.65; text-transform: uppercase; font-size: 11px; }
+      .stats-card .num { text-align: right; }
+      .stats-card tbody tr { cursor: pointer; }
+      .stats-card tbody tr:hover { background: rgba(255, 255, 255, 0.08); }
+      .stats-card tbody tr:nth-child(odd) { background: rgba(255, 255, 255, 0.03); }
+      .stats-card .close {
+        position: absolute; top: 8px; right: 12px; border: 0; background: none;
+        color: var(--text); font-size: 18px; cursor: pointer;
+      }
+      .stats-card .note { opacity: 0.7; font-size: 12px; }
+      #app { position: relative; flex: 1; min-height: 0; }
+      #app canvas { display: block; }
+      .labels { position: absolute; inset: 0; pointer-events: none; }
+      .district-label {
+        background: rgba(40, 30, 90, 0.85); color: var(--text);
+        padding: 1px 7px; font-size: 12px; letter-spacing: 1px; border-radius: 2px;
+      }
+
+      footer {
+        display: flex; justify-content: space-between; gap: 24px; padding: 6px 18px;
+        background: #140f32; color: var(--text); font-size: 12px;
+      }
+      /* Notes get their own popover now; the status stays short but keeps the
+         clamp as a belt for long database names. */
+      #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .foot-right { flex-shrink: 0; display: flex; gap: 12px; align-items: center; }
+      #asof { opacity: 0.65; }
+      #notes-button, #keys-button {
+        font: inherit; font-size: 12px; color: var(--text); background: none;
+        border: 1px solid #453a85; border-radius: 3px; padding: 1px 8px; cursor: pointer;
+      }
+      #notes-button:hover, #keys-button:hover { background: var(--panel); }
+      #notes-pop, #keys-pop {
+        position: fixed; right: 12px; bottom: 36px; z-index: 40; max-width: 420px;
+        background: rgba(35, 26, 80, 0.98); border: 1px solid #6a60a8;
+        border-radius: 5px; padding: 10px 14px; font-size: 12px; color: var(--text);
+      }
+      #notes-pop ul { margin: 4px 0 0; padding-left: 16px; }
+      #keys-pop table { border-collapse: collapse; }
+      #keys-pop td { padding: 2px 10px 2px 0; }
+      #keys-pop td:first-child { opacity: 0.7; font-weight: 700; }
+
+      #tooltip {
+        position: fixed; z-index: 10; pointer-events: none;
+        background: rgba(20, 15, 50, 0.92); color: var(--text);
+        padding: 3px 8px; font-size: 12px; border-radius: 2px;
+      }
+
+      #inspector {
+        position: absolute; top: 12px; right: 12px; z-index: 5; width: 300px;
+        max-height: calc(100% - 24px); overflow-y: auto;
+        background: rgba(40, 30, 90, 0.94); color: var(--text);
+        padding: 14px 16px; border-radius: 4px; font-size: 13px;
+      }
+      #inspector h2 { margin: 0 0 10px; font-size: 15px; word-break: break-all; }
+      #inspector h3 { margin: 12px 0 4px; font-size: 12px; opacity: 0.75; text-transform: uppercase; }
+      #inspector dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
+      #inspector dt { opacity: 0.65; }
+      #inspector dd { margin: 0; }
+      #inspector ul { margin: 0; padding-left: 16px; }
+      #inspector li[data-key] { cursor: pointer; text-decoration: underline; }
+      #inspector .prov { opacity: 0.55; font-size: 11px; margin-left: 8px; text-decoration: none; display: inline-block; }
+      #inspector .tests-fail { color: #ff7b72; font-weight: 700; }
+      #inspector .tests-warn { color: #e0a832; font-weight: 700; }
+      #inspector .tests-pass { color: #5ee07a; font-weight: 700; }
+      #inspector .doc { margin: 10px 0 0; font-size: 12px; opacity: 0.85; line-height: 1.45; }
+      #inspector .chips { margin: 8px 0 0; }
+      #inspector .chip {
+        display: inline-block; background: var(--panel); border-radius: 10px;
+        padding: 1px 9px; margin: 0 4px 4px 0; font-size: 11px;
+      }
+      #inspector ul.tests { list-style: none; padding-left: 2px; }
+      #inspector .graph-scroll { overflow-x: auto; margin: 4px 0; padding-bottom: 4px; }
+      #inspector ul.cols { list-style: none; padding-left: 2px; max-height: 220px; overflow-y: auto; }
+      #inspector .col-doc { opacity: 0.65; font-size: 11px; margin: 1px 0 4px 14px; }
+      #inspector li.none { opacity: 0.5; list-style: none; margin-left: -16px; }
+      /* Declared joins (OSI). Every object name is a door; the marker before
+         the lineage note reuses the model graph's vocabulary — SOLID = declared,
+         DASHED = inferred — so a declared join can never be read as observed
+         data movement. */
+      #inspector .door { cursor: pointer; text-decoration: underline; }
+      #inspector ul.joins { list-style: none; padding-left: 2px; }
+      #inspector ul.joins > li { margin: 0 0 8px; }
+      #inspector .join-line { font-size: 11px; opacity: 0.8; margin-left: 10px; }
+      #inspector .lin {
+        display: inline-block; width: 16px; border-top: 2px solid #8f86c9;
+        vertical-align: middle; margin-right: 6px;
+      }
+      #inspector .lin.dash { border-top-style: dashed; }
+      #inspector .close {
+        position: absolute; top: 6px; right: 8px; border: 0; background: none;
+        color: var(--text); font-size: 18px; cursor: pointer;
+      }
+      #inspector .note { opacity: 0.8; font-size: 12px; }
+
+      #problems {
+        position: absolute; top: 12px; left: 12px; z-index: 6; width: 340px;
+        max-height: calc(100% - 24px); overflow-y: auto;
+        background: rgba(40, 30, 90, 0.94); color: var(--text);
+        padding: 12px 14px; border-radius: 4px; font-size: 13px;
+      }
+      #problems h3 { margin: 0 0 8px; font-size: 12px; opacity: 0.75; text-transform: uppercase; }
+      #problems ul { margin: 0; padding: 0; list-style: none; }
+      #problems li[data-key] { cursor: pointer; padding: 5px 6px; border-radius: 3px; }
+      #problems li[data-key]:hover { background: rgba(255, 255, 255, 0.08); }
+      #problems li b { display: block; font-size: 12px; }
+      #problems .badges { font-size: 11px; }
+      #problems .badges span { margin-right: 8px; }
+      #problems li.none { opacity: 0.6; padding: 4px; }
+      #problems .coverage { margin: 0 0 8px; font-size: 11px; opacity: 0.7; }
+      /* A gauge the lens leads with; the rest still render, after it. */
+      #problems .coverage .lead { opacity: 1; font-weight: 700; color: #ffe9a8; }
+
+      /* --- ROLE LENSES: the first-run picker, the footer switcher, the tour */
+      #lens-modal {
+        position: absolute; inset: 0; z-index: 35;
+        background: rgba(10, 8, 30, 0.62);
+        display: flex; align-items: center; justify-content: center;
+      }
+      #lens-modal[hidden] { display: none; }
+      .lens-modal-card {
+        background: rgba(35, 26, 80, 0.98); border: 1px solid #6a60a8;
+        border-radius: 6px; padding: 18px 22px; width: 720px; max-width: 92%;
+      }
+      .lens-modal-card h2 { margin: 0 0 6px; font-size: 16px; }
+      .lens-modal-card .note { margin: 0 0 14px; font-size: 12px; opacity: 0.75; line-height: 1.5; }
+      .lens-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .lens-card {
+        font: inherit; text-align: left; cursor: pointer; color: var(--text);
+        background: var(--panel); border: 1px solid #6a60a8; border-radius: 5px;
+        padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;
+      }
+      .lens-card:hover { background: #574c9c; }
+      .lens-card b { font-size: 13px; letter-spacing: 1px; }
+      .lens-card .blurb { font-size: 12px; opacity: 0.85; line-height: 1.45; }
+      .lens-card .detail { font-size: 11px; opacity: 0.6; }
+      .lens-skip {
+        margin-top: 12px; font: inherit; font-size: 12px; cursor: pointer;
+        color: var(--text); background: none; border: 1px solid #453a85;
+        border-radius: 3px; padding: 4px 12px;
+      }
+      .lens-skip:hover { background: var(--panel); }
+      #lens-switch label { opacity: 0.65; }
+      #lens-switch select {
+        font: inherit; font-size: 11px; color: var(--text); background: #241c58;
+        border: 1px solid #453a85; border-radius: 3px; padding: 1px 4px;
+      }
+
+      #tour {
+        position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px;
+        z-index: 8; width: 560px; max-width: 92%;
+      }
+      #tour[hidden] { display: none; }
+      .tour-card {
+        background: rgba(35, 26, 80, 0.97); border: 1px solid #6a60a8;
+        border-radius: 5px; padding: 10px 14px; font-size: 13px;
+      }
+      .tour-card h3 {
+        margin: 0 0 6px; font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+        display: flex; justify-content: space-between; gap: 12px;
+      }
+      .tour-progress { opacity: 0.55; font-weight: 400; }
+      .tour-card p { margin: 0 0 8px; line-height: 1.5; font-size: 12px; }
+      .tour-buttons { display: flex; gap: 8px; align-items: center; }
+      .tour-buttons button {
+        font: inherit; font-size: 12px; cursor: pointer; color: var(--text);
+        background: var(--panel); border: 1px solid #6a60a8; border-radius: 3px;
+        padding: 2px 12px;
+      }
+      .tour-buttons button:hover { background: #574c9c; }
+      .tour-buttons .keys { font-size: 11px; opacity: 0.5; margin-left: auto; }
+
+      /* The run picker + current-step inspector. Bottom-left, clear of the
+         problems panel (top-left) and the legend (bottom-right). */
+      #run-panel {
+        position: absolute; left: 12px; bottom: 12px; z-index: 6; width: 360px;
+        max-height: calc(100% - 24px); overflow-y: auto;
+        background: rgba(40, 30, 90, 0.94); color: var(--text);
+        padding: 12px 14px; border-radius: 4px; font-size: 13px;
+      }
+      #run-panel h3 { margin: 0 0 8px; font-size: 12px; opacity: 0.75; text-transform: uppercase; }
+      #run-panel dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
+      #run-panel dt { opacity: 0.65; }
+      #run-panel dd { margin: 0; word-break: break-all; }
+      #run-panel ul { margin: 0; padding: 0; list-style: none; }
+      #run-panel ul.runs li { cursor: pointer; padding: 5px 6px; border-radius: 3px; }
+      #run-panel ul.runs li:hover { background: rgba(255, 255, 255, 0.08); }
+      #run-panel ul.runs b { display: block; font-size: 12px; }
+      #run-panel .badges { font-size: 11px; }
+      #run-panel ul.run-notes { margin: 6px 0 0; padding-left: 16px; list-style: disc; opacity: 0.75; font-size: 11px; }
+      #run-panel .door { cursor: pointer; text-decoration: underline; }
+      #run-panel .prov { opacity: 0.55; font-size: 11px; margin-left: 8px; display: inline-block; text-decoration: none; }
+      #run-panel .tests-fail { color: #ff7b72; font-weight: 700; }
+      #run-panel .tests-pass { color: #5ee07a; font-weight: 700; }
+      #run-panel .none { opacity: 0.75; margin: 4px 0; }
+      #run-panel .note, #run-panel .run-head { font-size: 11px; opacity: 0.75; margin: 6px 0 0; }
+      #run-panel .cascade { font-size: 12px; margin: 8px 0 0; line-height: 1.5; }
+      #run-panel .keys { font-size: 11px; opacity: 0.6; margin: 8px 0 0; }
+      #run-panel .close {
+        position: absolute; top: 6px; right: 8px; border: 0; background: none;
+        color: var(--text); font-size: 18px; cursor: pointer;
+      }
+
+      #search {
+        position: absolute; inset: 0; z-index: 30;
+        background: rgba(10, 8, 30, 0.55);
+        display: flex; align-items: flex-start; justify-content: center;
+      }
+      #search[hidden] { display: none; }
+      .search-card {
+        margin-top: 8vh; width: 480px; max-width: 92%;
+        background: rgba(35, 26, 80, 0.98); border-radius: 6px; overflow: hidden;
+        border: 1px solid #6a60a8;
+      }
+      .search-card input {
+        width: 100%; font: inherit; font-size: 15px; color: var(--text);
+        background: none; border: 0; outline: none; padding: 12px 14px;
+      }
+      .search-card ul { margin: 0; padding: 4px 0 6px; list-style: none; max-height: 320px; overflow-y: auto; }
+      .search-card li { padding: 6px 14px; font-size: 13px; cursor: pointer; }
+      .search-card li.active, .search-card li:hover { background: rgba(255, 255, 255, 0.1); }
+      .search-card li.none { opacity: 0.6; cursor: default; }
+
+      #legend {
+        position: absolute; right: 12px; bottom: 12px; z-index: 4;
+        background: rgba(40, 30, 90, 0.88); color: var(--text);
+        padding: 8px 12px; border-radius: 4px; font-size: 11px;
+      }
+      .legend-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+      .swatch { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span id="logo">DATABASE TYCOON</span>
+      <span><button id="replay-button" title="step through a specific dbt run">Replay a run</button>
+      <button id="stats-button">Stats</button></span>
+    </header>
+    <div id="health"></div>
+    <!-- Overlays live inside #app so their absolute positions anchor to the
+         canvas area, never over the header: an inspector parented to <body>
+         sat over the Stats button and made it unclickable while open. -->
+    <div id="app">
+      <div id="inspector" hidden></div>
+      <div id="stats" hidden></div>
+      <div id="problems" hidden></div>
+      <div id="run-panel" hidden></div>
+      <div id="search" hidden></div>
+      <div id="tour" hidden></div>
+      <div id="lens-modal" hidden></div>
+      <div id="legend"></div>
+    </div>
+    <div id="tooltip" hidden></div>
+    <footer>
+      <span id="status">loading city.json…</span>
+      <span class="foot-right">
+        <span id="lens-switch"></span>
+        <span id="asof"></span>
+        <button id="notes-button" hidden>ⓘ notes</button>
+        <button id="keys-button" title="keyboard map">?</button>
+      </span>
+    </footer>
+    <div id="notes-pop" hidden></div>
+    <div id="keys-pop" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

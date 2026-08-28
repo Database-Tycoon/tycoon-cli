@@ -2,6 +2,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Added
+
+- **`tycoon city` — the catalog as an interactive 3D city.** Schemas become districts, tables become buildings, lineage becomes roads. The renderer ships with tycoon — the pre-built web bundle is in the wheel and there is nothing extra to install. With no arguments the command walks up to the project root and serves it on `http://127.0.0.1:8000`; `--path` also accepts a DuckDB file or an `md:` catalog, and `--port`, `--host`, `--theme`, `--dist` and `--pricing` are forwarded to the renderer. Binding stays on localhost by default — the city names real schemas, tables and columns, so publishing it is opt-in.
+- **The renderer costs nothing until you run it.** `tycoon_city` is imported inside the command body, never at module scope, so registering `city` does not pull duckdb and sqlglot into every other command's startup. `sqlglot` moves to a declared dependency at `>=30.15.0`; it was already arriving transitively via `dbt-core` and `dlt`, so this pins the version the renderer needs rather than adding an install.
+
 ### Fixed
 
 - **Docs: the DuckLake read-while-ingest lock was attributed to the wrong backend** ([#71][]). `docs/commands/data/analyze.md` and `docs/recipes/motherduck-cloud-sync.md` both said SQLite-backed DuckLake catalogs hold an exclusive lock that breaks Rill-while-ingesting. The lock belongs to the catalog's metadata database, not to DuckLake or SQLite: a DuckDB-backed catalog (the default) is a DuckDB file and locks per-process, while a SQLite-backed catalog is multi-process safe — Rill 0.86 reads one live during ingest with zero conflicts. Both pages corrected; the v0.1.3 release note that originated the claim carries a dated correction rather than a rewrite.

@@ -36,6 +36,15 @@ dependencies = [
     "pyyaml==6.0.3",
     "pydantic==2.13.3",
     "ruamel-yaml==0.19.1",
+    # The city renderer's SQL lineage. This is a floor, not a new install:
+    # dbt-core (via metricflow) and dlt both depend on sqlglot already, so
+    # every install has carried it regardless. Declaring it here states the
+    # version the renderer needs instead of inheriting whatever those two
+    # happen to resolve to. It is deliberately not an extra -- an extra can
+    # only add *distributions*, never gate files out of this wheel, and
+    # tycoon_city ships inside it, so `[city]` would have installed nothing
+    # and advertised a choice the user does not actually have.
+    "sqlglot>=30.15.0",
 ]
 
 [project.optional-dependencies]
@@ -59,9 +68,19 @@ dev = [
 
 [project.scripts]
 tycoon = "tycoon.cli:app"
+# The city addon's own entry points, carried over from pipeline-city. The
+# contract docs' quickstart and web/package.json's demo-data script invoke
+# tycoon-city-export; `tycoon city` wraps tycoon-city but the standalone
+# server stays invocable for renderer development without a project.
+tycoon-city = "tycoon_city.webserve:main"
+tycoon-city-export = "tycoon_city.export.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/tycoon"]
+# Non-Python files inside tycoon_city ship too, and three things depend on it:
+# the built web bundle (`web_dist/`), the themes (`themes/*` — spritesheet plus
+# theme.toml) and the demo's OSI model (`demo/semantic.yml`). A data file that
+# does not ship is the classic version of this bug.
+packages = ["src/tycoon", "src/tycoon_city"]
 
 [tool.uv]
 prerelease = "if-necessary-or-explicit"
@@ -73,7 +92,13 @@ markers = [
     "recipe: marker for recipe doctest blocks parsed from README / docs/recipes (`tests/test_recipe_doctests.py`). `mode=offline` blocks run by default; `mode=online` blocks gate on `--run-online`.",
     "subprocess_e2e: subprocess-driven end-to-end tests that shell out to the installed `tycoon` binary (catches PATH / Rich rendering / packaging bugs that in-process tests can't see). Included in the default run.",
 ]
-addopts = "-m 'not e2e'"
+# tests/tycoon_city is the renderer's suite, carried over intact from the
+# pipeline-city repo before that repo is deleted. It is not collected yet: its
+# paths are anchored with `Path(__file__).parents[N]` against the old repo root,
+# so nesting it one level deeper here shifts every one of them. Carrying it
+# un-run beats losing it. Wiring it up is tracked separately; until then CI
+# gates the CLI, not the renderer.
+addopts = "-m 'not e2e' --ignore=tests/tycoon_city"
 
 [tool.ruff]
 line-length = 120

@@ -74,6 +74,7 @@ Already have a pipeline? `tycoon init` will ask about your ingestion tool, wareh
 | `tycoon data history show <id>` | Per-run detail (per-table rows for dlt, per-node status for dbt) |
 | `tycoon start` | Start the Rill dashboards and the Quack warehouse server |
 | `tycoon stop` | Stop all services |
+| `tycoon city` | Serve the catalog as an interactive 3D city in the browser |
 | `tycoon run <tool>` | Passthrough to dbt, dlt, rill |
 
 ---

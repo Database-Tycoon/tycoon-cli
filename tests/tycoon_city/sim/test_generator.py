@@ -1,0 +1,139 @@
+"""The generator as painter (streets v2): tiles faithfully realise the plan.
+
+Geometry rules are pinned in test_layout_plan.py; here the concern is paint —
+what kind each tile ends up, that buildings always win, and that the CityMap
+carries the plan through unchanged.
+"""
+
+from tycoon_city.catalog.models import CatalogObject, Edge, PipelineContext
+from tycoon_city.sim.generator import generate_city, refresh
+from tycoon_city.sim.layout import plan_dag_layout
+from tycoon_city.sim.tiles import TileKind, ZoneStyle
+
+RULES = [
+    ("raw", ZoneStyle.INDUSTRIAL),
+    ("staging", ZoneStyle.COMMERCIAL),
+    ("marts", ZoneStyle.RESIDENTIAL),
+]
+
+
+def _ctx(objects, edges=()):
+    return PipelineContext("demo", tuple(objects), tuple(edges))
+
+
+def _obj(schema, name, rows=0):
+    return CatalogObject(schema, name, "table", rows)
+
+
+def _chain_ctx():
+    return _ctx(
+        [_obj("raw", "a"), _obj("staging", "b"), _obj("marts", "c"), _obj("scratch", "x")],
+        [Edge("raw.a", "staging.b"), Edge("staging.b", "marts.c")],
+    )
+
+
+def test_every_lot_sits_on_a_lot_tile_and_the_plant_on_plant():
+    city = generate_city(_chain_ctx(), RULES)
+    for lot in city.lots.values():
+        assert city.tiles[lot.y][lot.x] is TileKind.LOT
+    px, py = city.plant_xy
+    assert city.tiles[py][px] is TileKind.PLANT
+
+
+def test_routes_are_paved_and_carried_on_the_map():
+    ctx = _chain_ctx()
+    city = generate_city(ctx, RULES)
+    plan = plan_dag_layout(ctx)
+    assert city.edge_routes == plan.routes
+    for route in city.edge_routes.values():
+        for x, y in route[1:-1]:
+            assert city.tiles[y][x] is TileKind.ROAD, f"unpaved street at {(x, y)}"
+
+
+def test_a_street_never_clobbers_a_building():
+    """Paint precedence: route endpoints are the lots themselves and must
+    still be LOT after every street is painted."""
+    city = generate_city(_chain_ctx(), RULES)
+    for route in city.edge_routes.values():
+        sx, sy = route[0]
+        dx, dy = route[-1]
+        assert city.tiles[sy][sx] is TileKind.LOT
+        assert city.tiles[dy][dx] is TileKind.LOT
+
+
+def test_power_is_painted_and_only_in_the_utility_strip():
+    ctx = _chain_ctx()
+    city = generate_city(ctx, RULES)
+    plan = plan_dag_layout(ctx)
+    painted = {(x, y) for y in range(city.height) for x in range(city.width) if city.tiles[y][x] is TileKind.POWER_LINE}
+    assert painted == set(plan.power_tiles)
+    assert painted, "a city with sources must show its ingestion power"
+
+
+def test_orphan_suburb_is_streetless():
+    city = generate_city(_chain_ctx(), RULES)
+    ox, oy = city.lots["scratch.x"].x, city.lots["scratch.x"].y
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        nx, ny = ox + dx, oy + dy
+        if 0 <= nx < city.width and 0 <= ny < city.height:
+            assert city.tiles[ny][nx] is not TileKind.ROAD, "no lineage, no road"
+
+
+def test_zone_styles_resolve_from_schema_rules():
+    city = generate_city(_chain_ctx(), RULES)
+    assert city.lots["raw.a"].zone_style is ZoneStyle.INDUSTRIAL
+    assert city.lots["staging.b"].zone_style is ZoneStyle.COMMERCIAL
+    assert city.lots["scratch.x"].zone_style is ZoneStyle.RESIDENTIAL  # no rule -> default
+
+
+def test_a_plaza_forecourt_is_paved_and_carried_on_the_map():
+    """Streets v4: a plaza is the one feature that adds PAVEMENT — the second
+    tile of a 2x2 building's forecourt starts as grass and must come out ROAD.
+    Measured on the 2x2 case (m.hub is the top decile of eleven tables) with a
+    SINGLE inbound edge, deliberately: the two-edge version of this fixture put
+    a merged lane on the second pad tile, so the paving assertion passed
+    without the plaza doing anything. The tile is asserted to be neither a
+    route nor a lane tile, which is what makes this test able to fail."""
+    objects = [_obj("s", f"t{i}", 10 + i) for i in range(9)] + [
+        _obj("m", "hub", 90_000),
+        _obj("s", "feeder", 5),
+    ]
+    ctx = _ctx(objects, [Edge("s.feeder", "m.hub")])
+    plan = plan_dag_layout(ctx)
+    city = generate_city(ctx, RULES)
+    assert city.street_features == plan.street_features
+
+    pads = [f for f in plan.street_features if f.kind == "plaza" and f.h == 2]
+    assert pads, f"the 2x2 arrival must earn a two-tile forecourt: {plan.street_features}"
+    pad = pads[0]
+    route_tiles = {t for route in plan.routes.values() for t in route}
+    extra = (pad.x, pad.y + 1) if (pad.x, pad.y) in route_tiles else (pad.x, pad.y)
+    assert extra not in route_tiles, "the extra pad tile must be new ground, not a route tile"
+    assert extra not in set(plan.lane_tiles), "nor a lane tile"
+    for dy in range(pad.h):
+        x, y = pad.x, pad.y + dy
+        assert city.tiles[y][x] is TileKind.ROAD, f"forecourt tile {(x, y)} unpaved"
+
+
+def test_a_feature_pad_never_eats_a_building():
+    """The grass-only guard applies to plazas too: every lot keeps its tile."""
+    city = generate_city(_chain_ctx(), RULES)
+    for lot in city.lots.values():
+        for dx in range(lot.w):
+            for dy in range(lot.h):
+                assert city.tiles[lot.y + dy][lot.x + dx] is TileKind.LOT
+
+
+def test_generation_is_deterministic():
+    a = generate_city(_chain_ctx(), RULES)
+    b = generate_city(_chain_ctx(), RULES)
+    assert a.tiles == b.tiles and a.edge_routes == b.edge_routes
+
+
+def test_refresh_carries_presentation_density_for_surviving_lots():
+    ctx = _chain_ctx()
+    city = generate_city(ctx, RULES)
+    city.lots["raw.a"].density = 5
+    refreshed = refresh(city, ctx, RULES)
+    assert refreshed.lots["raw.a"].density == 5
+    assert refreshed.lots["staging.b"].density == 0
