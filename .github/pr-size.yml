@@ -1,0 +1,28 @@
+# Configuration for the PR size check (see .github/workflows/pr-compliance.yml
+# and scripts/pr_size_check.py).
+
+# Enforcement mode:
+#   warn  - report violations (job summary + PR comment + annotations) but never
+#           block the merge. The check stays green.
+#   fail  - a violation fails the check and blocks the merge.
+# Flip this one line to move from the rollout/warning phase to enforcement.
+mode: warn
+
+# Maximum number of counted files a single PR may change.
+max_files: 8
+
+# Newly ADDED files matching new_file_globs may not exceed this many lines.
+# Set to 0 to disable the new-file check entirely.
+new_file_max_lines: 300
+new_file_globs:
+  - "src/**/*.py"
+
+# Files matching any of these globs do not count toward max_files.
+# (They are still shown in the report, marked as exempt.)
+exempt_path_globs:
+  - "src/tycoon/templates/**"
+
+# A PR whose HEAD branch matches this regex AND targets release_promotion_base
+# is fully exempt (release-promotion roll-ups of already-reviewed changes).
+exempt_head_branch_regex: '^v\d+\.\d+\.\d+$'
+release_promotion_base: main
