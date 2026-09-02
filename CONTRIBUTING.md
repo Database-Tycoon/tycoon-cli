@@ -90,9 +90,101 @@ Not enforced — CI is still the source of truth.
 
 ### Fixing a bug
 
-1. If there's an open issue, reference it in the commit (`fix: foo bar — #42`).
+1. If there's an open issue, reference it in the PR title — see
+   *Pull request guidelines* below.
 2. Add a regression test that fails on the release branch and passes on yours.
    This is enforced by review, not CI, but it's load-bearing.
+
+## Pull request guidelines
+
+### Keep PRs small
+
+Each PR should change **at most 8 counted files**. A well-scoped change will often include an implementation file, a test file, and a few supporting changes such as documentation, registration, or configuration.
+
+If your change needs to touch more than eight files, split it into a sequence of smaller PRs.
+
+How you manage that sequence is up to you. You can create each branch from the previous one and select the previous branch as the PR base:
+
+```shell
+gh pr create --base <previous-branch>
+```
+
+You can also use a stacking tool such as [`gh-stack`](https://github.com/github/gh-stack). What matters is that each PR remains focused and can be reviewed on its own.
+
+The following are excluded from the file-count limit:
+
+- Files under `src/tycoon/templates/**`. A template's file tree is treated as one atomic bundle, so its contents are not counted.
+- Release promotion PRs that merge a version branch such as `v0.2.0` into `main`. These collect work that has already been reviewed in earlier PRs.
+
+New Python source files under `src/**/*.py` must also be no more than **300 lines** long. This applies only to newly added files; modifying an existing file that already exceeds the limit will not trigger the check.
+
+### Title your PR consistently
+
+Use the following format:
+
+```text
+type(scope): description
+```
+
+- `type` must be one of `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, or `ci`.
+- `scope` identifies the issue, ticket, or maintenance area associated with the change.
+- `description` is a short summary without a trailing period.
+- The complete title must not exceed **100 characters**.
+
+#### Link features and fixes to tracked work
+
+For `feat`, `fix`, `refactor`, `test`, and `docs` PRs, the scope must be the GitHub issue being addressed, using `gh-<N>`:
+
+```text
+feat(gh-128): add layer materialization command
+```
+
+A GitHub issue is required even when the work is also tracked in Jira. A Jira-only reference (`PTC-<N>`) is not accepted as the scope: it isn't visible to anyone without internal Jira access, so every PR needs a GitHub issue behind it to stay legible to any reader of this repository.
+
+For `chore` and `ci` PRs, the scope may describe the affected maintenance area:
+
+```text
+chore(deps): bump dlt from 1.26.0 to 1.29.1
+ci(pypi-publish): bump action to v1.14.2
+```
+
+Routine maintenance and CI work do not require an issue or Jira ticket.
+
+Release promotion PRs are exempt from the title format because they collect multiple previously reviewed changes and do not map to a single issue.
+
+#### Closing GitHub issues
+
+A reference such as `gh-128` in the title does not automatically close the issue when the PR is merged.
+
+To close an issue automatically, include GitHub's closing syntax in the PR description:
+
+```text
+Closes #128
+```
+
+This is optional and is not enforced by the title check.
+
+### Break up large issues
+
+If an issue requires several PRs, divide it into smaller sub-issues before starting implementation. Each sub-issue should represent a focused unit of work that can be completed by one reasonably sized PR.
+
+The parent issue remains the record of the overall goal, while each sub-issue provides the `gh-<N>` reference for its corresponding PR.
+
+### Quick reference
+
+| Situation | What to do |
+|---|---|
+| Work is tied to a GitHub issue | `type(gh-<N>): description` |
+| Work is also tracked in Jira | Use `gh-<N>` for the GitHub issue; the Jira ticket can be linked from the issue |
+| Routine maintenance does not need a ticket | `chore(<area>): description` |
+| CI work does not need a ticket | `ci(<area>): description` |
+| A change needs more than 8 counted files | Split it into a sequence of smaller PRs |
+| An issue requires multiple PRs | Create smaller sub-issues or tickets, with one PR for each |
+| A version branch is being promoted into `main` | The PR is exempt from the size and title checks |
+
+### Enforcement status
+
+The size and title checks currently appear as **visible, non-blocking CI warnings**. They will become required checks after contributors have had time to adopt the conventions and the rules have been validated in practice.
 
 ## Code conventions
 
