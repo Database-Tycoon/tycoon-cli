@@ -182,7 +182,7 @@ def main() -> int:
         and base_ref == cfg["release_promotion_base"]
     ):
         report.append(
-            f"Release-promotion PR (`{head_ref}` → `{base_ref}`) — **exempt** "
+            f"Release-promotion PR (`{head_ref}` → `{base_ref}`), **exempt** "
             "from all size limits."
         )
         emit(report, violated=False, mode=mode)
@@ -236,7 +236,7 @@ def main() -> int:
             )
             report.append("")
             for path, lines in sorted(oversize):
-                report.append(f"- `{path}` — {lines} lines")
+                report.append(f"- `{path}`: {lines} lines")
                 violations.append(
                     f"new file `{path}` is {lines} lines "
                     f"(limit {cfg['new_file_max_lines']} for added "
@@ -262,11 +262,11 @@ def emit(
     if not violated:
         report.append("**Result:** :white_check_mark: within limits.")
     elif mode == "fail":
-        report.append("**Result:** :x: over the limit — this check is **blocking**.")
+        report.append("**Result:** :x: over the limit. This check is **blocking**.")
     else:
         report.append(
             "**Result:** :warning: over the limit. This check is in **warn** "
-            "mode, so it is not blocking yet — but it will once enforcement is on."
+            "mode, so it is not blocking yet. It will once enforcement is on."
         )
 
     text = "\n".join(report) + "\n"

@@ -4,8 +4,8 @@
 Validates that a PR title looks like `type(scope): description` where:
 
   * `type` is one of the allowed `types`.
-  * for `issue_ref_types` the scope is an issue / ticket reference matching
-    one of `issue_ref_patterns` (e.g. `gh-128`, `PTC-300`).
+  * for `issue_ref_types` the scope is a GitHub issue reference matching
+    one of `issue_ref_patterns` (e.g. `gh-128`).
   * for `freeform_scope_types` the scope may be anything, but must be present
     and non-empty.
   * the description is present and does not end with a period.
@@ -44,7 +44,7 @@ DEFAULTS = {
     "types": ["feat", "fix", "refactor", "test", "docs", "chore", "ci"],
     "issue_ref_types": ["feat", "fix", "refactor", "test", "docs"],
     "freeform_scope_types": ["chore", "ci"],
-    "issue_ref_patterns": [r"^gh-[0-9]+$", r"^PTC-[0-9]+$"],
+    "issue_ref_patterns": [r"^gh-[0-9]+$"],
     "max_length": 100,
     "exempt_head_branch_regex": r"^v\d+\.\d+\.\d+$",
     "release_promotion_base": "main",
@@ -131,7 +131,7 @@ def check_title(title: str, cfg: dict) -> list[str]:
 
     if scope is None:
         problems.append(
-            f"a scope is required — write `{ctype}(<scope>): ...`."
+            f"a scope is required: write `{ctype}(<scope>): ...`."
         )
     elif scope.strip() == "":
         problems.append("the scope is empty.")
@@ -142,9 +142,9 @@ def check_title(title: str, cfg: dict) -> list[str]:
             if not any(re.match(p, scope) for p in patterns):
                 shown = " or ".join(f"`{p}`" for p in patterns)
                 problems.append(
-                    f"`{ctype}` requires an issue / ticket reference as the "
-                    f"scope (matching {shown}) — e.g. `{ctype}(gh-128): ...` "
-                    f"or `{ctype}(PTC-300): ...`; got `{scope}`."
+                    f"`{ctype}` requires a GitHub issue reference as the "
+                    f"scope (matching {shown}), e.g. `{ctype}(gh-128): ...`; "
+                    f"got `{scope}`."
                 )
 
     if desc.strip() == "":
@@ -177,7 +177,7 @@ def main() -> int:
     report.append("")
 
     if author and author in cfg["ignore_authors"]:
-        report.append(f"Author `{author}` is on `ignore_authors` — **skipped**.")
+        report.append(f"Author `{author}` is on `ignore_authors`. **Skipped**.")
         emit(report, violations=[], mode=mode)
         return 0
 
@@ -187,7 +187,7 @@ def main() -> int:
         and base_ref == cfg["release_promotion_base"]
     ):
         report.append(
-            f"Release-promotion PR (`{head_ref}` → `{base_ref}`) — **exempt** "
+            f"Release-promotion PR (`{head_ref}` → `{base_ref}`), **exempt** "
             "from the title convention."
         )
         emit(report, violations=[], mode=mode)
@@ -212,7 +212,7 @@ def main() -> int:
         report.append("| type | scope | example |")
         report.append("| --- | --- | --- |")
         report.append(
-            "| `feat` `fix` `refactor` `test` `docs` | `gh-<N>` or `PTC-<N>` "
+            "| `feat` `fix` `refactor` `test` `docs` | `gh-<N>` "
             "| `feat(gh-128): add layer materialization command` |"
         )
         report.append(
@@ -228,15 +228,15 @@ def emit(report: list[str], *, violations: list[str], mode: str) -> None:
         if mode == "fail":
             report.append("")
             report.append(
-                "**Result:** :x: the title does not match the convention — "
-                "this check is **blocking**."
+                "**Result:** :x: the title does not match the convention. "
+                "This check is **blocking**."
             )
         else:
             report.append("")
             report.append(
                 "**Result:** :warning: the title does not match the convention. "
-                "This check is in **warn** mode, so it is not blocking yet — "
-                "but it will once enforcement is on."
+                "This check is in **warn** mode, so it is not blocking yet. "
+                "It will once enforcement is on."
             )
 
     text = "\n".join(report) + "\n"

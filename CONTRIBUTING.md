@@ -133,21 +133,13 @@ type(scope): description
 
 #### Link features and fixes to tracked work
 
-For `feat`, `fix`, `refactor`, `test`, and `docs` PRs, the scope must point to the GitHub issue or Jira ticket being addressed.
-
-Use `gh-<N>` for a GitHub issue in this repository:
+For `feat`, `fix`, `refactor`, `test`, and `docs` PRs, the scope must be the GitHub issue being addressed, using `gh-<N>`:
 
 ```text
 feat(gh-128): add layer materialization command
 ```
 
-Use the canonical uppercase `PTC-<N>` format for a Jira ticket:
-
-```text
-fix(PTC-300): correct dbt profile resolution on Windows
-```
-
-Use whichever tracker contains the work. A corresponding GitHub issue is not required when the work is tracked directly in Jira.
+A GitHub issue is required even when the work is also tracked in Jira. A Jira-only reference (`PTC-<N>`) is not accepted as the scope: it isn't visible to anyone without internal Jira access, so every PR needs a GitHub issue behind it to stay legible to any reader of this repository.
 
 For `chore` and `ci` PRs, the scope may describe the affected maintenance area:
 
@@ -176,14 +168,14 @@ This is optional and is not enforced by the title check.
 
 If an issue requires several PRs, divide it into smaller sub-issues before starting implementation. Each sub-issue should represent a focused unit of work that can be completed by one reasonably sized PR.
 
-The parent issue remains the record of the overall goal, while each sub-issue provides the `gh-<N>` reference for its corresponding PR. Work tracked directly in Jira can follow the same pattern using separate `PTC-<N>` tickets.
+The parent issue remains the record of the overall goal, while each sub-issue provides the `gh-<N>` reference for its corresponding PR.
 
 ### Quick reference
 
 | Situation | What to do |
 |---|---|
 | Work is tied to a GitHub issue | `type(gh-<N>): description` |
-| Work is tied directly to a Jira ticket | `type(PTC-<N>): description` |
+| Work is also tracked in Jira | Use `gh-<N>` for the GitHub issue; the Jira ticket can be linked from the issue |
 | Routine maintenance does not need a ticket | `chore(<area>): description` |
 | CI work does not need a ticket | `ci(<area>): description` |
 | A change needs more than 8 counted files | Split it into a sequence of smaller PRs |

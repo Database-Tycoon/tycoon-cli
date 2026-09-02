@@ -32,12 +32,12 @@ freeform_scope_types:
   - chore
   - ci
 
-# Accepted issue / ticket reference forms for issue_ref_types.
-# gh-<N>  : a GitHub issue in this repository (lowercase, to distinguish from Jira)
-# PTC-<N> : a Jira ticket (canonical uppercase; jira-sync.yml matches PTC-\d+)
+# Accepted issue reference form for issue_ref_types.
+# gh-<N> : a GitHub issue in this repository. Required for every issue_ref_type,
+# even when the work is also tracked in Jira, so every PR stays legible to
+# readers without internal Jira access (Stephen, #213).
 issue_ref_patterns:
   - "^gh-[0-9]+$"
-  - "^PTC-[0-9]+$"
 
 # Maximum length of the complete title (type + scope + description).
 max_length: 100
