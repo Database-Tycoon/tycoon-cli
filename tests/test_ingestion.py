@@ -193,6 +193,26 @@ class TestBuildFilesystemSource:
         assert result.is_transformer is False
         assert result.name == "filesystem"
 
+    def test_resources_list_returns_one_named_resource_per_entry(self):
+        """gh-224/gh-225: a multi-resource source builds one resource per
+        entry, each renamed to its own table_name, not the shared source name."""
+        from tycoon.ingestion.runner import _build_filesystem_source
+        from tycoon.project import ResourceConfig, SourceConfig
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_arcade",
+            resources=[
+                ResourceConfig(table_name="arcade_games", path="data/input", file_glob="games.csv"),
+                ResourceConfig(table_name="sensor_readings", path="/tmp/data", file_glob="**/*.parquet"),
+            ],
+        )
+        result = _build_filesystem_source(source_config)
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert result[0].name == "arcade_games"
+        assert result[1].name == "sensor_readings"
+
 
 class TestRunSourceDispatch:
     """Regression: native source types (filesystem, rest_api, sql_database)
@@ -279,6 +299,58 @@ class TestFilesystemResourceNaming:
         finally:
             for name in pipeline_names:
                 shutil.rmtree(Path.home() / ".dlt" / "pipelines" / name, ignore_errors=True)
+
+
+class TestMultiResourceFilesystemSource:
+    """Regression test for issue #225: a single source with multiple
+    resources runs as one pipeline and lands each resource in its own
+    table, using each resource's own table_name."""
+
+    def test_two_resources_one_source_land_in_separate_tables(self, tmp_path):
+        import shutil
+        from pathlib import Path
+
+        import duckdb
+
+        from tycoon.ingestion.runner import run_source
+        from tycoon.project import ResourceConfig, SourceConfig
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        (input_dir / "games.csv").write_text("id,value\n1,foo\n2,bar\n")
+        (input_dir / "players.csv").write_text("id,value\n1,baz\n")
+
+        raw_db_path = tmp_path / "raw.duckdb"
+        pipeline_name = "test_gh225_arcade"
+
+        try:
+            source_config = SourceConfig(
+                type="filesystem",
+                schema="raw_test",
+                resources=[
+                    ResourceConfig(table_name="test_gh225_games", path=str(input_dir), file_glob="games.csv"),
+                    ResourceConfig(table_name="test_gh225_players", path=str(input_dir), file_glob="players.csv"),
+                ],
+            )
+            run_source(pipeline_name, source_config, raw_db_path=raw_db_path)
+
+            con = duckdb.connect(str(raw_db_path), read_only=True)
+            tables = {
+                row[0]
+                for row in con.sql(
+                    "select table_name from information_schema.tables where table_schema = 'raw_test'"
+                ).fetchall()
+            }
+            games_rows = con.execute('SELECT count(*) FROM raw_test."test_gh225_games"').fetchone()
+            players_rows = con.execute('SELECT count(*) FROM raw_test."test_gh225_players"').fetchone()
+            con.close()
+
+            assert "test_gh225_games" in tables
+            assert "test_gh225_players" in tables
+            assert games_rows is not None and games_rows[0] == 2
+            assert players_rows is not None and players_rows[0] == 1
+        finally:
+            shutil.rmtree(Path.home() / ".dlt" / "pipelines" / pipeline_name, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
