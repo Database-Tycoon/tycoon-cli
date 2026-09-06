@@ -129,6 +129,14 @@ def analyze_cmd(
 
     info(f"Found {len(schema_tables)} table(s) in schema '{schema_name}'")
 
+    if not force and cfg.dbt_project_dir.exists():
+        from tycoon.commands.sources import _source_already_referenced
+
+        if _source_already_referenced(cfg.dbt_project_dir, source_name):
+            info(f"'{source_name}' is already referenced by an existing dbt model. Nothing to scaffold.")
+            info("Pass --force to scaffold anyway.")
+            return
+
     all_generated: list[str] = []
 
     # 4. Generate dbt staging models

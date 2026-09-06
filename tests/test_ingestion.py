@@ -232,6 +232,55 @@ class TestRunSourceDispatch:
             assert native in CATALOG, f"{native} should still appear in the catalog for browsing"
 
 
+class TestFilesystemResourceNaming:
+    """Regression test for issue #222: two filesystem sources sharing a
+    schema, each pointed at a different file, used to collide into one
+    table because dlt's read_csv() transformer always names its resource
+    "read_csv" regardless of which tycoon source built it. run_source()
+    now renames the resource after the tycoon source's own name."""
+
+    def test_two_filesystem_sources_land_in_separate_tables(self, tmp_path):
+        import shutil
+        from pathlib import Path
+
+        import duckdb
+
+        from tycoon.ingestion.runner import run_source
+        from tycoon.project import SourceConfig
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        (input_dir / "a.csv").write_text("id,value\n1,foo\n2,bar\n")
+        (input_dir / "b.csv").write_text("id,value\n1,baz\n")
+
+        raw_db_path = tmp_path / "raw.duckdb"
+        pipeline_names = ["test_gh222_source_a", "test_gh222_source_b"]
+
+        try:
+            for name, glob in zip(pipeline_names, ["a.csv", "b.csv"]):
+                source_config = SourceConfig(
+                    type="filesystem",
+                    schema="raw_test",
+                    config={"path": str(input_dir), "file_glob": glob},
+                )
+                run_source(name, source_config, raw_db_path=raw_db_path)
+
+            con = duckdb.connect(str(raw_db_path), read_only=True)
+            tables = {
+                row[0]
+                for row in con.sql(
+                    "select table_name from information_schema.tables where table_schema = 'raw_test'"
+                ).fetchall()
+            }
+            con.close()
+
+            assert "test_gh222_source_a" in tables
+            assert "test_gh222_source_b" in tables
+        finally:
+            for name in pipeline_names:
+                shutil.rmtree(Path.home() / ".dlt" / "pipelines" / name, ignore_errors=True)
+
+
 # ---------------------------------------------------------------------------
 # dlt write_disposition contract — replace / append / merge
 # ---------------------------------------------------------------------------

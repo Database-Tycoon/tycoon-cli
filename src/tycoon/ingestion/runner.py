@@ -340,6 +340,12 @@ def run_source(
                 ) from exc
         else:
             dlt_source = builder(source_config)
+            if source_type == "filesystem":
+                # dlt's read_csv()/read_parquet() transformers always name
+                # their resource "read_csv"/"read_parquet", so two filesystem
+                # sources sharing a schema collide into the same table unless
+                # renamed after the tycoon source itself. Issue #222.
+                dlt_source = dlt_source.with_name(name)
 
         load_info = pipeline.run(dlt_source)
         load_info.raise_on_failed_jobs()
