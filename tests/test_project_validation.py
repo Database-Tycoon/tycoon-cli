@@ -13,7 +13,7 @@ import pytest
 from pydantic import ValidationError
 
 from tycoon.config import TycoonConfig
-from tycoon.project import SourceConfig, TycoonProject, load_project
+from tycoon.project import ResourceConfig, SourceConfig, TycoonProject, load_project
 
 
 def _write_yml(root: Path, body: str) -> None:
@@ -177,6 +177,47 @@ class TestSchemaAndTableValidation:
     def test_malicious_table_rejected(self, bad_table):
         with pytest.raises(ValidationError, match="table"):
             SourceConfig(type="sql_database", schema="raw_db", tables=[bad_table])
+
+
+class TestResourceConfig:
+    """gh-224 — multi-resource filesystem sources; the flat shape stays valid too."""
+
+    def test_valid_resource_accepted(self):
+        resource = ResourceConfig(table_name="arcade_games", path="data/input", file_glob="games.csv")
+        assert resource.table_name == "arcade_games"
+
+    @pytest.mark.parametrize(
+        "bad_table_name",
+        ["games'); --", "../../secrets", "games; DROP", "game table", "1games"],
+    )
+    def test_malicious_table_name_rejected(self, bad_table_name):
+        with pytest.raises(ValidationError, match="table_name"):
+            ResourceConfig(table_name=bad_table_name, path="data/input", file_glob="games.csv")
+
+    def test_source_config_without_resources_still_valid(self):
+        """Old-shape filesystem sources (flat config.path/config.file_glob,
+        no resources list) must keep validating unchanged."""
+        src = SourceConfig(
+            type="filesystem",
+            schema="raw_files",
+            config={"path": "data/input", "file_glob": "*.csv"},
+        )
+        assert src.resources is None
+        assert src.config["path"] == "data/input"
+
+    def test_source_config_with_resources_accepted(self):
+        src = SourceConfig(
+            type="filesystem",
+            schema="raw_arcade",
+            resources=[
+                ResourceConfig(table_name="arcade_games", path="data/input", file_glob="games.csv"),
+                ResourceConfig(table_name="sensor_readings", path="/tmp/data", file_glob="**/*.parquet"),
+            ],
+        )
+        assert src.resources is not None
+        assert len(src.resources) == 2
+        assert src.resources[0].table_name == "arcade_games"
+        assert src.resources[1].path == "/tmp/data"
 
 
 class TestPathContainment:

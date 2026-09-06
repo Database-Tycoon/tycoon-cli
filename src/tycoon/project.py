@@ -164,6 +164,29 @@ _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SOURCE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
+class ResourceConfig(BaseModel):
+    """One named resource within a multi-resource filesystem source.
+
+    Each resource is self-contained: its own table name, its own location,
+    and its own glob. Resources under the same source can point at
+    completely different directories or buckets (gh-224).
+    """
+
+    table_name: str = Field(description="Destination table name for this resource")
+    path: str = Field(description="Directory, file, or bucket URL to read from")
+    file_glob: str = Field(description="Glob pattern for files to include, relative to path")
+
+    @field_validator("table_name")
+    @classmethod
+    def _check_table_name(cls, v: str) -> str:
+        if not _IDENTIFIER_RE.match(v):
+            raise ValueError(
+                f"table_name {v!r} is not a valid identifier "
+                "(letters, digits, and underscores only; must not start with a digit)"
+            )
+        return v
+
+
 class SourceConfig(BaseModel):
     """Configuration for a registered data source."""
 
@@ -172,6 +195,14 @@ class SourceConfig(BaseModel):
     schema_name: str = Field(alias="schema", description="Target schema in raw database")
     tables: list[str] | None = Field(default=None, description="Optional table filter")
     dbt_package: str | None = Field(default=None, description="Optional dbt hub package name")
+    resources: list[ResourceConfig] | None = Field(
+        default=None,
+        description=(
+            "Named resources for a multi-resource filesystem source. When absent, "
+            "a filesystem source uses the older flat config.path/config.file_glob shape; "
+            "both shapes are read, so existing tycoon.yml files keep working unchanged (gh-224)."
+        ),
+    )
 
     model_config = {"populate_by_name": True}
 
