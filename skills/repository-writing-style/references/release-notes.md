@@ -121,7 +121,7 @@ Dependency updates, formatting changes, and internal refactors may be omitted fr
 
 Do not market routine maintenance as a major improvement.
 
-## Organisation
+## Organization
 
 Group entries only when grouping makes the release easier to scan.
 

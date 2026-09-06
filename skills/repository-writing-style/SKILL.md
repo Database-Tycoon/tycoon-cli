@@ -244,6 +244,6 @@ Before finishing contributor-facing prose, verify that:
 - Examples agree with the rules they illustrate
 - Headings and lists improve rather than fragment the text
 - Repetition and meta-commentary have been removed
-- No em dash (—) remains anywhere in the text. Search for the character; do not rely on having intended to avoid it
+- No em dash (—) is used as punctuation anywhere in the text. Search for the character; do not rely on having intended to avoid it. A document that quotes or discusses the character itself is not a violation
 - The Markdown is ready to use without cleanup
 - The writing sounds like a maintainer communicating with peers, not an LLM filling out a template
