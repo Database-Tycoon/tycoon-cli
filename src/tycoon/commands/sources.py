@@ -496,9 +496,12 @@ def add_source(
     success(f"Source [bold]{source_name}[/bold] added to tycoon.yml")
 
     if not no_prompt:
-        if catalog_entry:
+        if catalog_entry and source_type != "filesystem":
+            # filesystem ships with dlt core and never needs a dlt-init
+            # download; it always runs through the native builder in
+            # runner.py, never the catalog/shim path.
             _maybe_install_catalog_source(source_type)
-        else:
+        elif not catalog_entry:
             _maybe_install_dlt_extra(source_type)
 
     next_steps(
