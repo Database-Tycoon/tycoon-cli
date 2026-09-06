@@ -4,8 +4,9 @@
 Validates that a PR title looks like `type(scope): description` where:
 
   * `type` is one of the allowed `types`.
-  * `scope` is a GitHub issue reference matching one of `issue_ref_patterns`
-    (e.g. `gh-128`). Required for every type, `chore`/`ci` included: a PR
+  * `scope` is an issue or ticket reference matching one of
+    `issue_ref_patterns` (e.g. `gh-128`, or `PTC-300` during the Jira
+    migration). Required for every type, `chore`/`ci` included: a PR
     with no issue behind it has no traceable reason for existing.
   * the description is present and does not end with a period.
   * the whole title is no longer than `max_length` characters.
@@ -41,7 +42,7 @@ CONFIG_PATH = Path(".github/pr-title.yml")
 DEFAULTS = {
     "mode": "warn",
     "types": ["feat", "fix", "refactor", "test", "docs", "chore", "ci"],
-    "issue_ref_patterns": [r"^gh-[0-9]+$"],
+    "issue_ref_patterns": [r"^gh-[0-9]+$", r"^PTC-[0-9]+$"],
     "max_length": 100,
     "exempt_head_branch_regex": r"^v\d+\.\d+\.\d+$",
     "release_promotion_base": "main",
@@ -137,7 +138,7 @@ def check_title(title: str, cfg: dict) -> list[str]:
         if not any(re.match(p, scope) for p in patterns):
             shown = " or ".join(f"`{p}`" for p in patterns)
             problems.append(
-                f"every PR needs a GitHub issue reference as the scope "
+                f"every PR needs an issue or ticket reference as the scope "
                 f"(matching {shown}), e.g. `{ctype}(gh-128): ...`; got `{scope}`."
             )
 

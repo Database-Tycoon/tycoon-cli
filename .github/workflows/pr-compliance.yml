@@ -2,7 +2,7 @@ name: PR Compliance
 
 # Enforces the PR guardrails described in CONTRIBUTING.md:
 #   - size:  at most 8 counted files per PR, template bundles and
-#            release-promotion branches exempt, plus a 300-line cap on
+#            release-promotion branches exempt, plus a 500-line cap on
 #            newly added src/**/*.py files (scripts/pr_size_check.py,
 #            configured in .github/pr-size.yml)
 #   - title: `type(scope): description`, every type must carry a gh-<N>

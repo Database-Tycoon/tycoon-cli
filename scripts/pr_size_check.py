@@ -38,7 +38,7 @@ CONFIG_PATH = Path(".github/pr-size.yml")
 DEFAULTS = {
     "mode": "warn",
     "max_files": 8,
-    "new_file_max_lines": 300,
+    "new_file_max_lines": 500,
     "new_file_globs": ["src/**/*.py"],
     "exempt_path_globs": ["src/tycoon/templates/**"],
     "exempt_head_branch_regex": r"^v\d+\.\d+\.\d+$",

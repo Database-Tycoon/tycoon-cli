@@ -116,7 +116,7 @@ The following are excluded from the file-count limit:
 - Files under `src/tycoon/templates/**`. A template's file tree is treated as one atomic bundle, so its contents are not counted.
 - Release promotion PRs that merge a version branch such as `v0.2.0` into `main`. These collect work that has already been reviewed in earlier PRs.
 
-New Python source files under `src/**/*.py` must also be no more than **300 lines** long. This applies only to newly added files; modifying an existing file that already exceeds the limit will not trigger the check.
+New Python source files under `src/**/*.py` must also be no more than **500 lines** long. This applies only to newly added files; modifying an existing file that already exceeds the limit will not trigger the check.
 
 ### Title your PR consistently
 
@@ -127,20 +127,20 @@ type(scope): description
 ```
 
 - `type` must be one of `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, or `ci`.
-- `scope` is the GitHub issue being addressed, using `gh-<N>` (see below).
+- `scope` references the tracked issue or ticket behind the change (see below).
 - `description` is a short summary without a trailing period.
 - The complete title must not exceed **100 characters**.
 
 #### Link every PR to a tracked issue
 
-Every PR's scope must be the GitHub issue being addressed, using `gh-<N>`, including `chore` and `ci` PRs:
+Every PR's scope must reference tracked work, including `chore` and `ci` PRs:
 
 ```text
 feat(gh-128): add layer materialization command
 chore(gh-140): bump dlt from 1.26.0 to 1.29.1
 ```
 
-A GitHub issue is required even when the work is also tracked in Jira. A Jira-only reference (`PTC-<N>`) is not accepted as the scope: it isn't visible to anyone without internal Jira access, so every PR needs a GitHub issue behind it to stay legible to any reader of this repository. If a chore or CI change doesn't already have an issue, file a lightweight one first.
+`gh-<N>` (a GitHub issue in this repository) is the preferred form and the direction of travel. `PTC-<N>` (a Jira ticket) is also accepted for now, since both the GitHub tracker and the Jira board are still live during the migration; support for it will be removed once that migration completes. If a chore or CI change doesn't already have an issue or ticket, file a lightweight one first.
 
 Release promotion PRs are exempt from the title format because they collect multiple previously reviewed changes and do not map to a single issue.
 
@@ -167,7 +167,7 @@ The parent issue remains the record of the overall goal, while each sub-issue pr
 | Situation | What to do |
 |---|---|
 | Work is tied to a GitHub issue | `type(gh-<N>): description` |
-| Work is also tracked in Jira | Use `gh-<N>` for the GitHub issue; the Jira ticket can be linked from the issue |
+| Work is tied to a Jira ticket only (transition period) | `type(PTC-<N>): description` |
 | Routine maintenance or CI work has no issue yet | File a lightweight issue first, then `chore(gh-<N>): description` or `ci(gh-<N>): description` |
 | A change needs more than 8 counted files | Split it into a sequence of smaller PRs |
 | An issue requires multiple PRs | Create smaller sub-issues or tickets, with one PR for each |

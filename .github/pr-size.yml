@@ -13,7 +13,7 @@ max_files: 8
 
 # Newly ADDED files matching new_file_globs may not exceed this many lines.
 # Set to 0 to disable the new-file check entirely.
-new_file_max_lines: 300
+new_file_max_lines: 500
 new_file_globs:
   - "src/**/*.py"
 
