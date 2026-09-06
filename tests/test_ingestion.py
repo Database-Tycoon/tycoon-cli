@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
+
 
 class TestNYCDotPipeline:
     def test_module_imports(self):
@@ -162,15 +164,20 @@ class TestBuildFilesystemSource:
         )
 
     def test_csv_glob_returns_dlt_source(self):
-        """CSV glob should pipe through read_csv, producing a transformer resource."""
+        """CSV glob should pipe through read_csv, producing a transformer resource.
+
+        gh-223: the flat shape now goes through _build_filesystem_resource
+        with a placeholder name (renamed again by run_source() after the
+        tycoon source's own name), so the resource name is the placeholder,
+        not dlt's default "read_csv" — only is_transformer distinguishes
+        the dispatch here.
+        """
         from tycoon.ingestion.runner import _build_filesystem_source
 
         source_config = self._make_source_config("*.csv")
         result = _build_filesystem_source(source_config)
         assert result is not None
-        # Piped sources are DltResource transformers; the name reflects read_csv
         assert result.is_transformer is True
-        assert "csv" in result.name.lower()
 
     def test_parquet_glob_returns_dlt_source(self):
         """Parquet glob should pipe through read_parquet, producing a transformer resource."""
@@ -180,7 +187,6 @@ class TestBuildFilesystemSource:
         result = _build_filesystem_source(source_config)
         assert result is not None
         assert result.is_transformer is True
-        assert "parquet" in result.name.lower()
 
     def test_unknown_glob_returns_raw_filesystem_source(self):
         """An unrecognised glob should fall back to the raw filesystem resource."""
@@ -191,7 +197,6 @@ class TestBuildFilesystemSource:
         assert result is not None
         # Raw filesystem source is not a transformer
         assert result.is_transformer is False
-        assert result.name == "filesystem"
 
     def test_resources_list_returns_one_named_resource_per_entry(self):
         """gh-224/gh-225: a multi-resource source builds one resource per
@@ -212,6 +217,81 @@ class TestBuildFilesystemSource:
         assert len(result) == 2
         assert result[0].name == "arcade_games"
         assert result[1].name == "sensor_readings"
+
+
+class TestFilesystemConfigValidation:
+    """gh-223: filesystem sources fail loudly on missing config instead of
+    silently defaulting, and warn (without failing) on a local glob that
+    matches nothing."""
+
+    def test_missing_path_raises_instead_of_defaulting_to_cwd(self):
+        """Previously: cfg.get("bucket_url", cfg.get("path", ".")) silently
+        scanned the current working directory when neither key was set."""
+        from tycoon.ingestion.runner import IngestionError, _build_filesystem_source
+        from tycoon.project import SourceConfig
+
+        source_config = SourceConfig(type="filesystem", schema="raw_files", config={"file_glob": "*.csv"})
+        with pytest.raises(IngestionError, match="path"):
+            _build_filesystem_source(source_config)
+
+    def test_resource_missing_path_raises(self):
+        from tycoon.ingestion.runner import IngestionError, _build_filesystem_source
+        from tycoon.project import ResourceConfig, SourceConfig
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_arcade",
+            resources=[ResourceConfig(table_name="games", path="", file_glob="games.csv")],
+        )
+        with pytest.raises(IngestionError, match="games"):
+            _build_filesystem_source(source_config)
+
+    def test_local_glob_with_no_matches_warns_not_fails(self, tmp_path, capsys):
+        """A typo'd glob shouldn't look identical to a genuinely empty source."""
+        from tycoon.ingestion.runner import _build_filesystem_source
+        from tycoon.project import SourceConfig
+
+        empty_dir = tmp_path / "input"
+        empty_dir.mkdir()
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_files",
+            config={"path": str(empty_dir), "file_glob": "*.csv"},
+        )
+        result = _build_filesystem_source(source_config)  # must not raise
+        assert result is not None
+        assert "no files matched" in capsys.readouterr().out.lower()
+
+    def test_local_glob_with_matches_does_not_warn(self, tmp_path, capsys):
+        from tycoon.ingestion.runner import _build_filesystem_source
+        from tycoon.project import SourceConfig
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        (input_dir / "data.csv").write_text("id\n1\n")
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_files",
+            config={"path": str(input_dir), "file_glob": "*.csv"},
+        )
+        _build_filesystem_source(source_config)
+        assert "no files matched" not in capsys.readouterr().out.lower()
+
+    def test_remote_bucket_url_skips_the_local_glob_check(self, capsys):
+        """S3/GCS/Azure aren't supported yet (see the parent tracking issue's
+        deferred scope) — the local-glob check must not misfire on them."""
+        from tycoon.ingestion.runner import _build_filesystem_source
+        from tycoon.project import SourceConfig
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_files",
+            config={"path": "s3://some-bucket/data", "file_glob": "*.csv"},
+        )
+        _build_filesystem_source(source_config)  # must not raise or warn
+        assert "no files matched" not in capsys.readouterr().out.lower()
 
 
 class TestRunSourceDispatch:

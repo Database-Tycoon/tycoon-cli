@@ -150,6 +150,27 @@ def _build_sql_database_source(source_config: SourceConfig) -> Any:
     return sql_database(connection_string)
 
 
+def _warn_if_local_glob_matches_nothing(bucket_url: str, file_glob: str, label: str) -> None:
+    """Warn when a local filesystem glob matches no files.
+
+    Only checks local paths (``bucket_url`` without a URI scheme). Remote
+    buckets (``s3://``, ``gs://``, ``az://``) aren't supported yet and are
+    skipped rather than guessed at. Issue #223: a typo in the glob should
+    not look identical to a source with nothing new to load, since both
+    currently produce zero rows with no distinguishing signal.
+    """
+    if "://" in bucket_url:
+        return
+
+    import glob as glob_module
+
+    pattern = str(Path(bucket_url).expanduser() / file_glob)
+    if not glob_module.glob(pattern, recursive=True):
+        from tycoon.utils.console import warn
+
+        warn(f"'{label}': no files matched glob {file_glob!r} under {bucket_url!r}.")
+
+
 def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str) -> Any:
     """Build one named dlt resource for a single (bucket_url, file_glob) pair.
 
@@ -167,7 +188,18 @@ def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str)
     `tycoon data sources run` rewrites the raw table rather than appending.
     Matches the convention used by every other tycoon-shipped pipeline
     (nyc_dot, mta, mta_bus_speeds). Issue #22.
+
+    Raises ``IngestionError`` if ``bucket_url`` or ``file_glob`` is empty,
+    and warns (doesn't fail) if a local glob matches no files. Issue #223.
     """
+    if not bucket_url or not file_glob:
+        raise IngestionError(
+            f"Resource '{table_name}' is missing a path or file_glob. "
+            "Both are required, e.g. `path: data/input`, `file_glob: '*.csv'`."
+        )
+
+    _warn_if_local_glob_matches_nothing(bucket_url, file_glob, table_name)
+
     from dlt.sources.filesystem import filesystem, read_csv, read_parquet
 
     files = filesystem(bucket_url=bucket_url, file_glob=file_glob)
@@ -193,32 +225,20 @@ def _build_filesystem_source(source_config: SourceConfig) -> Any:
     dlt's own ``readers()`` source uses to bundle multiple resources.
 
     Otherwise falls back to the older flat ``config.path``/``config.file_glob``
-    shape: a single resource, not yet renamed (the caller renames it after
-    the tycoon source's own name, since the flat shape has no per-resource
-    table name to use instead).
+    shape via ``_build_filesystem_resource`` with a placeholder name: the
+    caller (``run_source``) renames the single-resource result after the
+    tycoon source's own name regardless, since the flat shape has no
+    per-resource table name to use instead. Reusing that helper here (rather
+    than duplicating the CSV/Parquet dispatch) also gets this path the same
+    validation and zero-match warning as the multi-resource shape (gh-223).
     """
     if source_config.resources:
         return [_build_filesystem_resource(r.path, r.file_glob, r.table_name) for r in source_config.resources]
 
     cfg = source_config.config
-    bucket_url = cfg.get("bucket_url", cfg.get("path", "."))
+    bucket_url = cfg.get("bucket_url") or cfg.get("path") or ""
     file_glob = cfg.get("file_glob", "**/*")
-
-    from dlt.sources.filesystem import filesystem, read_csv, read_parquet
-
-    files = filesystem(bucket_url=bucket_url, file_glob=file_glob)
-
-    glob_lower = file_glob.lower()
-    if glob_lower.endswith(".csv") or glob_lower.endswith("*.csv"):
-        piped = files | read_csv()
-        piped.apply_hints(write_disposition="replace")
-        return piped
-    if glob_lower.endswith(".parquet") or glob_lower.endswith("*.parquet"):
-        piped = files | read_parquet()
-        piped.apply_hints(write_disposition="replace")
-        return piped
-
-    return files
+    return _build_filesystem_resource(bucket_url, file_glob, "resource")
 
 
 # Table names dlt's read_csv()/read_parquet() produced before this fix
