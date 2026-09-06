@@ -117,6 +117,35 @@ class TestSourcesShow:
         assert result.exit_code == 1
         assert "not found" in result.stdout.lower() or "not found" in (result.stderr or "").lower()
 
+    def test_show_multi_resource_source_renders_resources(self, cli_runner, tmp_path, monkeypatch):
+        """Regression test for a note on Stephen's gh-224 review: before
+        this fix, show_source rendered only src.config, so a multi-resource
+        source (config={}) displayed with no paths, globs, or table names —
+        indistinguishable from a misconfigured empty source."""
+        from tycoon.project import ResourceConfig
+
+        _setup_project(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        project = load_project(tmp_path)
+        assert project is not None
+        project.sources["arcade"] = SourceConfig(
+            type="filesystem",
+            schema="raw_arcade",
+            resources=[
+                ResourceConfig(table_name="games", path="data/games", file_glob="*.csv"),
+                ResourceConfig(table_name="players", path="data/players", file_glob="*.parquet"),
+            ],
+        )
+        save_project(project, tmp_path)
+
+        result = cli_runner.invoke(app, ["data", "sources", "list", "show", "arcade"])
+        assert result.exit_code == 0
+        assert "games" in result.stdout
+        assert "data/games" in result.stdout
+        assert "players" in result.stdout
+        assert "data/players" in result.stdout
+
 
 # ---------------------------------------------------------------------------
 # tycoon data sources remove
@@ -243,6 +272,62 @@ class TestPromptFilesystemResources:
         assert resources[0].table_name == "arcade_games"
         assert resources[1].table_name == "sensor_readings"
         assert resources[1].path == "/tmp/data"
+
+    def test_invalid_table_name_reprompts_instead_of_crashing(self, monkeypatch):
+        """Regression test for Stephen's review on gh-226 / PR #232: a raw
+        table name like 'sales-2024' (hyphen, matching tycoon's own
+        hyphenated source-name convention) used to raise an uncaught
+        pydantic ValidationError, killing the CLI and losing every
+        resource already entered. Now it re-prompts for the same
+        resource instead."""
+        from tycoon.commands.sources import _prompt_filesystem_resources
+
+        prompts = iter(
+            [
+                "sales-2024",  # invalid: hyphen not allowed in table_name
+                "data/input",
+                "*.csv",
+                "sales_2024",  # retry, valid
+                "data/input",
+                "*.csv",
+            ]
+        )
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
+
+        resources = _prompt_filesystem_resources()
+        assert len(resources) == 1
+        assert resources[0].table_name == "sales_2024"
+
+    def test_duplicate_table_name_rejected_and_reprompts(self, monkeypatch):
+        """Regression test for Stephen's review on gh-226 / PR #232: the
+        loop used to accept two resources with the same table_name, and
+        dlt unions both files' rows into one table at run time with no
+        warning. Now the prompt rejects a duplicate before even asking
+        for a path/glob."""
+        from tycoon.commands.sources import _prompt_filesystem_resources
+
+        prompts = iter(
+            [
+                "games",
+                "data/a",
+                "*.csv",
+                "games",  # duplicate: rejected before path/glob are asked
+                "sensors",
+                "data/b",
+                "*.csv",
+            ]
+        )
+        confirms = iter([True, False])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: next(confirms))
+
+        resources = _prompt_filesystem_resources()
+        assert len(resources) == 2
+        assert resources[0].table_name == "games"
+        assert resources[0].path == "data/a"
+        assert resources[1].table_name == "sensors"
+        assert resources[1].path == "data/b"
 
 
 # ---------------------------------------------------------------------------
