@@ -686,6 +686,30 @@ class TestSourcesAddFilesystemInteractive:
         assert source.resources[1].file_glob == "players.csv"
 
 
+class TestFilesystemNotABuiltinShimSource:
+    """gh-227 — filesystem never reached the shim/catalog path (runner.py's
+    native builder always took precedence), so its shim was dead code with
+    diverging defaults. Confirms it's gone, not just unreachable."""
+
+    def test_filesystem_not_in_builtin_sources(self):
+        from tycoon.ingestion.source_manager import _BUILTIN_SOURCES
+
+        assert "filesystem" not in _BUILTIN_SOURCES
+
+    def test_filesystem_not_in_shims(self):
+        from tycoon.ingestion.source_manager import _SHIMS
+
+        assert "filesystem" not in _SHIMS
+
+    def test_rest_api_still_a_builtin_shim_source(self):
+        """Only filesystem's shim was dead; rest_api's own catalog/install
+        path is untouched by this cleanup."""
+        from tycoon.ingestion.source_manager import _BUILTIN_SOURCES, _SHIMS
+
+        assert "rest_api" in _BUILTIN_SOURCES
+        assert "rest_api" in _SHIMS
+
+
 class TestGoogleSheetsCatalog:
     """Google Sheets (#52) catalog wiring + non-interactive registration."""
 
