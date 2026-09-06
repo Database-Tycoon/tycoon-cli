@@ -4,10 +4,9 @@
 Validates that a PR title looks like `type(scope): description` where:
 
   * `type` is one of the allowed `types`.
-  * for `issue_ref_types` the scope is a GitHub issue reference matching
-    one of `issue_ref_patterns` (e.g. `gh-128`).
-  * for `freeform_scope_types` the scope may be anything, but must be present
-    and non-empty.
+  * `scope` is a GitHub issue reference matching one of `issue_ref_patterns`
+    (e.g. `gh-128`). Required for every type, `chore`/`ci` included: a PR
+    with no issue behind it has no traceable reason for existing.
   * the description is present and does not end with a period.
   * the whole title is no longer than `max_length` characters.
 
@@ -42,8 +41,6 @@ CONFIG_PATH = Path(".github/pr-title.yml")
 DEFAULTS = {
     "mode": "warn",
     "types": ["feat", "fix", "refactor", "test", "docs", "chore", "ci"],
-    "issue_ref_types": ["feat", "fix", "refactor", "test", "docs"],
-    "freeform_scope_types": ["chore", "ci"],
     "issue_ref_patterns": [r"^gh-[0-9]+$"],
     "max_length": 100,
     "exempt_head_branch_regex": r"^v\d+\.\d+\.\d+$",
@@ -136,16 +133,13 @@ def check_title(title: str, cfg: dict) -> list[str]:
     elif scope.strip() == "":
         problems.append("the scope is empty.")
     else:
-        needs_ref = ctype in cfg["issue_ref_types"]
-        if needs_ref:
-            patterns = cfg["issue_ref_patterns"]
-            if not any(re.match(p, scope) for p in patterns):
-                shown = " or ".join(f"`{p}`" for p in patterns)
-                problems.append(
-                    f"`{ctype}` requires a GitHub issue reference as the "
-                    f"scope (matching {shown}), e.g. `{ctype}(gh-128): ...`; "
-                    f"got `{scope}`."
-                )
+        patterns = cfg["issue_ref_patterns"]
+        if not any(re.match(p, scope) for p in patterns):
+            shown = " or ".join(f"`{p}`" for p in patterns)
+            problems.append(
+                f"every PR needs a GitHub issue reference as the scope "
+                f"(matching {shown}), e.g. `{ctype}(gh-128): ...`; got `{scope}`."
+            )
 
     if desc.strip() == "":
         problems.append("the description is empty.")
@@ -212,11 +206,8 @@ def main() -> int:
         report.append("| type | scope | example |")
         report.append("| --- | --- | --- |")
         report.append(
-            "| `feat` `fix` `refactor` `test` `docs` | `gh-<N>` "
+            "| `feat` `fix` `refactor` `test` `docs` `chore` `ci` | `gh-<N>` "
             "| `feat(gh-128): add layer materialization command` |"
-        )
-        report.append(
-            "| `chore` `ci` | free-form | `chore(deps): bump typer to 0.16` |"
         )
 
     emit(report, violations=violations, mode=mode)

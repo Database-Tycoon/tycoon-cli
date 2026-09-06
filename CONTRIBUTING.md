@@ -127,28 +127,20 @@ type(scope): description
 ```
 
 - `type` must be one of `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, or `ci`.
-- `scope` identifies the issue, ticket, or maintenance area associated with the change.
+- `scope` is the GitHub issue being addressed, using `gh-<N>` (see below).
 - `description` is a short summary without a trailing period.
 - The complete title must not exceed **100 characters**.
 
-#### Link features and fixes to tracked work
+#### Link every PR to a tracked issue
 
-For `feat`, `fix`, `refactor`, `test`, and `docs` PRs, the scope must be the GitHub issue being addressed, using `gh-<N>`:
+Every PR's scope must be the GitHub issue being addressed, using `gh-<N>`, including `chore` and `ci` PRs:
 
 ```text
 feat(gh-128): add layer materialization command
+chore(gh-140): bump dlt from 1.26.0 to 1.29.1
 ```
 
-A GitHub issue is required even when the work is also tracked in Jira. A Jira-only reference (`PTC-<N>`) is not accepted as the scope: it isn't visible to anyone without internal Jira access, so every PR needs a GitHub issue behind it to stay legible to any reader of this repository.
-
-For `chore` and `ci` PRs, the scope may describe the affected maintenance area:
-
-```text
-chore(deps): bump dlt from 1.26.0 to 1.29.1
-ci(pypi-publish): bump action to v1.14.2
-```
-
-Routine maintenance and CI work do not require an issue or Jira ticket.
+A GitHub issue is required even when the work is also tracked in Jira. A Jira-only reference (`PTC-<N>`) is not accepted as the scope: it isn't visible to anyone without internal Jira access, so every PR needs a GitHub issue behind it to stay legible to any reader of this repository. If a chore or CI change doesn't already have an issue, file a lightweight one first.
 
 Release promotion PRs are exempt from the title format because they collect multiple previously reviewed changes and do not map to a single issue.
 
@@ -176,8 +168,7 @@ The parent issue remains the record of the overall goal, while each sub-issue pr
 |---|---|
 | Work is tied to a GitHub issue | `type(gh-<N>): description` |
 | Work is also tracked in Jira | Use `gh-<N>` for the GitHub issue; the Jira ticket can be linked from the issue |
-| Routine maintenance does not need a ticket | `chore(<area>): description` |
-| CI work does not need a ticket | `ci(<area>): description` |
+| Routine maintenance or CI work has no issue yet | File a lightweight issue first, then `chore(gh-<N>): description` or `ci(gh-<N>): description` |
 | A change needs more than 8 counted files | Split it into a sequence of smaller PRs |
 | An issue requires multiple PRs | Create smaller sub-issues or tickets, with one PR for each |
 | A version branch is being promoted into `main` | The PR is exempt from the size and title checks |

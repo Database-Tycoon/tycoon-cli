@@ -128,7 +128,14 @@ def git(*args: str) -> str:
 
 def changed_entries(base_sha: str, head_sha: str) -> list[tuple[str, str]]:
     """Return (status, path) pairs. For renames the new path is used."""
-    merge_base = git("merge-base", base_sha, head_sha).strip() or base_sha
+    try:
+        merge_base = git("merge-base", base_sha, head_sha).strip() or base_sha
+    except subprocess.CalledProcessError:
+        # `git()` runs with check=True, so `merge-base` failing (e.g. a stale
+        # base SHA after a force-push race) raises before it can ever reach
+        # `or base_sha` -- that fallback was dead. Degrade to base_sha itself
+        # rather than crashing the job red even in warn mode.
+        merge_base = base_sha
     raw = git("diff", "--name-status", "-M", merge_base, head_sha)
     entries: list[tuple[str, str]] = []
     for line in raw.splitlines():
@@ -146,7 +153,10 @@ def changed_entries(base_sha: str, head_sha: str) -> list[tuple[str, str]]:
 def file_line_count(head_sha: str, path: str) -> int:
     try:
         blob = git("show", f"{head_sha}:{path}")
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, UnicodeDecodeError):
+        # UnicodeDecodeError: `git()` runs with text=True, which can raise on
+        # a non-UTF-8 file. Either way, treat as "can't measure" rather than
+        # failing the job red over a line count we can't compute.
         return 0
     return len(blob.splitlines())
 
@@ -199,7 +209,8 @@ def main() -> int:
         else:
             counted.append(path)
 
-    report.append(f"### Files changed: {len(counted)} counted / {cfg['max_files']} allowed")
+    n_counted = len(set(counted))
+    report.append(f"### Files changed: {n_counted} counted / {cfg['max_files']} allowed")
     report.append("")
     for path in sorted(set(counted)):
         report.append(f"- `{path}`")
@@ -211,7 +222,6 @@ def main() -> int:
     report.append("")
 
     violations: list[str] = []
-    n_counted = len(set(counted))
     if n_counted > cfg["max_files"]:
         violations.append(
             f"{n_counted} counted files changed (limit {cfg['max_files']}). "
