@@ -219,6 +219,65 @@ class TestResourceConfig:
         assert src.resources[0].table_name == "arcade_games"
         assert src.resources[1].path == "/tmp/data"
 
+    def test_duplicate_table_name_rejected(self):
+        """Two resources sharing a table_name would have the second
+        silently overwrite the first each run (write_disposition=replace)
+        — the exact collision class gh-222 fixes, reintroduced via YAML."""
+        with pytest.raises(ValidationError, match="duplicate table_name"):
+            SourceConfig(
+                type="filesystem",
+                schema="raw_arcade",
+                resources=[
+                    ResourceConfig(table_name="games", path="data/a", file_glob="*.csv"),
+                    ResourceConfig(table_name="games", path="data/b", file_glob="*.csv"),
+                ],
+            )
+
+    @pytest.mark.parametrize("flat_key", ["path", "bucket_url", "file_glob"])
+    def test_resources_with_flat_config_key_rejected(self, flat_key):
+        """`resources` alongside a flat config key leaves the flat key
+        silently ignored by the runner — reject the ambiguous shape."""
+        with pytest.raises(ValidationError, match="mutually exclusive"):
+            SourceConfig(
+                type="filesystem",
+                schema="raw_arcade",
+                config={flat_key: "data/input"},
+                resources=[ResourceConfig(table_name="games", path="data/a", file_glob="*.csv")],
+            )
+
+    def test_resources_on_non_filesystem_type_rejected(self):
+        """`resources` is filesystem-only; rest_api already has an
+        unrelated config.resources key, so silently ignoring this one
+        would be especially confusing."""
+        with pytest.raises(ValidationError, match="only supported for type 'filesystem'"):
+            SourceConfig(
+                type="rest_api",
+                schema="raw_api",
+                resources=[ResourceConfig(table_name="games", path="data/a", file_glob="*.csv")],
+            )
+
+    def test_resource_path_and_glob_expand_env_vars(self, tmp_path, monkeypatch):
+        """gh-224 fields sit in the interpolation allowlist same as the
+        flat config.path/config.file_glob shape."""
+        monkeypatch.setenv("TYCOON_TEST_DATA_DIR", "/mnt/arcade")
+        monkeypatch.setenv("TYCOON_TEST_GLOB", "*.parquet")
+        _write_yml(
+            tmp_path,
+            "sources:\n"
+            "  arcade:\n"
+            "    type: filesystem\n"
+            "    schema: raw_arcade\n"
+            "    resources:\n"
+            "      - table_name: games\n"
+            "        path: ${TYCOON_TEST_DATA_DIR}\n"
+            "        file_glob: ${TYCOON_TEST_GLOB}\n",
+        )
+        loaded = load_project(tmp_path)
+        assert loaded is not None
+        resource = loaded.sources["arcade"].resources[0]
+        assert resource.path == "/mnt/arcade"
+        assert resource.file_glob == "*.parquet"
+
 
 class TestPathContainment:
     """#65 — dbt_project_dir / rill_dir must resolve within the project's parent dir."""

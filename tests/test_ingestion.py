@@ -232,6 +232,85 @@ class TestRunSourceDispatch:
             assert native in CATALOG, f"{native} should still appear in the catalog for browsing"
 
 
+class TestUnexpandedEnvVarCheck:
+    """Regression test for Stephen's review on gh-224 / PR #230: a resource's
+    own path/file_glob can carry an unexpanded ${VAR} just like the flat
+    config shape, and it needs the same diagnostic — otherwise a typo'd or
+    unset env var silently loads zero rows with no error anywhere."""
+
+    def test_flat_config_value_detected(self):
+        from tycoon.ingestion.runner import _check_unexpanded_env_vars
+        from tycoon.project import SourceConfig
+
+        source_config = SourceConfig(
+            type="rest_api",
+            schema="raw_api",
+            config={"base_url": "${API_BASE_URL}"},
+        )
+        assert _check_unexpanded_env_vars(source_config) == [("base_url", "${API_BASE_URL}")]
+
+    def test_resource_path_and_glob_detected(self):
+        from tycoon.ingestion.runner import _check_unexpanded_env_vars
+        from tycoon.project import ResourceConfig, SourceConfig
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_files",
+            resources=[
+                ResourceConfig(table_name="widgets", path="${DATA_DIR}/widgets", file_glob="*.csv"),
+                ResourceConfig(table_name="gadgets", path="/tmp/gadgets", file_glob="${GADGET_GLOB}"),
+            ],
+        )
+        bad_pairs = _check_unexpanded_env_vars(source_config)
+        assert ("resources[0].path", "${DATA_DIR}") in bad_pairs
+        assert ("resources[1].file_glob", "${GADGET_GLOB}") in bad_pairs
+
+    def test_no_bad_pairs_when_fully_expanded(self):
+        from tycoon.ingestion.runner import _check_unexpanded_env_vars
+        from tycoon.project import ResourceConfig, SourceConfig
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_files",
+            resources=[ResourceConfig(table_name="widgets", path="/data/widgets", file_glob="*.csv")],
+        )
+        assert _check_unexpanded_env_vars(source_config) == []
+
+    def test_run_source_warns_for_unexpanded_var_on_native_dispatch(self, tmp_path, capsys):
+        """End-to-end: before this fix, only the catalog dispatch path
+        (_run_catalog) called _check_unexpanded_env_vars, so a native
+        builder (filesystem, rest_api, sql_database) never warned about an
+        unexpanded ${VAR} at all, flat config included. Uses the flat shape
+        here since it's what this layer's filesystem builder reads; a
+        resources-shaped source runs through the same warning call.
+
+        The bad var is scoped to a bounded glob (*.csv under a
+        nonexistent literal directory), not "**/*", so a miss resolves to
+        zero matches instead of walking the whole working tree.
+        """
+        import shutil
+        from pathlib import Path
+
+        from tycoon.ingestion.runner import run_source
+        from tycoon.project import SourceConfig
+
+        raw_db_path = tmp_path / "raw.duckdb"
+        pipeline_name = "test_gh224_unexpanded_env_var"
+        try:
+            source_config = SourceConfig(
+                type="filesystem",
+                schema="raw_test",
+                config={"path": "${UNSET_TYCOON_TEST_VAR}", "file_glob": "*.csv"},
+            )
+            run_source(pipeline_name, source_config, raw_db_path=raw_db_path)
+
+            out = capsys.readouterr().out.lower()
+            assert "config key 'path'" in out
+            assert "${unset_tycoon_test_var}" in out
+        finally:
+            shutil.rmtree(Path.home() / ".dlt" / "pipelines" / pipeline_name, ignore_errors=True)
+
+
 class TestFilesystemResourceNaming:
     """Regression test for issue #222: two filesystem sources sharing a
     schema, each pointed at a different file, used to collide into one

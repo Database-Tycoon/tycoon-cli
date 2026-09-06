@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 
 
 class IngestionTool(str, Enum):
@@ -127,6 +127,12 @@ _INTERPOLATED_LEAVES: tuple[tuple[str, ...], ...] = (
 _INTERPOLATED_SUBTREES: tuple[tuple[str, ...], ...] = (
     # dlt source credentials: tokens, connection strings, bucket URLs.
     ("sources", "*", "config"),
+    # Each resource's own path/file_glob (gh-224 multi-resource filesystem
+    # sources) carries the same machine-specific values as the flat
+    # config.path/config.file_glob shape above, so it needs the same
+    # interpolation — otherwise `${DATA_DIR}` in a resource's path reaches
+    # dlt as a literal string and silently loads zero rows.
+    ("sources", "*", "resources", "*"),
 )
 
 
@@ -164,6 +170,22 @@ _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SOURCE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
+def _validate_identifier(kind: str, value: str) -> str:
+    """Shared identifier check for type/schema/table/table_name fields.
+
+    Centralizing this means the rule and its wording can't drift between
+    the several fields that need it (source name has its own hyphen-aware
+    check above; this one is for identifiers that flow into generated
+    Python/SQL/jinja rather than filesystem paths).
+    """
+    if not _IDENTIFIER_RE.match(value):
+        raise ValueError(
+            f"{kind} {value!r} is not a valid identifier (letters, digits, and underscores only; "
+            "must not start with a digit)"
+        )
+    return value
+
+
 class ResourceConfig(BaseModel):
     """One named resource within a multi-resource filesystem source.
 
@@ -179,12 +201,7 @@ class ResourceConfig(BaseModel):
     @field_validator("table_name")
     @classmethod
     def _check_table_name(cls, v: str) -> str:
-        if not _IDENTIFIER_RE.match(v):
-            raise ValueError(
-                f"table_name {v!r} is not a valid identifier "
-                "(letters, digits, and underscores only; must not start with a digit)"
-            )
-        return v
+        return _validate_identifier("table_name", v)
 
 
 class SourceConfig(BaseModel):
@@ -211,33 +228,56 @@ class SourceConfig(BaseModel):
     def _check_type(cls, v: str) -> str:
         # `type` names a dlt source module: it reaches `dlt init` argv and
         # filesystem paths, so it gets the strict identifier charset.
-        if not _IDENTIFIER_RE.match(v):
-            raise ValueError(
-                f"source type {v!r} is not a valid identifier "
-                "(letters, digits, and underscores only; must not start with a digit)"
-            )
-        return v
+        return _validate_identifier("source type", v)
 
     @field_validator("schema_name")
     @classmethod
     def _check_schema_name(cls, v: str) -> str:
-        if not _IDENTIFIER_RE.match(v):
-            raise ValueError(
-                f"schema {v!r} is not a valid identifier "
-                "(letters, digits, and underscores only; must not start with a digit)"
-            )
-        return v
+        return _validate_identifier("schema", v)
 
     @field_validator("tables")
     @classmethod
     def _check_tables(cls, v: list[str] | None) -> list[str] | None:
         for table in v or []:
-            if not _IDENTIFIER_RE.match(table):
-                raise ValueError(
-                    f"table {table!r} is not a valid identifier "
-                    "(letters, digits, and underscores only; must not start with a digit)"
-                )
+            _validate_identifier("table", table)
         return v
+
+    @model_validator(mode="after")
+    def _check_resources_consistency(self) -> "SourceConfig":
+        """Reject config shapes that validate cleanly but silently misbehave at run time.
+
+        - Two resources sharing a table_name would have the second overwrite
+          the first each run (write_disposition=replace) — the exact
+          table-collision class gh-222 fixes, reintroduced via YAML.
+        - `resources` alongside the flat config.path/bucket_url/file_glob
+          shape leaves the flat keys silently ignored by the runner.
+        - `resources` on a non-filesystem type is silently ignored (and
+          especially confusing for rest_api, whose config already has an
+          unrelated `resources` key of its own).
+        """
+        if not self.resources:
+            return self
+
+        if self.type != "filesystem":
+            raise ValueError(f"'resources' is only supported for type 'filesystem' sources, got type {self.type!r}")
+
+        flat_keys = {"path", "bucket_url", "file_glob"} & self.config.keys()
+        if flat_keys:
+            raise ValueError(
+                f"'resources' and the flat config key(s) {sorted(flat_keys)} are mutually exclusive; "
+                "use 'resources' for a multi-resource source or the flat shape for a single one, not both"
+            )
+
+        seen: set[str] = set()
+        for resource in self.resources:
+            if resource.table_name in seen:
+                raise ValueError(
+                    f"duplicate table_name {resource.table_name!r} in 'resources'; "
+                    "each resource needs a unique table_name"
+                )
+            seen.add(resource.table_name)
+
+        return self
 
 
 class DatabaseConfig(BaseModel):
