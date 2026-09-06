@@ -205,6 +205,46 @@ class TestSourceConfigModel:
         assert loaded.sources["new-api"].config["base_url"] == "https://api.example.com"
 
 
+class TestPromptFilesystemResources:
+    """gh-226 — interactive resource loop for `sources add filesystem`."""
+
+    def test_single_resource_no_loop(self, monkeypatch):
+        from tycoon.commands.sources import _prompt_filesystem_resources
+
+        prompts = iter(["arcade_games", "data/input", "games.csv"])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
+
+        resources = _prompt_filesystem_resources()
+        assert len(resources) == 1
+        assert resources[0].table_name == "arcade_games"
+        assert resources[0].path == "data/input"
+        assert resources[0].file_glob == "games.csv"
+
+    def test_loops_until_user_declines(self, monkeypatch):
+        from tycoon.commands.sources import _prompt_filesystem_resources
+
+        prompts = iter(
+            [
+                "arcade_games",
+                "data/input",
+                "games.csv",
+                "sensor_readings",
+                "/tmp/data",
+                "**/*.parquet",
+            ]
+        )
+        confirms = iter([True, False])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: next(confirms))
+
+        resources = _prompt_filesystem_resources()
+        assert len(resources) == 2
+        assert resources[0].table_name == "arcade_games"
+        assert resources[1].table_name == "sensor_readings"
+        assert resources[1].path == "/tmp/data"
+
+
 # ---------------------------------------------------------------------------
 # source_installer
 # ---------------------------------------------------------------------------
@@ -591,6 +631,59 @@ class TestSourcesAddNoPrompt:
         )
         assert result.exit_code == 1
         assert "Invalid --config" in (result.stderr or result.output)
+
+
+class TestSourcesAddFilesystemInteractive:
+    """gh-226 — end-to-end interactive `sources add filesystem` writes the
+    multi-resource shape from gh-224/gh-225, looping until the user is done."""
+
+    def _bind(self, tmp_path: Path, monkeypatch):
+        body = (
+            "name: test\n"
+            "version: 0.1.0\n"
+            "database:\n"
+            "  raw: data/raw.duckdb\n"
+            "  warehouse: data/warehouse.duckdb\n"
+            "sources: {}\n"
+        )
+        (tmp_path / "tycoon.yml").write_text(body)
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        monkeypatch.chdir(tmp_path)
+
+    def test_add_filesystem_with_two_resources(self, cli_runner, tmp_path, monkeypatch):
+        self._bind(tmp_path, monkeypatch)
+
+        prompt_input = "\n".join(
+            [
+                "arcade",  # source name
+                "raw_arcade",  # schema name
+                "arcade_games",  # resource 1: table name
+                "data/input",  # resource 1: path
+                "games.csv",  # resource 1: file glob
+                "y",  # add another resource?
+                "arcade_players",  # resource 2: table name
+                "data/input",  # resource 2: path
+                "players.csv",  # resource 2: file glob
+                "n",  # add another resource?
+            ]
+        )
+        result = cli_runner.invoke(
+            app,
+            ["data", "sources", "add", "filesystem"],
+            input=prompt_input + "\n",
+        )
+        assert result.exit_code == 0, result.output
+
+        project = load_project(tmp_path)
+        assert project is not None
+        source = project.sources["arcade"]
+        assert source.schema_name == "raw_arcade"
+        assert source.resources is not None
+        assert len(source.resources) == 2
+        assert source.resources[0].table_name == "arcade_games"
+        assert source.resources[0].file_glob == "games.csv"
+        assert source.resources[1].table_name == "arcade_players"
+        assert source.resources[1].file_glob == "players.csv"
 
 
 class TestGoogleSheetsCatalog:
