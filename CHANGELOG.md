@@ -1,33 +1,5 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.1] - UNRELEASED
-
-_Headline: **TBD**. Two streams. Filesystem sources grow up — multiple named resources per source, JSONL, validated config, and an interactive resource loop in `sources add` — and the city stops being a static plan: the simulation engine lands (PR [#206][]) and the three limitations shipped alongside 0.2.0 are closed._
-
-### Added
-
-_Filesystem sources — entries land here as PRs [#229][], [#230][], [#231][], [#232][], [#234][] and [#235][] merge (gh-222 through gh-228). Keep this section; move each PR's own `[Unreleased]` bullets into it rather than adding a second section._
-
-- **City simulation engine — radial layout, planner gaps, street thinning** (PR [#206][]). Schemas are placed in rings by longest-chain depth over the cross-schema graph and inverted, so gold/mart precincts sit downtown and sources on the periphery; ties break on fan-out, member count, then name. A district is redefined as the schema's zoned precinct rect housing every member lot, which makes the old orphan-exclusion failure mode impossible by construction. Streets are generated where demand exists rather than everywhere, `town_network.py` closes three route-completeness gaps, and the v4/v5 planners dissolve into one resolved planner. Median route on the dogfood catalog fell 229 → 36 tiles. The `contract/fixtures/demo.city.json` golden and `docs/city/city-json-v1.md` move with it.
-
-### Fixed
-
-- **Vehicles and guests are drawn, not just simulated.** `web/src/boot/loop.ts` ticked the sims but never called `vehicleLayer.update()` / `guestLayer.update()` — the only writers of the instance matrices — so traffic and guests counted up while the street rendered empty. The draw halves now run each frame, interpolated on the tick accumulator, and the e2e hooks count meshes rather than the sim array so the gap cannot reopen silently.
-- **Coverage milestones are read instead of reported as unknown.** The exporter emitted an `achievements` block that `web/src/contract.ts` never parsed, so the inspector, problems, and tour surfaces reported a measured milestone as `0% documented`. The block is parsed, and unknown coverage renders as unknown rather than as zero.
-- **Document-derived chrome repaints on refresh.** The footer, legend, and notes kept their pre-refresh values after `R`.
-
-### Changed
-
-- **The renderer and front end are CI-gated.** `tests/tycoon_city` — 563 tests, the `city.json` contract golden included — joins the default pytest run instead of being ignored, and `src/tycoon_city` counts toward coverage (floor re-baselined 68 → 73). A new `web` job runs `tsc --noEmit` (vite strips types without checking them), the production build, a bundle-freshness check that `web_dist/` is exactly the build of `web/`, and the Playwright e2e suite against a real `tycoon-city-export` of the demo fixture.
-
-[#206]: https://github.com/Database-Tycoon/tycoon-cli/pull/206
-[#229]: https://github.com/Database-Tycoon/tycoon-cli/pull/229
-[#230]: https://github.com/Database-Tycoon/tycoon-cli/pull/230
-[#231]: https://github.com/Database-Tycoon/tycoon-cli/pull/231
-[#232]: https://github.com/Database-Tycoon/tycoon-cli/pull/232
-[#234]: https://github.com/Database-Tycoon/tycoon-cli/pull/234
-[#235]: https://github.com/Database-Tycoon/tycoon-cli/pull/235
-
 ## [0.2.0] - 2026-08-28
 
 _Headline: **pipeline city**. The catalog becomes a place — `tycoon city` (PR [#205][]) serves your warehouse as an interactive 3D city, with schemas as districts, tables as buildings, and lineage as roads. The renderer ships inside the wheel, so there is nothing extra to install, and it costs nothing until you run the command._
