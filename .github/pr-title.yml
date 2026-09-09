@@ -1,0 +1,43 @@
+# Configuration for the PR title check (see .github/workflows/pr-compliance.yml
+# and scripts/pr_title_check.py).
+
+# Enforcement mode:
+#   warn  - report violations (job summary + PR comment + annotations) but never
+#           block the merge. The check stays green.
+#   fail  - a violation fails the check and blocks the merge.
+mode: warn
+
+# Format: type(scope): description
+
+# Allowed types.
+types:
+  - feat
+  - fix
+  - refactor
+  - test
+  - docs
+  - chore
+  - ci
+
+# Accepted issue reference forms for the scope. Required for every type,
+# chore/ci included: no free-form scopes (sciortino/Stephen, #214).
+# gh-<N> (a GitHub issue in this repository) is the direction of travel.
+# PTC-<N> (a Jira ticket) is also accepted for now, since both the GitHub
+# tracker and the Jira board are still live during the migration (Stephen,
+# softening the #213 call). Tighten back to gh-only once that migration
+# completes.
+issue_ref_patterns:
+  - "^gh-[0-9]+$"
+  - "^PTC-[0-9]+$"
+
+# Maximum length of the complete title (type + scope + description).
+max_length: 100
+
+# A PR whose HEAD branch matches this regex AND targets release_promotion_base
+# is fully exempt (release-promotion roll-ups of already-reviewed changes).
+exempt_head_branch_regex: '^v\d+\.\d+\.\d+$'
+release_promotion_base: main
+
+# PR authors to skip entirely (e.g. bots whose titles already conform).
+ignore_authors:
+  - dependabot[bot]
