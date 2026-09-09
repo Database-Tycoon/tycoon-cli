@@ -175,6 +175,48 @@ def _build_filesystem_source(source_config: SourceConfig) -> Any:
     return files
 
 
+# Table names dlt's read_csv()/read_parquet() produced before this fix
+# renamed the resource after the tycoon source. Both the current dlt
+# behavior ("read_csv") and the underscore-prefixed name the shipped
+# csv-import template originally shipped with ("_read_csv", an older dlt
+# version's naming) are checked, since an existing project's frozen table
+# could be either depending on which dlt version it last ran against.
+_LEGACY_FILESYSTEM_TABLE_NAMES = frozenset({"read_csv", "read_parquet", "_read_csv", "_read_parquet"})
+
+
+def _warn_if_legacy_filesystem_table_exists(raw_db_path: Path, schema_name: str, new_name: str) -> None:
+    """Warn once per run if a pre-fix generic table still exists alongside
+    the newly-renamed one.
+
+    Existing projects on the old flat config shape silently start writing
+    to a new table name after this fix (Issue #222); their dbt models still
+    select the old, now-frozen table, and dbt keeps succeeding against
+    stale data with no error anywhere. This can't be fixed automatically
+    (the old table is data, not something safe to drop unprompted), so the
+    best available mitigation is surfacing it loudly, every run, until the
+    legacy table is gone (the user has renamed or dropped it).
+    """
+    from tycoon.utils.duckdb_utils import get_tables
+
+    legacy_present = {
+        table
+        for schema, table in get_tables(raw_db_path)
+        if schema == schema_name and table in _LEGACY_FILESYSTEM_TABLE_NAMES
+    }
+    if not legacy_present:
+        return
+
+    from tycoon.utils.console import warn
+
+    for legacy_table in sorted(legacy_present):
+        warn(
+            f"'{schema_name}.{legacy_table}' still exists from before this project's filesystem sources were "
+            f"renamed. New rows now land in '{schema_name}.{new_name}' instead; '{legacy_table}' will not "
+            "receive new data. If a dbt model still selects from it, update it to use the new name, then drop "
+            f"'{schema_name}.{legacy_table}'."
+        )
+
+
 def _emit_event_safe(metadata_db: Path | None, event: Any) -> None:
     """Append an event to the metadata backend; silently no-ops on any failure."""
     if metadata_db is None:
@@ -323,6 +365,7 @@ def run_source(
             dataset_name=source_config.schema_name,
         )
 
+        legacy_rename = False
         builder = _NATIVE_BUILDERS.get(source_type)
         if builder is None:
             # Try dynamic import: dlt.sources.<source_type>
@@ -340,9 +383,18 @@ def run_source(
                 ) from exc
         else:
             dlt_source = builder(source_config)
+            legacy_rename = source_type == "filesystem" and not isinstance(dlt_source, list)
+            if legacy_rename:
+                # dlt's read_csv()/read_parquet() transformers always name
+                # their resource "read_csv"/"read_parquet", so two filesystem
+                # sources sharing a schema collide into the same table unless
+                # renamed after the tycoon source itself. Issue #222.
+                dlt_source = dlt_source.with_name(name)
 
         load_info = pipeline.run(dlt_source)
         load_info.raise_on_failed_jobs()
+        if legacy_rename:
+            _warn_if_legacy_filesystem_table_exists(raw_db_path, source_config.schema_name, name)
         _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
         _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
         return pipeline, load_info

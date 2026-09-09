@@ -232,6 +232,128 @@ class TestRunSourceDispatch:
             assert native in CATALOG, f"{native} should still appear in the catalog for browsing"
 
 
+class TestFilesystemResourceNaming:
+    """Regression test for issue #222: two filesystem sources sharing a
+    schema, each pointed at a different file, used to collide into one
+    table because dlt's read_csv() transformer always names its resource
+    "read_csv" regardless of which tycoon source built it. run_source()
+    now renames the resource after the tycoon source's own name."""
+
+    def test_two_filesystem_sources_land_in_separate_tables(self, tmp_path):
+        import shutil
+        from pathlib import Path
+
+        import duckdb
+
+        from tycoon.ingestion.runner import run_source
+        from tycoon.project import SourceConfig
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        (input_dir / "a.csv").write_text("id,value\n1,foo\n2,bar\n")
+        (input_dir / "b.csv").write_text("id,value\n1,baz\n")
+
+        raw_db_path = tmp_path / "raw.duckdb"
+        pipeline_names = ["test_gh222_source_a", "test_gh222_source_b"]
+
+        try:
+            for name, glob in zip(pipeline_names, ["a.csv", "b.csv"]):
+                source_config = SourceConfig(
+                    type="filesystem",
+                    schema="raw_test",
+                    config={"path": str(input_dir), "file_glob": glob},
+                )
+                run_source(name, source_config, raw_db_path=raw_db_path)
+
+            con = duckdb.connect(str(raw_db_path), read_only=True)
+            tables = {
+                row[0]
+                for row in con.sql(
+                    "select table_name from information_schema.tables where table_schema = 'raw_test'"
+                ).fetchall()
+            }
+            con.close()
+
+            assert "test_gh222_source_a" in tables
+            assert "test_gh222_source_b" in tables
+        finally:
+            for name in pipeline_names:
+                shutil.rmtree(Path.home() / ".dlt" / "pipelines" / name, ignore_errors=True)
+
+
+class TestLegacyFilesystemTableWarning:
+    """Regression test for Stephen's review on #229: existing projects on
+    the old flat config shape silently start writing to a new table name
+    after the gh-222 fix, while their dbt models keep selecting the old,
+    now-frozen table. Since that can't be fixed automatically (the old
+    table is data, not something safe to drop unprompted), run_source()
+    warns whenever the legacy table is still present."""
+
+    def test_warns_when_legacy_table_present(self, tmp_path, capsys):
+        import shutil
+        from pathlib import Path
+
+        import duckdb
+
+        from tycoon.ingestion.runner import run_source
+        from tycoon.project import SourceConfig
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        (input_dir / "widgets.csv").write_text("id,value\n1,foo\n")
+
+        raw_db_path = tmp_path / "raw.duckdb"
+
+        # Simulate a project that ingested before the gh-222 fix: the
+        # pre-fix generic table already exists in the target schema.
+        con = duckdb.connect(str(raw_db_path))
+        con.execute("CREATE SCHEMA raw_test")
+        con.execute("CREATE TABLE raw_test.read_csv (id INTEGER, value VARCHAR)")
+        con.execute("INSERT INTO raw_test.read_csv VALUES (1, 'stale')")
+        con.close()
+
+        pipeline_name = "test_gh222_legacy_warning"
+        try:
+            source_config = SourceConfig(
+                type="filesystem",
+                schema="raw_test",
+                config={"path": str(input_dir), "file_glob": "widgets.csv"},
+            )
+            run_source(pipeline_name, source_config, raw_db_path=raw_db_path)
+
+            out = capsys.readouterr().out.lower()
+            assert "raw_test.read_csv" in out
+            assert pipeline_name.lower() in out
+        finally:
+            shutil.rmtree(Path.home() / ".dlt" / "pipelines" / pipeline_name, ignore_errors=True)
+
+    def test_no_warning_when_no_legacy_table(self, tmp_path, capsys):
+        import shutil
+        from pathlib import Path
+
+        from tycoon.ingestion.runner import run_source
+        from tycoon.project import SourceConfig
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        (input_dir / "widgets.csv").write_text("id,value\n1,foo\n")
+
+        raw_db_path = tmp_path / "raw.duckdb"
+        pipeline_name = "test_gh222_no_legacy_warning"
+        try:
+            source_config = SourceConfig(
+                type="filesystem",
+                schema="raw_test",
+                config={"path": str(input_dir), "file_glob": "widgets.csv"},
+            )
+            run_source(pipeline_name, source_config, raw_db_path=raw_db_path)
+
+            out = capsys.readouterr().out.lower()
+            assert "still exists from before" not in out
+        finally:
+            shutil.rmtree(Path.home() / ".dlt" / "pipelines" / pipeline_name, ignore_errors=True)
+
+
 # ---------------------------------------------------------------------------
 # dlt write_disposition contract — replace / append / merge
 # ---------------------------------------------------------------------------

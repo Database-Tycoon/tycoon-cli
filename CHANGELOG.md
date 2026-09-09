@@ -1,5 +1,14 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Filesystem sources sharing a schema no longer collide into one table** ([#222][], PR [#229][]). dlt's `read_csv()`/`read_parquet()` transformers always name their resource generically, so two filesystem sources pointed at different files but sharing a schema used to land in the same table. `run_source()` now renames the resource after the tycoon source's own name. Projects with data already in the old generic table (`read_csv`/`read_parquet`) get a one-time warning naming both the stale table and the new one — new rows land in the new table only, so a dbt model still selecting the old name needs updating by hand.
+
+[#222]: https://github.com/Database-Tycoon/tycoon-cli/issues/222
+[#229]: https://github.com/Database-Tycoon/tycoon-cli/pull/229
+
 ## [0.2.0] - 2026-08-28
 
 _Headline: **pipeline city**. The catalog becomes a place — `tycoon city` (PR [#205][]) serves your warehouse as an interactive 3D city, with schemas as districts, tables as buildings, and lineage as roads. The renderer ships inside the wheel, so there is nothing extra to install, and it costs nothing until you run the command._
