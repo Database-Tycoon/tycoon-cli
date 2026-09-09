@@ -150,24 +150,61 @@ def _build_sql_database_source(source_config: SourceConfig) -> Any:
     return sql_database(connection_string)
 
 
-def _build_filesystem_source(source_config: SourceConfig) -> Any:
-    """Build a dlt source for filesystem (local, S3, GCS).
+def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str) -> Any:
+    """Build one named dlt resource for a single (bucket_url, file_glob) pair.
 
     For CSV and Parquet globs the raw file metadata stream is piped through
     the appropriate dlt transformer so that parsed rows are loaded into
-    DuckDB rather than file-level metadata.  Any other glob pattern falls
-    back to the raw filesystem source.
+    DuckDB rather than file-level metadata. Any other glob pattern falls
+    back to the raw filesystem resource.
 
-    All piped resources land with ``write_disposition="replace"`` so a
-    second `tycoon data sources run` rewrites the raw table rather than
-    appending. Matches the convention used by every other tycoon-shipped
-    pipeline (nyc_dot, mta, mta_bus_speeds). Issue #22.
+    The resource is renamed to ``table_name`` before being returned: dlt's
+    read_csv()/read_parquet() transformers otherwise always name their
+    resource "read_csv"/"read_parquet" regardless of input, which collides
+    when more than one resource lands in the same schema. Issue #222.
+
+    Lands with ``write_disposition="replace"`` so a second
+    `tycoon data sources run` rewrites the raw table rather than appending.
+    Matches the convention used by every other tycoon-shipped pipeline
+    (nyc_dot, mta, mta_bus_speeds). Issue #22.
     """
     from dlt.sources.filesystem import filesystem, read_csv, read_parquet
+
+    files = filesystem(bucket_url=bucket_url, file_glob=file_glob)
+
+    glob_lower = file_glob.lower()
+    if glob_lower.endswith(".csv") or glob_lower.endswith("*.csv"):
+        piped = files | read_csv()
+    elif glob_lower.endswith(".parquet") or glob_lower.endswith("*.parquet"):
+        piped = files | read_parquet()
+    else:
+        piped = files
+
+    piped.apply_hints(write_disposition="replace")
+    return piped.with_name(table_name)
+
+
+def _build_filesystem_source(source_config: SourceConfig) -> Any:
+    """Build a dlt source for filesystem (local, S3, GCS).
+
+    If ``source_config.resources`` is set (gh-224's multi-resource shape),
+    builds one named resource per entry and returns them as a list — dlt's
+    ``pipeline.run()`` accepts a list of resources directly, the same shape
+    dlt's own ``readers()`` source uses to bundle multiple resources.
+
+    Otherwise falls back to the older flat ``config.path``/``config.file_glob``
+    shape: a single resource, not yet renamed (the caller renames it after
+    the tycoon source's own name, since the flat shape has no per-resource
+    table name to use instead).
+    """
+    if source_config.resources:
+        return [_build_filesystem_resource(r.path, r.file_glob, r.table_name) for r in source_config.resources]
 
     cfg = source_config.config
     bucket_url = cfg.get("bucket_url", cfg.get("path", "."))
     file_glob = cfg.get("file_glob", "**/*")
+
+    from dlt.sources.filesystem import filesystem, read_csv, read_parquet
 
     files = filesystem(bucket_url=bucket_url, file_glob=file_glob)
 
@@ -411,6 +448,11 @@ def run_source(
                 # their resource "read_csv"/"read_parquet", so two filesystem
                 # sources sharing a schema collide into the same table unless
                 # renamed after the tycoon source itself. Issue #222.
+                #
+                # Multi-resource sources (gh-224) come back as a list of
+                # resources already named after their own table_name; only
+                # the older single-resource shape still needs renaming here.
+                # See _build_filesystem_source and _build_filesystem_resource.
                 dlt_source = dlt_source.with_name(name)
 
         load_info = pipeline.run(dlt_source)
