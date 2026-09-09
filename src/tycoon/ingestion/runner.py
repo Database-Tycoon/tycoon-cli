@@ -28,7 +28,10 @@ def _check_unexpanded_env_vars(source_config: SourceConfig) -> list[tuple[str, s
     """Return (key, unexpanded_var) pairs for config values still containing ``${VAR}``.
 
     Both pieces are returned so callers don't need to re-run the regex
-    (which loses the typed-Match → str narrowing).
+    (which loses the typed-Match → str narrowing). Scans both the flat
+    ``config`` dict and each entry of the gh-224 multi-resource ``resources``
+    list, since a resource's own path/file_glob carries the same
+    machine-specific values the flat shape does.
     """
     out: list[tuple[str, str]] = []
     for key, value in source_config.config.items():
@@ -36,6 +39,12 @@ def _check_unexpanded_env_vars(source_config: SourceConfig) -> list[tuple[str, s
             match = _UNEXPANDED_ENV_VAR.search(value)
             if match is not None:
                 out.append((key, match.group()))
+    for i, resource in enumerate(source_config.resources or []):
+        for field in ("path", "file_glob"):
+            value = getattr(resource, field)
+            match = _UNEXPANDED_ENV_VAR.search(value)
+            if match is not None:
+                out.append((f"resources[{i}].{field}", match.group()))
     return out
 
 
@@ -357,6 +366,19 @@ def run_source(
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
             _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
             return pipeline, load_info
+
+        # Warn about unexpanded env vars before building the source. Native
+        # builders (filesystem, sql_database, rest_api) skip the catalog
+        # path entirely, so this can't rely on _run_catalog's check.
+        bad_pairs = _check_unexpanded_env_vars(source_config)
+        if bad_pairs:
+            from tycoon.utils.console import warn
+
+            for key, var in bad_pairs:
+                warn(
+                    f"Config key '{key}' contains an unexpanded env var: {var}\n"
+                    f"  Set it with: export {var[2:-1]}=<your-value>"
+                )
 
         # Generic pipeline
         pipeline = dlt.pipeline(
