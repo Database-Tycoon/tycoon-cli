@@ -174,15 +174,18 @@ def _warn_if_local_glob_matches_nothing(bucket_url: str, file_glob: str, label: 
 def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str) -> Any:
     """Build one named dlt resource for a single (bucket_url, file_glob) pair.
 
-    For CSV and Parquet globs the raw file metadata stream is piped through
-    the appropriate dlt transformer so that parsed rows are loaded into
-    DuckDB rather than file-level metadata. Any other glob pattern falls
-    back to the raw filesystem resource.
+    For CSV, Parquet, and JSONL globs the raw file metadata stream is piped
+    through the appropriate dlt transformer so that parsed rows are loaded
+    into DuckDB rather than file-level metadata. Any other glob pattern
+    falls back to the raw filesystem resource (file listings, not parsed
+    rows) with a warning, since that's rarely what's actually wanted for a
+    tycoon filesystem source. Issue #228.
 
     The resource is renamed to ``table_name`` before being returned: dlt's
-    read_csv()/read_parquet() transformers otherwise always name their
-    resource "read_csv"/"read_parquet" regardless of input, which collides
-    when more than one resource lands in the same schema. Issue #222.
+    read_csv()/read_parquet()/read_jsonl() transformers otherwise always
+    name their resource "read_csv"/"read_parquet"/"read_jsonl" regardless
+    of input, which collides when more than one resource lands in the same
+    schema. Issue #222.
 
     Lands with ``write_disposition="replace"`` so a second
     `tycoon data sources run` rewrites the raw table rather than appending.
@@ -200,7 +203,7 @@ def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str)
 
     _warn_if_local_glob_matches_nothing(bucket_url, file_glob, table_name)
 
-    from dlt.sources.filesystem import filesystem, read_csv, read_parquet
+    from dlt.sources.filesystem import filesystem, read_csv, read_jsonl, read_parquet
 
     files = filesystem(bucket_url=bucket_url, file_glob=file_glob)
 
@@ -209,7 +212,16 @@ def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str)
         piped = files | read_csv()
     elif glob_lower.endswith(".parquet") or glob_lower.endswith("*.parquet"):
         piped = files | read_parquet()
+    elif glob_lower.endswith(".jsonl") or glob_lower.endswith("*.jsonl"):
+        piped = files | read_jsonl()
     else:
+        from tycoon.utils.console import warn
+
+        warn(
+            f"'{table_name}': file_glob {file_glob!r} isn't a recognized format "
+            "(.csv, .parquet, .jsonl) for row-level parsing. Falling back to raw "
+            "file metadata (path, size, modification time), not parsed rows."
+        )
         piped = files
 
     piped.apply_hints(write_disposition="replace")

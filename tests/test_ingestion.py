@@ -188,13 +188,28 @@ class TestBuildFilesystemSource:
         assert result is not None
         assert result.is_transformer is True
 
-    def test_unknown_glob_returns_raw_filesystem_source(self):
-        """An unrecognised glob should fall back to the raw filesystem resource."""
+    def test_jsonl_glob_returns_dlt_source(self):
+        """JSONL glob should pipe through read_jsonl, producing a transformer resource."""
+        from tycoon.ingestion.runner import _build_filesystem_source
+
+        source_config = self._make_source_config("*.jsonl")
+        result = _build_filesystem_source(source_config)
+        assert result is not None
+        assert result.is_transformer is True
+
+    def test_unknown_glob_returns_raw_filesystem_source(self, capsys):
+        """An unrecognised glob should fall back to the raw filesystem
+        resource, with a warning that it isn't parsed into rows (gh-228).
+        Plain `.json` (not `.jsonl`) is deliberately still unrecognized:
+        a single JSON document isn't the newline-delimited shape
+        read_jsonl() expects.
+        """
         from tycoon.ingestion.runner import _build_filesystem_source
 
         source_config = self._make_source_config("**/*.json")
         result = _build_filesystem_source(source_config)
         assert result is not None
+        assert "isn't a recognized format" in capsys.readouterr().out.lower()
         # Raw filesystem source is not a transformer
         assert result.is_transformer is False
 
