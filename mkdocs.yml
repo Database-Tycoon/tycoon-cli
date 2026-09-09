@@ -144,3 +144,7 @@ not_in_nav: |
   /proposals/v0.1.6-and-v0.1.7-open-questions.md
   /proposals/v0.1.8-scope.md
   /proposals/v0.1.9-scope.md
+  /process/index.md
+  /process/ci-cd-workflows.md
+  /process/qa-test-plan.md
+  /process/metrics.md
