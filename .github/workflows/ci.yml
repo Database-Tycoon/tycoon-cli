@@ -51,7 +51,7 @@ jobs:
         # ([tool.coverage.report].fail_under). Pinned at 60% for v0.1.2
         # (baseline ~65%, ~5% drift headroom); raise over time as
         # coverage improves. CI fails if coverage drops below the floor.
-        run: uv run pytest -q --cov=src/tycoon --cov-report=term --cov-report=xml
+        run: uv run pytest -q --cov=src/tycoon --cov=src/tycoon_city --cov-report=term --cov-report=xml
 
       - name: Upload coverage report
         if: matrix.python-version == '3.12'
@@ -148,6 +148,66 @@ jobs:
         run: |
           /tmp/wheel-smoke/bin/tycoon --version
           /tmp/wheel-smoke/bin/tycoon -h | head -20
+
+  web:
+    # Gates the renderer that ships inside the wheel. Four things, in
+    # dependency order: typecheck (`vite build` strips types without
+    # checking them, so tsc is the only type gate), the production build,
+    # bundle freshness (the committed src/tycoon_city/web_dist must be
+    # exactly the build of web/ source — a stale bundle ships a UI nobody
+    # reviewed), and the Playwright e2e suite against a real
+    # tycoon-city-export of the demo fixture. Uses the runner's
+    # preinstalled Node and Google Chrome (playwright.config.ts pins
+    # channel: "chrome"), so no browser download.
+    name: web (tsc + build + e2e)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Sync project
+        # tycoon-city-export generates the e2e suite's demo data, and
+        # sync_web_bundle.py runs under the project venv.
+        run: uv sync
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: web
+        run: npx tsc --noEmit
+
+      - name: Build web bundle
+        working-directory: web
+        run: npm run build
+
+      - name: Bundle freshness (web_dist matches web/ source)
+        run: |
+          uv run python scripts/sync_web_bundle.py
+          git diff --exit-code -- src/tycoon_city/web_dist \
+            || { echo "::error::src/tycoon_city/web_dist is stale — run 'npm run build' in web/ then scripts/sync_web_bundle.py and commit"; exit 1; }
+
+      - name: Generate e2e demo data
+        working-directory: web
+        run: npm run demo-data
+
+      - name: Playwright e2e
+        working-directory: web
+        run: npx playwright test
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: web/test-results/
+          if-no-files-found: ignore
 
   docs:
     # Builds the MkDocs site in --strict mode so broken internal links,

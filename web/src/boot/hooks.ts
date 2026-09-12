@@ -127,8 +127,11 @@ export interface HookDeps {
   flow: FlowOverlay;
   weather: Weather;
   usage: UsageOverlay;
-  /** The simulated layer stays behind the composition root; only its count
-   * crosses into the hooks. */
+  /** Both counters answer from the DRAWN InstancedMesh (`mesh.count`), never
+   * the simulation array. The sim ticking while the layer never draws is
+   * exactly the regression these hooks exist to catch — a sim-array count
+   * reads > 0 over an empty screen and hides it. */
+  vehicleCount: () => number;
   guestCount: () => number;
   selectedKey: () => string | null;
   select: (key: string | null) => void;
@@ -151,7 +154,7 @@ export function installHooks(deps: HookDeps): TycoonCityHooks {
     sceneChildCount: () => scene.children.length,
     select: deps.select,
     selectedKey: deps.selectedKey,
-    vehicleCount: () => deps.city().traffic.vehicles.length,
+    vehicleCount: deps.vehicleCount,
     guestCount: deps.guestCount,
     skybridgeCount: () => skybridges.count,
     flowTileCount: () => flow.count,

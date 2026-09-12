@@ -92,13 +92,7 @@ markers = [
     "recipe: marker for recipe doctest blocks parsed from README / docs/recipes (`tests/test_recipe_doctests.py`). `mode=offline` blocks run by default; `mode=online` blocks gate on `--run-online`.",
     "subprocess_e2e: subprocess-driven end-to-end tests that shell out to the installed `tycoon` binary (catches PATH / Rich rendering / packaging bugs that in-process tests can't see). Included in the default run.",
 ]
-# tests/tycoon_city is the renderer's suite, carried over intact from the
-# pipeline-city repo before that repo is deleted. It is not collected yet: its
-# paths are anchored with `Path(__file__).parents[N]` against the old repo root,
-# so nesting it one level deeper here shifts every one of them. Carrying it
-# un-run beats losing it. Wiring it up is tracked separately; until then CI
-# gates the CLI, not the renderer.
-addopts = "-m 'not e2e' --ignore=tests/tycoon_city"
+addopts = "-m 'not e2e'"
 
 [tool.ruff]
 line-length = 120
@@ -116,16 +110,16 @@ target-version = "py312"
 "tests/test_ingestion.py" = ["F821"]
 
 [tool.coverage.run]
-source = ["src/tycoon"]
+source = ["src/tycoon", "src/tycoon_city"]
 branch = false
 
 [tool.coverage.report]
-# Floor re-baselined after dropping server/dagster/ask extras (v0.1.10).
-# Removing that largely-untested code lifted the real ratio from ~65%
-# to ~73%. Floor sits 5 points under baseline for routine-drift
-# headroom (same margin as the old 65/60 split); raise it 1-2 points
-# per release alongside genuine test additions.
-fail_under = 68
+# Floor re-baselined for v0.2.0 when tests/tycoon_city (563 tests) and the
+# src/tycoon_city package joined the gated run: combined baseline is ~78%.
+# Floor sits 5 points under baseline for routine-drift headroom (same
+# margin as previous cycles); raise it 1-2 points per release alongside
+# genuine test additions.
+fail_under = 73
 show_missing = true
 skip_covered = false
 exclude_lines = [
