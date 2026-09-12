@@ -8,7 +8,7 @@
  * TWO RULES MATTER MORE THAN THE COPY (see tour.ts for the full explanation).
  */
 
-import type { CityDocument } from "../contract";
+import { milestoneOf, type CityDocument } from "../contract";
 import type { Lens, OverlayId } from "./lenses";
 import { DRIFT_RECENT_S } from "./health";
 import { PLANT_KEY } from "../scene/plant";
@@ -167,6 +167,16 @@ export const TOUR_STOPS: readonly import("./tour").TourStop[] = [
     title: "The library is your context",
     requires: (doc) => doc.library !== null && doc.objects.length > 0,
     body: (doc) => {
+      // Same rule as the library panel: shelves the manifest never reached
+      // are unknown, not empty — 0/N here would narrate an invented failure.
+      const m = milestoneOf(doc, "documented_buildings");
+      if (m !== null && m.state === "unknown") {
+        return (
+          `Every shelf is a count of real documentation, and these shelves are ` +
+          `unknown rather than empty: ${m.note}. Join a dbt manifest and the ` +
+          `counts appear — they are artifacts, never points.`
+        );
+      }
       const cols = doc.objects.flatMap((o) => o.columns);
       const documented = cols.filter((c) => c.description !== null).length;
       const tested = doc.objects.filter((o) => (o.dbt?.tests.length ?? 0) > 0).length;

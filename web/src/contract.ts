@@ -269,6 +269,36 @@ const weather = z.object({
   note: z.string(),
 });
 
+/**
+ * Named coverage milestones (2026-08-06, additive): counts of real declared
+ * artifacts, never invented points, and STATELESS — true right now, derived
+ * from this document alone.
+ *
+ * `state` is a plain string (`met` / `unmet` / `unknown`) for the same
+ * forward-compat reason `weather.condition` is. The unknown state is the load-
+ * bearing one: `met`, `have`, `need` are all null there, because a catalog
+ * whose manifest was never read has UNKNOWN coverage, not 0% — a client that
+ * recomputes these fractions from raw fields invents a failure out of an
+ * absence. Key gauges off `id`, never off `name`.
+ */
+const milestone = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  state: z.string(),
+  met: z.boolean().nullable(),
+  have: z.number().int().nullable(),
+  need: z.number().int().nullable(),
+  // The object keys that fall short — the HUD's fly-to list. [] when met or unknown.
+  short: z.array(z.string()),
+  note: z.string(),
+});
+
+const achievements = z.object({
+  milestones: z.array(milestone),
+  note: z.string(),
+});
+
 const replay = z.object({
   span_ticks: z.number().int().positive(),
   note: z.string(), // "durations measured, ordering reconstructed" — display it
@@ -320,6 +350,11 @@ export const citySchema = z.object({
   budget: budget.nullable().optional().default(null),
   weather: weather.nullable().optional().default(null),
   street_features: z.array(streetFeature).optional().default([]),
+  // Coverage milestones (2026-08-06). Optional with the empty block as its
+  // default, per the contract page: documents written before the block keep
+  // validating, and an empty `milestones` tells a consumer to fall back to
+  // whatever it can derive itself rather than claim an unknown it wasn't told.
+  achievements: achievements.optional().default({ milestones: [], note: "" }),
   // Civic buildings (2026-08-05, additive): the public library (context /
   // documentation inventory) and the firehouse (fire-response dispatch).
   library: z.object({ x: z.number().int(), y: z.number().int() }).nullable(),
@@ -347,6 +382,8 @@ export type UsageRecord = z.infer<typeof usage>;
 export type BudgetRecord = z.infer<typeof budget>;
 export type WeatherRecord = z.infer<typeof weather>;
 export type WeatherCellRecord = z.infer<typeof weatherCell>;
+export type MilestoneRecord = z.infer<typeof milestone>;
+export type AchievementsRecord = z.infer<typeof achievements>;
 export type JoinRecord = z.infer<typeof join>;
 export type SemanticRecord = z.infer<typeof semantic>;
 export type ColumnRecord = ObjectRecord["columns"][number];
@@ -371,6 +408,13 @@ export type RequestRecord = z.infer<typeof requestSchema>;
  * noise; with one, a null `semantic` means "the semantic model does not
  * mention this object", which is a finding and stays named.
  */
+/** The coverage milestone for a gauge id, or null for a document that
+ * predates the achievements block (the empty default): the caller falls back
+ * to its own derivation rather than claim an unknown it was never told. */
+export function milestoneOf(doc: CityDocument, id: string): MilestoneRecord | null {
+  return doc.achievements.milestones.find((m) => m.id === id) ?? null;
+}
+
 export function hasSemanticModel(doc: CityDocument): boolean {
   return doc.joins.length > 0 || doc.objects.some((o) => o.semantic !== null);
 }
