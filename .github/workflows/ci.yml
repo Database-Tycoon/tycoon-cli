@@ -51,7 +51,7 @@ jobs:
         # ([tool.coverage.report].fail_under). Pinned at 60% for v0.1.2
         # (baseline ~65%, ~5% drift headroom); raise over time as
         # coverage improves. CI fails if coverage drops below the floor.
-        run: uv run pytest -q --cov=src/tycoon --cov-report=term --cov-report=xml
+        run: uv run pytest -q --cov=src/tycoon --cov=src/tycoon_city --cov-report=term --cov-report=xml
 
       - name: Upload coverage report
         if: matrix.python-version == '3.12'
