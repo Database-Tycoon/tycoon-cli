@@ -33,8 +33,8 @@ from tycoon_city.sim.generator import generate_city
 from tycoon_city.sim.tiles import TileKind
 from tycoon_city.theme_data import load_theme_data, theme_dir
 
-REPO = Path(__file__).resolve().parents[2]
-DEMO_DB = REPO / "demo.duckdb"
+REPO = Path(__file__).resolve().parents[3]
+DEMO_DB = REPO / "contract" / "fixtures" / "demo.duckdb"
 GOLDEN = REPO / "contract" / "fixtures" / "demo.city.json"
 
 
@@ -336,21 +336,19 @@ def _inside(box: dict, lot: dict) -> bool:
 
 
 @pytest.mark.parametrize("name", CATALOG_IDS)
-def test_districts_bound_connected_lots_and_exclude_a_mixed_schemas_orphans(name, theme):
-    """A plate is the schema's WORKING NEIGHBOURHOOD, not a bounding box over
-    everything the schema owns.
+def test_districts_house_every_lot_of_their_schema(name, theme):
+    """A plate is the schema's ZONED NEIGHBOURHOOD, and zoning houses every
+    member — orphans included.
 
-    `docs/city-json-v1.md` and
-    `tests/sim/test_layout_plan.py::test_districts_bound_their_connected_lots_and_exclude_suburb_orphans`
-    both say the same thing: a schema that has connected lots leaves its
-    suburb orphans OUT of its plate, or one stray table stretches the rect
-    across the map and washes every band into a blur. Only an all-orphan
-    schema wraps its orphans.
-
-    Until 2026-08-06 this asserted the opposite — every lot inside its
-    schema's plate — and passed, because no fixture mixed the two kinds in one
-    schema. `mixed_schema` is that fixture; see the precondition test below,
-    which is what stops it degrading back into an assertion that cannot fail.
+    Until the ring planner (2026-08-14) a plate was the bounding box of the
+    schema's CONNECTED lots, and suburb orphans were excluded so one stray
+    table could not stretch the rect across the map. Ring placement removed
+    the suburb: `schema_precincts` allots land per schema up front and every
+    member gets a slot inside it, so the plate is precinct geometry, not a
+    box over scattered lots — the stretched-plate failure mode is impossible
+    by construction. The contract flips back to the pre-2026-08-06 reading,
+    this time non-vacuously: `mixed_schema` (see the precondition test below)
+    proves an orphan sharing a schema with connected lots stays IN the plate.
     """
     ctx = CATALOGS[name]
     document = _document_for(ctx, theme)
@@ -358,40 +356,22 @@ def test_districts_bound_connected_lots_and_exclude_a_mixed_schemas_orphans(name
     boxes = {d["schema"]: d for d in document["districts"]}
     assert set(boxes) == {obj.schema for obj in ctx.objects}
 
-    connected = _connected_keys(document)
     schema_of = {lot["object_key"]: lot["object_key"].rsplit(".", 1)[0] for lot in document["lots"]}
-    members: dict[str, list[str]] = {}
-    for key, schema in schema_of.items():
-        members.setdefault(schema, []).append(key)
-    # A schema is "mixed" when it owns at least one of each kind; only those
-    # schemas exclude anything.
-    mixed = {
-        schema
-        for schema, keys in members.items()
-        if any(k in connected for k in keys) and any(k not in connected for k in keys)
-    }
-
     for lot in document["lots"]:
         key = lot["object_key"]
         box = boxes[schema_of[key]]
-        if key in connected:
-            assert _inside(box, lot), f"{key} is connected and must sit in its plate: {box}"
-        elif schema_of[key] in mixed:
-            # The exclusion, asserted rather than merely exempted: an orphan
-            # that crept back inside means the plate stretched to the suburb.
-            assert not _inside(box, lot), f"{key} is a suburb orphan inside a mixed plate: {box}"
-        else:
-            assert _inside(box, lot), f"{key}'s schema is all-orphan and keeps its plate: {box}"
+        assert _inside(box, lot), f"{key} must sit in its schema's plate: {box}"
 
 
 def test_the_mixed_schema_fixture_actually_mixes(theme):
     """The precondition the test above needs and cannot check per-catalog.
 
-    `mixed_schema` exists for exactly one reason: to put a connected lot and a
-    suburb orphan in ONE schema, so the exclusion branch runs at all. Assert
-    the arrangement here, on the emitted document, so an edit that reconnects
-    `raw.stray` or moves it to its own schema fails loudly instead of turning
-    the exclusion branch off in silence.
+    `mixed_schema` exists for exactly one reason: to put a connected lot and
+    an orphan in ONE schema, so the housing rule above is proven on the hard
+    case rather than passing vacuously. Assert the arrangement here, on the
+    emitted document, so an edit that reconnects `raw.stray` or moves it to
+    its own schema fails loudly instead of degrading the test above in
+    silence.
     """
     document = _document_for(CATALOGS["mixed_schema"], theme)
     connected = _connected_keys(document)
@@ -402,17 +382,17 @@ def test_the_mixed_schema_fixture_actually_mixes(theme):
 
     raw = [k for k in keys if k.startswith("raw.")]
     assert {k for k in raw if k in connected} and {k for k in raw if k not in connected}, (
-        "`raw` must own both a connected lot and a suburb orphan"
+        "`raw` must own both a connected lot and an orphan"
     )
     scratch = [k for k in keys if k.startswith("scratch.")]
     assert all(k not in connected for k in scratch), "`scratch` must stay all-orphan"
 
-    # And the exclusion is real on this document: raw's plate stops north of
-    # the suburb row its stray sits on.
+    # And the housing is real on this document: the orphan shares raw's plate
+    # with the connected lot (ring zoning has no suburb to exile it to).
     boxes = {d["schema"]: d for d in document["districts"]}
     lots = {lot["object_key"]: lot for lot in document["lots"]}
     assert _inside(boxes["raw"], lots["raw.a"])
-    assert lots["raw.stray"]["y"] >= boxes["raw"]["y"] + boxes["raw"]["h"]
+    assert _inside(boxes["raw"], lots["raw.stray"])
     assert _inside(boxes["scratch"], lots["scratch.x"])
 
 
@@ -568,16 +548,20 @@ def test_street_features_dress_the_ends_of_a_real_street(theme):
         # buildings the tile grid does not paint).
         assert faced in (TileKind.LOT, TileKind.GRASS), f"{f} faces {faced.name}"
 
-    assert _document_for(CATALOGS["at_cap_wide"], theme)["street_features"] == [], (
-        "no lineage, no street, nothing to dress"
-    )
+    # A lineage-free catalog still wires its firehouse (the access road is a
+    # street too), so its ONLY ending is the civic plaza at the station door.
+    bare = _document_for(CATALOGS["at_cap_wide"], theme)["street_features"]
+    assert [f["kind"] for f in bare] == ["plaza"], "no lineage: only the civic ending remains"
 
 
 def test_a_big_lots_plaza_ships_its_frontage_geometry(theme):
     """`w`/`h` are how the renderer sizes a forecourt, so they are pinned on the
     emitted bytes for the one shape that produces a pad bigger than a tile: a
-    2x2 building's west frontage, two tiles TALL (h=2, w=1 — not the other way
-    round), both of them paved in the decoded grid."""
+    2x2 building's side frontage, two tiles TALL (h=2, w=1 — not the other way
+    round), both of them paved in the decoded grid. Which side carries the door
+    is the planner's call (v4 always doored west; the ring planner points doors
+    at the kerb it zoned), so the pad may flank either side — but it must hug
+    the hub's full height and face it."""
     ctx = CATALOGS["big_plaza"]
     document = _document_for(ctx, theme)
     grid = decode_rle(document["grid"]["tiles_rle"], document["grid"]["width"], document["grid"]["height"])
@@ -587,8 +571,10 @@ def test_a_big_lots_plaza_ships_its_frontage_geometry(theme):
     pads = [f for f in document["street_features"] if f["w"] > 1 or f["h"] > 1]
     assert len(pads) == 1, document["street_features"]
     pad = pads[0]
-    assert (pad["kind"], pad["w"], pad["h"], pad["facing"]) == ("plaza", 1, 2, "e"), pad
-    assert (pad["x"], pad["y"]) == (hub["x"] - 1, hub["y"]), pad
+    assert (pad["kind"], pad["w"], pad["h"]) == ("plaza", 1, 2), pad
+    assert pad["facing"] in ("e", "w"), pad
+    flank_x = hub["x"] - 1 if pad["facing"] == "e" else hub["x"] + hub["w"]
+    assert (pad["x"], pad["y"]) == (flank_x, hub["y"]), pad
     for dy in range(pad["h"]):
         assert grid[pad["y"] + dy][pad["x"]] is TileKind.ROAD, f"forecourt row {dy} unpaved"
 
