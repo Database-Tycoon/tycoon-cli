@@ -115,8 +115,16 @@ def compute_depths(ctx: PipelineContext) -> dict[str, int]:
     at 0 rather than being pushed past the rest of the graph, and a chain
     hanging below a cycle steps up hop by hop from there.
     """
-    keys = sorted(obj.key for obj in ctx.objects)
-    edges = _known_edges(ctx)
+    return longest_chain_depths(sorted(obj.key for obj in ctx.objects), _known_edges(ctx))
+
+
+def longest_chain_depths(keys: list[str], edges: list[tuple[str, str]]) -> dict[str, int]:
+    """`compute_depths` over any node/edge set, not just a catalog's objects.
+
+    The town planner ranks whole SCHEMAS with the same longest-chain rule the
+    objects use (cross-schema edges in, ring index out), so the cycle
+    condensation and the Kahn pass live here once rather than twice.
+    """
     successors = _successor_map(keys, edges)
 
     components = _components(keys, successors)
@@ -178,38 +186,31 @@ def isolated_keys(ctx: PipelineContext) -> set[str]:
 
 
 # The DAG planner grew past the 500-line rule and moved to its own module;
-# these re-exports keep every existing import (`tycoon_city.sim.layout`) valid.
-from .town_plan import (  # noqa: E402
-    BAND_GAP,
-    GRID_MIN,
-    H_LANE_CAP,
-    LANE_CAP,
-    MARGIN,
-    NEIGHBOUR_PITCH,
-    ROW_PITCH,
-    SUBURB_PER_ROW,
-    TRACK_PITCH,
-    DagPlan,
-    DistrictPlan,
-    StreetFeature,
-    plan_dag_layout,
-)
+# these re-exports keep every existing import (`tycoon_city.sim.layout`)
+# valid. Lazy (PEP 562) because `town_plan` imports this module's helpers at
+# ITS top — an eager import here would read town_plan mid-initialization
+# whenever town_plan is imported first.
+_PLAN_EXPORTS = frozenset({"MARGIN", "DagPlan", "DistrictPlan", "StreetFeature", "plan_dag_layout"})
 
+
+def __getattr__(name: str):
+    if name in _PLAN_EXPORTS:
+        from . import town_plan
+
+        return getattr(town_plan, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# The F822 suppressions are the lazy re-export above: these five names are
+# served by module __getattr__, so ruff cannot see them statically.
 __all__ = [
-    "BAND_GAP",
-    "GRID_MIN",
-    "H_LANE_CAP",
-    "LANE_CAP",
-    "MARGIN",
-    "NEIGHBOUR_PITCH",
-    "ROW_PITCH",
-    "SUBURB_PER_ROW",
-    "TRACK_PITCH",
-    "DagPlan",
-    "DistrictPlan",
-    "StreetFeature",
+    "MARGIN",  # noqa: F822
+    "DagPlan",  # noqa: F822
+    "DistrictPlan",  # noqa: F822
+    "StreetFeature",  # noqa: F822
     "compute_depths",
     "has_known_edges",
     "isolated_keys",
-    "plan_dag_layout",
+    "longest_chain_depths",
+    "plan_dag_layout",  # noqa: F822
 ]
