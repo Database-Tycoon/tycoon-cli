@@ -1,4 +1,4 @@
-"""Rewrite contract/fixtures/demo.city.json from demo.duckdb.
+"""Rewrite contract/fixtures/demo.city.json from contract/fixtures/demo.duckdb.
 
 Run this whenever a deliberate contract change makes
 `tests/export/test_city_json.py::test_golden_matches_a_fresh_emit` fail, and
@@ -22,7 +22,7 @@ GOLDEN = REPO / "contract" / "fixtures" / "demo.city.json"
 
 def main() -> int:
     theme = load_theme_data(theme_dir("default"))
-    ctx, city = build_city(REPO / "demo.duckdb", theme.style_rules)
+    ctx, city = build_city(GOLDEN.parent / "demo.duckdb", theme.style_rules)
     text = dumps(city_document(ctx, city, theme))
 
     previous = GOLDEN.read_text(encoding="utf-8") if GOLDEN.exists() else None
