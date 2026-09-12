@@ -8,12 +8,12 @@ updated: '2026-09-12'
 
 # Log
 
-- 2026-09-12 — **The ring planner, documented where the contract lives.**
+- 2026-09-12: **The ring planner, documented where the contract lives.**
   `schema_precincts` (2026-08-14, Stephen inverting his 2026-08-10 order)
   lays schema precincts out in rings by the schema's LONGEST-CHAIN depth over
   the cross-schema edge graph, inverted: gold and mart neighbourhoods
   downtown against the civic core, int in the middle ring, sources on the
-  periphery. Mean depth could not express the directive — on dogfood it
+  periphery. Mean depth could not express the directive; on dogfood it
   landed `mart` and `int` in one band. Within a ring the kerb nearest
   downtown goes to the schema feeding the most distinct schemas, then the
   larger, then by name. Ring zoning removed the orphan suburb, so a
@@ -27,16 +27,16 @@ updated: '2026-09-12'
   (`districts` row, the ring paragraph); the demo export was regenerated,
   which re-derived `streets.spec.ts`'s curb golden (56 − 8 + 6 = 54 →
   74 − 7 + 4 = 71) and moved its grazing-camera pose onto the new trunk
-  street — the old pose read 0 asphalt because it faced open grass, not
+  street. The old pose read 0 asphalt because it faced open grass, not
   because the skirt depth fight had returned.
 
-- 2026-08-22 — **Five ship blockers from the pre-release review, fixed
+- 2026-08-22: **Five ship blockers from the pre-release review, fixed
   test-first.** (1) The animation loop ticked the traffic and guest sims but
-  never called `VehicleLayer.update()` / `GuestLayer.update()` — the only
-  writers of the instance matrices — so both meshes drew nothing; the hooks
+  never called `VehicleLayer.update()` / `GuestLayer.update()`, the only
+  writers of the instance matrices, so both meshes drew nothing; the hooks
   counted the sim arrays and hid it, and now count the drawn mesh. (2) The
   footer status line, notes popover, and legend were painted once at boot;
-  `applyChrome()` now owns all document-derived chrome — the same stale-boot-doc
+  `applyChrome()` now owns all document-derived chrome, the same stale-boot-doc
   class as the 2026-08-09 tour fix, closed out. (3) The client's zod schema was
   a full block behind the producer: `achievements` was silently stripped, and
   the problems gauges / library panel / library tour stop recomputed coverage
@@ -47,7 +47,7 @@ updated: '2026-09-12'
   themselves: `tests/tycoon_city` re-enters the default pytest run (the
   path-anchoring rationale on the ignore was stale), coverage counts
   `src/tycoon_city`, and a new `web` CI job runs tsc, the build, a
-  bundle-freshness diff, and the Playwright suite — none of which ran in CI
+  bundle-freshness diff, and the Playwright suite, none of which ran in CI
   before.
 
 - 2026-08-09 — **Release candidate made honest, and the tour stopped reading a

@@ -43,7 +43,7 @@ test("every closed road edge gets a raised curb", async ({ page }) => {
   // decoded RLE: 37 road tiles). The two docks and the plaza re-pave tiles
   // carrying 7 of them, which lose their curb; each of the 4 aprons notches
   // its faced edge into two flanking stubs (+1 apiece). 74 - 7 + 4 = 71,
-  // derived independently — a drift here means the mask shared with
+  // derived independently: a drift here means the mask shared with
   // terrain.ts moved, or a feature stopped owning its curb. (The ring
   // planner of 2026-08-14 regenerated the export; before it the same
   // arithmetic read 56 - 8 + 6 = 54.)
@@ -72,7 +72,7 @@ test("the streets survive a grazing camera — the skirt must not swallow the gr
   // Eye height, standing on the trunk street (x = 18, y 9..19 in the demo
   // export), looking north almost along the ground: the 3D curbs made this
   // view worth taking, and it exposed a defect that had nothing to do with
-  // them — the grass skirt 0.02 below the grid won the depth fight at grazing
+  // them: the grass skirt 0.02 below the grid won the depth fight at grazing
   // incidence and the ENTIRE road network rendered as grass. The skirt now
   // writes no depth (terrain.ts). ~40k asphalt pixels here with that fix,
   // exactly 0 without it, so this assertion is the regression guard.

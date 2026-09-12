@@ -50,7 +50,7 @@ the document says nothing about the machine that produced it.
 | `plant` | object | `x`, `y` — the database itself, one tile |
 | `library` / `firehouse` | object \| null | Civic buildings on the utility strip (context inventory / fire-response dispatch); null on hand-built maps |
 | `focus` | object | `min_x`, `min_y`, `max_x`, `max_y` — inclusive tile bbox |
-| `districts` | array | One per schema: `schema`, `x`, `y`, `w`, `h` — the schema's ZONED precinct rect, housing every member lot, orphans included (ring planner, 2026-08-14: `schema_precincts` allots land per schema up front, so there is no suburb to exile an orphan to and a stray table can no longer stretch the rect — the 2026-08-05 "connected lots only" rule this replaced guarded against exactly that; rects are ground tint, may overlap) |
+| `districts` | array | One per schema: `schema`, `x`, `y`, `w`, `h`: the schema's ZONED precinct rect, housing every member lot, orphans included (ring planner, 2026-08-14: `schema_precincts` allots land per schema up front, so there is no suburb to exile an orphan to and a stray table can no longer stretch the rect; the 2026-08-05 "connected lots only" rule this replaced guarded against exactly that; rects are ground tint, may overlap) |
 | `street_features` | array | How each road is allowed to END (streets v4, 2026-08-05; additive): `kind` (`apron`/`dock`/`plaza`), `x`, `y`, `facing` (`n`/`s`/`e`/`w`, or null if a future kind faces nothing), `w`, `h` — see below |
 | `lots` | array | One per placed object: `object_key`, `x`, `y`, `w`, `h` (ground plan in tiles, NW-anchored — big tables, the top decile of the catalog's row counts, are 2×2; added 2026-08-05), `zone_style`, `target_density`, `powered`, `last_build_age_s`, `build_status`, `test_status`, `freshness_status` (dbt's sources.json SLA verdict), `schema_drift_age_s` |
 | `objects` | array | Catalog facts plus `dbt` (nullable: `description`, `materialized`, `tags`, `owner`, `tests[]` with per-test `status`, null = never run), plus `usage` (measured run appearances, nullable) and `semantic` (the declared OSI model, nullable) — see below |
@@ -193,8 +193,8 @@ say so rather than render a city where nothing is connected.
 
 An edge may run *inward*, from a higher ring to a lower one. Since the ring
 planner (2026-08-14) a district's ring is its schema's **longest-chain depth**
-over the cross-schema edge graph, inverted — gold and mart precincts downtown,
-sources on the periphery — so a schema mixing depths sits on one ring not all of
+over the cross-schema edge graph, inverted (gold and mart precincts downtown,
+sources on the periphery), so a schema mixing depths sits on one ring not all of
 its objects agree with. Within a ring, order is fan-out (distinct schemas fed)
 desc, then member count desc, then name. This is expected, not corrupt data.
 
