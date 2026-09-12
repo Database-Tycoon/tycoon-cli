@@ -13,7 +13,7 @@ one that would compile.
 import re
 from pathlib import Path
 
-WEB_SRC = Path(__file__).resolve().parents[1] / "web" / "src"
+WEB_SRC = Path(__file__).resolve().parents[2] / "web" / "src"
 
 # What the simulated layer may reach: derived facts (contract), the shared
 # deterministic primitives, and nothing else -- no scene, no ui, no three.js.

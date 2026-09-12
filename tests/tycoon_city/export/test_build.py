@@ -21,7 +21,7 @@ from tycoon_city.theme_data import load_theme_data, theme_dir
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
-DEMO_DB = Path(__file__).resolve().parents[2] / "demo.duckdb"
+DEMO_DB = Path(__file__).resolve().parents[3] / "contract" / "fixtures" / "demo.duckdb"
 
 
 @pytest.fixture
