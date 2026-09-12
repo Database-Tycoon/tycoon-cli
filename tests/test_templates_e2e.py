@@ -238,7 +238,7 @@ def test_csv_import_rerun_idempotent(cli_runner, tmp_path, monkeypatch):
     raw_db = project / "data" / "files_raw.duckdb"
     con = duckdb.connect(str(raw_db), read_only=True)
     try:
-        rows = con.execute('SELECT count(*) FROM raw_files."_read_csv"').fetchone()
+        rows = con.execute('SELECT count(*) FROM raw_files."files"').fetchone()
         assert rows is not None and rows[0] == 5, (
             f"raw row count drifted across reruns; got {rows[0]} (default write_disposition should be `replace`)"
         )
@@ -276,8 +276,8 @@ def test_csv_import_transform_ingest_transform(cli_runner, tmp_path, monkeypatch
 
     First transform runs against an empty raw table (0 rows). Second
     transform runs after the ingest and should produce the seeded
-    aggregates. The first pass is allowed to non-zero exit because
-    `_read_csv` may not yet exist; we only assert the *final* state.
+    aggregates. The first pass is allowed to non-zero exit because the
+    `files` table may not yet exist; we only assert the *final* state.
     """
     project = tmp_path / "csv-import-tit"
     project.mkdir()

@@ -1,5 +1,67 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-09-12
+
+_Headline: **multi-resource filesystem sources + validated config**. A filesystem source can now declare several named resources and load them all in a single run, `sources add` walks you through them interactively, and JSONL joins CSV and Parquet. Config that used to be quietly defaulted is validated instead — the one change here that can break an existing project._
+
+### Added
+
+- **Multiple named resources per filesystem source** ([#224][], [#225][], PRs [#230][], [#231][]). A filesystem source can declare a `resources:` list, each entry with its own `table_name`, `path` and `file_glob`, and one `tycoon data sources run` loads them all in a single dlt pipeline run — each landing in its own table.
+
+  ```yaml
+  sources:
+    arcade:
+      type: filesystem
+      schema: raw_arcade
+      resources:
+        - table_name: arcade_games
+          path: data/input
+          file_glob: games.csv
+        - table_name: arcade_players
+          path: data/input
+          file_glob: players.csv
+  ```
+
+  The older flat `path`/`file_glob` shape keeps working unchanged.
+- **`tycoon sources add` prompts for resources** ([#226][], PR [#232][]). Adding a filesystem source now loops through resource entries interactively instead of accepting a single path. A table name that isn't a valid identifier, or that duplicates one already entered, is rejected with the reason and re-prompted rather than written out and failing later at load time.
+- **JSONL files are parsed into rows** ([#228][], PR [#235][]). A `*.jsonl` glob pipes through dlt's `read_jsonl()`, alongside the existing CSV and Parquet support. Plain `.json` is deliberately not included — a single JSON document isn't the newline-delimited shape `read_jsonl()` reads.
+- **A glob that matches no local files says so** ([#223][], PR [#234][]). Previously a typo'd glob and a source with genuinely nothing to load were indistinguishable: both loaded zero rows silently. Remote buckets (`s3://`, `gs://`, `az://`) are skipped rather than guessed at.
+
+### Changed
+
+- **Breaking: a filesystem source must declare `path` or `bucket_url`** ([#223][], PR [#234][]). Both missing used to fall back to `"."`, silently scanning the working directory; it now fails with an error naming the source. If a project relied on that default, add the path explicitly:
+
+  ```yaml
+  sources:
+    files:
+      type: filesystem
+      config:
+        path: data/input      # previously implicit
+        file_glob: "*.csv"
+  ```
+- **An unrecognized `file_glob` warns instead of quietly loading metadata** ([#228][], PR [#235][]). A glob that is neither CSV, Parquet, nor JSONL still falls back to the raw filesystem resource, but now says that it is loading file listings — path, size, modification time — rather than parsed rows. Those globs also now load with `write_disposition="replace"`, matching every other filesystem resource.
+- **`sources add` no longer offers to run `dlt init` for filesystem sources** ([#226][], PR [#232][]). The filesystem source ships with dlt, so the install prompt was asking to fetch something already present. The dead filesystem pipeline implementation it was wired to is gone too ([#227][], PR [#232][]).
+
+### Fixed
+
+- **Filesystem sources sharing a schema no longer collide into one table** ([#222][], PR [#229][]). dlt's `read_csv()`/`read_parquet()` transformers always name their resource generically, so two filesystem sources pointed at different files but sharing a schema used to land in the same table. `run_source()` now renames the resource after the tycoon source's own name. Projects with data already in the old generic table (`read_csv`/`read_parquet`) get a one-time warning naming both the stale table and the new one — new rows land in the new table only, so a dbt model still selecting the old name needs updating by hand.
+- **`tycoon data analyze --rill` builds dashboards for an already-scaffolded source** ([#222][], PR [#229][]). The already-referenced check skipped the whole command, so running `analyze <source> --rill` on a source that already had dbt staging models generated no dashboards at all, and the only way past it (`--force`) would also overwrite the existing dbt files. It now skips only the dbt scaffolding step.
+- **The `csv-import` template points at the renamed table** ([#222][], PR [#229][]). Its staging model selected `_read_csv`, which no longer exists after the rename above, so a freshly scaffolded project's first `dbt build` would fail.
+
+[#222]: https://github.com/Database-Tycoon/tycoon-cli/issues/222
+[#223]: https://github.com/Database-Tycoon/tycoon-cli/issues/223
+[#224]: https://github.com/Database-Tycoon/tycoon-cli/issues/224
+[#225]: https://github.com/Database-Tycoon/tycoon-cli/issues/225
+[#226]: https://github.com/Database-Tycoon/tycoon-cli/issues/226
+[#227]: https://github.com/Database-Tycoon/tycoon-cli/issues/227
+[#228]: https://github.com/Database-Tycoon/tycoon-cli/issues/228
+[#229]: https://github.com/Database-Tycoon/tycoon-cli/pull/229
+[#230]: https://github.com/Database-Tycoon/tycoon-cli/pull/230
+[#231]: https://github.com/Database-Tycoon/tycoon-cli/pull/231
+[#232]: https://github.com/Database-Tycoon/tycoon-cli/pull/232
+[#234]: https://github.com/Database-Tycoon/tycoon-cli/pull/234
+[#235]: https://github.com/Database-Tycoon/tycoon-cli/pull/235
+
 ## [0.2.0] - 2026-08-28
 
 _Headline: **pipeline city**. The catalog becomes a place — `tycoon city` (PR [#205][]) serves your warehouse as an interactive 3D city, with schemas as districts, tables as buildings, and lineage as roads. The renderer ships inside the wheel, so there is nothing extra to install, and it costs nothing until you run the command._

@@ -28,7 +28,10 @@ def _check_unexpanded_env_vars(source_config: SourceConfig) -> list[tuple[str, s
     """Return (key, unexpanded_var) pairs for config values still containing ``${VAR}``.
 
     Both pieces are returned so callers don't need to re-run the regex
-    (which loses the typed-Match → str narrowing).
+    (which loses the typed-Match → str narrowing). Scans both the flat
+    ``config`` dict and each entry of the gh-224 multi-resource ``resources``
+    list, since a resource's own path/file_glob carries the same
+    machine-specific values the flat shape does.
     """
     out: list[tuple[str, str]] = []
     for key, value in source_config.config.items():
@@ -36,6 +39,12 @@ def _check_unexpanded_env_vars(source_config: SourceConfig) -> list[tuple[str, s
             match = _UNEXPANDED_ENV_VAR.search(value)
             if match is not None:
                 out.append((key, match.group()))
+    for i, resource in enumerate(source_config.resources or []):
+        for field in ("path", "file_glob"):
+            value = getattr(resource, field)
+            match = _UNEXPANDED_ENV_VAR.search(value)
+            if match is not None:
+                out.append((f"resources[{i}].{field}", match.group()))
     return out
 
 
@@ -141,38 +150,149 @@ def _build_sql_database_source(source_config: SourceConfig) -> Any:
     return sql_database(connection_string)
 
 
-def _build_filesystem_source(source_config: SourceConfig) -> Any:
-    """Build a dlt source for filesystem (local, S3, GCS).
+def _warn_if_local_glob_matches_nothing(bucket_url: str, file_glob: str, label: str) -> None:
+    """Warn when a local filesystem glob matches no files.
 
-    For CSV and Parquet globs the raw file metadata stream is piped through
-    the appropriate dlt transformer so that parsed rows are loaded into
-    DuckDB rather than file-level metadata.  Any other glob pattern falls
-    back to the raw filesystem source.
-
-    All piped resources land with ``write_disposition="replace"`` so a
-    second `tycoon data sources run` rewrites the raw table rather than
-    appending. Matches the convention used by every other tycoon-shipped
-    pipeline (nyc_dot, mta, mta_bus_speeds). Issue #22.
+    Only checks local paths (``bucket_url`` without a URI scheme). Remote
+    buckets (``s3://``, ``gs://``, ``az://``) aren't supported yet and are
+    skipped rather than guessed at. Issue #223: a typo in the glob should
+    not look identical to a source with nothing new to load, since both
+    currently produce zero rows with no distinguishing signal.
     """
-    from dlt.sources.filesystem import filesystem, read_csv, read_parquet
+    if "://" in bucket_url:
+        return
 
-    cfg = source_config.config
-    bucket_url = cfg.get("bucket_url", cfg.get("path", "."))
-    file_glob = cfg.get("file_glob", "**/*")
+    import glob as glob_module
+
+    pattern = str(Path(bucket_url).expanduser() / file_glob)
+    if not glob_module.glob(pattern, recursive=True):
+        from tycoon.utils.console import warn
+
+        warn(f"'{label}': no files matched glob {file_glob!r} under {bucket_url!r}.")
+
+
+def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str) -> Any:
+    """Build one named dlt resource for a single (bucket_url, file_glob) pair.
+
+    For CSV, Parquet, and JSONL globs the raw file metadata stream is piped
+    through the appropriate dlt transformer so that parsed rows are loaded
+    into DuckDB rather than file-level metadata. Any other glob pattern
+    falls back to the raw filesystem resource (file listings, not parsed
+    rows) with a warning, since that's rarely what's actually wanted for a
+    tycoon filesystem source. Issue #228.
+
+    The resource is renamed to ``table_name`` before being returned: dlt's
+    read_csv()/read_parquet()/read_jsonl() transformers otherwise always
+    name their resource "read_csv"/"read_parquet"/"read_jsonl" regardless
+    of input, which collides when more than one resource lands in the same
+    schema. Issue #222.
+
+    Lands with ``write_disposition="replace"`` so a second
+    `tycoon data sources run` rewrites the raw table rather than appending.
+    Matches the convention used by every other tycoon-shipped pipeline
+    (nyc_dot, mta, mta_bus_speeds). Issue #22.
+
+    Raises ``IngestionError`` if ``bucket_url`` or ``file_glob`` is empty,
+    and warns (doesn't fail) if a local glob matches no files. Issue #223.
+    """
+    if not bucket_url or not file_glob:
+        raise IngestionError(
+            f"Resource '{table_name}' is missing a path or file_glob. "
+            "Both are required, e.g. `path: data/input`, `file_glob: '*.csv'`."
+        )
+
+    _warn_if_local_glob_matches_nothing(bucket_url, file_glob, table_name)
+
+    from dlt.sources.filesystem import filesystem, read_csv, read_jsonl, read_parquet
 
     files = filesystem(bucket_url=bucket_url, file_glob=file_glob)
 
     glob_lower = file_glob.lower()
     if glob_lower.endswith(".csv") or glob_lower.endswith("*.csv"):
         piped = files | read_csv()
-        piped.apply_hints(write_disposition="replace")
-        return piped
-    if glob_lower.endswith(".parquet") or glob_lower.endswith("*.parquet"):
+    elif glob_lower.endswith(".parquet") or glob_lower.endswith("*.parquet"):
         piped = files | read_parquet()
-        piped.apply_hints(write_disposition="replace")
-        return piped
+    elif glob_lower.endswith(".jsonl") or glob_lower.endswith("*.jsonl"):
+        piped = files | read_jsonl()
+    else:
+        from tycoon.utils.console import warn
 
-    return files
+        warn(
+            f"'{table_name}': file_glob {file_glob!r} isn't a recognized format "
+            "(.csv, .parquet, .jsonl) for row-level parsing. Falling back to raw "
+            "file metadata (path, size, modification time), not parsed rows."
+        )
+        piped = files
+
+    piped.apply_hints(write_disposition="replace")
+    return piped.with_name(table_name)
+
+
+def _build_filesystem_source(source_config: SourceConfig) -> Any:
+    """Build a dlt source for filesystem (local, S3, GCS).
+
+    If ``source_config.resources`` is set (gh-224's multi-resource shape),
+    builds one named resource per entry and returns them as a list — dlt's
+    ``pipeline.run()`` accepts a list of resources directly, the same shape
+    dlt's own ``readers()`` source uses to bundle multiple resources.
+
+    Otherwise falls back to the older flat ``config.path``/``config.file_glob``
+    shape via ``_build_filesystem_resource`` with a placeholder name: the
+    caller (``run_source``) renames the single-resource result after the
+    tycoon source's own name regardless, since the flat shape has no
+    per-resource table name to use instead. Reusing that helper here (rather
+    than duplicating the CSV/Parquet dispatch) also gets this path the same
+    validation and zero-match warning as the multi-resource shape (gh-223).
+    """
+    if source_config.resources:
+        return [_build_filesystem_resource(r.path, r.file_glob, r.table_name) for r in source_config.resources]
+
+    cfg = source_config.config
+    bucket_url = cfg.get("bucket_url") or cfg.get("path") or ""
+    file_glob = cfg.get("file_glob", "**/*")
+    return _build_filesystem_resource(bucket_url, file_glob, "resource")
+
+
+# Table names dlt's read_csv()/read_parquet() produced before this fix
+# renamed the resource after the tycoon source. Both the current dlt
+# behavior ("read_csv") and the underscore-prefixed name the shipped
+# csv-import template originally shipped with ("_read_csv", an older dlt
+# version's naming) are checked, since an existing project's frozen table
+# could be either depending on which dlt version it last ran against.
+_LEGACY_FILESYSTEM_TABLE_NAMES = frozenset({"read_csv", "read_parquet", "_read_csv", "_read_parquet"})
+
+
+def _warn_if_legacy_filesystem_table_exists(raw_db_path: Path, schema_name: str, new_name: str) -> None:
+    """Warn once per run if a pre-fix generic table still exists alongside
+    the newly-renamed one.
+
+    Existing projects on the old flat config shape silently start writing
+    to a new table name after this fix (Issue #222); their dbt models still
+    select the old, now-frozen table, and dbt keeps succeeding against
+    stale data with no error anywhere. This can't be fixed automatically
+    (the old table is data, not something safe to drop unprompted), so the
+    best available mitigation is surfacing it loudly, every run, until the
+    legacy table is gone (the user has renamed or dropped it).
+    """
+    from tycoon.utils.duckdb_utils import get_tables
+
+    legacy_present = {
+        table
+        for schema, table in get_tables(raw_db_path)
+        if schema == schema_name and table in _LEGACY_FILESYSTEM_TABLE_NAMES
+    }
+    if not legacy_present:
+        return
+
+    from tycoon.utils.console import warn
+
+    for legacy_table in sorted(legacy_present):
+        warn(
+            f"'{schema_name}.{legacy_table}' still exists from before this project's filesystem sources were "
+            f"renamed. New rows now land in '{schema_name}.{new_name}' instead; '{legacy_table}' will not "
+            "receive new data. If a dbt model still selects from it, update it to use the new name, then drop "
+            f"'{schema_name}.{legacy_table}'."
+        )
 
 
 def _emit_event_safe(metadata_db: Path | None, event: Any) -> None:
@@ -316,6 +436,19 @@ def run_source(
             _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
             return pipeline, load_info
 
+        # Warn about unexpanded env vars before building the source. Native
+        # builders (filesystem, sql_database, rest_api) skip the catalog
+        # path entirely, so this can't rely on _run_catalog's check.
+        bad_pairs = _check_unexpanded_env_vars(source_config)
+        if bad_pairs:
+            from tycoon.utils.console import warn
+
+            for key, var in bad_pairs:
+                warn(
+                    f"Config key '{key}' contains an unexpanded env var: {var}\n"
+                    f"  Set it with: export {var[2:-1]}=<your-value>"
+                )
+
         # Generic pipeline
         pipeline = dlt.pipeline(
             pipeline_name=name,
@@ -323,6 +456,7 @@ def run_source(
             dataset_name=source_config.schema_name,
         )
 
+        legacy_rename = False
         builder = _NATIVE_BUILDERS.get(source_type)
         if builder is None:
             # Try dynamic import: dlt.sources.<source_type>
@@ -340,9 +474,23 @@ def run_source(
                 ) from exc
         else:
             dlt_source = builder(source_config)
+            legacy_rename = source_type == "filesystem" and not isinstance(dlt_source, list)
+            if legacy_rename:
+                # dlt's read_csv()/read_parquet() transformers always name
+                # their resource "read_csv"/"read_parquet", so two filesystem
+                # sources sharing a schema collide into the same table unless
+                # renamed after the tycoon source itself. Issue #222.
+                #
+                # Multi-resource sources (gh-224) come back as a list of
+                # resources already named after their own table_name; only
+                # the older single-resource shape still needs renaming here.
+                # See _build_filesystem_source and _build_filesystem_resource.
+                dlt_source = dlt_source.with_name(name)
 
         load_info = pipeline.run(dlt_source)
         load_info.raise_on_failed_jobs()
+        if legacy_rename:
+            _warn_if_legacy_filesystem_table_exists(raw_db_path, source_config.schema_name, name)
         _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
         _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
         return pipeline, load_info

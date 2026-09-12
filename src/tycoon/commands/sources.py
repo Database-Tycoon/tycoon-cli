@@ -11,7 +11,7 @@ from rich.table import Table
 
 from tycoon.config import TycoonConfig, load_config
 from tycoon.ingestion.catalog import CATALOG, CatalogEntry
-from tycoon.project import SourceConfig, load_project, save_project
+from tycoon.project import ResourceConfig, SourceConfig, load_project, save_project
 from tycoon.utils.console import console, error, header, info, next_steps, success, warn
 
 app = typer.Typer(help="Manage registered data sources.")
@@ -133,6 +133,11 @@ def show_source(
     if src.dbt_package:
         console.print(f"  [bold]dbt package:[/bold] {src.dbt_package}")
 
+    if src.resources:
+        console.print("  [bold]Resources:[/bold]")
+        for resource in src.resources:
+            console.print(f"    {resource.table_name}: {resource.path} ({resource.file_glob})")
+
     if src.config:
         console.print("  [bold]Config:[/bold]")
         for key, value in src.config.items():
@@ -194,10 +199,42 @@ def _prompt_sql_database_config() -> dict[str, Any]:
     return {"connection_string": connection_string}
 
 
-def _prompt_filesystem_config() -> dict[str, Any]:
-    """Prompt for filesystem source configuration."""
-    path = typer.prompt("Path or URL to the data files")
-    return {"path": path}
+def _prompt_filesystem_resources() -> list[ResourceConfig]:
+    """Prompt for one or more resources, looping until the user is done.
+
+    Each resource is self-contained — its own table name, path, and glob —
+    so resources in the same source can point at completely different
+    locations, not just different files in one shared directory. gh-226.
+
+    A table name is rejected before it's ever passed to ResourceConfig if
+    it duplicates one already entered for this source — dlt would silently
+    union both files' rows into one table at run time otherwise. A table
+    name that fails ResourceConfig's identifier check (e.g. a hyphen, which
+    reads naturally next to tycoon's own hyphenated source-name convention)
+    re-prompts for the same resource instead of crashing the whole loop and
+    losing every resource already entered.
+    """
+    from pydantic import ValidationError
+
+    resources: list[ResourceConfig] = []
+    while True:
+        console.print(f"\n  [bold]Resource {len(resources) + 1}[/bold]")
+        while True:
+            table_name = typer.prompt("  Table name")
+            if any(r.table_name == table_name for r in resources):
+                warn(f"  '{table_name}' is already used by another resource in this source. Choose a different name.")
+                continue
+            path = typer.prompt("  Path or URL to the data files")
+            file_glob = typer.prompt("  File glob", default="*.csv")
+            try:
+                resources.append(ResourceConfig(table_name=table_name, path=path, file_glob=file_glob))
+            except ValidationError as exc:
+                warn(f"  {exc.errors()[0]['msg']}")
+                continue
+            break
+        if not typer.confirm("  Add another resource?", default=False):
+            break
+    return resources
 
 
 def _prompt_generic_config() -> dict[str, Any]:
@@ -219,7 +256,6 @@ def _prompt_generic_config() -> dict[str, Any]:
 _CONFIG_PROMPTERS = {
     "rest_api": _prompt_rest_api_config,
     "sql_database": _prompt_sql_database_config,
-    "filesystem": _prompt_filesystem_config,
 }
 
 
@@ -423,6 +459,14 @@ def add_source(
             error(f"--name is required under --no-prompt for `{source_type}` (no auto-naming rule). Pass --name <id>.")
             raise typer.Exit(1)
         schema_name = schema or derived_schema
+        filesystem_resources = None
+    elif source_type == "filesystem":
+        default_name = name or "files"
+        source_name = name if name else typer.prompt("Source name", default=default_name)
+        default_schema = schema or f"raw_{source_name.replace('-', '_')}"
+        schema_name = schema if schema else typer.prompt("Schema name", default=default_schema)
+        filesystem_resources = _prompt_filesystem_resources()
+        source_config = {}
     elif catalog_entry and source_type in _AUTO_NAMED_SOURCES:
         source_config = _prompt_catalog_config(catalog_entry)
         source_name, schema_name = _derive_source_identity(source_type, source_config)
@@ -432,6 +476,7 @@ def add_source(
             schema_name = schema
         info(f"Source name: [bold]{source_name}[/bold]")
         info(f"Schema:      [bold]{schema_name}[/bold]")
+        filesystem_resources = None
     else:
         default_name = name or (f"my-{source_type}" if catalog_entry else source_type)
         source_name = name if name else typer.prompt("Source name", default=default_name)
@@ -444,12 +489,16 @@ def add_source(
         else:
             prompter = _CONFIG_PROMPTERS.get(source_type, _prompt_generic_config)
             source_config = prompter()
+        filesystem_resources = None
 
-    new_source = SourceConfig(
-        type=source_type,
-        schema=schema_name,
-        config=source_config,
-    )
+    if filesystem_resources:
+        new_source = SourceConfig(type=source_type, schema=schema_name, resources=filesystem_resources)
+    else:
+        new_source = SourceConfig(
+            type=source_type,
+            schema=schema_name,
+            config=source_config,
+        )
 
     project = load_project(cfg.root)
     assert project is not None  # guarded by _require_project
@@ -471,9 +520,12 @@ def add_source(
     success(f"Source [bold]{source_name}[/bold] added to tycoon.yml")
 
     if not no_prompt:
-        if catalog_entry:
+        if catalog_entry and source_type != "filesystem":
+            # filesystem ships with dlt core and never needs a dlt-init
+            # download; it always runs through the native builder in
+            # runner.py, never the catalog/shim path.
             _maybe_install_catalog_source(source_type)
-        else:
+        elif not catalog_entry:
             _maybe_install_dlt_extra(source_type)
 
     next_steps(
