@@ -27,6 +27,8 @@ _Headline: **multi-resource filesystem sources + validated config**. A filesyste
 - **JSONL files are parsed into rows** ([#228][], PR [#235][]). A `*.jsonl` glob pipes through dlt's `read_jsonl()`, alongside the existing CSV and Parquet support. Plain `.json` is deliberately not included — a single JSON document isn't the newline-delimited shape `read_jsonl()` reads.
 - **A glob that matches no local files says so** ([#223][], PR [#234][]). Previously a typo'd glob and a source with genuinely nothing to load were indistinguishable: both loaded zero rows silently. Remote buckets (`s3://`, `gs://`, `az://`) are skipped rather than guessed at.
 
+- **City simulation engine — radial layout, planner consolidation, street thinning** (PR [#206][]). `tycoon city` lays the city out by pipeline depth: schemas are placed in rings by their longest chain over the cross-schema graph and inverted, so gold and mart precincts sit downtown and sources on the periphery, with ties broken on fan-out, then member count, then name. A district is redefined as the schema's zoned precinct rect housing every member lot, which makes the orphan-exclusion failure mode impossible by construction rather than by check. Streets are generated where traffic actually goes instead of everywhere, `town_network.py` closes three route-completeness gaps, and the v4/v5 planners dissolve into a single resolved planner. Median route length on the dogfood catalog fell from 229 tiles to 36.
+
 ### Changed
 
 - **Breaking: a filesystem source must declare `path` or `bucket_url`** ([#223][], PR [#234][]). Both missing used to fall back to `"."`, silently scanning the working directory; it now fails with an error naming the source. If a project relied on that default, add the path explicitly:
@@ -40,15 +42,20 @@ _Headline: **multi-resource filesystem sources + validated config**. A filesyste
         file_glob: "*.csv"
   ```
 - **An unrecognized `file_glob` warns instead of quietly loading metadata** ([#228][], PR [#235][]). A glob that is neither CSV, Parquet, nor JSONL still falls back to the raw filesystem resource, but now says that it is loading file listings — path, size, modification time — rather than parsed rows. Those globs also now load with `write_disposition="replace"`, matching every other filesystem resource.
+- **The renderer and its front end are CI-gated** (PR [#206][]). `tests/tycoon_city` — 563 tests, the `city.json` contract golden included — joins the default pytest run instead of being excluded, and `src/tycoon_city` counts toward coverage (floor re-baselined 68 → 73). A new `web` job runs `tsc --noEmit`, the production build, a check that the shipped `web_dist/` is exactly the build of `web/`, and the Playwright e2e suite. Through 0.2.0 the CLI was gated and the renderer was not.
 - **`sources add` no longer offers to run `dlt init` for filesystem sources** ([#226][], PR [#232][]). The filesystem source ships with dlt, so the install prompt was asking to fetch something already present. The dead filesystem pipeline implementation it was wired to is gone too ([#227][], PR [#232][]).
 
 ### Fixed
 
+- **The city's traffic actually drives** (PR [#206][]). The animation loop ticked the vehicle and guest simulations but never called the layers' `update()` — the only writers of the instance matrices — so both meshes sat at count 0 over a fully simulated street. Shipped this way in 0.2.0 and listed there as a known limitation. The verification hooks were counting the sim arrays and masking it; they now answer from the drawn mesh, which is what a viewer can actually see.
+- **Coverage renders unknown, not zero, when the evidence was never read** (PR [#206][]). The renderer's schema was missing the `achievements` block the exporter has emitted since 2026-08-06, so zod silently stripped it and the problems gauges, library panel, and library tour recomputed coverage from raw fields — reporting "columns documented 0%" for a catalog with no dbt manifest. All three surfaces now honor the unknown state.
+- **`R` refresh repaints the document-derived chrome** (PR [#206][]). The footer status line, the degradation-notes popover, and the legend were painted once at boot and never again, so a refresh showed a fresh "exported N ago" over the previous city's name, counts, notes, and legend rows.
 - **Filesystem sources sharing a schema no longer collide into one table** ([#222][], PR [#229][]). dlt's `read_csv()`/`read_parquet()` transformers always name their resource generically, so two filesystem sources pointed at different files but sharing a schema used to land in the same table. `run_source()` now renames the resource after the tycoon source's own name. Projects with data already in the old generic table (`read_csv`/`read_parquet`) get a one-time warning naming both the stale table and the new one — new rows land in the new table only, so a dbt model still selecting the old name needs updating by hand.
 - **`tycoon data analyze --rill` builds dashboards for an already-scaffolded source** ([#222][], PR [#229][]). The already-referenced check skipped the whole command, so running `analyze <source> --rill` on a source that already had dbt staging models generated no dashboards at all, and the only way past it (`--force`) would also overwrite the existing dbt files. It now skips only the dbt scaffolding step.
 - **The `csv-import` template points at the renamed table** ([#222][], PR [#229][]). Its staging model selected `_read_csv`, which no longer exists after the rename above, so a freshly scaffolded project's first `dbt build` would fail.
 
 [#222]: https://github.com/Database-Tycoon/tycoon-cli/issues/222
+[#206]: https://github.com/Database-Tycoon/tycoon-cli/pull/206
 [#223]: https://github.com/Database-Tycoon/tycoon-cli/issues/223
 [#224]: https://github.com/Database-Tycoon/tycoon-cli/issues/224
 [#225]: https://github.com/Database-Tycoon/tycoon-cli/issues/225
