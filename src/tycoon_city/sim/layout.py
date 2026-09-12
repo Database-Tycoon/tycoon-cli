@@ -193,7 +193,7 @@ def isolated_keys(ctx: PipelineContext) -> set[str]:
 _PLAN_EXPORTS = frozenset({"MARGIN", "DagPlan", "DistrictPlan", "StreetFeature", "plan_dag_layout"})
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     if name in _PLAN_EXPORTS:
         from . import town_plan
 
