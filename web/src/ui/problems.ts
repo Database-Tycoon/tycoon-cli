@@ -13,7 +13,7 @@
  * sets and the gauge texts across lenses.
  */
 
-import type { CityDocument, LotRecord } from "../contract";
+import { milestoneOf, type CityDocument, type LotRecord } from "../contract";
 import type { GaugeId, Lens } from "./lenses";
 import { NO_LENS } from "./lenses";
 import { DRIFT_RECENT_S } from "./health";
@@ -190,21 +190,34 @@ export class Problems {
     const measured = objects.filter((o) => o.usage !== null);
     const quiet = measured.filter((o) => o.usage!.runs_seen === 0).length;
     const budget = this.doc.budget;
+    // The producer's milestone is the authority on whether the evidence was
+    // ever READ. state "unknown" means the manifest / verdicts were never
+    // joined — recomputing a fraction from raw fields there renders 0% for
+    // an absence, the exact lie city-json-v1.md's achievements block exists
+    // to prevent. A document predating the block has no milestones, and the
+    // derived numbers stay (nobody told us they are unknown).
+    const unknownNote = (id: string): string | null => {
+      const m = milestoneOf(this.doc, id);
+      return m !== null && m.state === "unknown" ? m.note : null;
+    };
+    const docsUnknown = unknownNote("documented_buildings");
+    const testsUnknown = unknownNote("tested_buildings");
+    const slaUnknown = unknownNote("sources_under_sla");
     return [
       {
         id: "documented",
-        text: `columns documented ${pct(documented, cols.length)}`,
-        title: `${documented} of ${cols.length} columns carry a description (dbt manifest)`,
+        text: docsUnknown ? "columns documented — unknown" : `columns documented ${pct(documented, cols.length)}`,
+        title: docsUnknown ?? `${documented} of ${cols.length} columns carry a description (dbt manifest)`,
       },
       {
         id: "tested",
-        text: `objects tested ${pct(tested, objects.length)}`,
-        title: `${tested} of ${objects.length} objects declare at least one dbt test`,
+        text: testsUnknown ? "objects tested — unknown" : `objects tested ${pct(tested, objects.length)}`,
+        title: testsUnknown ?? `${tested} of ${objects.length} objects declare at least one dbt test`,
       },
       {
         id: "sla",
-        text: `freshness SLAs ${sources}`,
-        title: "sources dbt judged against a declared freshness SLA",
+        text: slaUnknown ? "freshness SLAs — unknown" : `freshness SLAs ${sources}`,
+        title: slaUnknown ?? "sources dbt judged against a declared freshness SLA",
       },
       {
         id: "budget",
