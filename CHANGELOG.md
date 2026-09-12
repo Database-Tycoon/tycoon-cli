@@ -2,7 +2,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [0.2.1] - UNRELEASED
 
-_Headline: **TBD**. Filesystem sources grow up. One source can now declare several named resources and load them all in a single run, `sources add` walks you through them interactively, JSONL joins CSV and Parquet, and config that used to be quietly defaulted is validated instead._
+_Headline: **multi-resource filesystem sources + validated config**. A filesystem source can now declare several named resources and load them all in a single run, `sources add` walks you through them interactively, and JSONL joins CSV and Parquet. Config that used to be quietly defaulted is validated instead — the one change here that can break an existing project._
 
 ### Added
 
