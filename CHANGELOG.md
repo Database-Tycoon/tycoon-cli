@@ -1,6 +1,6 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.1] - UNRELEASED
+## [0.2.1] - 2026-09-12
 
 _Headline: **multi-resource filesystem sources + validated config**. A filesystem source can now declare several named resources and load them all in a single run, `sources add` walks you through them interactively, and JSONL joins CSV and Parquet. Config that used to be quietly defaulted is validated instead — the one change here that can break an existing project._
 
