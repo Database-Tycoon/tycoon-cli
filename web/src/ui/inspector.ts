@@ -5,7 +5,7 @@
  */
 
 import type { CityDocument, JoinRecord, LineageEntry, SemanticRecord } from "../contract";
-import { hasSemanticModel, joinsOf, lineageOf, PROVENANCE_LABEL } from "../contract";
+import { hasSemanticModel, joinsOf, lineageOf, milestoneOf, PROVENANCE_LABEL } from "../contract";
 import { graphSvg } from "./graph";
 import { PLANT_KEY } from "../scene/plant";
 import { FIREHOUSE_KEY, LIBRARY_KEY } from "../scene/civic";
@@ -61,18 +61,27 @@ export class Inspector {
     const owned = objects.filter((o) => o.dbt?.owner != null).length;
     const tested = objects.filter((o) => (o.dbt?.tests.length ?? 0) > 0).length;
     const pct = (n: number, d: number) => (d ? `${Math.round((100 * n) / d)}%` : "—");
+    // Every shelf above is a dbt-manifest count. When the producer says the
+    // manifest was never read (milestone state "unknown"), 0-of-N would show
+    // empty shelves for a library nobody has looked inside — unknown, not
+    // bare. The milestone's own note names the missing artifact.
+    const manifest = milestoneOf(this.doc, "documented_buildings");
+    const manifestUnknown = manifest !== null && manifest.state === "unknown";
+    const shelf = (n: number, d: number, withPct: boolean): string =>
+      manifestUnknown ? "unknown" : `${n} / ${d}${withPct ? ` (${pct(n, d)})` : ""}`;
     return `
       <button class="close" title="close">×</button>
       <h2>public library</h2>
       <p class="note">The city's context lives here. Every shelf is a count
       of real documentation — filling these in builds the city.</p>
       <dl>
-        <dt>objects described</dt><dd>${described} / ${objects.length} (${pct(described, objects.length)})</dd>
-        <dt>columns documented</dt><dd>${colsDocumented} / ${cols.length} (${pct(colsDocumented, cols.length)})</dd>
-        <dt>objects tagged</dt><dd>${tagged} / ${objects.length}</dd>
-        <dt>owners assigned</dt><dd>${owned} / ${objects.length}</dd>
-        <dt>objects tested</dt><dd>${tested} / ${objects.length}</dd>
+        <dt>objects described</dt><dd>${shelf(described, objects.length, true)}</dd>
+        <dt>columns documented</dt><dd>${shelf(colsDocumented, cols.length, true)}</dd>
+        <dt>objects tagged</dt><dd>${shelf(tagged, objects.length, false)}</dd>
+        <dt>owners assigned</dt><dd>${shelf(owned, objects.length, false)}</dd>
+        <dt>objects tested</dt><dd>${shelf(tested, objects.length, false)}</dd>
       </dl>
+      ${manifestUnknown ? `<p class="note">${escapeHtml(manifest.note)}</p>` : ""}
       <p class="note">Descriptions come from the dbt manifest. A semantic
       model (Apache Ossie / OSI) is not connected yet — when it is, its
       relationships and ai_context shelve here too.</p>`;
