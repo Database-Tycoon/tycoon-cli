@@ -22,14 +22,22 @@ repos:
     hooks:
       - id: trailing-whitespace
         # Snapshot files pin exact CLI output, incl. Rich's trailing
-        # padding — stripping it breaks every snapshot assertion.
-        exclude: ^tests/__snapshots__/
+        # padding — stripping it breaks every snapshot assertion. The built
+        # web bundle is excluded for the same reason as below: CI's freshness
+        # check diffs it byte-for-byte against the build, so a hook that
+        # rewrites it makes every rebuild fail that check.
+        exclude: ^(tests/__snapshots__/|src/tycoon_city/web_dist/)
       - id: end-of-file-fixer
-        exclude: ^tests/__snapshots__/
+        exclude: ^(tests/__snapshots__/|src/tycoon_city/web_dist/)
       - id: check-yaml
       - id: check-merge-conflict
       - id: check-added-large-files
         args: ['--maxkb=500']
+        # The built web bundle (~700 KB minified JS) is committed by design —
+        # it is what ships in the wheel, and CI's freshness check diffs it.
+        # Without this exclusion every legitimate rebuild fails the hook and
+        # teaches people --no-verify, which also skips gitleaks and bandit.
+        exclude: ^src/tycoon_city/web_dist/
 
   - repo: https://github.com/gitleaks/gitleaks
     # Same gitleaks version CI runs (ci.yml secret-scan job); bump together.

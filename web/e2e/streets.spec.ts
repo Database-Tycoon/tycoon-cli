@@ -1,8 +1,8 @@
 /**
  * Streets v4: the street network has real geometry (`scene/streetscape.ts`).
  * Runs against the plain committed demo export in `web/public`, which since
- * the v4 planner landed carries REAL `street_features` (9: 6 aprons, 2
- * docks, 1 plaza). Pre-planner documents omit the field entirely; that
+ * the v4 planner landed carries REAL `street_features` (7 since the ring
+ * planner of 2026-08-14: 4 aprons, 2 docks, 1 plaza). Pre-planner documents omit the field entirely; that
  * absence is still pinned below by serving a stripped copy — the contract's
  * default must keep old documents loading.
  *
@@ -39,13 +39,15 @@ test("a document with no street_features loads and dresses nothing", async ({ pa
 test("every closed road edge gets a raised curb", async ({ page }) => {
   await open(page, "?settle=1");
 
-  // 56 closed road edges in the demo export (counted straight off the
-  // decoded RLE). The two docks and the plaza re-pave tiles carrying 8 of
-  // them, which lose their curb; each of the 6 aprons notches its faced edge
-  // into two flanking stubs (+1 apiece). 56 - 8 + 6 = 54, derived
-  // independently — a drift here means the mask shared with terrain.ts
-  // moved, or a feature stopped owning its curb.
-  expect(await page.evaluate(() => window.__tycoonCity!.curbCount())).toBe(54);
+  // 74 closed road edges in the demo export (counted straight off the
+  // decoded RLE: 37 road tiles). The two docks and the plaza re-pave tiles
+  // carrying 7 of them, which lose their curb; each of the 4 aprons notches
+  // its faced edge into two flanking stubs (+1 apiece). 74 - 7 + 4 = 71,
+  // derived independently: a drift here means the mask shared with
+  // terrain.ts moved, or a feature stopped owning its curb. (The ring
+  // planner of 2026-08-14 regenerated the export; before it the same
+  // arithmetic read 56 - 8 + 6 = 54.)
+  expect(await page.evaluate(() => window.__tycoonCity!.curbCount())).toBe(71);
 });
 
 test("the raised curb covers the painted kerb line instead of doubling it", async ({ page }) => {
@@ -67,14 +69,20 @@ test("the streets survive a grazing camera — the skirt must not swallow the gr
   page,
 }) => {
   await open(page, "?settle=1");
-  // Eye height, a few tiles out, looking almost along the ground: the 3D curbs
-  // made this view worth taking, and it exposed a defect that had nothing to
-  // do with them — the grass skirt 0.02 below the grid won the depth fight at
-  // grazing incidence and the ENTIRE road network rendered as grass. The skirt
-  // now writes no depth (terrain.ts). 70k asphalt pixels here with that fix,
+  // Eye height, standing on the trunk street (x = 18, y 9..19 in the demo
+  // export), looking north almost along the ground: the 3D curbs made this
+  // view worth taking, and it exposed a defect that had nothing to do with
+  // them: the grass skirt 0.02 below the grid won the depth fight at grazing
+  // incidence and the ENTIRE road network rendered as grass. The skirt now
+  // writes no depth (terrain.ts). ~40k asphalt pixels here with that fix,
   // exactly 0 without it, so this assertion is the regression guard.
+  //
+  // The pose is tied to the demo layout: the pre-ring-planner pose
+  // ([6, 2.2, 7.5] → [10, 0, 4]) stared at open grass once the city moved
+  // and read 0 asphalt for the wrong reason. If the export is regenerated,
+  // re-aim at a street before trusting a 0 here.
   await page.evaluate(() =>
-    window.__tycoonCity!.setCameraPose({ position: [6, 2.2, 7.5], target: [10, 0, 4] }),
+    window.__tycoonCity!.setCameraPose({ position: [18.5, 2.2, 16.5], target: [18.5, 0, 9] }),
   );
   await page.waitForTimeout(400);
 
