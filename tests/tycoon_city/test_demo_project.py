@@ -26,7 +26,7 @@ from tycoon_city.demo.project import build_demo_project, semantic_source
 from tycoon_city.export.build import build_city
 from tycoon_city.theme_data import load_theme_data, theme_dir
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(scope="module")
