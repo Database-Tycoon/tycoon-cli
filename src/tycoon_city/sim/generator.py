@@ -1,31 +1,21 @@
 """Paint the planned DAG city onto tiles — the edge IS the street.
 
-Streets v2.1 (Stephen's redirects, 2026-08-05): `layout.plan_dag_layout`
-places buildings in topological columns and routes every edge through its
-channel on its destination group's shared trunk — geometry is decided there;
+`layout.plan_dag_layout` clusters each schema into a lattice neighbourhood
+(property S8 by construction — see `town_plan` and `road_junctions`) and
+routes every edge door to door over the lattice — geometry is decided there;
 this module only paints it. The rules the tests pin:
 
   V1  Every known edge has a route, and no building stands anywhere on it:
       route interiors are never LOT tiles. The street literally and cleanly
       connects the two.
-  V2  Flow reads west -> east: a forward edge's destination column is east of
-      its source's; only in-cycle edges stay in-column (routed out and back
-      through their channel).
-  V3  Two routes share a vertical run only when they share a source or a
-      destination — edges bound for the same place MERGE like tributaries
-      onto one trunk; unrelated streets stay individually traceable.
-  V4  Orphans live in the streetless southern suburb. No lineage, no road.
-  V5  The plant and its POWER_LINE trunk feed exactly the source columns
-      (depth-0 lots) — data enters the city there.
-  V6  Every road ENDING is dressed (streets v4): the planner's street features
-      are painted last, which is what gives a plaza its forecourt pavement.
+  V2  The plant and its POWER_LINE trunk feed the city from the western
+      utility strip — data enters the city there.
+  V3  Every road ENDING is dressed: the planner's street features are
+      painted last, which is what gives a plaza its forecourt pavement.
       A naked stub is a failing build — see property S7.
 
-Sprawl is intentional and priced per destination: each distinct destination
-group (plus each loop edge) widens its channel, so a tangled DAG pays for
-itself in pavement while a heavy fan-in stays a village street. Paint order
-is the guard: lots and the plant first (unconditional), then streets over
-GRASS only — a street can never clobber a building.
+Paint order is the guard: lots and the plant first (unconditional), then
+streets over GRASS only — a street can never clobber a building.
 
 Fully deterministic: no randomness, every collection sorted upstream.
 """
@@ -88,8 +78,8 @@ def _build(
     px, py = plan.plant_xy
     tiles[py][px] = TileKind.PLANT
 
-    # 2. The utility strip (V5), then every edge's street (V1-V3), then the
-    #    extra lanes that keep merged trunks at their combined thickness.
+    # 2. The utility strip (V2), then every edge's street (V1), then the
+    #    lattice tiles no route claimed — still streets.
     _paint(tiles, plan.power_tiles, TileKind.POWER_LINE)
     for pair in sorted(plan.routes):
         _paint(tiles, plan.routes[pair], TileKind.ROAD)
@@ -97,9 +87,9 @@ def _build(
     # The firehouse's civic access road: vehicles must travel on roads, so
     # the station is wired into the network the moment the city has one.
     _paint(tiles, plan.access_road, TileKind.ROAD)
-    # Streets v4: every road ending is dressed, and a plaza's forecourt is
-    # PAVEMENT — the only feature tiles that are not already road. Painted last,
-    # under the same grass-only guard, so a pad can never eat a building.
+    # Every road ending is dressed, and a plaza's forecourt is PAVEMENT — the
+    # only feature tiles that are not already road. Painted last, under the
+    # same grass-only guard, so a pad can never eat a building.
     _paint(tiles, feature_tiles(plan.street_features), TileKind.ROAD)
 
     return CityMap(
@@ -121,18 +111,8 @@ def generate_city(
     ctx: PipelineContext,
     style_rules: list[tuple[str, ZoneStyle]],
 ) -> CityMap:
-    """Lay out a catalog as a layered city whose streets are its lineage.
-
-    `DATABASE_TYCOON_PLANNER=v5` swaps in the streets v5 planner: schema
-    neighbourhoods on a lattice that satisfies property S8 by construction
-    (`town_v5_plan`). Unset — the default — v4 runs unchanged, which is what
-    the `city.json` golden and the contract tests are frozen against. The flag
-    is read per call so a session can switch without a restart.
-    """
-    from .town_v5_plan import plan_v5_layout, v5_selected
-
-    planner = plan_v5_layout if v5_selected() else plan_dag_layout
-    return _build(ctx, planner(ctx), style_rules)
+    """Lay out a catalog as a layered city whose streets are its lineage."""
+    return _build(ctx, plan_dag_layout(ctx), style_rules)
 
 
 def refresh(
