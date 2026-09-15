@@ -36,7 +36,6 @@ tests/sim/test_no_pygame.py via the `layout` re-export.
 
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass
 
 from ..catalog.models import PipelineContext
@@ -113,38 +112,6 @@ class DagPlan:
     # route endpoint (see `town_streets.StreetFeature` and
     # docs/road-grammar.md). Sorted; derived from routes and lot metadata.
     street_features: tuple[StreetFeature, ...] = ()
-
-
-# --- routing: shortest path over the lattice -------------------------------
-
-
-def _bfs(road: frozenset[Tile], start: Tile, goal: Tile) -> tuple[Tile, ...]:
-    """Shortest lattice path, with a DETERMINISTIC tie-break.
-
-    Neighbours are visited in a fixed N/E/S/W order and the queue is FIFO, so
-    equal-length paths always resolve the same way. That is not a nicety: two
-    exports of one catalog must produce the same bytes, and a set-iteration
-    order would break that on the first rehash.
-    """
-    if start == goal:
-        return (start,)
-    if start not in road or goal not in road:
-        return ()
-    prev: dict[Tile, Tile] = {start: start}
-    queue = deque([start])
-    while queue:
-        at = queue.popleft()
-        for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
-            nxt = (at[0] + dx, at[1] + dy)
-            if nxt in road and nxt not in prev:
-                prev[nxt] = at
-                if nxt == goal:
-                    path = [nxt]
-                    while path[-1] != start:
-                        path.append(prev[path[-1]])
-                    return tuple(reversed(path))
-                queue.append(nxt)
-    return ()
 
 
 def _anchor(rect: tuple[int, int, int, int], door: Tile, big: bool) -> Tile:
