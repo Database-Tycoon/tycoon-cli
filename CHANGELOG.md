@@ -2,7 +2,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [0.2.1] - 2026-09-16
 
-_Headline: **multi-resource filesystem sources + validated config**. A filesystem source can now declare several named resources and load them all in a single run, `sources add` walks you through them interactively, and JSONL joins CSV and Parquet. Config that used to be quietly defaulted is validated instead — the one change here that can break an existing project._
+_Headline: **multi-resource filesystem sources + validated config**. A filesystem source can now declare several named resources and load them all in a single run, `sources add` walks you through them interactively, and JSONL joins CSV and Parquet. Config that used to be quietly defaulted is validated instead — the one change here that can break an existing project. Also here: `tycoon city` lays the city out by pipeline depth, so the city looks different from 0.2.0 while the `city.json` contract stays the same._
 
 ### Added
 
@@ -26,6 +26,8 @@ _Headline: **multi-resource filesystem sources + validated config**. A filesyste
 - **`tycoon sources add` prompts for resources** ([#226][], PR [#232][]). Adding a filesystem source now loops through resource entries interactively instead of accepting a single path. A table name that isn't a valid identifier, or that duplicates one already entered, is rejected with the reason and re-prompted rather than written out and failing later at load time.
 - **JSONL files are parsed into rows** ([#228][], PR [#235][]). A `*.jsonl` glob pipes through dlt's `read_jsonl()`, alongside the existing CSV and Parquet support. Plain `.json` is deliberately not included — a single JSON document isn't the newline-delimited shape `read_jsonl()` reads.
 - **A glob that matches no local files says so** ([#223][], PR [#234][]). Previously a typo'd glob and a source with genuinely nothing to load were indistinguishable: both loaded zero rows silently. Remote buckets (`s3://`, `gs://`, `az://`) are skipped rather than guessed at.
+- **PR size and title checks, warn-only** ([#211][], [#213][], PR [#214][]). Every pull request gets two advisory checks: at most 8 counted files, with a 500-line cap on newly added `src/**/*.py` files, and a `type(scope): description` title whose scope names the tracked work as `gh-<N>` (preferred) or `PTC-<N>` (accepted during the Jira migration). Files under `src/tycoon/templates/**` are not counted, and release-promotion PRs from a `vX.Y.Z` branch into `main` are exempt from both. The checks read their config and scripts from the base ref, so a PR cannot loosen its own limits. They become required once the conventions have settled.
+- **A repository writing-style skill** ([#215][], PR [#216][]) documents the house style for documentation, GitHub issues, PR descriptions, release notes and review notes, in `skills/repository-writing-style`.
 
 ### Changed
 
@@ -53,6 +55,9 @@ _Headline: **multi-resource filesystem sources + validated config**. A filesyste
 - **`tycoon data analyze --rill` builds dashboards for an already-scaffolded source** ([#222][], PR [#229][]). The already-referenced check skipped the whole command, so running `analyze <source> --rill` on a source that already had dbt staging models generated no dashboards at all, and the only way past it (`--force`) would also overwrite the existing dbt files. It now skips only the dbt scaffolding step.
 - **The `csv-import` template points at the renamed table** ([#222][], PR [#229][]). Its staging model selected `_read_csv`, which no longer exists after the rename above, so a freshly scaffolded project's first `dbt build` would fail.
 
+[#211]: https://github.com/Database-Tycoon/tycoon-cli/issues/211
+[#213]: https://github.com/Database-Tycoon/tycoon-cli/issues/213
+[#215]: https://github.com/Database-Tycoon/tycoon-cli/issues/215
 [#222]: https://github.com/Database-Tycoon/tycoon-cli/issues/222
 [#223]: https://github.com/Database-Tycoon/tycoon-cli/issues/223
 [#224]: https://github.com/Database-Tycoon/tycoon-cli/issues/224
@@ -66,6 +71,8 @@ _Headline: **multi-resource filesystem sources + validated config**. A filesyste
 [#232]: https://github.com/Database-Tycoon/tycoon-cli/pull/232
 [#234]: https://github.com/Database-Tycoon/tycoon-cli/pull/234
 [#235]: https://github.com/Database-Tycoon/tycoon-cli/pull/235
+[#214]: https://github.com/Database-Tycoon/tycoon-cli/pull/214
+[#216]: https://github.com/Database-Tycoon/tycoon-cli/pull/216
 [#247]: https://github.com/Database-Tycoon/tycoon-cli/pull/247
 
 ## [0.2.0] - 2026-08-28
@@ -228,10 +235,6 @@ _The layered-architecture release. Tycoon learns the sources → staging → int
 ### Changed
 
 - **`tycoon semantics scaffold` switches mart discovery from prefix matching to layer classification** ([#30][]). Previously globbed for `mart_*` / `fct_*` / `dim_*` / `obt_*`; now reads the dbt manifest and respects per-model overrides. Falls back to the old prefix matcher (with a clear warning) when no manifest is available, so behaviour is preserved for unmigrated projects.
-
-### Fixed
-
-- _TBD._
 
 [#30]: https://github.com/Database-Tycoon/tycoon-cli/issues/30
 [#39]: https://github.com/Database-Tycoon/tycoon-cli/issues/39
