@@ -29,6 +29,7 @@ _Headline: **multi-resource filesystem sources + validated config**. A filesyste
 
 ### Changed
 
+- **`tycoon city` lays the city out by pipeline depth** (PR [#247][]). The planner that 0.2.0 shipped, depth columns with schema bands, is replaced by the lattice ring planner that previously sat behind a flag. Each schema is one neighbourhood on a street lattice; neighbourhoods sit in rings by pipeline depth, gold and mart schemas downtown and sources on the edge, with ties broken on fan-out, then member count, then name. Every lineage edge is routed door to door over the lattice, streets are drawn only where routes and doors need them, and every table sits inside its own schema's district. Median route length on the dogfood catalog fell from 229 tiles to 36. A city rendered from the same catalog will not match a 0.2.0 screenshot. The `city.json` contract is unchanged: same top-level keys, same `version: 1`, same `DagPlan` fields; only the geometry moves.
 - **Breaking: a filesystem source must declare `path` or `bucket_url`** ([#223][], PR [#234][]). Both missing used to fall back to `"."`, silently scanning the working directory; it now fails with an error naming the source. If a project relied on that default, add the path explicitly:
 
   ```yaml
@@ -41,6 +42,10 @@ _Headline: **multi-resource filesystem sources + validated config**. A filesyste
   ```
 - **An unrecognized `file_glob` warns instead of quietly loading metadata** ([#228][], PR [#235][]). A glob that is neither CSV, Parquet, nor JSONL still falls back to the raw filesystem resource, but now says that it is loading file listings — path, size, modification time — rather than parsed rows. Those globs also now load with `write_disposition="replace"`, matching every other filesystem resource.
 - **`sources add` no longer offers to run `dlt init` for filesystem sources** ([#226][], PR [#232][]). The filesystem source ships with dlt, so the install prompt was asking to fetch something already present. The dead filesystem pipeline implementation it was wired to is gone too ([#227][], PR [#232][]).
+
+### Removed
+
+- **The `DATABASE_TYCOON_PLANNER` environment variable** (PR [#247][]). It opted a run into the ring planner while the old planner was the default. The ring planner is now the only one, so nothing reads the variable; setting it is harmless and does nothing.
 
 ### Fixed
 
@@ -61,6 +66,7 @@ _Headline: **multi-resource filesystem sources + validated config**. A filesyste
 [#232]: https://github.com/Database-Tycoon/tycoon-cli/pull/232
 [#234]: https://github.com/Database-Tycoon/tycoon-cli/pull/234
 [#235]: https://github.com/Database-Tycoon/tycoon-cli/pull/235
+[#247]: https://github.com/Database-Tycoon/tycoon-cli/pull/247
 
 ## [0.2.0] - 2026-08-28
 

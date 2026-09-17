@@ -3,10 +3,21 @@ title: Documentation log
 description: Chronological record of documentation changes
 tags: [log]
 related: []
-updated: '2026-08-09'
+updated: '2026-09-16'
 ---
 
 # Log
+
+- 2026-09-16: **The ring planner ships in 0.2.1 on its own; the rest of the
+  city stream moves to 0.2.2.** #247, the engine half of #206 split at the
+  precinct seam, merged into `v0.2.1` on 2026-09-15 after review. The other
+  eight PRs of the stack (#248 through #256: tests, renderer fixes, bundle,
+  web CI gate, docs) stay draft and retarget to 0.2.2. Recorded in the
+  0.2.1 CHANGELOG and release notes: the city looks different, the
+  `city.json` contract does not, `DATABASE_TYCOON_PLANNER` is a no-op, and
+  the planner's own tests under `tests/tycoon_city/sim` are not yet in the
+  default `pytest` run. `guide.md`'s "Streets are mid-rewrite" bullet was
+  stale (it still described the flag) and now states the current planner.
 
 - 2026-08-09 — **Release candidate made honest, and the tour stopped reading a
   dead city.** The final whole-branch review found the release notes claiming a
