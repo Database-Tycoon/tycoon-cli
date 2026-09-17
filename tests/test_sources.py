@@ -117,6 +117,35 @@ class TestSourcesShow:
         assert result.exit_code == 1
         assert "not found" in result.stdout.lower() or "not found" in (result.stderr or "").lower()
 
+    def test_show_multi_resource_source_renders_resources(self, cli_runner, tmp_path, monkeypatch):
+        """Regression test for a note on Stephen's gh-224 review: before
+        this fix, show_source rendered only src.config, so a multi-resource
+        source (config={}) displayed with no paths, globs, or table names —
+        indistinguishable from a misconfigured empty source."""
+        from tycoon.project import ResourceConfig
+
+        _setup_project(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        project = load_project(tmp_path)
+        assert project is not None
+        project.sources["arcade"] = SourceConfig(
+            type="filesystem",
+            schema="raw_arcade",
+            resources=[
+                ResourceConfig(table_name="games", path="data/games", file_glob="*.csv"),
+                ResourceConfig(table_name="players", path="data/players", file_glob="*.parquet"),
+            ],
+        )
+        save_project(project, tmp_path)
+
+        result = cli_runner.invoke(app, ["data", "sources", "list", "show", "arcade"])
+        assert result.exit_code == 0
+        assert "games" in result.stdout
+        assert "data/games" in result.stdout
+        assert "players" in result.stdout
+        assert "data/players" in result.stdout
+
 
 # ---------------------------------------------------------------------------
 # tycoon data sources remove
@@ -203,6 +232,102 @@ class TestSourceConfigModel:
         assert loaded.sources["new-api"].type == "rest_api"
         assert loaded.sources["new-api"].schema_name == "raw_new_api"
         assert loaded.sources["new-api"].config["base_url"] == "https://api.example.com"
+
+
+class TestPromptFilesystemResources:
+    """gh-226 — interactive resource loop for `sources add filesystem`."""
+
+    def test_single_resource_no_loop(self, monkeypatch):
+        from tycoon.commands.sources import _prompt_filesystem_resources
+
+        prompts = iter(["arcade_games", "data/input", "games.csv"])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
+
+        resources = _prompt_filesystem_resources()
+        assert len(resources) == 1
+        assert resources[0].table_name == "arcade_games"
+        assert resources[0].path == "data/input"
+        assert resources[0].file_glob == "games.csv"
+
+    def test_loops_until_user_declines(self, monkeypatch):
+        from tycoon.commands.sources import _prompt_filesystem_resources
+
+        prompts = iter(
+            [
+                "arcade_games",
+                "data/input",
+                "games.csv",
+                "sensor_readings",
+                "/tmp/data",
+                "**/*.parquet",
+            ]
+        )
+        confirms = iter([True, False])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: next(confirms))
+
+        resources = _prompt_filesystem_resources()
+        assert len(resources) == 2
+        assert resources[0].table_name == "arcade_games"
+        assert resources[1].table_name == "sensor_readings"
+        assert resources[1].path == "/tmp/data"
+
+    def test_invalid_table_name_reprompts_instead_of_crashing(self, monkeypatch):
+        """Regression test for Stephen's review on gh-226 / PR #232: a raw
+        table name like 'sales-2024' (hyphen, matching tycoon's own
+        hyphenated source-name convention) used to raise an uncaught
+        pydantic ValidationError, killing the CLI and losing every
+        resource already entered. Now it re-prompts for the same
+        resource instead."""
+        from tycoon.commands.sources import _prompt_filesystem_resources
+
+        prompts = iter(
+            [
+                "sales-2024",  # invalid: hyphen not allowed in table_name
+                "data/input",
+                "*.csv",
+                "sales_2024",  # retry, valid
+                "data/input",
+                "*.csv",
+            ]
+        )
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
+
+        resources = _prompt_filesystem_resources()
+        assert len(resources) == 1
+        assert resources[0].table_name == "sales_2024"
+
+    def test_duplicate_table_name_rejected_and_reprompts(self, monkeypatch):
+        """Regression test for Stephen's review on gh-226 / PR #232: the
+        loop used to accept two resources with the same table_name, and
+        dlt unions both files' rows into one table at run time with no
+        warning. Now the prompt rejects a duplicate before even asking
+        for a path/glob."""
+        from tycoon.commands.sources import _prompt_filesystem_resources
+
+        prompts = iter(
+            [
+                "games",
+                "data/a",
+                "*.csv",
+                "games",  # duplicate: rejected before path/glob are asked
+                "sensors",
+                "data/b",
+                "*.csv",
+            ]
+        )
+        confirms = iter([True, False])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: next(confirms))
+
+        resources = _prompt_filesystem_resources()
+        assert len(resources) == 2
+        assert resources[0].table_name == "games"
+        assert resources[0].path == "data/a"
+        assert resources[1].table_name == "sensors"
+        assert resources[1].path == "data/b"
 
 
 # ---------------------------------------------------------------------------
@@ -591,6 +716,83 @@ class TestSourcesAddNoPrompt:
         )
         assert result.exit_code == 1
         assert "Invalid --config" in (result.stderr or result.output)
+
+
+class TestSourcesAddFilesystemInteractive:
+    """gh-226 — end-to-end interactive `sources add filesystem` writes the
+    multi-resource shape from gh-224/gh-225, looping until the user is done."""
+
+    def _bind(self, tmp_path: Path, monkeypatch):
+        body = (
+            "name: test\n"
+            "version: 0.1.0\n"
+            "database:\n"
+            "  raw: data/raw.duckdb\n"
+            "  warehouse: data/warehouse.duckdb\n"
+            "sources: {}\n"
+        )
+        (tmp_path / "tycoon.yml").write_text(body)
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        monkeypatch.chdir(tmp_path)
+
+    def test_add_filesystem_with_two_resources(self, cli_runner, tmp_path, monkeypatch):
+        self._bind(tmp_path, monkeypatch)
+
+        prompt_input = "\n".join(
+            [
+                "arcade",  # source name
+                "raw_arcade",  # schema name
+                "arcade_games",  # resource 1: table name
+                "data/input",  # resource 1: path
+                "games.csv",  # resource 1: file glob
+                "y",  # add another resource?
+                "arcade_players",  # resource 2: table name
+                "data/input",  # resource 2: path
+                "players.csv",  # resource 2: file glob
+                "n",  # add another resource?
+            ]
+        )
+        result = cli_runner.invoke(
+            app,
+            ["data", "sources", "add", "filesystem"],
+            input=prompt_input + "\n",
+        )
+        assert result.exit_code == 0, result.output
+
+        project = load_project(tmp_path)
+        assert project is not None
+        source = project.sources["arcade"]
+        assert source.schema_name == "raw_arcade"
+        assert source.resources is not None
+        assert len(source.resources) == 2
+        assert source.resources[0].table_name == "arcade_games"
+        assert source.resources[0].file_glob == "games.csv"
+        assert source.resources[1].table_name == "arcade_players"
+        assert source.resources[1].file_glob == "players.csv"
+
+
+class TestFilesystemNotABuiltinShimSource:
+    """gh-227 — filesystem never reached the shim/catalog path (runner.py's
+    native builder always took precedence), so its shim was dead code with
+    diverging defaults. Confirms it's gone, not just unreachable."""
+
+    def test_filesystem_not_in_builtin_sources(self):
+        from tycoon.ingestion.source_manager import _BUILTIN_SOURCES
+
+        assert "filesystem" not in _BUILTIN_SOURCES
+
+    def test_filesystem_not_in_shims(self):
+        from tycoon.ingestion.source_manager import _SHIMS
+
+        assert "filesystem" not in _SHIMS
+
+    def test_rest_api_still_a_builtin_shim_source(self):
+        """Only filesystem's shim was dead; rest_api's own catalog/install
+        path is untouched by this cleanup."""
+        from tycoon.ingestion.source_manager import _BUILTIN_SOURCES, _SHIMS
+
+        assert "rest_api" in _BUILTIN_SOURCES
+        assert "rest_api" in _SHIMS
 
 
 class TestGoogleSheetsCatalog:

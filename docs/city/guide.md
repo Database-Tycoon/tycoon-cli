@@ -338,14 +338,13 @@ genuinely unimportable to prove it.
   without one it is parsed out of view SQL with sqlglot, which cannot see
   through a table built by an external process. Column-level lineage covers
   what it can parse and the notes count what it could not.
-- **Streets are mid-rewrite.** What ships by default is the v4 planner:
-  lineage-driven layout in depth columns, schema bands, and POWER_LINE
-  arterials. The v5 planner — schema-clustered neighbourhoods on a lattice
-  that satisfies the junction-spacing rule by construction — is available
-  behind `DATABASE_TYCOON_PLANNER=v5` and is not yet the default. The next
-  geometry phase is planned behind a spike gauntlet: every geometry change
-  gets rendered and looked at before a test is written for it, because four
-  spec-first attempts at this were wrong.
+- **Streets are one planner now.** Each schema is one neighbourhood on a
+  street lattice, dealt into rings by pipeline depth: gold and mart
+  downtown, sources on the edge. The `DATABASE_TYCOON_PLANNER` flag that
+  used to opt into this layout is gone; there is nothing to opt out to.
+  Geometry changes still go through the spike gauntlet: rendered and looked
+  at before a test is written, because four spec-first attempts at this
+  were wrong.
 - **District labels can stack** when two bands sit adjacent, and far-view
   contrast on residential zones is low.
 - **Simulated content stays flagged.** Anything not restating a measured fact

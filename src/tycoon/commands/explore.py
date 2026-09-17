@@ -129,10 +129,25 @@ def analyze_cmd(
 
     info(f"Found {len(schema_tables)} table(s) in schema '{schema_name}'")
 
+    already_referenced = False
+    if not force and cfg.dbt_project_dir.exists():
+        from tycoon.commands.sources import _source_already_referenced
+
+        already_referenced = _source_already_referenced(cfg.dbt_project_dir, source_name)
+
     all_generated: list[str] = []
 
     # 4. Generate dbt staging models
-    if not no_dbt:
+    #
+    # The already-referenced check only skips this step, not the whole
+    # command: --rill (step 5) and --build must still run on a source that
+    # already has staging models, otherwise "analyze <source> --rill" on an
+    # already-scaffolded source silently generates no dashboards, and the
+    # only escape (--force) would also overwrite the existing dbt files.
+    if not no_dbt and already_referenced:
+        info(f"'{source_name}' is already referenced by an existing dbt model. Skipping dbt scaffolding.")
+        info("Pass --force to scaffold anyway.")
+    elif not no_dbt:
         info("Generating dbt staging models...")
         staging_dir = cfg.dbt_project_dir / "models" / "staging" / source_name
         try:

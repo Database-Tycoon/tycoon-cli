@@ -784,6 +784,73 @@ class TestAnalyzeCLIErrors:
         )
 
 
+class TestAnalyzeAlreadyReferencedScopesToStagingOnly:
+    """Regression test for Stephen's review on gh-222 / PR #229: the
+    already-referenced skip must only apply to the dbt staging step, not
+    the whole command, so --rill still runs on a source that already has
+    dbt models."""
+
+    def _seed_project(self, tmp_path: Path, *, with_existing_model: bool) -> None:
+        tycoon_yml = (
+            "name: test\n"
+            "version: 0.1.0\n"
+            "database:\n"
+            "  raw: data/raw.duckdb\n"
+            "  warehouse: data/warehouse.duckdb\n"
+            "sources:\n"
+            "  src_a:\n"
+            "    type: rest_api\n"
+            "    schema: raw_src_a\n"
+        )
+        (tmp_path / "tycoon.yml").write_text(tycoon_yml)
+        (tmp_path / "data").mkdir()
+        con = duckdb.connect(str(tmp_path / "data" / "raw.duckdb"))
+        con.execute("CREATE SCHEMA raw_src_a")
+        con.execute("CREATE TABLE raw_src_a.items (id INTEGER, name VARCHAR)")
+        con.execute("INSERT INTO raw_src_a.items VALUES (1, 'a')")
+        con.close()
+
+        staging = tmp_path / "dbt_project" / "models" / "staging"
+        staging.mkdir(parents=True)
+        if with_existing_model:
+            (staging / "stg_existing.sql").write_text("select * from {{ source('src_a', 'items') }}\n")
+
+    def test_dbt_scaffolding_skipped_when_already_referenced(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        self._seed_project(tmp_path, with_existing_model=True)
+
+        result = cli_runner.invoke(app, ["data", "analyze", "src_a"])
+        assert result.exit_code == 0, result.stdout
+        assert "already referenced" in result.stdout.lower()
+        assert not (tmp_path / "dbt_project" / "models" / "staging" / "src_a").exists()
+
+    def test_rill_still_runs_when_dbt_scaffolding_is_skipped(self, cli_runner, tmp_path, monkeypatch):
+        """Before the fix: the whole command returned early, so --rill on an
+        already-scaffolded source silently generated no dashboards."""
+        monkeypatch.chdir(tmp_path)
+        self._seed_project(tmp_path, with_existing_model=True)
+
+        result = cli_runner.invoke(app, ["data", "analyze", "src_a", "--rill"])
+        assert result.exit_code == 0, result.stdout
+
+        # dbt scaffolding still skipped...
+        assert not (tmp_path / "dbt_project" / "models" / "staging" / "src_a").exists()
+        # ...but Rill generation still ran.
+        rill_sources = tmp_path / "rill" / "sources"
+        assert rill_sources.exists() and any(rill_sources.iterdir()), (
+            f"expected Rill source files, found none. stdout:\n{result.stdout}"
+        )
+
+    def test_dbt_scaffolding_runs_when_not_already_referenced(self, cli_runner, tmp_path, monkeypatch):
+        """Sanity check: the normal case (no prior model) is unaffected."""
+        monkeypatch.chdir(tmp_path)
+        self._seed_project(tmp_path, with_existing_model=False)
+
+        result = cli_runner.invoke(app, ["data", "analyze", "src_a"])
+        assert result.exit_code == 0, result.stdout
+        assert (tmp_path / "dbt_project" / "models" / "staging" / "src_a" / "stg_src_a__items.sql").exists()
+
+
 # ---------------------------------------------------------------------------
 # observability: capture_dlt + capture_dbt + refresh_usage_dashboards
 # ---------------------------------------------------------------------------

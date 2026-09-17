@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
+
 
 class TestNYCDotPipeline:
     def test_module_imports(self):
@@ -162,15 +164,20 @@ class TestBuildFilesystemSource:
         )
 
     def test_csv_glob_returns_dlt_source(self):
-        """CSV glob should pipe through read_csv, producing a transformer resource."""
+        """CSV glob should pipe through read_csv, producing a transformer resource.
+
+        gh-223: the flat shape now goes through _build_filesystem_resource
+        with a placeholder name (renamed again by run_source() after the
+        tycoon source's own name), so the resource name is the placeholder,
+        not dlt's default "read_csv" — only is_transformer distinguishes
+        the dispatch here.
+        """
         from tycoon.ingestion.runner import _build_filesystem_source
 
         source_config = self._make_source_config("*.csv")
         result = _build_filesystem_source(source_config)
         assert result is not None
-        # Piped sources are DltResource transformers; the name reflects read_csv
         assert result.is_transformer is True
-        assert "csv" in result.name.lower()
 
     def test_parquet_glob_returns_dlt_source(self):
         """Parquet glob should pipe through read_parquet, producing a transformer resource."""
@@ -180,18 +187,126 @@ class TestBuildFilesystemSource:
         result = _build_filesystem_source(source_config)
         assert result is not None
         assert result.is_transformer is True
-        assert "parquet" in result.name.lower()
 
-    def test_unknown_glob_returns_raw_filesystem_source(self):
-        """An unrecognised glob should fall back to the raw filesystem resource."""
+    def test_jsonl_glob_returns_dlt_source(self):
+        """JSONL glob should pipe through read_jsonl, producing a transformer resource."""
+        from tycoon.ingestion.runner import _build_filesystem_source
+
+        source_config = self._make_source_config("*.jsonl")
+        result = _build_filesystem_source(source_config)
+        assert result is not None
+        assert result.is_transformer is True
+
+    def test_unknown_glob_returns_raw_filesystem_source(self, capsys):
+        """An unrecognised glob should fall back to the raw filesystem
+        resource, with a warning that it isn't parsed into rows (gh-228).
+        Plain `.json` (not `.jsonl`) is deliberately still unrecognized:
+        a single JSON document isn't the newline-delimited shape
+        read_jsonl() expects.
+        """
         from tycoon.ingestion.runner import _build_filesystem_source
 
         source_config = self._make_source_config("**/*.json")
         result = _build_filesystem_source(source_config)
         assert result is not None
+        assert "isn't a recognized format" in capsys.readouterr().out.lower()
         # Raw filesystem source is not a transformer
         assert result.is_transformer is False
-        assert result.name == "filesystem"
+
+    def test_resources_list_returns_one_named_resource_per_entry(self):
+        """gh-224/gh-225: a multi-resource source builds one resource per
+        entry, each renamed to its own table_name, not the shared source name."""
+        from tycoon.ingestion.runner import _build_filesystem_source
+        from tycoon.project import ResourceConfig, SourceConfig
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_arcade",
+            resources=[
+                ResourceConfig(table_name="arcade_games", path="data/input", file_glob="games.csv"),
+                ResourceConfig(table_name="sensor_readings", path="/tmp/data", file_glob="**/*.parquet"),
+            ],
+        )
+        result = _build_filesystem_source(source_config)
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert result[0].name == "arcade_games"
+        assert result[1].name == "sensor_readings"
+
+
+class TestFilesystemConfigValidation:
+    """gh-223: filesystem sources fail loudly on missing config instead of
+    silently defaulting, and warn (without failing) on a local glob that
+    matches nothing."""
+
+    def test_missing_path_raises_instead_of_defaulting_to_cwd(self):
+        """Previously: cfg.get("bucket_url", cfg.get("path", ".")) silently
+        scanned the current working directory when neither key was set."""
+        from tycoon.ingestion.runner import IngestionError, _build_filesystem_source
+        from tycoon.project import SourceConfig
+
+        source_config = SourceConfig(type="filesystem", schema="raw_files", config={"file_glob": "*.csv"})
+        with pytest.raises(IngestionError, match="path"):
+            _build_filesystem_source(source_config)
+
+    def test_resource_missing_path_raises(self):
+        from tycoon.ingestion.runner import IngestionError, _build_filesystem_source
+        from tycoon.project import ResourceConfig, SourceConfig
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_arcade",
+            resources=[ResourceConfig(table_name="games", path="", file_glob="games.csv")],
+        )
+        with pytest.raises(IngestionError, match="games"):
+            _build_filesystem_source(source_config)
+
+    def test_local_glob_with_no_matches_warns_not_fails(self, tmp_path, capsys):
+        """A typo'd glob shouldn't look identical to a genuinely empty source."""
+        from tycoon.ingestion.runner import _build_filesystem_source
+        from tycoon.project import SourceConfig
+
+        empty_dir = tmp_path / "input"
+        empty_dir.mkdir()
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_files",
+            config={"path": str(empty_dir), "file_glob": "*.csv"},
+        )
+        result = _build_filesystem_source(source_config)  # must not raise
+        assert result is not None
+        assert "no files matched" in capsys.readouterr().out.lower()
+
+    def test_local_glob_with_matches_does_not_warn(self, tmp_path, capsys):
+        from tycoon.ingestion.runner import _build_filesystem_source
+        from tycoon.project import SourceConfig
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        (input_dir / "data.csv").write_text("id\n1\n")
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_files",
+            config={"path": str(input_dir), "file_glob": "*.csv"},
+        )
+        _build_filesystem_source(source_config)
+        assert "no files matched" not in capsys.readouterr().out.lower()
+
+    def test_remote_bucket_url_skips_the_local_glob_check(self, capsys):
+        """S3/GCS/Azure aren't supported yet (see the parent tracking issue's
+        deferred scope) — the local-glob check must not misfire on them."""
+        from tycoon.ingestion.runner import _build_filesystem_source
+        from tycoon.project import SourceConfig
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_files",
+            config={"path": "s3://some-bucket/data", "file_glob": "*.csv"},
+        )
+        _build_filesystem_source(source_config)  # must not raise or warn
+        assert "no files matched" not in capsys.readouterr().out.lower()
 
 
 class TestRunSourceDispatch:
@@ -230,6 +345,259 @@ class TestRunSourceDispatch:
 
         for native in ("rest_api", "filesystem"):
             assert native in CATALOG, f"{native} should still appear in the catalog for browsing"
+
+
+class TestUnexpandedEnvVarCheck:
+    """Regression test for Stephen's review on gh-224 / PR #230: a resource's
+    own path/file_glob can carry an unexpanded ${VAR} just like the flat
+    config shape, and it needs the same diagnostic — otherwise a typo'd or
+    unset env var silently loads zero rows with no error anywhere."""
+
+    def test_flat_config_value_detected(self):
+        from tycoon.ingestion.runner import _check_unexpanded_env_vars
+        from tycoon.project import SourceConfig
+
+        source_config = SourceConfig(
+            type="rest_api",
+            schema="raw_api",
+            config={"base_url": "${API_BASE_URL}"},
+        )
+        assert _check_unexpanded_env_vars(source_config) == [("base_url", "${API_BASE_URL}")]
+
+    def test_resource_path_and_glob_detected(self):
+        from tycoon.ingestion.runner import _check_unexpanded_env_vars
+        from tycoon.project import ResourceConfig, SourceConfig
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_files",
+            resources=[
+                ResourceConfig(table_name="widgets", path="${DATA_DIR}/widgets", file_glob="*.csv"),
+                ResourceConfig(table_name="gadgets", path="/tmp/gadgets", file_glob="${GADGET_GLOB}"),
+            ],
+        )
+        bad_pairs = _check_unexpanded_env_vars(source_config)
+        assert ("resources[0].path", "${DATA_DIR}") in bad_pairs
+        assert ("resources[1].file_glob", "${GADGET_GLOB}") in bad_pairs
+
+    def test_no_bad_pairs_when_fully_expanded(self):
+        from tycoon.ingestion.runner import _check_unexpanded_env_vars
+        from tycoon.project import ResourceConfig, SourceConfig
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_files",
+            resources=[ResourceConfig(table_name="widgets", path="/data/widgets", file_glob="*.csv")],
+        )
+        assert _check_unexpanded_env_vars(source_config) == []
+
+    def test_run_source_warns_for_unexpanded_var_on_native_dispatch(self, tmp_path, capsys):
+        """End-to-end: before this fix, only the catalog dispatch path
+        (_run_catalog) called _check_unexpanded_env_vars, so a native
+        builder (filesystem, rest_api, sql_database) never warned about an
+        unexpanded ${VAR} at all, flat config included. Uses the flat shape
+        here since it's what this layer's filesystem builder reads; a
+        resources-shaped source runs through the same warning call.
+
+        The bad var is scoped to a bounded glob (*.csv under a
+        nonexistent literal directory), not "**/*", so a miss resolves to
+        zero matches instead of walking the whole working tree.
+        """
+        import shutil
+        from pathlib import Path
+
+        from tycoon.ingestion.runner import run_source
+        from tycoon.project import SourceConfig
+
+        raw_db_path = tmp_path / "raw.duckdb"
+        pipeline_name = "test_gh224_unexpanded_env_var"
+        try:
+            source_config = SourceConfig(
+                type="filesystem",
+                schema="raw_test",
+                config={"path": "${UNSET_TYCOON_TEST_VAR}", "file_glob": "*.csv"},
+            )
+            run_source(pipeline_name, source_config, raw_db_path=raw_db_path)
+
+            out = capsys.readouterr().out.lower()
+            assert "config key 'path'" in out
+            assert "${unset_tycoon_test_var}" in out
+        finally:
+            shutil.rmtree(Path.home() / ".dlt" / "pipelines" / pipeline_name, ignore_errors=True)
+
+
+class TestFilesystemResourceNaming:
+    """Regression test for issue #222: two filesystem sources sharing a
+    schema, each pointed at a different file, used to collide into one
+    table because dlt's read_csv() transformer always names its resource
+    "read_csv" regardless of which tycoon source built it. run_source()
+    now renames the resource after the tycoon source's own name."""
+
+    def test_two_filesystem_sources_land_in_separate_tables(self, tmp_path):
+        import shutil
+        from pathlib import Path
+
+        import duckdb
+
+        from tycoon.ingestion.runner import run_source
+        from tycoon.project import SourceConfig
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        (input_dir / "a.csv").write_text("id,value\n1,foo\n2,bar\n")
+        (input_dir / "b.csv").write_text("id,value\n1,baz\n")
+
+        raw_db_path = tmp_path / "raw.duckdb"
+        pipeline_names = ["test_gh222_source_a", "test_gh222_source_b"]
+
+        try:
+            for name, glob in zip(pipeline_names, ["a.csv", "b.csv"]):
+                source_config = SourceConfig(
+                    type="filesystem",
+                    schema="raw_test",
+                    config={"path": str(input_dir), "file_glob": glob},
+                )
+                run_source(name, source_config, raw_db_path=raw_db_path)
+
+            con = duckdb.connect(str(raw_db_path), read_only=True)
+            tables = {
+                row[0]
+                for row in con.sql(
+                    "select table_name from information_schema.tables where table_schema = 'raw_test'"
+                ).fetchall()
+            }
+            con.close()
+
+            assert "test_gh222_source_a" in tables
+            assert "test_gh222_source_b" in tables
+        finally:
+            for name in pipeline_names:
+                shutil.rmtree(Path.home() / ".dlt" / "pipelines" / name, ignore_errors=True)
+
+
+class TestLegacyFilesystemTableWarning:
+    """Regression test for Stephen's review on #229: existing projects on
+    the old flat config shape silently start writing to a new table name
+    after the gh-222 fix, while their dbt models keep selecting the old,
+    now-frozen table. Since that can't be fixed automatically (the old
+    table is data, not something safe to drop unprompted), run_source()
+    warns whenever the legacy table is still present."""
+
+    def test_warns_when_legacy_table_present(self, tmp_path, capsys):
+        import shutil
+        from pathlib import Path
+
+        import duckdb
+
+        from tycoon.ingestion.runner import run_source
+        from tycoon.project import SourceConfig
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        (input_dir / "widgets.csv").write_text("id,value\n1,foo\n")
+
+        raw_db_path = tmp_path / "raw.duckdb"
+
+        # Simulate a project that ingested before the gh-222 fix: the
+        # pre-fix generic table already exists in the target schema.
+        con = duckdb.connect(str(raw_db_path))
+        con.execute("CREATE SCHEMA raw_test")
+        con.execute("CREATE TABLE raw_test.read_csv (id INTEGER, value VARCHAR)")
+        con.execute("INSERT INTO raw_test.read_csv VALUES (1, 'stale')")
+        con.close()
+
+        pipeline_name = "test_gh222_legacy_warning"
+        try:
+            source_config = SourceConfig(
+                type="filesystem",
+                schema="raw_test",
+                config={"path": str(input_dir), "file_glob": "widgets.csv"},
+            )
+            run_source(pipeline_name, source_config, raw_db_path=raw_db_path)
+
+            out = capsys.readouterr().out.lower()
+            assert "raw_test.read_csv" in out
+            assert pipeline_name.lower() in out
+        finally:
+            shutil.rmtree(Path.home() / ".dlt" / "pipelines" / pipeline_name, ignore_errors=True)
+
+    def test_no_warning_when_no_legacy_table(self, tmp_path, capsys):
+        import shutil
+        from pathlib import Path
+
+        from tycoon.ingestion.runner import run_source
+        from tycoon.project import SourceConfig
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        (input_dir / "widgets.csv").write_text("id,value\n1,foo\n")
+
+        raw_db_path = tmp_path / "raw.duckdb"
+        pipeline_name = "test_gh222_no_legacy_warning"
+        try:
+            source_config = SourceConfig(
+                type="filesystem",
+                schema="raw_test",
+                config={"path": str(input_dir), "file_glob": "widgets.csv"},
+            )
+            run_source(pipeline_name, source_config, raw_db_path=raw_db_path)
+
+            out = capsys.readouterr().out.lower()
+            assert "still exists from before" not in out
+        finally:
+            shutil.rmtree(Path.home() / ".dlt" / "pipelines" / pipeline_name, ignore_errors=True)
+
+
+class TestMultiResourceFilesystemSource:
+    """Regression test for issue #225: a single source with multiple
+    resources runs as one pipeline and lands each resource in its own
+    table, using each resource's own table_name."""
+
+    def test_two_resources_one_source_land_in_separate_tables(self, tmp_path):
+        import shutil
+        from pathlib import Path
+
+        import duckdb
+
+        from tycoon.ingestion.runner import run_source
+        from tycoon.project import ResourceConfig, SourceConfig
+
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        (input_dir / "games.csv").write_text("id,value\n1,foo\n2,bar\n")
+        (input_dir / "players.csv").write_text("id,value\n1,baz\n")
+
+        raw_db_path = tmp_path / "raw.duckdb"
+        pipeline_name = "test_gh225_arcade"
+
+        try:
+            source_config = SourceConfig(
+                type="filesystem",
+                schema="raw_test",
+                resources=[
+                    ResourceConfig(table_name="test_gh225_games", path=str(input_dir), file_glob="games.csv"),
+                    ResourceConfig(table_name="test_gh225_players", path=str(input_dir), file_glob="players.csv"),
+                ],
+            )
+            run_source(pipeline_name, source_config, raw_db_path=raw_db_path)
+
+            con = duckdb.connect(str(raw_db_path), read_only=True)
+            tables = {
+                row[0]
+                for row in con.sql(
+                    "select table_name from information_schema.tables where table_schema = 'raw_test'"
+                ).fetchall()
+            }
+            games_rows = con.execute('SELECT count(*) FROM raw_test."test_gh225_games"').fetchone()
+            players_rows = con.execute('SELECT count(*) FROM raw_test."test_gh225_players"').fetchone()
+            con.close()
+
+            assert "test_gh225_games" in tables
+            assert "test_gh225_players" in tables
+            assert games_rows is not None and games_rows[0] == 2
+            assert players_rows is not None and players_rows[0] == 1
+        finally:
+            shutil.rmtree(Path.home() / ".dlt" / "pipelines" / pipeline_name, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------

@@ -4,16 +4,14 @@ sources:
   - name: files
     description: >
       Raw CSV rows ingested by dlt from data/input/ via the filesystem source.
-      dlt's `read_csv()` transformer produces a single unified table named
-      `_read_csv` that holds rows from every matched file.
+      dlt's `read_csv()` transformer produces a single unified table, named
+      after this source (`files`), that holds rows from every matched file.
     database: raw
     schema: raw_files
     tables:
-      - name: _read_csv
+      - name: files
         description: Unioned rows from every CSV under data/input/.
-        identifier: _read_csv
-        quoting:
-          identifier: true
+        identifier: files
 
 models:
   - name: stg_widgets

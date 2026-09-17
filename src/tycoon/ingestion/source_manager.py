@@ -190,44 +190,18 @@ def run_pipeline(name, source_config, raw_db_path, max_records=None):
     )
     return pipeline, pipeline.run(source)
 """,
-    "filesystem": """\
-from __future__ import annotations
-from pathlib import Path
-from typing import Any
-import re
-import dlt
-from dlt.sources.filesystem import filesystem, read_csv
-
-def run_pipeline(name, source_config, raw_db_path, max_records=None):
-    cfg = source_config.config
-    path = Path(cfg.get("path", "")).expanduser()
-
-    # If path is a single CSV file, use its parent dir as bucket and filename as glob.
-    # If path is a directory (or glob pattern), use it directly.
-    if path.suffix.lower() == ".csv" and path.is_file():
-        bucket_url = str(path.parent)
-        file_glob = path.name
-        # Use the filename stem as table name (e.g. "sales_data" from "sales_data.csv")
-        table_name = re.sub(r"[^a-z0-9]+", "_", path.stem.lower()).strip("_") or "data"
-    else:
-        bucket_url = str(path)
-        file_glob = "**/*.csv"
-        table_name = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "data"
-
-    resource = (filesystem(bucket_url=bucket_url, file_glob=file_glob) | read_csv()).with_name(table_name)
-    if max_records:
-        resource = resource.add_limit(max_records)
-    pipeline = dlt.pipeline(
-        pipeline_name=name,
-        destination=dlt.destinations.duckdb(str(raw_db_path)),
-        dataset_name=source_config.schema_name,
-    )
-    return pipeline, pipeline.run(resource)
-""",
 }
 
 # Sources that ship with dlt itself — no `dlt init` needed.
-_BUILTIN_SOURCES: set[str] = {"rest_api", "filesystem"}
+#
+# filesystem is intentionally absent: unlike rest_api, it never reaches this
+# shim-and-catalog-dispatch path at all (runner.py's _NATIVE_BUILDERS always
+# takes precedence over CATALOG for it), and _maybe_install_catalog_source
+# skips it for the same reason. It used to have its own shim here with
+# different defaults (write_disposition left at dlt's default "append"
+# rather than tycoon's "replace" convention, and a different table-naming
+# heuristic) that could never actually run. Issue #227.
+_BUILTIN_SOURCES: set[str] = {"rest_api"}
 
 # Maps catalog source type → dlt init source name (they sometimes differ)
 _DLT_INIT_NAME: dict[str, str] = {
@@ -252,7 +226,7 @@ def is_source_installed(source_type: str) -> bool:
 def install_source(source_type: str) -> bool:
     """Install a source and write its _run.py shim.
 
-    For built-in dlt sources (rest_api, filesystem) this just writes the shim.
+    For built-in dlt sources (rest_api) this just writes the shim.
     For verified sources it runs `dlt init <source> duckdb` only if the package
     isn't already present, then always writes the _run.py shim.
 
