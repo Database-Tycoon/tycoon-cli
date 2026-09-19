@@ -358,3 +358,130 @@ class TestUpgrade:
 
         assert result.exit_code != 0
         assert "newer than this tycoon supports" in result.output
+
+
+class TestPromptDbt:
+    """gh-259: `tycoon init`'s "create new dbt project" now defaults inline,
+    matching `_prompt_rill`'s existing shape, instead of a sibling repo."""
+
+    def test_create_new_defaults_to_inline_path(self, tmp_path, monkeypatch):
+        from tycoon.commands.init import DetectionResults, _prompt_dbt
+        from tycoon.project import TransformationTool
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+
+        prompts = iter(["1"])  # "Create new inline at ..." is the only non-skip option
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        tool, managed, path = _prompt_dbt(target, "myproj", DetectionResults())
+
+        assert tool is TransformationTool.dbt
+        assert managed is True
+        assert path == str(target / "dbt_project")
+
+    def test_create_new_option_label_says_inline_not_sibling(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.init import DetectionResults, _prompt_dbt
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+
+        prompts = iter(["1"])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        _prompt_dbt(target, "myproj", DetectionResults())
+
+        out = capsys.readouterr().out
+        assert "inline" in out.lower()
+        assert "sibling" not in out.lower()
+
+    def test_register_existing_local_path_within_bounds_accepted(self, tmp_path, monkeypatch):
+        from tycoon.commands.init import DetectionResults, _prompt_dbt
+        from tycoon.project import TransformationTool
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+        existing = tmp_path / "myproj-dbt"  # sibling, still a valid *registered* location
+        existing.mkdir()
+
+        prompts = iter(["2", str(existing)])  # "Register existing project..."
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        tool, managed, path = _prompt_dbt(target, "myproj", DetectionResults())
+
+        assert tool is TransformationTool.dbt
+        assert managed is False
+        assert path == str(existing)
+
+    def test_register_existing_path_outside_boundary_rejected(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.init import DetectionResults, _prompt_dbt
+        from tycoon.project import TransformationTool
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+        outside = tmp_path.parent / "definitely-outside"
+        outside.mkdir(exist_ok=True)
+
+        prompts = iter(["2", str(outside)])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        tool, managed, path = _prompt_dbt(target, "myproj", DetectionResults())
+
+        assert tool is TransformationTool.none
+        assert path is None
+        # Rich wraps console output to the detected terminal width, which
+        # differs between a local run and CI -- normalize whitespace so the
+        # match doesn't depend on where a line break happened to land.
+        out = " ".join(capsys.readouterr().out.split())
+        assert "outside the project's parent" in out
+
+
+class TestPromptRegisterProjectContainment:
+    """gh-259: the register-existing sub-flow (shared by dbt and Rill) now
+    rejects a path outside the project's parent directory at prompt time,
+    instead of only failing the first time a command tries to use it."""
+
+    def test_clone_destination_outside_boundary_rejected(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.init import _prompt_register_project
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+        outside = tmp_path.parent / "way-outside"
+
+        # URL branch: decline the default clone destination, type an out-of-bounds one.
+        prompts = iter(["https://github.com/example/dbt-project.git", str(outside)])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
+
+        result = _prompt_register_project("dbt", target)
+
+        assert result is None
+        out = " ".join(capsys.readouterr().out.split())
+        assert "outside the project's parent" in out
+
+    def test_clone_destination_defaults_beside_the_project_not_inside_it(self, tmp_path, monkeypatch):
+        """A cloned URL brings its own .git; defaulting inside `target` would
+        nest one git repo inside another. Must default beside it instead,
+        even though "create new" (no .git of its own) now defaults inline."""
+        from tycoon.commands.init import _prompt_register_project
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+
+        cloned = []
+        monkeypatch.setattr(
+            "tycoon.commands.init._clone_repo",
+            lambda url, dest: (cloned.append((url, dest)), True)[1],
+        )
+
+        prompts = iter(["https://github.com/example/dbt-project.git"])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)  # accept the default destination
+
+        result = _prompt_register_project("dbt", target)
+
+        expected = tmp_path / "myproj-dbt"
+        assert result == str(expected)
+        assert cloned == [("https://github.com/example/dbt-project.git", expected)]
+        assert expected.parent == target.parent  # sibling, not nested inside target
+        assert not expected.is_relative_to(target)

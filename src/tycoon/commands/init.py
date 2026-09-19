@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 
+from tycoon.config import resolve_contained_path
 from tycoon.project import (
     BITool,
     IngestionTool,
@@ -147,8 +148,21 @@ def _clone_repo(url: str, dest: Path) -> bool:
         return False
 
 
-def _prompt_register_project(component: str, default_sibling: Path) -> str | None:
-    """Shared sub-flow for "register existing" — returns absolute path string or None on failure."""
+def _prompt_register_project(component: str, target: Path) -> str | None:
+    """Shared sub-flow for "register existing" — returns absolute path string or None on failure.
+
+    `target` is the tycoon project root, used to reject a path outside its
+    parent directory (#65) at prompt time rather than only the first time a
+    command tries to use it.
+
+    A cloned URL always defaults beside `target`, never inside it: cloning
+    brings the source's own `.git`, and a clone landing inside `target`
+    nests one git repo inside another -- the outer repo can't track it
+    normally, and a fresh clone of the tycoon project won't bring the dbt
+    or Rill project's files along without submodule wiring nobody set up.
+    That's a different concern from where a freshly *scaffolded* (no
+    `.git` of its own) project defaults to, which is inline (gh-259).
+    """
     raw = typer.prompt(
         f"Local path or GitHub URL for your {component} project",
         default="",
@@ -158,22 +172,33 @@ def _prompt_register_project(component: str, default_sibling: Path) -> str | Non
         return None
 
     if raw.startswith(("http://", "https://", "git@")):
+        clone_default = target.parent / f"{target.name}-{component.lower()}"
         clone_here = typer.confirm(
-            f"Clone into {default_sibling}?",
+            f"Clone into {clone_default}?",
             default=True,
         )
         dest = (
-            default_sibling
+            clone_default
             if clone_here
-            else Path(typer.prompt(f"Where should the {component} project be cloned?", default=str(default_sibling)))
+            else Path(typer.prompt(f"Where should the {component} project be cloned?", default=str(clone_default)))
             .expanduser()
             .resolve()
         )
+        try:
+            resolve_contained_path(str(dest), target, f"{component} project path")
+        except ValueError as exc:
+            warn(str(exc))
+            return None
         if not _clone_repo(raw, dest):
             return None
         return str(dest)
 
     path = Path(raw).expanduser().resolve()
+    try:
+        resolve_contained_path(str(path), target, f"{component} project path")
+    except ValueError as exc:
+        warn(str(exc))
+        return None
     if not path.exists():
         warn(f"Path {path} does not exist; treating this component as skipped.")
         return None
@@ -244,8 +269,8 @@ def _prompt_dbt(
     for item in detected.dbt:
         options.append(f"Use detected project at {item.path} ({item.kind})")
 
-    default_new = target.parent / f"{project_name}-dbt"
-    options.append(f"Create new dbt project at {default_new} (sibling repo)")
+    default_new = target / "dbt_project"
+    options.append(f"Create new inline at {default_new}")
     options.append("Register existing project (local path or GitHub URL)")
     options.append("Skip — `tycoon data transform` becomes a no-op")
 
@@ -254,12 +279,12 @@ def _prompt_dbt(
     # Detected
     if choice <= len(detected_paths):
         return TransformationTool.dbt, False, str(detected_paths[choice - 1])
-    # Create new (sibling)
+    # Create new (inline)
     if choice == len(detected_paths) + 1:
         return TransformationTool.dbt, True, str(default_new)
     # Register existing
     if choice == len(detected_paths) + 2:
-        registered = _prompt_register_project("dbt", default_new)
+        registered = _prompt_register_project("dbt", target)
         if registered:
             return TransformationTool.dbt, False, registered
         return TransformationTool.none, False, None
@@ -295,7 +320,7 @@ def _prompt_rill(
         return BITool.rill, True, str(default_new)
     # Register
     if choice == len(detected_paths) + 2:
-        registered = _prompt_register_project("Rill", default_new)
+        registered = _prompt_register_project("Rill", target)
         if registered:
             return BITool.rill, False, registered
         return BITool.none, False, None
