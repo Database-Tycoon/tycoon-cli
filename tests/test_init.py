@@ -446,7 +446,6 @@ class TestPromptRegisterProjectContainment:
 
         target = tmp_path / "myproj"
         target.mkdir()
-        default_path = target / "dbt_project"
         outside = tmp_path.parent / "way-outside"
 
         # URL branch: decline the default clone destination, type an out-of-bounds one.
@@ -454,8 +453,35 @@ class TestPromptRegisterProjectContainment:
         monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
         monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
 
-        result = _prompt_register_project("dbt", default_path, target)
+        result = _prompt_register_project("dbt", target)
 
         assert result is None
         out = " ".join(capsys.readouterr().out.split())
         assert "outside the project's parent" in out
+
+    def test_clone_destination_defaults_beside_the_project_not_inside_it(self, tmp_path, monkeypatch):
+        """A cloned URL brings its own .git; defaulting inside `target` would
+        nest one git repo inside another. Must default beside it instead,
+        even though "create new" (no .git of its own) now defaults inline."""
+        from tycoon.commands.init import _prompt_register_project
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+
+        cloned = []
+        monkeypatch.setattr(
+            "tycoon.commands.init._clone_repo",
+            lambda url, dest: (cloned.append((url, dest)), True)[1],
+        )
+
+        prompts = iter(["https://github.com/example/dbt-project.git"])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)  # accept the default destination
+
+        result = _prompt_register_project("dbt", target)
+
+        expected = tmp_path / "myproj-dbt"
+        assert result == str(expected)
+        assert cloned == [("https://github.com/example/dbt-project.git", expected)]
+        assert expected.parent == target.parent  # sibling, not nested inside target
+        assert not expected.is_relative_to(target)
