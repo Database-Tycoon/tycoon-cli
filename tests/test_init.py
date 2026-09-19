@@ -429,7 +429,11 @@ class TestPromptDbt:
 
         assert tool is TransformationTool.none
         assert path is None
-        assert "outside the project's parent" in capsys.readouterr().out
+        # Rich wraps console output to the detected terminal width, which
+        # differs between a local run and CI -- normalize whitespace so the
+        # match doesn't depend on where a line break happened to land.
+        out = " ".join(capsys.readouterr().out.split())
+        assert "outside the project's parent" in out
 
 
 class TestPromptRegisterProjectContainment:
@@ -453,4 +457,5 @@ class TestPromptRegisterProjectContainment:
         result = _prompt_register_project("dbt", default_path, target)
 
         assert result is None
-        assert "outside the project's parent" in capsys.readouterr().out
+        out = " ".join(capsys.readouterr().out.split())
+        assert "outside the project's parent" in out
