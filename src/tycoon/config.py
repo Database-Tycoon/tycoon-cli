@@ -44,7 +44,10 @@ def resolve_contained_path(value: str, root: Path, field: str) -> Path:
         boundary = root.resolve()
     if not resolved.is_relative_to(boundary):
         raise ValueError(
-            f"{field} ({value!r}) resolves to {resolved}, outside the project's parent directory {boundary}"
+            f"{field} ({value!r}) resolves to {resolved}, outside the project's parent directory {boundary}. "
+            "tycoon keeps dbt/Rill project paths inside the tycoon project or its parent directory as a "
+            "security boundary, so a shared tycoon.yml can't be used to reach unrelated locations on your "
+            f"machine. Move the project under {boundary}, or point tycoon.yml at a path within it."
         )
     return resolved
 

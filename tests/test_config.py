@@ -135,3 +135,20 @@ class TestResolveContainedPath:
         root.mkdir()
         with pytest.raises(ValueError, match="dbt project path"):
             resolve_contained_path("/etc/cron.d", root, "dbt project path")
+
+    def test_error_message_explains_the_boundary_and_a_fix(self, tmp_path: Path):
+        """An out-of-bounds path (e.g. an existing project that lives in a
+        completely unrelated part of the filesystem, not a sibling or a
+        traversal attempt) should get an error that explains *why* it's
+        rejected and what to do, not just that it was rejected."""
+        root = tmp_path / "codespace" / "experiments"
+        root.mkdir(parents=True)
+        unrelated = tmp_path / "projects" / "dbt"
+        unrelated.mkdir(parents=True)
+
+        with pytest.raises(ValueError) as exc_info:
+            resolve_contained_path(str(unrelated), root, "dbt project path")
+
+        message = str(exc_info.value)
+        assert "security boundary" in message
+        assert f"Move the project under {root.parent}" in message
