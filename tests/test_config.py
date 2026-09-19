@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tycoon.config import TycoonConfig, load_config
+import pytest
+
+from tycoon.config import TycoonConfig, load_config, resolve_contained_path
 from tycoon.project import SCHEMA_VERSION
 
 
@@ -93,8 +95,6 @@ class TestLoadConfigSchemaWarning:
         The gate lives here (not in load_project) so the import-time singleton
         never raises and --help / init --upgrade remain reachable.
         """
-        import pytest
-
         (tmp_path / "tycoon.yml").write_text(f"name: future\nschema_version: {SCHEMA_VERSION + 1}\n")
         monkeypatch.chdir(tmp_path)
 
@@ -107,3 +107,31 @@ class TestLoadConfigSchemaWarning:
         assert exc_info.value.code == 1
         assert len(errors) == 1
         assert "newer than this tycoon supports" in errors[0]
+
+
+class TestResolveContainedPath:
+    """gh-259: `resolve_contained_path` is now a standalone function, shared
+    by `TycoonConfig` (runtime) and the `tycoon init` wizard (prompt time),
+    not just a private `TycoonConfig` method."""
+
+    def test_inline_path_accepted(self, tmp_path: Path):
+        root = tmp_path / "proj"
+        root.mkdir()
+        assert resolve_contained_path("dbt_project", root, "dbt_project_dir") == (root / "dbt_project").resolve()
+
+    def test_sibling_path_accepted(self, tmp_path: Path):
+        root = tmp_path / "proj"
+        root.mkdir()
+        assert resolve_contained_path("../proj-dbt", root, "dbt_project_dir") == (tmp_path / "proj-dbt").resolve()
+
+    def test_traversal_beyond_parent_rejected(self, tmp_path: Path):
+        root = tmp_path / "proj"
+        root.mkdir()
+        with pytest.raises(ValueError, match="outside the project's parent"):
+            resolve_contained_path("../../../escape", root, "dbt_project_dir")
+
+    def test_error_message_includes_the_given_field_name(self, tmp_path: Path):
+        root = tmp_path / "proj"
+        root.mkdir()
+        with pytest.raises(ValueError, match="dbt project path"):
+            resolve_contained_path("/etc/cron.d", root, "dbt project path")
