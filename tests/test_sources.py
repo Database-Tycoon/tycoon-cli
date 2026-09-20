@@ -852,3 +852,85 @@ class TestGoogleSheetsCatalog:
         assert src.config["range_names"] == "Sheet1"
         # Credential defaults to the env-var reference (set GOOGLE_APPLICATION_CREDENTIALS).
         assert src.config["credentials_path"] == "${GOOGLE_APPLICATION_CREDENTIALS}"
+
+
+# ---------------------------------------------------------------------------
+# Project-local sources dir (gh-263)
+# ---------------------------------------------------------------------------
+
+
+class TestProjectLocalSourcesDir:
+    """Downloaded source code and _run.py shims live project-local once a
+    project has its own `.venv` (gh-262); a project without one keeps
+    resolving from the shared global location, so anything already
+    downloaded there keeps working (gh-261)."""
+
+    def test_resolve_sources_dir_project_local_when_venv_exists(self, tmp_path):
+        from tycoon.ingestion.source_manager import resolve_sources_dir
+
+        (tmp_path / ".venv").mkdir()
+        assert resolve_sources_dir(tmp_path) == tmp_path / ".tycoon" / "sources"
+
+    def test_resolve_sources_dir_falls_back_to_global_without_venv(self, tmp_path):
+        from tycoon.ingestion.source_manager import SOURCES_DIR, resolve_sources_dir
+
+        assert resolve_sources_dir(tmp_path) == SOURCES_DIR
+
+    def test_is_source_installed_checks_given_sources_dir(self, tmp_path):
+        from tycoon.ingestion.source_manager import is_source_installed
+
+        custom_dir = tmp_path / "custom-sources"
+        assert is_source_installed("rest_api", custom_dir) is False
+        shim_dir = custom_dir / "rest_api"
+        shim_dir.mkdir(parents=True)
+        (shim_dir / "_run.py").write_text("# shim")
+        assert is_source_installed("rest_api", custom_dir) is True
+
+    def test_install_source_writes_into_given_sources_dir(self, tmp_path):
+        from tycoon.ingestion.source_manager import install_source, is_source_installed
+
+        custom_dir = tmp_path / "custom-sources"
+        assert install_source("rest_api", custom_dir) is True
+        assert (custom_dir / "rest_api" / "_run.py").exists()
+        assert is_source_installed("rest_api", custom_dir) is True
+
+    def test_maybe_install_catalog_source_resolves_project_local_dir(self, tmp_path, monkeypatch):
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.commands.sources import _maybe_install_catalog_source
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+
+        seen: dict[str, Path] = {}
+
+        def _fake_install(source_type: str, sources_dir: Path) -> bool:
+            seen["sources_dir"] = sources_dir
+            return True
+
+        monkeypatch.setattr(source_manager, "install_source", _fake_install)
+
+        _maybe_install_catalog_source("github", tmp_path)
+
+        assert seen["sources_dir"] == tmp_path / ".tycoon" / "sources"
+
+    def test_maybe_install_catalog_source_falls_back_to_global_dir(self, tmp_path, monkeypatch):
+        """No project-local `.venv` yet, keeps installing into the shared
+        global directory, unchanged from before gh-263."""
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.commands.sources import _maybe_install_catalog_source
+
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+
+        seen: dict[str, Path] = {}
+
+        def _fake_install(source_type: str, sources_dir: Path) -> bool:
+            seen["sources_dir"] = sources_dir
+            return True
+
+        monkeypatch.setattr(source_manager, "install_source", _fake_install)
+
+        _maybe_install_catalog_source("github", tmp_path)
+
+        assert seen["sources_dir"] == source_manager.SOURCES_DIR
