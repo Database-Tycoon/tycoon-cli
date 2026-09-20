@@ -1,5 +1,11 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`tycoon city`'s cold build no longer re-parses the whole schema per column** ([#274][], PR [#277][]). `derive_column_lineage` passed a plain `dict` as sqlglot's `schema=`, and `ensure_schema()` builds a fresh `MappingSchema` — normalizing, and so `parse_one`-ing, every identifier in the mapping — every time it is handed a dict. The entire warehouse schema was therefore re-parsed once per traced column. Building the `MappingSchema` once and reusing it cuts a cold `city.json` on an 87-object catalog from **43.6s to 10.3s** against sqlglot 27.29.0, and from 9.9s to 6.5s against 30.15.0. Column edges are byte-identical before and after (1,023 edges, same digest): this removes redundant work, it does not change lineage.
+
 ## [0.2.1] - 2026-09-16
 
 _Headline: **multi-resource filesystem sources + validated config**. A filesystem source can now declare several named resources and load them all in a single run, `sources add` walks you through them interactively, and JSONL joins CSV and Parquet. Config that used to be quietly defaulted is validated instead — the one change here that can break an existing project. Also here: `tycoon city` lays the city out by pipeline depth, so the city looks different from 0.2.0 while the `city.json` contract stays the same._
@@ -74,6 +80,8 @@ _Headline: **multi-resource filesystem sources + validated config**. A filesyste
 [#214]: https://github.com/Database-Tycoon/tycoon-cli/pull/214
 [#216]: https://github.com/Database-Tycoon/tycoon-cli/pull/216
 [#247]: https://github.com/Database-Tycoon/tycoon-cli/pull/247
+[#274]: https://github.com/Database-Tycoon/tycoon-cli/issues/274
+[#277]: https://github.com/Database-Tycoon/tycoon-cli/pull/277
 
 ## [0.2.0] - 2026-08-28
 
