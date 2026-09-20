@@ -525,8 +525,17 @@ def _run_catalog(
     import importlib
 
     from tycoon.config import config as _cfg
+    from tycoon.utils.console import warn
+    from tycoon.venv import venv_path
 
     sources_dir = resolve_sources_dir(_cfg.root)
+
+    if not venv_path(_cfg.root).exists():
+        warn(
+            "This project doesn't have its own .venv yet, source code is loaded "
+            f"from the shared {sources_dir}. Run `tycoon setup` to give this "
+            "project its own isolated environment."
+        )
 
     if not is_source_installed(source_type, sources_dir):
         raise IngestionError(f"Source '{source_type}' is not installed. Run: tycoon data sources add {source_type}")
@@ -534,8 +543,6 @@ def _run_catalog(
     # Warn about unexpanded env vars before hitting the API
     bad_pairs = _check_unexpanded_env_vars(source_config)
     if bad_pairs:
-        from tycoon.utils.console import warn
-
         for key, var in bad_pairs:
             warn(
                 f"Config key '{key}' contains an unexpanded env var: {var}\n"

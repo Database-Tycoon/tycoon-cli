@@ -1157,3 +1157,73 @@ class TestInstallDepsIntoProjectVenv:
         _maybe_install_dlt_extra("google_sheets", tmp_path)
 
         assert seen["project_root"] is None
+
+
+# ---------------------------------------------------------------------------
+# Warn on the old, global environment model (gh-265)
+# ---------------------------------------------------------------------------
+
+
+class TestWarnOnOldEnvironmentModel:
+    """A project without its own `.venv` sees a clear, actionable nudge at
+    the moment it's actually using the old, shared/global behavior (gh-265).
+    Purely additive: never raises, never blocks the action it's warning
+    about."""
+
+    def test_maybe_install_catalog_source_warns_without_venv(self, tmp_path, monkeypatch, capsys):
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.commands.sources import _maybe_install_catalog_source
+
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+        monkeypatch.setattr(source_manager, "install_source", lambda *a, **k: True)
+
+        _maybe_install_catalog_source("github", tmp_path)
+
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "doesn't have its own .venv yet" in combined
+        assert "tycoon setup" in combined
+
+    def test_maybe_install_catalog_source_no_warning_with_venv(self, tmp_path, monkeypatch, capsys):
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.commands.sources import _maybe_install_catalog_source
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+        monkeypatch.setattr(source_manager, "install_source", lambda *a, **k: True)
+
+        _maybe_install_catalog_source("github", tmp_path)
+
+        captured = capsys.readouterr()
+        assert "doesn't have its own .venv yet" not in (captured.out + captured.err)
+
+    def test_maybe_install_dlt_extra_warns_without_venv(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+        monkeypatch.setattr(source_installer, "install_dlt_extra", lambda *a, **k: True)
+
+        _maybe_install_dlt_extra("google_sheets", tmp_path)
+
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "doesn't have its own .venv yet" in combined
+        assert "tycoon setup" in combined
+
+    def test_maybe_install_dlt_extra_no_warning_with_venv(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+        monkeypatch.setattr(source_installer, "install_dlt_extra", lambda *a, **k: True)
+
+        _maybe_install_dlt_extra("google_sheets", tmp_path)
+
+        captured = capsys.readouterr()
+        assert "doesn't have its own .venv yet" not in (captured.out + captured.err)

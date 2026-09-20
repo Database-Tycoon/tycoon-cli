@@ -121,6 +121,42 @@ class TestPythonVersionCheck:
         assert "supported range" in out
 
 
+class TestProjectVenvCheck:
+    """`_check_project_venv` (gh-265) reports plainly whether this project
+    has picked up its own `.venv` (gh-262+), a runtime filesystem fact, not
+    a schema field."""
+
+    def _patch_config(self, monkeypatch, tmp_path):
+        from tycoon.commands import doctor
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        cfg = TycoonConfig(project_root=tmp_path)
+        monkeypatch.setattr(doctor, "config", cfg)
+        return cfg
+
+    def test_reports_success_when_venv_exists(self, monkeypatch, tmp_path, capsys):
+        from tycoon.commands import doctor
+
+        self._patch_config(monkeypatch, tmp_path)
+        (tmp_path / ".venv").mkdir()
+
+        doctor._check_project_venv()
+        out = capsys.readouterr().out
+        assert "using its own .venv" in out
+
+    def test_warns_when_venv_missing(self, monkeypatch, tmp_path, capsys):
+        from tycoon.commands import doctor
+
+        self._patch_config(monkeypatch, tmp_path)
+
+        doctor._check_project_venv()
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "doesn't have its own .venv yet" in combined
+        assert "tycoon setup" in combined
+
+
 class TestDoctorObservabilityCheck:
     """`_check_observability` reports capture-hook health."""
 
