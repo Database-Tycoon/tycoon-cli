@@ -462,6 +462,7 @@ def _build_project_venv(target: Path) -> None:
     user to retry via `tycoon setup`, the same command this delegates to.
     """
     console.print()
+    info("Building the project's own environment via uv...")
     with console.status("Building the project's own environment via uv..."):
         result = create_venv(target)
     if result.ok:
