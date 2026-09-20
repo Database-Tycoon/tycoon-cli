@@ -463,6 +463,59 @@ class TestRunCatalogProjectLocalSourcesDir:
             sys.modules.pop("rest_api._run", None)
             sys.modules.pop("rest_api", None)
 
+    def test_warns_when_no_project_venv(self, tmp_path, monkeypatch, sys_path_copy, capsys):
+        """gh-265: nudge toward gh-262's project-local model right before
+        falling back to the shared source-code location."""
+        import sys
+        import types
+
+        import tycoon.config as cfg_mod
+        from tycoon.config import TycoonConfig
+        from tycoon.ingestion import runner
+        from tycoon.project import SourceConfig
+
+        monkeypatch.setattr(cfg_mod, "config", TycoonConfig(project_root=tmp_path))
+        monkeypatch.setattr(runner, "is_source_installed", lambda *a, **k: True)
+        monkeypatch.setattr(runner, "get_run_module_path", lambda source_type: "fake_gh265_pkg._run")
+
+        fake_load_info = types.SimpleNamespace(raise_on_failed_jobs=lambda: None)
+        fake_mod = types.ModuleType("fake_gh265_pkg._run")
+        fake_mod.run_pipeline = lambda *a, **k: (object(), fake_load_info)
+        monkeypatch.setitem(sys.modules, "fake_gh265_pkg._run", fake_mod)
+
+        source_config = SourceConfig(type="github", schema="raw_github", config={})
+        runner._run_catalog("github", "gh", source_config, tmp_path / "raw.duckdb")
+
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "doesn't have its own .venv yet" in combined
+        assert "tycoon setup" in combined
+
+    def test_no_warning_when_project_venv_exists(self, tmp_path, monkeypatch, sys_path_copy, capsys):
+        import sys
+        import types
+
+        import tycoon.config as cfg_mod
+        from tycoon.config import TycoonConfig
+        from tycoon.ingestion import runner
+        from tycoon.project import SourceConfig
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr(cfg_mod, "config", TycoonConfig(project_root=tmp_path))
+        monkeypatch.setattr(runner, "is_source_installed", lambda *a, **k: True)
+        monkeypatch.setattr(runner, "get_run_module_path", lambda source_type: "fake_gh265b_pkg._run")
+
+        fake_load_info = types.SimpleNamespace(raise_on_failed_jobs=lambda: None)
+        fake_mod = types.ModuleType("fake_gh265b_pkg._run")
+        fake_mod.run_pipeline = lambda *a, **k: (object(), fake_load_info)
+        monkeypatch.setitem(sys.modules, "fake_gh265b_pkg._run", fake_mod)
+
+        source_config = SourceConfig(type="github", schema="raw_github", config={})
+        runner._run_catalog("github", "gh", source_config, tmp_path / "raw.duckdb")
+
+        captured = capsys.readouterr()
+        assert "doesn't have its own .venv yet" not in (captured.out + captured.err)
+
     def test_installed_globally_but_not_project_local_points_at_migrate(self, tmp_path, monkeypatch, sys_path_copy):
         """The must-fix: a source installed before the project had its own
         `.venv` stops resolving once `resolve_sources_dir` switches to the
