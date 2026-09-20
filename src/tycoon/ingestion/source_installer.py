@@ -1,9 +1,12 @@
 """Install dlt extras and a catalog source's own requirements.txt on demand.
 
-Both install paths go through uv, targeting the project's own `.venv` when
-one exists (gh-262) and falling back to installing into the ambient
-environment, exactly as before, when it doesn't (gh-264). Neither falls back
-to plain `pip` if uv isn't on PATH, tycoon is uv-only end to end.
+Both install paths go through uv. When the project has its own `.venv` (and
+so its own `pyproject.toml`, gh-262), they go through `uv add`, so the
+dependency lands somewhere durable, not just installed into `.venv` and
+forgotten -- a fresh `uv sync` elsewhere reproduces it. A project without its
+own `.venv` yet falls back to installing into the ambient environment via
+`uv pip install`, exactly as before gh-264. Neither falls back to plain
+`pip` if uv isn't on PATH, tycoon is uv-only end to end.
 """
 
 from __future__ import annotations
@@ -13,6 +16,8 @@ import importlib.metadata
 import shutil
 import subprocess
 from pathlib import Path
+
+from rich.markup import escape
 
 from tycoon.utils.console import error, info
 
@@ -64,13 +69,31 @@ def is_dlt_extra_available(source_type: str) -> bool:
         return False
 
 
-def install_dlt_extra(source_type: str, python: str | None = None) -> bool:
-    """Install the dlt extra for this source type via ``uv pip install``.
+def _run_install(cmd: list[str]) -> bool:
+    # A package spec like `dlt[chess]==1.26.0` would otherwise have `[chess]`
+    # swallowed as unrecognized Rich markup (console.print isn't plain text).
+    info(f"Running: {escape(' '.join(cmd))}")
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return False
 
-    ``python`` targets a specific interpreter (the project's own `.venv`,
-    gh-264) with ``--python``; omitted, ``uv`` installs into whatever
-    environment it resolves ambiently, unchanged from before gh-264.
-    Returns True on success, False on failure (uv missing included).
+
+def install_dlt_extra(source_type: str, project_root: Path | None = None) -> bool:
+    """Install the dlt extra for this source type.
+
+    ``project_root`` targets a project with its own `.venv`/`pyproject.toml`
+    (gh-262): the extra is added via ``uv add``, landing durably in that
+    project's own dependency list. Omitted (no `.venv` yet), ``uv pip
+    install`` installs into whatever environment resolves ambiently,
+    unchanged from before gh-264. Returns True on success, False on failure
+    (uv missing included).
     """
     extra_name = DLT_EXTRAS.get(source_type, source_type)
     # Pin to the already-installed dlt version so a runtime extra install
@@ -81,50 +104,28 @@ def install_dlt_extra(source_type: str, python: str | None = None) -> bool:
     if _require_uv() is None:
         return False
 
-    cmd = ["uv", "pip", "install"]
-    if python:
-        cmd += ["--python", python]
-    cmd.append(package)
+    if project_root is not None:
+        cmd = ["uv", "--project", str(project_root), "add", package]
+    else:
+        cmd = ["uv", "pip", "install", package]
 
-    info(f"Running: {' '.join(cmd)}")
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return False
+    return _run_install(cmd)
 
 
-def install_requirements(requirements_path: Path, python: str | None = None) -> bool:
+def install_requirements(requirements_path: Path, project_root: Path | None = None) -> bool:
     """Install exactly what a dlt-init'd source's requirements.txt lists.
 
     No filtering or second-guessing its contents, whatever dlt wrote is what
-    gets installed (gh-264). ``python`` targets the project's own `.venv`
-    the same way ``install_dlt_extra`` does. Returns True on success, False
-    on failure (uv missing included).
+    gets installed (gh-264). ``project_root`` targets the project's own
+    `.venv`/`pyproject.toml` the same way ``install_dlt_extra`` does.
+    Returns True on success, False on failure (uv missing included).
     """
     if _require_uv() is None:
         return False
 
-    cmd = ["uv", "pip", "install"]
-    if python:
-        cmd += ["--python", python]
-    cmd += ["-r", str(requirements_path)]
+    if project_root is not None:
+        cmd = ["uv", "--project", str(project_root), "add", "-r", str(requirements_path)]
+    else:
+        cmd = ["uv", "pip", "install", "-r", str(requirements_path)]
 
-    info(f"Running: {' '.join(cmd)}")
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return False
+    return _run_install(cmd)

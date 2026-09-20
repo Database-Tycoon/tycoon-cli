@@ -406,10 +406,10 @@ class TestSourceInstaller:
         cmd = mock_run.call_args.args[0]
         assert cmd[-1] == expected
 
-    def test_install_dlt_extra_targets_given_python(self):
-        """gh-264: a `python` arg threads `--python <path>` into the uv
-        command, targeting the project's own `.venv` instead of whatever
-        environment `uv pip install` would resolve ambiently."""
+    def test_install_dlt_extra_targets_given_project_root(self, tmp_path):
+        """gh-262/gh-264: a `project_root` arg threads `uv --project <root>
+        add` into the command, landing the extra durably in that project's
+        own pyproject.toml instead of an ephemeral `uv pip install`."""
         from unittest.mock import MagicMock, patch
 
         from tycoon.ingestion.source_installer import install_dlt_extra
@@ -418,15 +418,14 @@ class TestSourceInstaller:
         mock_result.returncode = 0
 
         with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result) as mock_run:
-            assert install_dlt_extra("rest_api", python="/proj/.venv/bin/python") is True
+            assert install_dlt_extra("rest_api", project_root=tmp_path) is True
 
         cmd = mock_run.call_args.args[0]
-        assert "--python" in cmd
-        assert cmd[cmd.index("--python") + 1] == "/proj/.venv/bin/python"
+        assert cmd[:4] == ["uv", "--project", str(tmp_path), "add"]
 
-    def test_install_dlt_extra_omits_python_flag_when_not_given(self):
-        """No `python` arg (pre-gh-262 project, no `.venv` yet): same
-        ambient-install command as before gh-264."""
+    def test_install_dlt_extra_omits_project_flag_when_not_given(self):
+        """No `project_root` arg (pre-gh-262 project, no `.venv` yet): same
+        ambient `uv pip install` as before gh-264."""
         from unittest.mock import MagicMock, patch
 
         from tycoon.ingestion.source_installer import install_dlt_extra
@@ -438,7 +437,8 @@ class TestSourceInstaller:
             assert install_dlt_extra("rest_api") is True
 
         cmd = mock_run.call_args.args[0]
-        assert "--python" not in cmd
+        assert cmd[:3] == ["uv", "pip", "install"]
+        assert "--project" not in cmd
 
     def test_install_dlt_extra_fails_without_uv_no_pip_fallback(self, monkeypatch):
         """gh-264: no silent `pip` fallback, uv missing is a hard failure."""
@@ -476,7 +476,7 @@ class TestInstallRequirements:
         assert cmd[-2:] == ["-r", str(requirements)]
         assert "--python" not in cmd
 
-    def test_targets_given_python(self, tmp_path):
+    def test_targets_given_project_root(self, tmp_path):
         from unittest.mock import MagicMock, patch
 
         from tycoon.ingestion.source_installer import install_requirements
@@ -488,11 +488,10 @@ class TestInstallRequirements:
         mock_result.returncode = 0
 
         with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result) as mock_run:
-            assert install_requirements(requirements, python="/proj/.venv/bin/python") is True
+            assert install_requirements(requirements, project_root=tmp_path) is True
 
         cmd = mock_run.call_args.args[0]
-        assert "--python" in cmd
-        assert cmd[cmd.index("--python") + 1] == "/proj/.venv/bin/python"
+        assert cmd == ["uv", "--project", str(tmp_path), "add", "-r", str(requirements)]
 
     def test_returns_false_on_failure(self, tmp_path):
         from unittest.mock import MagicMock, patch
@@ -1072,9 +1071,9 @@ class TestInstallDepsIntoProjectVenv:
 
         seen: dict[str, object] = {}
 
-        def _fake_install(requirements_path, python=None):
+        def _fake_install(requirements_path, project_root=None):
             seen["requirements_path"] = requirements_path
-            seen["python"] = python
+            seen["project_root"] = project_root
             return True
 
         monkeypatch.setattr(source_installer, "install_requirements", _fake_install)
@@ -1082,12 +1081,11 @@ class TestInstallDepsIntoProjectVenv:
         _maybe_install_source_requirements("google_sheets", sources_dir, tmp_path)
 
         assert seen["requirements_path"] == sources_dir / "requirements.txt"
-        assert seen["python"] is None
+        assert seen["project_root"] is None
 
-    def test_maybe_install_source_requirements_targets_project_venv_python(self, tmp_path, monkeypatch):
+    def test_maybe_install_source_requirements_targets_project_root_with_venv(self, tmp_path, monkeypatch):
         from tycoon.commands.sources import _maybe_install_source_requirements
         from tycoon.ingestion import source_installer
-        from tycoon.venv import venv_python
 
         (tmp_path / ".venv").mkdir()
         sources_dir = tmp_path / "sources"
@@ -1096,15 +1094,15 @@ class TestInstallDepsIntoProjectVenv:
 
         seen: dict[str, object] = {}
 
-        def _fake_install(requirements_path, python=None):
-            seen["python"] = python
+        def _fake_install(requirements_path, project_root=None):
+            seen["project_root"] = project_root
             return True
 
         monkeypatch.setattr(source_installer, "install_requirements", _fake_install)
 
         _maybe_install_source_requirements("google_sheets", sources_dir, tmp_path)
 
-        assert seen["python"] == str(venv_python(tmp_path))
+        assert seen["project_root"] == tmp_path
 
     def test_maybe_install_source_requirements_noop_when_file_absent(self, tmp_path, monkeypatch):
         """dlt didn't write a requirements.txt for this source, nothing to install."""
@@ -1121,10 +1119,9 @@ class TestInstallDepsIntoProjectVenv:
 
         assert called == []
 
-    def test_maybe_install_dlt_extra_targets_project_venv_python(self, tmp_path, monkeypatch):
+    def test_maybe_install_dlt_extra_targets_project_root_with_venv(self, tmp_path, monkeypatch):
         from tycoon.commands.sources import _maybe_install_dlt_extra
         from tycoon.ingestion import source_installer
-        from tycoon.venv import venv_python
 
         (tmp_path / ".venv").mkdir()
         monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
@@ -1132,15 +1129,15 @@ class TestInstallDepsIntoProjectVenv:
 
         seen: dict[str, object] = {}
 
-        def _fake_install(source_type, python=None):
-            seen["python"] = python
+        def _fake_install(source_type, project_root=None):
+            seen["project_root"] = project_root
             return True
 
         monkeypatch.setattr(source_installer, "install_dlt_extra", _fake_install)
 
         _maybe_install_dlt_extra("google_sheets", tmp_path)
 
-        assert seen["python"] == str(venv_python(tmp_path))
+        assert seen["project_root"] == tmp_path
 
     def test_maybe_install_dlt_extra_falls_back_to_ambient_without_venv(self, tmp_path, monkeypatch):
         from tycoon.commands.sources import _maybe_install_dlt_extra
@@ -1151,12 +1148,12 @@ class TestInstallDepsIntoProjectVenv:
 
         seen: dict[str, object] = {}
 
-        def _fake_install(source_type, python=None):
-            seen["python"] = python
+        def _fake_install(source_type, project_root=None):
+            seen["project_root"] = project_root
             return True
 
         monkeypatch.setattr(source_installer, "install_dlt_extra", _fake_install)
 
         _maybe_install_dlt_extra("google_sheets", tmp_path)
 
-        assert seen["python"] is None
+        assert seen["project_root"] is None
