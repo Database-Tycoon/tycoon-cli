@@ -1,4 +1,10 @@
-"""Install dlt extras on demand for registered source types."""
+"""Install dlt extras and a catalog source's own requirements.txt on demand.
+
+Both install paths go through uv, targeting the project's own `.venv` when
+one exists (gh-262) and falling back to installing into the ambient
+environment, exactly as before, when it doesn't (gh-264). Neither falls back
+to plain `pip` if uv isn't on PATH, tycoon is uv-only end to end.
+"""
 
 from __future__ import annotations
 
@@ -6,8 +12,9 @@ import importlib
 import importlib.metadata
 import shutil
 import subprocess
+from pathlib import Path
 
-from tycoon.utils.console import info
+from tycoon.utils.console import error, info
 
 # dlt pip extras for generic source types (rest_api, sql_database, filesystem).
 # Catalog sources (github, slack, stripe, hubspot, notion) are NOT pip extras —
@@ -30,6 +37,19 @@ DLT_EXTRAS: dict[str, str] = {
 }
 
 
+def _require_uv() -> str | None:
+    """Return the uv binary path, or None after printing the standard hint."""
+    uv = shutil.which("uv")
+    if uv is None:
+        from tycoon.venv import UV_INSTALL_HINT
+
+        error(
+            "uv is not installed. tycoon uses uv to install source dependencies.\n"
+            f"  Install it with:  {UV_INSTALL_HINT}"
+        )
+    return uv
+
+
 def is_dlt_extra_available(source_type: str) -> bool:
     """Check if the dlt extra for this source type is importable.
 
@@ -44,11 +64,13 @@ def is_dlt_extra_available(source_type: str) -> bool:
         return False
 
 
-def install_dlt_extra(source_type: str) -> bool:
-    """Install the dlt extra for this source type.
+def install_dlt_extra(source_type: str, python: str | None = None) -> bool:
+    """Install the dlt extra for this source type via ``uv pip install``.
 
-    Prefers ``uv pip install`` if ``uv`` is on PATH, otherwise falls back
-    to ``pip install``. Returns True on success, False on failure.
+    ``python`` targets a specific interpreter (the project's own `.venv`,
+    gh-264) with ``--python``; omitted, ``uv`` installs into whatever
+    environment it resolves ambiently, unchanged from before gh-264.
+    Returns True on success, False on failure (uv missing included).
     """
     extra_name = DLT_EXTRAS.get(source_type, source_type)
     # Pin to the already-installed dlt version so a runtime extra install
@@ -56,11 +78,43 @@ def install_dlt_extra(source_type: str) -> bool:
     dlt_version = importlib.metadata.version("dlt")
     package = f"dlt[{extra_name}]=={dlt_version}"
 
-    # Prefer uv, fall back to pip
-    if shutil.which("uv"):
-        cmd = ["uv", "pip", "install", package]
-    else:
-        cmd = ["pip", "install", package]
+    if _require_uv() is None:
+        return False
+
+    cmd = ["uv", "pip", "install"]
+    if python:
+        cmd += ["--python", python]
+    cmd.append(package)
+
+    info(f"Running: {' '.join(cmd)}")
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return False
+
+
+def install_requirements(requirements_path: Path, python: str | None = None) -> bool:
+    """Install exactly what a dlt-init'd source's requirements.txt lists.
+
+    No filtering or second-guessing its contents, whatever dlt wrote is what
+    gets installed (gh-264). ``python`` targets the project's own `.venv`
+    the same way ``install_dlt_extra`` does. Returns True on success, False
+    on failure (uv missing included).
+    """
+    if _require_uv() is None:
+        return False
+
+    cmd = ["uv", "pip", "install"]
+    if python:
+        cmd += ["--python", python]
+    cmd += ["-r", str(requirements_path)]
 
     info(f"Running: {' '.join(cmd)}")
 
