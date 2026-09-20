@@ -1227,3 +1227,114 @@ class TestWarnOnOldEnvironmentModel:
 
         captured = capsys.readouterr()
         assert "doesn't have its own .venv yet" not in (captured.out + captured.err)
+
+
+# ---------------------------------------------------------------------------
+# --no-prompt auto-installs instead of skipping (gh-261 follow-up)
+# ---------------------------------------------------------------------------
+
+
+class TestNoPromptAutoInstalls:
+    """`--no-prompt` used to skip the install offer entirely, leaving a
+    catalog source registered in tycoon.yml but never downloaded, with no
+    feedback that anything was left undone. `--no-prompt` now means what it
+    means everywhere else in this command: don't ask, do the sensible
+    default. `auto=True` skips the confirm and installs directly."""
+
+    def test_maybe_install_catalog_source_auto_skips_confirm(self, tmp_path, monkeypatch):
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.commands.sources import _maybe_install_catalog_source
+
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+        monkeypatch.setattr(source_manager, "install_source", lambda *a, **k: True)
+
+        def _confirm_should_not_be_called(*a, **k):
+            raise AssertionError("typer.confirm should not be called when auto=True")
+
+        monkeypatch.setattr("typer.confirm", _confirm_should_not_be_called)
+
+        _maybe_install_catalog_source("github", tmp_path, auto=True)
+
+    def test_maybe_install_catalog_source_auto_false_still_prompts(self, tmp_path, monkeypatch):
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.commands.sources import _maybe_install_catalog_source
+
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+        monkeypatch.setattr(source_manager, "install_source", lambda *a, **k: True)
+
+        called = []
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: called.append(1) or True)
+
+        _maybe_install_catalog_source("github", tmp_path)
+
+        assert called == [1]
+
+    def test_maybe_install_dlt_extra_auto_skips_confirm(self, tmp_path, monkeypatch):
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+        monkeypatch.setattr(source_installer, "install_dlt_extra", lambda *a, **k: True)
+
+        def _confirm_should_not_be_called(*a, **k):
+            raise AssertionError("typer.confirm should not be called when auto=True")
+
+        monkeypatch.setattr("typer.confirm", _confirm_should_not_be_called)
+
+        _maybe_install_dlt_extra("google_sheets", tmp_path, auto=True)
+
+    def test_add_source_no_prompt_auto_installs_catalog_source(self, cli_runner, tmp_path, monkeypatch):
+        """End-to-end: `tycoon data sources add github --no-prompt ...`
+        actually downloads the source instead of silently leaving it
+        registered-but-not-installed."""
+        import tycoon.ingestion.source_manager as source_manager
+
+        TestSourcesAddNoPrompt()._bind(tmp_path, monkeypatch)
+
+        installed: list[str] = []
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+        monkeypatch.setattr(
+            source_manager, "install_source", lambda source_type, sources_dir: installed.append(source_type) or True
+        )
+
+        def _confirm_should_not_be_called(*a, **k):
+            raise AssertionError("typer.confirm should not be called under --no-prompt")
+
+        monkeypatch.setattr("typer.confirm", _confirm_should_not_be_called)
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "data",
+                "sources",
+                "add",
+                "github",
+                "--name",
+                "gh",
+                "--config",
+                "owner=dlt-hub",
+                "--config",
+                "repo=dlt",
+                "--config",
+                "access_token=x",
+                "--no-prompt",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert installed == ["github"]
+
+    def test_retry_hints_reference_a_real_command(self, tmp_path, monkeypatch, capsys):
+        """The old hint pointed at `tycoon data sources catalog install`,
+        which was never built. It now points at a command that exists."""
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.commands.sources import _maybe_install_catalog_source
+
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+        monkeypatch.setattr(source_manager, "install_source", lambda *a, **k: False)
+
+        _maybe_install_catalog_source("github", tmp_path, auto=True)
+
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "catalog install" not in combined
+        assert "tycoon data sources add github --force --no-prompt" in combined

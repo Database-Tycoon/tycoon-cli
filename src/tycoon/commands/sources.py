@@ -519,14 +519,13 @@ def add_source(
 
     success(f"Source [bold]{source_name}[/bold] added to tycoon.yml")
 
-    if not no_prompt:
-        if catalog_entry and source_type != "filesystem":
-            # filesystem ships with dlt core and never needs a dlt-init
-            # download; it always runs through the native builder in
-            # runner.py, never the catalog/shim path.
-            _maybe_install_catalog_source(source_type, cfg.root)
-        elif not catalog_entry:
-            _maybe_install_dlt_extra(source_type, cfg.root)
+    if catalog_entry and source_type != "filesystem":
+        # filesystem ships with dlt core and never needs a dlt-init
+        # download; it always runs through the native builder in
+        # runner.py, never the catalog/shim path.
+        _maybe_install_catalog_source(source_type, cfg.root, auto=no_prompt)
+    elif not catalog_entry:
+        _maybe_install_dlt_extra(source_type, cfg.root, auto=no_prompt)
 
     next_steps(
         (f"tycoon data sources run {source_name}", "load data into DuckDB"),
@@ -534,8 +533,14 @@ def add_source(
     )
 
 
-def _maybe_install_catalog_source(source_type: str, project_root: Path) -> None:
-    """Offer to download the dlt verified source if not already installed."""
+def _maybe_install_catalog_source(source_type: str, project_root: Path, *, auto: bool = False) -> None:
+    """Offer to download the dlt verified source if not already installed.
+
+    ``auto`` (set for ``--no-prompt``) skips the confirmation and installs
+    directly instead of skipping the download entirely, matching every
+    other ``--no-prompt`` behavior in this command: don't ask, just do the
+    sensible default.
+    """
     from tycoon.ingestion.source_manager import install_source, is_source_installed, resolve_sources_dir
     from tycoon.venv import venv_path
 
@@ -551,7 +556,7 @@ def _maybe_install_catalog_source(source_type: str, project_root: Path) -> None:
             "Run `tycoon setup` to give this project its own isolated environment."
         )
 
-    install = typer.confirm(
+    install = auto or typer.confirm(
         f"Source '{source_type}' hasn't been downloaded yet. Download it now via dlt init?",
         default=True,
     )
@@ -563,10 +568,14 @@ def _maybe_install_catalog_source(source_type: str, project_root: Path) -> None:
         else:
             warn(
                 f"Failed to install '{source_type}'. "
-                f"You can retry with: tycoon data sources catalog install {source_type}"
+                f"You can retry with: tycoon data sources add {source_type} --force --no-prompt "
+                "(plus your original --config flags)"
             )
     else:
-        info(f"Skipped. Install later with: tycoon data sources catalog install {source_type}")
+        info(
+            f"Skipped. Install later with: tycoon data sources add {source_type} --force --no-prompt "
+            "(plus your original --config flags)"
+        )
 
 
 def _maybe_install_source_requirements(source_type: str, sources_dir: Path, project_root: Path) -> None:
@@ -596,8 +605,14 @@ def _maybe_install_source_requirements(source_type: str, sources_dir: Path, proj
         warn(f"Failed to install dependencies for '{source_type}'. You can retry with: {retry}")
 
 
-def _maybe_install_dlt_extra(source_type: str, project_root: Path) -> None:
-    """Check if the dlt extra is available and offer to install if not."""
+def _maybe_install_dlt_extra(source_type: str, project_root: Path, *, auto: bool = False) -> None:
+    """Check if the dlt extra is available and offer to install if not.
+
+    ``auto`` (set for ``--no-prompt``) skips the confirmation and installs
+    directly instead of skipping the install entirely, matching every
+    other ``--no-prompt`` behavior in this command: don't ask, just do the
+    sensible default.
+    """
     from tycoon.ingestion.source_installer import (
         DLT_EXTRAS,
         install_dlt_extra,
@@ -619,7 +634,7 @@ def _maybe_install_dlt_extra(source_type: str, project_root: Path) -> None:
             "Run `tycoon setup` to give this project its own isolated environment."
         )
 
-    install = typer.confirm(f"dlt[{source_type}] is not installed. Install it now?", default=True)
+    install = auto or typer.confirm(f"dlt[{source_type}] is not installed. Install it now?", default=True)
     if install:
         if install_dlt_extra(source_type, project_root if has_venv else None):
             success(f"dlt[{source_type}] installed successfully.")
