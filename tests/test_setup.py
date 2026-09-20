@@ -80,10 +80,10 @@ class TestCreateVenv:
         assert "--force" in result.message
         run.assert_not_called()
 
-    def test_happy_path_creates_pins_and_installs(self, tmp_path):
+    def test_happy_path_creates_pins_and_syncs(self, tmp_path):
         with (
             patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
-            patch("tycoon.venv.subprocess.run", side_effect=[_ok(), _ok()]) as run,
+            patch("tycoon.venv.subprocess.run", side_effect=[_ok()]) as run,
         ):
             result = venv_mod.create_venv(tmp_path, "3.13")
 
@@ -91,14 +91,24 @@ class TestCreateVenv:
         assert result.venv_path == tmp_path / ".venv"
         # .python-version pinned in the project dir.
         assert (tmp_path / ".python-version").read_text() == "3.13\n"
-        # Two subprocess calls: `uv venv` then `uv pip install`.
-        assert run.call_count == 2
-        venv_cmd = run.call_args_list[0].args[0]
-        assert venv_cmd[:3] == ["/usr/bin/uv", "venv", "--python"]
-        assert "3.13" in venv_cmd
-        install_cmd = run.call_args_list[1].args[0]
-        assert install_cmd[:3] == ["/usr/bin/uv", "pip", "install"]
-        assert "database-tycoon" in install_cmd
+        # pyproject.toml seeded with the default install spec.
+        pyproject = (tmp_path / "pyproject.toml").read_text()
+        assert 'name = "' in pyproject
+        assert "database-tycoon" in pyproject
+        # A single `uv --project <root> sync` call — default spec needs no
+        # follow-up `uv add`, it's already declared in pyproject.toml.
+        assert run.call_count == 1
+        sync_cmd = run.call_args_list[0].args[0]
+        assert sync_cmd == ["/usr/bin/uv", "--project", str(tmp_path), "sync"]
+
+    def test_existing_pyproject_is_left_alone(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "hand-written"\n')
+        with (
+            patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.venv.subprocess.run", side_effect=[_ok()]),
+        ):
+            venv_mod.create_venv(tmp_path, "3.13")
+        assert (tmp_path / "pyproject.toml").read_text() == '[project]\nname = "hand-written"\n'
 
     def test_no_install_skips_pip(self, tmp_path):
         with (
@@ -107,9 +117,37 @@ class TestCreateVenv:
         ):
             result = venv_mod.create_venv(tmp_path, "3.13", install_spec=None)
         assert result.ok is True
-        assert run.call_count == 1  # only `uv venv`
+        assert run.call_count == 1  # only `uv sync`, no follow-up `uv add`
+        # No dependency declared — nothing to install beyond the bare venv.
+        assert "database-tycoon" not in (tmp_path / "pyproject.toml").read_text()
 
-    def test_uv_venv_failure_surfaces_stderr(self, tmp_path):
+    def test_custom_install_spec_layers_on_via_uv_add(self, tmp_path):
+        """A dev-checkout override (`--from -e .`) isn't pre-declared in
+        pyproject.toml — it's added afterward via `uv add --editable`, so
+        the default `database-tycoon` is never installed from PyPI first."""
+        with (
+            patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.venv.subprocess.run", side_effect=[_ok(), _ok()]) as run,
+        ):
+            result = venv_mod.create_venv(tmp_path, "3.13", install_spec="-e /repo/tycoon-cli")
+        assert result.ok is True
+        assert run.call_count == 2
+        sync_cmd = run.call_args_list[0].args[0]
+        assert sync_cmd == ["/usr/bin/uv", "--project", str(tmp_path), "sync"]
+        add_cmd = run.call_args_list[1].args[0]
+        assert add_cmd == ["/usr/bin/uv", "--project", str(tmp_path), "add", "--editable", "/repo/tycoon-cli"]
+        assert "database-tycoon" not in (tmp_path / "pyproject.toml").read_text()
+
+    def test_pinned_version_spec_uses_plain_uv_add(self, tmp_path):
+        with (
+            patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.venv.subprocess.run", side_effect=[_ok(), _ok()]) as run,
+        ):
+            venv_mod.create_venv(tmp_path, "3.13", install_spec="database-tycoon==0.2.2")
+        add_cmd = run.call_args_list[1].args[0]
+        assert add_cmd == ["/usr/bin/uv", "--project", str(tmp_path), "add", "database-tycoon==0.2.2"]
+
+    def test_uv_sync_failure_surfaces_stderr(self, tmp_path):
         with (
             patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
             patch("tycoon.venv.subprocess.run", side_effect=[_ok(1, stderr="no such python")]),
@@ -117,30 +155,45 @@ class TestCreateVenv:
             result = venv_mod.create_venv(tmp_path, "3.13")
         assert result.ok is False
         assert "no such python" in result.message
-        # Never got as far as pinning the version.
-        assert not (tmp_path / ".python-version").exists()
+        # The pin and pyproject.toml are prerequisites `uv sync` reads, so
+        # they're written before the call, and left in place on failure.
+        assert (tmp_path / ".python-version").exists()
+        assert (tmp_path / "pyproject.toml").exists()
 
     def test_install_failure_keeps_venv_but_reports(self, tmp_path):
         with (
             patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
             patch("tycoon.venv.subprocess.run", side_effect=[_ok(), _ok(1, stderr="resolution impossible")]),
         ):
-            result = venv_mod.create_venv(tmp_path, "3.13")
+            result = venv_mod.create_venv(tmp_path, "3.13", install_spec="-e /repo/tycoon-cli")
         assert result.ok is False
         assert "installing" in result.message
         assert "resolution impossible" in result.message
-        # The env + pin were still created before the install step failed.
+        # The env + pin were still created before the `uv add` step failed.
         assert (tmp_path / ".python-version").exists()
 
     def test_force_recreates_existing(self, tmp_path):
         (tmp_path / ".venv").mkdir()
         with (
             patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
-            patch("tycoon.venv.subprocess.run", side_effect=[_ok(), _ok()]) as run,
+            patch("tycoon.venv.shutil.rmtree") as rmtree,
+            patch("tycoon.venv.subprocess.run", side_effect=[_ok()]) as run,
         ):
             result = venv_mod.create_venv(tmp_path, "3.13", force=True)
         assert result.ok is True
-        assert run.call_count == 2
+        rmtree.assert_called_once_with(tmp_path / ".venv")
+        assert run.call_count == 1
+
+    def test_force_also_removes_stale_lockfile(self, tmp_path):
+        (tmp_path / ".venv").mkdir()
+        (tmp_path / "uv.lock").write_text("stale")
+        with (
+            patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.venv.shutil.rmtree"),
+            patch("tycoon.venv.subprocess.run", side_effect=[_ok()]),
+        ):
+            venv_mod.create_venv(tmp_path, "3.13", force=True)
+        assert not (tmp_path / "uv.lock").exists()
 
 
 # ---------------------------------------------------------------------------
