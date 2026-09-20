@@ -22,6 +22,9 @@ All notable changes to this project will be documented in this file. The format 
 [#268]: https://github.com/Database-Tycoon/tycoon-cli/pull/268
 [#269]: https://github.com/Database-Tycoon/tycoon-cli/pull/269
 [#273]: https://github.com/Database-Tycoon/tycoon-cli/pull/273
+### Fixed
+
+- **Rill source YAMLs no longer hard-code an absolute path** ([#275][], PR [#276][]). `tycoon` wrote its generated Rill `local_file` sources with the full path to the exported Parquet (`path: /Users/you/project/data/parquet/_tycoon/dbt_nodes.parquet`). Those files are committed to the project repo, so the absolute path broke on every other clone and in CI, and rewrote itself into the diff each time observability regenerated. The emitted path is now relative to the Rill project directory (`path: ../data/parquet/_tycoon/dbt_nodes.parquet`), which is what Rill resolves `local_file` paths against anyway. Affects both the observability sources and the per-table sources from `data analyze --rill`. A project carrying absolute paths picks up the portable form on its next regeneration.
 
 ## [0.2.1] - 2026-09-16
 
@@ -97,6 +100,8 @@ _Headline: **multi-resource filesystem sources + validated config**. A filesyste
 [#214]: https://github.com/Database-Tycoon/tycoon-cli/pull/214
 [#216]: https://github.com/Database-Tycoon/tycoon-cli/pull/216
 [#247]: https://github.com/Database-Tycoon/tycoon-cli/pull/247
+[#275]: https://github.com/Database-Tycoon/tycoon-cli/issues/275
+[#276]: https://github.com/Database-Tycoon/tycoon-cli/pull/276
 
 ## [0.2.0] - 2026-08-28
 
