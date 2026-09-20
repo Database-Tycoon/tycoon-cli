@@ -537,11 +537,19 @@ def add_source(
 def _maybe_install_catalog_source(source_type: str, project_root: Path) -> None:
     """Offer to download the dlt verified source if not already installed."""
     from tycoon.ingestion.source_manager import install_source, is_source_installed, resolve_sources_dir
+    from tycoon.venv import venv_path
 
     sources_dir = resolve_sources_dir(project_root)
 
     if is_source_installed(source_type, sources_dir):
         return
+
+    if not venv_path(project_root).exists():
+        warn(
+            "This project doesn't have its own .venv yet, "
+            f"'{source_type}' will be downloaded into the shared {sources_dir}. "
+            "Run `tycoon setup` to give this project its own isolated environment."
+        )
 
     install = typer.confirm(
         f"Source '{source_type}' hasn't been downloaded yet. Download it now via dlt init?",
@@ -604,6 +612,13 @@ def _maybe_install_dlt_extra(source_type: str, project_root: Path) -> None:
         return
 
     has_venv = venv_path(project_root).exists()
+    if not has_venv:
+        warn(
+            "This project doesn't have its own .venv yet, "
+            f"dlt[{source_type}] will be installed into the shared/ambient environment. "
+            "Run `tycoon setup` to give this project its own isolated environment."
+        )
+
     install = typer.confirm(f"dlt[{source_type}] is not installed. Install it now?", default=True)
     if install:
         if install_dlt_extra(source_type, project_root if has_venv else None):

@@ -63,6 +63,27 @@ def _check_python_version(version_info: tuple[int, int] | None = None) -> bool:
     return True
 
 
+def _check_project_venv() -> None:
+    """Report plainly whether this project has its own `.venv` (gh-262+).
+
+    Detection is a runtime fact, whether `.venv` exists beside `tycoon.yml`,
+    not a schema field, so this reflects reality even for a project that
+    predates gh-262 and has never touched tycoon.yml since. Purely
+    informational: doesn't affect doctor's overall pass/fail.
+    """
+    from tycoon.venv import venv_path
+
+    target = venv_path(config.root)
+    if target.exists():
+        success(f"Project environment: using its own .venv at {target}.")
+    else:
+        warn(
+            "Project environment: this project doesn't have its own .venv yet, "
+            "it's on tycoon's older shared/ambient environment model. "
+            "Run `tycoon setup` to build one."
+        )
+
+
 def _fix_python_env() -> None:
     """Build a project-local ``.venv`` on a supported interpreter (``--fix``).
 
@@ -445,6 +466,9 @@ def doctor_cmd(
     with console.status("[bold green]Running checks...[/bold green]"):
         console.print(Panel("Checking Python interpreter...", expand=False))
         python_ok = _check_python_version()
+
+        console.print(Panel("Checking project environment...", expand=False))
+        _check_project_venv()
 
         console.print(Panel("Checking scheduled runs...", expand=False))
         _check_schedules()
