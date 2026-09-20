@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 import yaml
 
 from tycoon.cli import app
 from tycoon.project import SCHEMA_VERSION, load_project
 from tycoon.scaffolding.templates import list_templates, scaffold_blank_project
+
+# `init` builds the project's own .venv as part of scaffolding (gh-262);
+# fake that out here so these tests don't shell out to real uv.
+pytestmark = pytest.mark.usefixtures("fake_venv")
 
 
 class TestInitHelp:
@@ -358,3 +365,120 @@ class TestUpgrade:
 
         assert result.exit_code != 0
         assert "newer than this tycoon supports" in result.output
+
+
+class TestInitBuildsVenv:
+    """gh-262: `tycoon init` builds the project's own `.venv` by default,
+    instead of requiring a separate, manual `tycoon setup` call.
+
+    Each test `chdir`s into its own subdirectory of `tmp_path`, not
+    `tmp_path` itself: the wizard's dbt/Rill prompts scan *siblings* of the
+    project root for an existing dbt project (any directory containing a
+    `dbt_project.yml`, regardless of name), and `tmp_path` is shared as a
+    parent across every test in the session. Landing straight in `tmp_path`
+    leaks into, and picks up leaks from, unrelated tests (confirmed: this
+    file's own `test_blank_scaffold_via_cli` leaves exactly such a sibling
+    behind). A dedicated subdirectory keeps each test's project root's
+    parent empty and private.
+    """
+
+    def _project_dir(self, tmp_path: Path, monkeypatch, name: str = "project") -> Path:
+        project = tmp_path / name
+        project.mkdir()
+        monkeypatch.chdir(project)
+        return project
+
+    def test_venv_build_invoked_after_blank_scaffold(self, cli_runner, tmp_path, monkeypatch):
+        project = self._project_dir(tmp_path, monkeypatch)
+        calls = []
+        monkeypatch.setattr(
+            "tycoon.commands.init.create_venv",
+            lambda target, *a, **k: calls.append(target) or _ok_venv(target),
+        )
+
+        result = cli_runner.invoke(app, ["init", "--name", "gh262-project"], input="3\n1\n3\n3\n")
+
+        assert result.exit_code == 0, result.stdout
+        assert calls == [project]
+        assert "Created .venv" in result.stdout or "Building the project's own environment" in result.stdout
+
+    def test_venv_build_invoked_after_template_scaffold(self, cli_runner, tmp_path, monkeypatch):
+        project = self._project_dir(tmp_path, monkeypatch)
+        calls = []
+        monkeypatch.setattr(
+            "tycoon.commands.init.create_venv",
+            lambda target, *a, **k: calls.append(target) or _ok_venv(target),
+        )
+
+        result = cli_runner.invoke(app, ["init", "--template", "nyc-transit"])
+
+        assert result.exit_code == 0, result.stdout
+        assert calls == [project]
+
+    def test_no_venv_flag_skips_venv_build_entirely(self, cli_runner, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock
+
+        project = self._project_dir(tmp_path, monkeypatch)
+        fake_find_uv = MagicMock()
+        fake_create_venv = MagicMock()
+        monkeypatch.setattr("tycoon.commands.init.find_uv", fake_find_uv)
+        monkeypatch.setattr("tycoon.commands.init.create_venv", fake_create_venv)
+
+        result = cli_runner.invoke(app, ["init", "--name", "gh262-project", "--no-venv"], input="3\n1\n3\n3\n")
+
+        assert result.exit_code == 0, result.stdout
+        assert (project / "tycoon.yml").exists()
+        # --no-venv skips the whole thing, not just the install: neither the
+        # presence check nor the build itself should run.
+        fake_find_uv.assert_not_called()
+        fake_create_venv.assert_not_called()
+
+    def test_env_var_override_skips_venv_build(self, cli_runner, tmp_path, monkeypatch):
+        """TYCOON_INIT_NO_VENV, the subprocess-e2e test escape hatch, has
+        the same effect as --no-venv without needing the flag."""
+        self._project_dir(tmp_path, monkeypatch)
+        monkeypatch.setenv("TYCOON_INIT_NO_VENV", "1")
+        calls = []
+        monkeypatch.setattr("tycoon.commands.init.create_venv", lambda *a, **k: calls.append(1))
+
+        result = cli_runner.invoke(app, ["init", "--name", "gh262-project"], input="3\n1\n3\n3\n")
+
+        assert result.exit_code == 0, result.stdout
+        assert calls == []
+
+    def test_uv_missing_fails_before_any_scaffolding(self, cli_runner, tmp_path, monkeypatch):
+        project = self._project_dir(tmp_path, monkeypatch)
+        monkeypatch.setattr("tycoon.commands.init.find_uv", lambda: None)
+
+        result = cli_runner.invoke(app, ["init", "--name", "gh262-project"], input="3\n1\n3\n3\n")
+
+        assert result.exit_code != 0
+        assert "uv is not installed" in result.output
+        assert not (project / "tycoon.yml").exists()
+
+    def test_venv_build_failure_does_not_fail_init(self, cli_runner, tmp_path, monkeypatch):
+        """The scaffold already succeeded by the time the venv build runs;
+        a build failure is reported, not fatal to `init` as a whole."""
+        from tycoon import venv as venv_mod
+
+        project = self._project_dir(tmp_path, monkeypatch)
+        monkeypatch.setattr(
+            "tycoon.commands.init.create_venv",
+            lambda *a, **k: venv_mod.VenvResult(ok=False, message="uv venv failed: disk full"),
+        )
+
+        result = cli_runner.invoke(app, ["init", "--name", "gh262-project"], input="3\n1\n3\n3\n")
+
+        assert result.exit_code == 0, result.stdout
+        assert (project / "tycoon.yml").exists()
+        # Rich wraps console output to the detected terminal width, which
+        # can split a long message mid-phrase; normalize before matching.
+        out = " ".join(result.stdout.split())
+        assert "uv venv failed: disk full" in out
+        assert "tycoon setup" in out
+
+
+def _ok_venv(target):
+    from tycoon import venv as venv_mod
+
+    return venv_mod.VenvResult(ok=True, message="Created .venv", venv_path=target / ".venv")
