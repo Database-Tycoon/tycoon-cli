@@ -406,6 +406,121 @@ class TestSourceInstaller:
         cmd = mock_run.call_args.args[0]
         assert cmd[-1] == expected
 
+    def test_install_dlt_extra_targets_given_project_root(self, tmp_path):
+        """gh-262/gh-264: a `project_root` arg threads `uv --project <root>
+        add` into the command, landing the extra durably in that project's
+        own pyproject.toml instead of an ephemeral `uv pip install`."""
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_dlt_extra
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result) as mock_run:
+            assert install_dlt_extra("rest_api", project_root=tmp_path) is True
+
+        cmd = mock_run.call_args.args[0]
+        assert cmd[:4] == ["uv", "--project", str(tmp_path), "add"]
+
+    def test_install_dlt_extra_omits_project_flag_when_not_given(self):
+        """No `project_root` arg (pre-gh-262 project, no `.venv` yet): same
+        ambient `uv pip install` as before gh-264."""
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_dlt_extra
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result) as mock_run:
+            assert install_dlt_extra("rest_api") is True
+
+        cmd = mock_run.call_args.args[0]
+        assert cmd[:3] == ["uv", "pip", "install"]
+        assert "--project" not in cmd
+
+    def test_install_dlt_extra_fails_without_uv_no_pip_fallback(self, monkeypatch):
+        """gh-264: no silent `pip` fallback, uv missing is a hard failure."""
+        from unittest.mock import patch
+
+        from tycoon.ingestion.source_installer import install_dlt_extra
+
+        monkeypatch.setattr("tycoon.ingestion.source_installer.shutil.which", lambda name: None)
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run") as mock_run:
+            assert install_dlt_extra("rest_api") is False
+            mock_run.assert_not_called()
+
+
+class TestInstallRequirements:
+    """`install_requirements` (gh-264): installs exactly what a dlt-init'd
+    source's requirements.txt lists, no filtering."""
+
+    def test_installs_via_uv_pip_install_dash_r(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_requirements
+
+        requirements = tmp_path / "requirements.txt"
+        requirements.write_text("google-api-python-client\n")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result) as mock_run:
+            assert install_requirements(requirements) is True
+
+        cmd = mock_run.call_args.args[0]
+        assert cmd[:3] == ["uv", "pip", "install"]
+        assert cmd[-2:] == ["-r", str(requirements)]
+        assert "--python" not in cmd
+
+    def test_targets_given_project_root(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_requirements
+
+        requirements = tmp_path / "requirements.txt"
+        requirements.write_text("google-api-python-client\n")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result) as mock_run:
+            assert install_requirements(requirements, project_root=tmp_path) is True
+
+        cmd = mock_run.call_args.args[0]
+        assert cmd == ["uv", "--project", str(tmp_path), "add", "-r", str(requirements)]
+
+    def test_returns_false_on_failure(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_requirements
+
+        requirements = tmp_path / "requirements.txt"
+        requirements.write_text("google-api-python-client\n")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result):
+            assert install_requirements(requirements) is False
+
+    def test_fails_without_uv_no_pip_fallback(self, tmp_path, monkeypatch):
+        from unittest.mock import patch
+
+        from tycoon.ingestion.source_installer import install_requirements
+
+        requirements = tmp_path / "requirements.txt"
+        requirements.write_text("google-api-python-client\n")
+
+        monkeypatch.setattr("tycoon.ingestion.source_installer.shutil.which", lambda name: None)
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run") as mock_run:
+            assert install_requirements(requirements) is False
+            mock_run.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Auto-scaffold (`_maybe_auto_scaffold` — used by `data sources run`)
@@ -934,3 +1049,111 @@ class TestProjectLocalSourcesDir:
         _maybe_install_catalog_source("github", tmp_path)
 
         assert seen["sources_dir"] == source_manager.SOURCES_DIR
+
+
+# ---------------------------------------------------------------------------
+# Install deps into the project's own venv (gh-264)
+# ---------------------------------------------------------------------------
+
+
+class TestInstallDepsIntoProjectVenv:
+    """By the time `sources add` finishes, whatever a source needs is
+    already installed into the project's own `.venv`, not wherever tycoon
+    happens to be running (gh-264)."""
+
+    def test_maybe_install_source_requirements_installs_when_present(self, tmp_path, monkeypatch):
+        from tycoon.commands.sources import _maybe_install_source_requirements
+        from tycoon.ingestion import source_installer
+
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        (sources_dir / "requirements.txt").write_text("google-api-python-client\n")
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(requirements_path, project_root=None):
+            seen["requirements_path"] = requirements_path
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_requirements", _fake_install)
+
+        _maybe_install_source_requirements("google_sheets", sources_dir, tmp_path)
+
+        assert seen["requirements_path"] == sources_dir / "requirements.txt"
+        assert seen["project_root"] is None
+
+    def test_maybe_install_source_requirements_targets_project_root_with_venv(self, tmp_path, monkeypatch):
+        from tycoon.commands.sources import _maybe_install_source_requirements
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / ".venv").mkdir()
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        (sources_dir / "requirements.txt").write_text("google-api-python-client\n")
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(requirements_path, project_root=None):
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_requirements", _fake_install)
+
+        _maybe_install_source_requirements("google_sheets", sources_dir, tmp_path)
+
+        assert seen["project_root"] == tmp_path
+
+    def test_maybe_install_source_requirements_noop_when_file_absent(self, tmp_path, monkeypatch):
+        """dlt didn't write a requirements.txt for this source, nothing to install."""
+        from tycoon.commands.sources import _maybe_install_source_requirements
+        from tycoon.ingestion import source_installer
+
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+
+        called = []
+        monkeypatch.setattr(source_installer, "install_requirements", lambda *a, **k: called.append(1) or True)
+
+        _maybe_install_source_requirements("github", sources_dir, tmp_path)
+
+        assert called == []
+
+    def test_maybe_install_dlt_extra_targets_project_root_with_venv(self, tmp_path, monkeypatch):
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(source_type, project_root=None):
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_dlt_extra", _fake_install)
+
+        _maybe_install_dlt_extra("google_sheets", tmp_path)
+
+        assert seen["project_root"] == tmp_path
+
+    def test_maybe_install_dlt_extra_falls_back_to_ambient_without_venv(self, tmp_path, monkeypatch):
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(source_type, project_root=None):
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_dlt_extra", _fake_install)
+
+        _maybe_install_dlt_extra("google_sheets", tmp_path)
+
+        assert seen["project_root"] is None
