@@ -347,6 +347,76 @@ class TestRunSourceDispatch:
             assert native in CATALOG, f"{native} should still appear in the catalog for browsing"
 
 
+class TestRunCatalogProjectLocalSourcesDir:
+    """`_run_catalog` resolves a project-local sources dir once the project
+    has its own `.venv` (gh-263), instead of always reading/writing
+    `~/.tycoon/sources/`."""
+
+    def test_uses_project_local_dir_when_venv_exists(self, tmp_path, monkeypatch, sys_path_copy):
+        import sys
+        import types
+
+        import tycoon.config as cfg_mod
+        from tycoon.config import TycoonConfig
+        from tycoon.ingestion import runner
+        from tycoon.project import SourceConfig
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr(cfg_mod, "config", TycoonConfig(project_root=tmp_path))
+
+        expected_dir = tmp_path / ".tycoon" / "sources"
+        monkeypatch.setattr(
+            runner,
+            "is_source_installed",
+            lambda source_type, sources_dir: sources_dir == expected_dir,
+        )
+        monkeypatch.setattr(runner, "get_run_module_path", lambda source_type: "fake_gh263_pkg._run")
+
+        fake_pipeline = object()
+        fake_load_info = types.SimpleNamespace(raise_on_failed_jobs=lambda: None)
+        fake_mod = types.ModuleType("fake_gh263_pkg._run")
+        fake_mod.run_pipeline = lambda *a, **k: (fake_pipeline, fake_load_info)
+        monkeypatch.setitem(sys.modules, "fake_gh263_pkg._run", fake_mod)
+
+        source_config = SourceConfig(type="github", schema="raw_github", config={})
+        pipeline, load_info = runner._run_catalog("github", "gh", source_config, tmp_path / "raw.duckdb")
+
+        assert pipeline is fake_pipeline
+        assert load_info is fake_load_info
+        assert str(expected_dir) in sys.path
+
+    def test_falls_back_to_global_dir_without_venv(self, tmp_path, monkeypatch, sys_path_copy):
+        import sys
+        import types
+
+        import tycoon.config as cfg_mod
+        from tycoon.config import TycoonConfig
+        from tycoon.ingestion import runner
+        from tycoon.ingestion.source_manager import SOURCES_DIR
+        from tycoon.project import SourceConfig
+
+        monkeypatch.setattr(cfg_mod, "config", TycoonConfig(project_root=tmp_path))
+
+        monkeypatch.setattr(
+            runner,
+            "is_source_installed",
+            lambda source_type, sources_dir: sources_dir == SOURCES_DIR,
+        )
+        monkeypatch.setattr(runner, "get_run_module_path", lambda source_type: "fake_gh263_global_pkg._run")
+
+        fake_pipeline = object()
+        fake_load_info = types.SimpleNamespace(raise_on_failed_jobs=lambda: None)
+        fake_mod = types.ModuleType("fake_gh263_global_pkg._run")
+        fake_mod.run_pipeline = lambda *a, **k: (fake_pipeline, fake_load_info)
+        monkeypatch.setitem(sys.modules, "fake_gh263_global_pkg._run", fake_mod)
+
+        source_config = SourceConfig(type="github", schema="raw_github", config={})
+        pipeline, load_info = runner._run_catalog("github", "gh", source_config, tmp_path / "raw.duckdb")
+
+        assert pipeline is fake_pipeline
+        assert str(SOURCES_DIR) in sys.path
+
+
 class TestUnexpandedEnvVarCheck:
     """Regression test for Stephen's review on gh-224 / PR #230: a resource's
     own path/file_glob can carry an unexpanded ${VAR} just like the flat

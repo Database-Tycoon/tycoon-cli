@@ -32,6 +32,15 @@ def tmp_config(tmp_path: Path):
 
 
 @pytest.fixture
+def sys_path_copy(monkeypatch):
+    """Let a test mutate `sys.path` (e.g. `_run_catalog`'s sys.path.insert)
+    without leaking the mutation into later tests."""
+    import sys
+
+    monkeypatch.setattr(sys, "path", list(sys.path))
+
+
+@pytest.fixture
 def cli_runner():
     """Typer CLI test runner."""
     from typer.testing import CliRunner

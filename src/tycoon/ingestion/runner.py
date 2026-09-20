@@ -18,7 +18,7 @@ import dlt
 
 from tycoon.core.events import RunCompleted, RunFailed, RunStarted
 from tycoon.ingestion.catalog import CATALOG
-from tycoon.ingestion.source_manager import SOURCES_DIR, get_run_module_path, is_source_installed
+from tycoon.ingestion.source_manager import get_run_module_path, is_source_installed, resolve_sources_dir
 from tycoon.project import SourceConfig
 
 _UNEXPANDED_ENV_VAR = re.compile(r"\$\{[^}]+\}")
@@ -521,10 +521,14 @@ def _run_catalog(
     raw_db_path: Path,
     max_records: int | None = None,
 ) -> tuple[dlt.Pipeline, Any]:
-    """Load a catalog source from ~/.tycoon/sources/ and run its pipeline."""
+    """Load a catalog source from its resolved sources dir and run its pipeline."""
     import importlib
 
-    if not is_source_installed(source_type):
+    from tycoon.config import config as _cfg
+
+    sources_dir = resolve_sources_dir(_cfg.root)
+
+    if not is_source_installed(source_type, sources_dir):
         raise IngestionError(f"Source '{source_type}' is not installed. Run: tycoon data sources add {source_type}")
 
     # Warn about unexpanded env vars before hitting the API
@@ -538,8 +542,8 @@ def _run_catalog(
                 f"  Set it with: export {var[2:-1]}=<your-value>"
             )
 
-    # Add ~/.tycoon/sources/ to sys.path so dlt-init'd packages are importable
-    sources_str = str(SOURCES_DIR)
+    # Add the resolved sources dir to sys.path so dlt-init'd packages are importable
+    sources_str = str(sources_dir)
     if sources_str not in sys.path:
         sys.path.insert(0, sources_str)
 

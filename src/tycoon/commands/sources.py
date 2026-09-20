@@ -524,7 +524,7 @@ def add_source(
             # filesystem ships with dlt core and never needs a dlt-init
             # download; it always runs through the native builder in
             # runner.py, never the catalog/shim path.
-            _maybe_install_catalog_source(source_type)
+            _maybe_install_catalog_source(source_type, cfg.root)
         elif not catalog_entry:
             _maybe_install_dlt_extra(source_type)
 
@@ -534,11 +534,13 @@ def add_source(
     )
 
 
-def _maybe_install_catalog_source(source_type: str) -> None:
+def _maybe_install_catalog_source(source_type: str, project_root: Path) -> None:
     """Offer to download the dlt verified source if not already installed."""
-    from tycoon.ingestion.source_manager import install_source, is_source_installed
+    from tycoon.ingestion.source_manager import install_source, is_source_installed, resolve_sources_dir
 
-    if is_source_installed(source_type):
+    sources_dir = resolve_sources_dir(project_root)
+
+    if is_source_installed(source_type, sources_dir):
         return
 
     install = typer.confirm(
@@ -547,8 +549,8 @@ def _maybe_install_catalog_source(source_type: str) -> None:
     )
     if install:
         info(f"Running dlt init {source_type} ...")
-        if install_source(source_type):
-            success(f"Source '{source_type}' installed to ~/.tycoon/sources/")
+        if install_source(source_type, sources_dir):
+            success(f"Source '{source_type}' installed to {sources_dir}")
         else:
             warn(
                 f"Failed to install '{source_type}'. "
