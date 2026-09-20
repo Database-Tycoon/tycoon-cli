@@ -37,3 +37,26 @@ def cli_runner():
     from typer.testing import CliRunner
 
     return CliRunner()
+
+
+@pytest.fixture
+def fake_venv(monkeypatch):
+    """Fake a successful `.venv` build instead of shelling out to real uv.
+
+    `tycoon init` builds the project's own environment as part of scaffolding
+    (gh-262), so every test that invokes `init` end to end would otherwise
+    try to run a real `uv venv` + `uv pip install database-tycoon` against
+    PyPI. Opt a module in with `pytestmark = pytest.mark.usefixtures("fake_venv")`
+    rather than making this autouse repo-wide; tests that specifically
+    exercise venv-building (find_uv missing, create_venv failing, ...)
+    override this locally with their own patch.
+    """
+    from tycoon import venv as venv_mod
+
+    monkeypatch.setattr("tycoon.commands.init.find_uv", lambda: "/usr/bin/uv")
+    monkeypatch.setattr(
+        "tycoon.commands.init.create_venv",
+        lambda target, *a, **k: venv_mod.VenvResult(
+            ok=True, message="Created .venv (faked)", venv_path=target / ".venv"
+        ),
+    )

@@ -143,6 +143,10 @@ def test_recipe_block(block: RecipeBlock, tmp_path: Path, request: pytest.Fixtur
     # Stub LM Studio / Ollama probes so any block that touches `tycoon ask`
     # doesn't hang waiting on a port that isn't listening in CI.
     env["TYCOON_DISABLE_LLM_PROBE"] = "1"
+    # Skip the real `uv venv` + PyPI install `tycoon init` now does by
+    # default (gh-262), these blocks test the documented commands, not
+    # environment-building, and a real build is too slow for per-PR CI.
+    env["TYCOON_INIT_NO_VENV"] = "1"
 
     result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", block.body],

@@ -80,6 +80,10 @@ def test_demo_arc_csv_import(tmp_path: Path) -> None:
     env["HOME"] = str(tmp_path / "home")
     Path(env["HOME"]).mkdir()
     env["TYCOON_DISABLE_LLM_PROBE"] = "1"
+    # Skip the real `uv venv` + PyPI install `tycoon init` now does by
+    # default (gh-262), this test exercises the ingestion/transform arc,
+    # not environment-building, and a real build is too slow for per-PR CI.
+    env["TYCOON_INIT_NO_VENV"] = "1"
 
     # 1. init
     _assert_ok(
