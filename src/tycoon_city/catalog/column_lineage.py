@@ -18,6 +18,7 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.errors import SqlglotError
 from sqlglot.lineage import lineage
+from sqlglot.schema import MappingSchema
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,15 @@ def derive_column_lineage(
     spelling canonical, same rule as the manifest join.
     """
     canonical = {key.lower(): key for key in columns_by_key}
-    schema = _schema_dict(columns_by_key)
+    # Build the MappingSchema ONCE. sqlglot's `lineage()` calls
+    # `ensure_schema()`, which constructs a fresh MappingSchema every time it
+    # is handed a plain dict -- and that constructor normalizes (and so
+    # `parse_one`s) every identifier in the whole mapping. Passing the dict
+    # straight in therefore re-parses the entire warehouse schema once per
+    # traced column: on an 87-object catalog that was 1,421 lineage() calls
+    # and ~1.98M parse_one calls, ~45s of a cold `tycoon city` build. A
+    # Schema instance is returned by ensure_schema untouched (gh-274).
+    schema = MappingSchema(_schema_dict(columns_by_key), dialect=DIALECT)
 
     edges: set[ColumnEdge] = set()
     unparsed = 0
