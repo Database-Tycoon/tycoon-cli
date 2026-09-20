@@ -6,7 +6,7 @@ import typer
 
 from tycoon.config import config
 from tycoon.constants import DEFAULT_SETUP_PYTHON
-from tycoon.utils.console import error, header, info, next_steps, success, warn
+from tycoon.utils.console import console, error, header, info, next_steps, success, warn
 from tycoon.venv import DEFAULT_INSTALL_SPEC, create_venv, find_uv, venv_path
 
 
@@ -83,12 +83,13 @@ def setup_cmd(
     if no_install:
         info("Skipping tycoon install (--no-install).")
 
-    result = create_venv(
-        project_root,
-        python,
-        install_spec=None if no_install else install_spec,
-        force=force,
-    )
+    with console.status(f"Building {target} via uv..."):
+        result = create_venv(
+            project_root,
+            python,
+            install_spec=None if no_install else install_spec,
+            force=force,
+        )
 
     if not result.ok:
         error(result.message)

@@ -81,7 +81,8 @@ def _fix_python_env() -> None:
         return
 
     info(f"--fix: building a project-local .venv on Python {DEFAULT_SETUP_PYTHON} via uv...")
-    result = create_venv(config.root, DEFAULT_SETUP_PYTHON)
+    with console.status("Building the project's own environment via uv..."):
+        result = create_venv(config.root, DEFAULT_SETUP_PYTHON)
     if result.ok:
         success(result.message)
         info("Activate it with `source .venv/bin/activate`, then re-run `tycoon doctor`.")

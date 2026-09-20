@@ -463,7 +463,8 @@ def _build_project_venv(target: Path) -> None:
     """
     console.print()
     info("Building the project's own environment via uv...")
-    result = create_venv(target)
+    with console.status("Building the project's own environment via uv..."):
+        result = create_venv(target)
     if result.ok:
         success(result.message)
     else:
