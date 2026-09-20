@@ -14,6 +14,7 @@ The olap_connector in rill.yaml is set to 'duckdb' (Rill's built-in in-memory OL
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -118,12 +119,30 @@ def _classify_column(col_name: str, data_type: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _generate_source_yaml(parquet_path: Path) -> str:
+def _source_yaml_path(parquet_path: Path, rill_dir: Path) -> str:
+    """``parquet_path`` expressed relative to the Rill project directory.
+
+    Rill resolves a ``local_file`` ``path:`` against its own project root, so
+    either form loads locally — but an absolute path pins the generated
+    project to one machine. These YAMLs get committed, so an absolute path
+    breaks every other clone and CI, and rewrites itself into the diff each
+    time the project is regenerated. A relative path stays portable and
+    keeps the committed file stable (gh-275).
+    """
+    try:
+        return os.path.relpath(parquet_path.resolve(), rill_dir.resolve())
+    except ValueError:
+        # Windows: no relative path exists across drives. An absolute path is
+        # wrong-but-working, which beats emitting nothing.
+        return str(parquet_path)
+
+
+def _generate_source_yaml(parquet_path: Path, rill_dir: Path) -> str:
     """Return a Rill source YAML string pointing at a local Parquet file."""
     return f"""\
 type: source
 connector: local_file
-path: {parquet_path}
+path: {_source_yaml_path(parquet_path, rill_dir)}
 """
 
 
@@ -330,7 +349,7 @@ def generate_rill_config(
 
         # Source YAML
         source_path = sources_dir / f"{model_name}.yaml"
-        source_path.write_text(_generate_source_yaml(parquet_path))
+        source_path.write_text(_generate_source_yaml(parquet_path, output_dir))
         generated.append(str(source_path))
 
         # Metrics view YAML
@@ -558,7 +577,7 @@ def _write_parquet_backed_source_set(
             continue
 
         src_path = sources_dir / f"{src_name}.yaml"
-        src_path.write_text(_generate_source_yaml(parquet_path))
+        src_path.write_text(_generate_source_yaml(parquet_path, output_dir))
         written.append(str(src_path))
 
         mv_path = metrics_dir / f"{src_name}_mv.yaml"
