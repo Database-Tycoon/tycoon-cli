@@ -81,10 +81,10 @@ tycoon run identically on a laptop and on a cloud VM.
 
 ## A note on this site
 
-These docs are written for tycoon **v0.1.5**. Anything called out as
-"deferred to v0.2.0" links to a tracking issue on the
+These docs track the current release of tycoon; the `releases/` section
+carries the canonical change history, one page per version. Anything
+described as deferred or planned links to a tracking issue on the
 [GitHub repo](https://github.com/Database-Tycoon/tycoon-cli/issues).
-The `releases/` section carries the canonical change history.
 
 The site is built with
 [MkDocs Material](https://squidfunk.github.io/mkdocs-material/);

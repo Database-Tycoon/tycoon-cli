@@ -62,56 +62,59 @@ In your GitHub repo (`Database-Tycoon/tycoon-cli`):
 
 The workflow lives at `.github/workflows/publish.yml` and triggers whenever you push a tag starting with `v` (e.g. `v0.4.0`, `v0.5.0`).
 
-It runs three jobs in sequence:
+It runs four jobs in sequence:
 
 ```
-build → publish-testpypi → publish-pypi
+preflight → build → publish-testpypi → publish-pypi
 ```
 
-1. **build** — runs `uv build` to produce wheel and sdist in `dist/`
-2. **publish-testpypi** — uploads to TestPyPI first; if this fails, production publish is blocked
-3. **publish-pypi** — uploads to the real PyPI only after TestPyPI succeeds
+1. **preflight** checks that the tag, `pyproject.toml`, `src/tycoon/__init__.py`, the `CHANGELOG.md` section and the release notes agree on the version and carry a real date (`UNRELEASED` and `_Released: TBD_` fail here).
+2. **build** runs `uv build` to produce the wheel and sdist in `dist/`.
+3. **publish-testpypi** uploads to TestPyPI first; if this fails, the production publish is blocked.
+4. **publish-pypi** uploads to PyPI only after TestPyPI succeeds.
+
+The GitHub Release is not created by the workflow. Create it by hand after the publish succeeds, with the notes from `docs/releases/v<ver>.md`.
 
 ---
 
 ## Publishing a Release
 
-### First release (v0.1.0)
-
-Once the trusted publisher is configured (Steps 1–3 above), tag and push:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-### Future releases
-
 Development happens on a per-version release branch (see the *Release
 process* section of `CONTRIBUTING.md`); nothing pushes to `main` directly.
+The examples below use `tycoon-cli` as the remote name, which is what a
+clone of this repository is called in the maintainers' checkouts; substitute
+your own.
 
-1. On the release branch, update the version in `pyproject.toml`:
-   ```toml
-   version = "0.2.0"
-   ```
+1. Open the cycle on the release branch with the version bump in
+   `pyproject.toml`, `src/tycoon/__init__.py` and `uv.lock`, plus a
+   `docs/releases/v<ver>.md` stub. Content PRs then target that branch.
 
-2. Commit the bump to the release branch:
-   ```bash
-   git add pyproject.toml
-   git commit -m "chore: bump version to 0.2.0"
-   git push origin refs/heads/v0.2.0
-   ```
+2. When the cycle is done, land the date-set commit last: the dated
+   `## [<ver>] - YYYY-MM-DD` section in `CHANGELOG.md` and the
+   `_Released: YYYY-MM-DD_` line in the notes. Preflight only checks the
+   shape, so a date set early ships stale.
 
 3. Merge the release branch into `main` via PR, then tag the merge commit:
    ```bash
-   git fetch origin main
-   git tag v0.2.0 origin/main
-   git push origin refs/tags/v0.2.0   # triggers the publish workflow
+   git fetch tycoon-cli main
+   git tag v0.2.2 tycoon-cli/main
+   git push tycoon-cli refs/tags/v0.2.2   # triggers the publish workflow
    ```
 
    The branch and its tag share a name, so always push with the
-   fully-qualified `refs/heads/…` / `refs/tags/…` form — a bare
-   `git push origin v0.2.0` is ambiguous and will be rejected.
+   fully-qualified `refs/heads/...` / `refs/tags/...` form. A bare
+   `git push tycoon-cli v0.2.2` is ambiguous and is rejected. The same
+   applies to deleting the merged branch later: `--delete refs/heads/v0.2.2`.
+
+4. Watch the run, then create the GitHub Release:
+   ```bash
+   gh run watch "$(gh run list --workflow publish.yml --limit 1 --json databaseId --jq '.[0].databaseId')" --exit-status
+   git show refs/tags/v0.2.2:docs/releases/v0.2.2.md > /tmp/notes.md
+   gh release create v0.2.2 --verify-tag --title "v0.2.2: <headline>" --notes-file /tmp/notes.md
+   ```
+
+A release is done when four surfaces agree: the PR merged to `main`, the
+tag, the version on PyPI, and the GitHub Release marked Latest.
 
 The workflow triggers automatically. Watch it at:
 `https://github.com/Database-Tycoon/tycoon-cli/actions`
@@ -145,12 +148,27 @@ Double-check that:
 - The workflow filename is `publish.yml` (not `publish.yaml`)
 - The owner is `Database-Tycoon` (capital D and T)
 
-### Build fails
-Run `uv build` locally first to catch errors before pushing a tag:
+### Build fails, or the publisher rejects the wheel
+Run the build locally from a clean checkout before pushing a tag, and check
+the artifacts the way the publisher will:
 ```bash
 uv build
-ls dist/
+uvx twine check dist/*
+unzip -p dist/*.whl '*/METADATA' | head -2   # Metadata-Version the pinned publisher accepts
 ```
+A green build is not a green publish: v0.2.0 built cleanly and was rejected
+because the wheel's `Metadata-Version` had moved ahead of the publisher's
+bundled twine. Building in a working tree with ignored files present also
+inflates the sdist; hatchling honours only the root `.gitignore`.
+
+### The publish workflow fails after the tag is pushed
+First confirm the version still returns 404 on both
+`https://pypi.org/pypi/database-tycoon/<ver>/json` and TestPyPI. If it does,
+fix forward on `main` via PR, delete the tag, re-tag the new tip and push the
+tag again. Do not bump the version to escape a failed publish; that leaves a
+hole in the version history for a release that never existed.
 
 ### Version conflict (version already exists on PyPI)
-PyPI does not allow re-uploading the same version. Bump the version in `pyproject.toml` and tag a new release.
+PyPI does not allow re-uploading the same version. This only happens when a
+publish partially succeeded; check which index has the version before
+deciding anything.
