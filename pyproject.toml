@@ -79,6 +79,16 @@ tycoon = "tycoon.cli:app"
 tycoon-city = "tycoon_city.webserve:main"
 tycoon-city-export = "tycoon_city.export.cli:main"
 
+[tool.hatch.build.targets.sdist]
+# The sdist carries what the wheel build needs and the metadata a consumer
+# expects, nothing else. hatchling's default is every tracked file the root
+# .gitignore does not exclude, which is why a working-tree build with
+# web/node_modules or site/ present shipped a 24 MB sdist locally, and why
+# the published one carried web/, docs/, tests/, spikes/ and the dbt demo
+# (gh-258). Wheel-relevant data (web_dist, themes, demo/semantic.yml) lives
+# under src/ and is included.
+only-include = ["src", "pyproject.toml", "README.md", "LICENSE", "CHANGELOG.md", "THIRD-PARTY.md"]
+
 [tool.hatch.build.targets.wheel]
 # Non-Python files inside tycoon_city ship too, and three things depend on it:
 # the built web bundle (`web_dist/`), the themes (`themes/*` — spritesheet plus
