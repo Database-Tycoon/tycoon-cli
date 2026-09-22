@@ -12,7 +12,6 @@ updated: '2026-08-05'
 
 - [task_streets_v4_planner.md](task_streets_v4_planner.md) — legal endings (apron/dock/plaza) + S7 no-naked-stub property + town_plan split; contract seam frozen
 - [task_streets_v4_renderer.md](task_streets_v4_renderer.md) — 3D sidewalk curbs + dressed-ending rendering; builds against the frozen street_features shape
-- [task_v5_reconciliation.md](task_v5_reconciliation.md) — Streets v5 planner unit tests (Property S7/S8, schema clustering, determinism) + v5 cutover & block stagger reconciliation
 
 ## CRLF blueprints
 
