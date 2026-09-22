@@ -1,5 +1,9 @@
 [build-system]
-requires = ["hatchling"]
+# Pinned: the backend writes the wheel's Metadata-Version, and an unpinned
+# hatchling floated from 2.4 (v0.1.11) to 2.5 (v0.2.0) with no change on our
+# side, which the publisher then rejected (gh-257). Bump deliberately, and
+# re-check `unzip -p dist/*.whl '*/METADATA' | head -2` against the publisher.
+requires = ["hatchling==1.32.4"]
 build-backend = "hatchling.build"
 
 [project]
