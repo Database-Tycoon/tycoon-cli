@@ -1,0 +1,42 @@
+{
+  "name": "tycoon-skills",
+  "owner": {
+    "name": "Database Tycoon",
+    "url": "https://github.com/Database-Tycoon"
+  },
+  "metadata": {
+    "description": "Agent skills for the tycoon CLI — using it, contributing to it, and maintaining it",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "tycoon",
+      "source": "./",
+      "description": "Skills for using the tycoon CLI in an analytics project: adding data sources, diagnosing failures, reading pipeline state, building dbt models and Rill dashboards",
+      "skills": [
+        "./skills/users/adding-data-sources",
+        "./skills/users/diagnosing-projects",
+        "./skills/users/reading-project-state",
+        "./skills/users/building-models-and-dashboards",
+        "./skills/users/operating-pipelines"
+      ]
+    },
+    {
+      "name": "tycoon-contrib",
+      "source": "./",
+      "description": "Skills for contributing to tycoon-cli: the release-branch PR model and the test layers",
+      "skills": [
+        "./skills/contributors/contributing-changes",
+        "./skills/contributors/testing-cli-changes"
+      ]
+    },
+    {
+      "name": "tycoon-maintainers",
+      "source": "./",
+      "description": "Skills for tycoon-cli maintainers: cutting and publishing releases",
+      "skills": [
+        "./skills/maintainers/cutting-a-release"
+      ]
+    }
+  ]
+}
