@@ -50,6 +50,91 @@ updated: '2026-09-16'
   street. The old pose read 0 asphalt because it faced open grass, not
   because the skirt depth fight had returned.
 
+- 2026-08-22: **Five ship blockers from the pre-release review, fixed
+  test-first.** (1) The animation loop ticked the traffic and guest sims but
+  never called `VehicleLayer.update()` / `GuestLayer.update()`, the only
+  writers of the instance matrices, so both meshes drew nothing; the hooks
+  counted the sim arrays and hid it, and now count the drawn mesh. (2) The
+  footer status line, notes popover, and legend were painted once at boot;
+  `applyChrome()` now owns all document-derived chrome, the same stale-boot-doc
+  class as the 2026-08-09 tour fix, closed out. (3) The client's zod schema was
+  a full block behind the producer: `achievements` was silently stripped, and
+  the problems gauges / library panel / library tour stop recomputed coverage
+  from raw fields, rendering the "0% documented" lie the block exists to
+  prevent; all three now honor `state: "unknown"`. (4) `tycoon-city` /
+  `tycoon-city-export` console scripts restored (lost in the absorb; the
+  contract quickstarts and `npm run demo-data` invoke them). (5) The gates
+  themselves: `tests/tycoon_city` re-enters the default pytest run (the
+  path-anchoring rationale on the ignore was stale), coverage counts
+  `src/tycoon_city`, and a new `web` CI job runs tsc, the build, a
+  bundle-freshness diff, and the Playwright suite, none of which ran in CI
+  before.
+
+- 2026-08-15: **Data-cli metaphor audit** (`023a663` on `feat/data-cli`,
+  PR #207): every city claim in the fire/layers/explore commands checked
+  against what the renderer draws. Vocabulary aligned (fire trucks,
+  contractor vans, worn facades, district fog), the fleet honesty rule ("a
+  vehicle means a problem is awaiting response, never a running fix") stated
+  in every command, the fake `unreachable` stat removed (no contract field;
+  reachability is by construction), `tycoon.districts` renamed back to
+  `tycoon.layers` (district = schema plate; the layers are the RINGS). Bugs:
+  `fire --run` ignored its argument; statuses read from `manifest.json`
+  (they live in `run_results.json`); three groups wired as one-command
+  sub-apps forcing `tycoon fire fire`-style invocations. New docs:
+  `commands/fire.md`, `commands/data/layers.md`. Verified live on dogfood , 
+  `tycoon fire` surfaced the failing `assert_toggl_deel_hours_variance`.
+
+- 2026-08-14: **Published to the tycoon-cli remote; PR stack repaired.**
+  `feat/city-addon` fast-forwarded with the day's commits (merge resolution,
+  radial inversion, ruff-format). The 8/12 stacked PRs #205/#206/#207 were
+  found mis-carved: #206 (`feat/city-sim`) and #207 (`feat/data-cli`) had
+  committed, unresolved conflict markers (nine and seven files), were based
+  on `main` while depending on each other's content, and #207 additionally
+  carried the abandoned `pipeline_city` rename plus Xcode user-state files.
+  Both heads were rebuilt as true stacks: #206 = `feat/city-engine` + one
+  sim-slice commit (resolved planner + radial inversion + suite fixes),
+  #207 = `feat/city-sim` + one data-cli commit (fire/layers/source_explorer,
+  layers→districts, 0.2.0, `pipeline city`→`tycoon city`, and re-registering
+  `city` in cli.py, which the old carve had dropped): bases retargeted so
+  CI runs the stacked trees. Merge order: #205 → #206 → #207.
+
+- 2026-08-14: **Radial inversion: gold downtown, sources on the periphery**
+  (Stephen's directive, same day: "density should generally radiate outward…
+  core/gold models central… surrounded by the major int models… fan out to
+  the smaller source neighborhoods"). The ring index is now the schema's
+  longest-chain depth over the CROSS-SCHEMA edge graph
+  (`layout.longest_chain_depths`, extracted from `compute_depths`), inverted , 
+  mean member depth could not express the directive (it banded dogfood's
+  `mart` and `int` together). Within-ring ties (the real conflict: an 18-way
+  tie of depth-0 source schemas on dogfood) break decisively on cross-schema
+  fan-out desc, then member count desc, then name. Observed on dogfood:
+  routing IMPROVED: median route 229 → 36 tiles (total 11,249 → 2,795),
+  congestion halved (worst tile 47 → 22 routes), map 99×161 → 96×135 , 
+  because consumers are now central, producers reach them radially. Two
+  fixture-truth updates: S8 now HOLDS under the fan-in fixture (flipped per
+  the old test's own instruction), and the plaza-forecourt "starts as grass"
+  precondition is no longer constructible (downtown kerbs are through-streets;
+  the paved-on-map assertion stays). Golden regenerated again: same review
+  process as the morning's contract change. Suite: 563 passed, 6 skipped.
+
+- 2026-08-14: **Ring-planner promotion reconciled with the contract.** The
+  working tree makes the ring planner (`town_plan.py`, v5 lineage) the sole
+  default: the `DATABASE_TYCOON_PLANNER` switch and the v4 depth-column path
+  are gone from `generator.py`. Consequences landed as one deliberate contract
+  change: the golden (`contract/fixtures/demo.city.json`) regenerated via
+  `scripts/update_contract_golden.py`; `districts` redefined in
+  `city-json-v1.md` from "bounding rect of connected lots, orphans excluded"
+  to the schema's zoned precinct rect housing every member (ring zoning has no
+  suburb, so the stretched-plate failure mode is impossible by construction);
+  a big lot's forecourt pad may flank either side of the building. Also fixed
+  six carried-over test files (plus `update_contract_golden.py`) whose
+  `parents[N]` anchors still resolved to `tests/` instead of the repo root
+  after the pipeline-city absorb, restored `tests/fixtures/tycoon_factory.py`
+  as the re-export of `tycoon_city.demo.factory` (a prior session had stubbed
+  it), and module-skipped `test_layout_plan.py` (pure v4 geometry). Suite:
+  560 passed, 6 skipped. **Awaiting Stephen's review**: the golden diff and
+  the districts redefinition are the contract calls.
+
 - 2026-08-09 — **Release candidate made honest, and the tour stopped reading a
   dead city.** The final whole-branch review found the release notes claiming a
   bundle-drift *guard* that was only ever a manual release step, and documenting
