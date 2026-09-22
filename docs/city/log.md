@@ -19,6 +19,37 @@ updated: '2026-09-16'
   default `pytest` run. `guide.md`'s "Streets are mid-rewrite" bullet was
   stale (it still described the flag) and now states the current planner.
 
+- 2026-09-12: **`town_plan.py` split at the precinct seam.** The ring
+  planner took the module from 288 to 529 lines, past the 500-line
+  convention. `schema_precincts` and the two constants only it uses
+  (`NEIGHBOURHOOD_GAP`, `CIVIC_CORE_CELLS`) now live in
+  `sim/town_precincts.py`. `town_plan` keeps the `DagPlan` contract,
+  routing and `plan_dag_layout`, and re-exports the moved names, so every
+  import path of record still resolves. The golden regenerates byte for
+  byte.
+
+- 2026-09-12: **The ring planner, documented where the contract lives.**
+  `schema_precincts` (2026-08-14, Stephen inverting his 2026-08-10 order)
+  lays schema precincts out in rings by the schema's LONGEST-CHAIN depth over
+  the cross-schema edge graph, inverted: gold and mart neighbourhoods
+  downtown against the civic core, int in the middle ring, sources on the
+  periphery. Mean depth could not express the directive; on dogfood it
+  landed `mart` and `int` in one band. Within a ring the kerb nearest
+  downtown goes to the schema feeding the most distinct schemas, then the
+  larger, then by name. Ring zoning removed the orphan suburb, so a
+  `districts` rect is now the precinct rect housing every member lot; the
+  2026-08-05 connected-lots-only rule and its stretched-plate failure mode
+  are gone by construction
+  (`test_districts_house_every_lot_of_their_schema`). Same change:
+  `town_network.py` closes three route-completeness gaps, streets are thinned
+  to where routes run, and the v4/v5 planner split is dissolved. Median
+  route on the dogfood catalog: 229 tiles → 36. `city-json-v1.md` updated
+  (`districts` row, the ring paragraph); the demo export was regenerated,
+  which re-derived `streets.spec.ts`'s curb golden (56 − 8 + 6 = 54 →
+  74 − 7 + 4 = 71) and moved its grazing-camera pose onto the new trunk
+  street. The old pose read 0 asphalt because it faced open grass, not
+  because the skirt depth fight had returned.
+
 - 2026-08-09 — **Release candidate made honest, and the tour stopped reading a
   dead city.** The final whole-branch review found the release notes claiming a
   bundle-drift *guard* that was only ever a manual release step, and documenting
