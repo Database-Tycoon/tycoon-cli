@@ -357,6 +357,58 @@ The renderer ships with tycoon; there is nothing extra to install.
 
 ---
 
+## Fire & Response
+
+### [`tycoon fire`](../commands/fire.md)
+
+```
+tycoon fire [OPTIONS]
+
+Options:
+  -r, --run TEXT           Show failures for a specific run (invocation ID
+                           prefix).
+```
+
+Failing tests from the latest run — the buildings on fire in the 3D city.
+
+### [`tycoon firehouse`](../commands/fire.md#tycoon-firehouse)
+
+```
+tycoon firehouse
+```
+
+Dispatch stats: station location (from an exported city.json), fire trucks
+and contractor vans on duty.
+
+### [`tycoon repair`](../commands/fire.md#tycoon-repair)
+
+```
+tycoon repair
+```
+
+The contractor call sheet: sources past their freshness SLA.
+
+---
+
+### [`tycoon data layers`](../commands/data/layers.md)
+
+```
+tycoon data layers
+tycoon data health
+```
+
+The layered architecture ring by ring with vendor per object, and the city's
+health strip as text.
+
+### [`tycoon data sources explore`](../commands/data/sources.md)
+
+```
+tycoon data sources explore [NAME] [--limit N]
+```
+
+List all sources with metadata, or inspect one source's schema, sample rows,
+and health.
+
 ## Tools
 
 ### [`tycoon run`](../commands/run.md)
