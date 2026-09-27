@@ -369,7 +369,7 @@ Options:
                            prefix).
 ```
 
-Failing tests from the latest run — the buildings on fire in the 3D city.
+Failing tests from the latest run: the buildings on fire in the 3D city.
 
 ### [`tycoon firehouse`](../commands/fire.md#tycoon-firehouse)
 

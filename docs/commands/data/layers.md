@@ -1,6 +1,6 @@
 # `tycoon data layers` / `tycoon data health`
 
-Text views of the layered architecture and its health — the **same data** the
+Text views of the layered architecture and its health: the **same data** the
 3D city renders, without the browser.
 
 ## Layers are the city's rings
@@ -21,7 +21,7 @@ the vendor each one comes from:
   overrides taking priority
 
 Objects tycoon doesn't govern (hand-rolled SQL, notebook outputs) classify
-as *unclassified* — tycoon has opinions only about the surfaces it manages.
+as *unclassified*; tycoon has opinions only about the surfaces it manages.
 
 ```
 tycoon data layers
@@ -29,7 +29,7 @@ tycoon data layers
 
 ## `tycoon data health`
 
-The city UI's **health strip** as text: one chip per problem class —
+The city UI's **health strip** as text, one chip per problem class:
 failing tests, build errors, late sources, test warnings, stale builds
 (14+ days), schema drift (7 days). Every chip is a count of problematic
 objects from the same fields the city colors buildings with.
