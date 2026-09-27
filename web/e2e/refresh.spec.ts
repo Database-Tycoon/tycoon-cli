@@ -79,7 +79,7 @@ test("repeated refreshes do not grow the scene graph", async ({ page }) => {
 test("a refresh repaints the chrome for the new document", async ({ page }) => {
   // The footer status, the degradation-notes popover, and the legend are all
   // document-derived. A refresh that swaps the city but leaves them painted
-  // with boot values shows a fresh #asof over stale facts — the worst kind of
+  // with boot values shows a fresh #asof over stale facts: the worst kind of
   // stale, because it claims to be current.
   await open(page, "?settle=1");
 

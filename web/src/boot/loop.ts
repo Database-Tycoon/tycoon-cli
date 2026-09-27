@@ -53,7 +53,7 @@ export function setupLoop(
       // The draw halves of the 10 Hz sims, fed the accumulator's progress
       // toward the next tick so positions interpolate between tiles. These
       // are the ONLY writers of the instance matrices: ticking the sims
-      // without calling these renders an empty street — the sim arrays keep
+      // without calling these renders an empty street; the sim arrays keep
       // counting, the screen shows nothing, and only a mesh-count assertion
       // can tell the difference (which is what the hooks now count).
       const fraction = accumulator / TICK_SECONDS;

@@ -129,7 +129,7 @@ export interface HookDeps {
   usage: UsageOverlay;
   /** Both counters answer from the DRAWN InstancedMesh (`mesh.count`), never
    * the simulation array. The sim ticking while the layer never draws is
-   * exactly the regression these hooks exist to catch — a sim-array count
+   * exactly the regression these hooks exist to catch: a sim-array count
    * reads > 0 over an empty screen and hides it. */
   vehicleCount: () => number;
   guestCount: () => number;
