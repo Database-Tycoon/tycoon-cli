@@ -17,6 +17,8 @@ _DEFAULT_LOCAL_DB = "data/warehouse.duckdb"
 _DEFAULT_DBT_DIR = "dbt_project"
 _DEFAULT_RILL_DIR = "rill"
 
+MOTHERDUCK_PREFIX = "md:"
+
 
 def _find_project_root() -> Path:
     """Walk up from CWD to find the directory containing tycoon.yml or pyproject.toml."""
@@ -67,10 +69,32 @@ class TycoonConfig:
         return self.root / _DEFAULT_RAW_DB
 
     @property
-    def local_db(self) -> Path:
+    def _warehouse_setting(self) -> str:
         if self._project:
-            return self.root / self._project.database.warehouse
-        return self.root / _DEFAULT_LOCAL_DB
+            return self._project.database.warehouse
+        return _DEFAULT_LOCAL_DB
+
+    @property
+    def warehouse_is_motherduck(self) -> bool:
+        return self._warehouse_setting.startswith(MOTHERDUCK_PREFIX)
+
+    @property
+    def warehouse_target(self) -> str:
+        """What ``duckdb.connect`` opens for the warehouse.
+
+        A MotherDuck ``md:`` connection string passes through verbatim; a
+        local path resolves under the project root.
+        """
+        if self.warehouse_is_motherduck:
+            return self._warehouse_setting
+        return str(self.root / self._warehouse_setting)
+
+    @property
+    def local_db(self) -> Path | None:
+        """The warehouse's local DuckDB file, or None when it lives in MotherDuck."""
+        if self.warehouse_is_motherduck:
+            return None
+        return self.root / self._warehouse_setting
 
     @property
     def dbt_project_dir(self) -> Path:

@@ -107,3 +107,23 @@ class TestLoadConfigSchemaWarning:
         assert exc_info.value.code == 1
         assert len(errors) == 1
         assert "newer than this tycoon supports" in errors[0]
+
+
+class TestWarehouseTarget:
+    def _config(self, tmp_path, warehouse: str):
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "tycoon.yml").write_text(f"name: test\nsources: {{}}\ndatabase:\n  warehouse: '{warehouse}'\n")
+        return TycoonConfig(project_root=tmp_path)
+
+    def test_motherduck_target_passes_through(self, tmp_path):
+        cfg = self._config(tmp_path, "md:dogfood_dbt_prod")
+        assert cfg.warehouse_target == "md:dogfood_dbt_prod"
+        assert cfg.warehouse_is_motherduck
+        assert cfg.local_db is None
+
+    def test_local_target_resolves_under_root(self, tmp_path):
+        cfg = self._config(tmp_path, "data/wh.duckdb")
+        assert cfg.warehouse_target == str(tmp_path / "data" / "wh.duckdb")
+        assert not cfg.warehouse_is_motherduck
+        assert cfg.local_db == tmp_path / "data" / "wh.duckdb"

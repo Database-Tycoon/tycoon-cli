@@ -86,8 +86,15 @@ def scaffold(
     project = config.project
     project_name = project.name if project else config.root.name
 
+    warehouse_db = config.local_db
+    if warehouse_db is None:
+        error(
+            f"OSI scaffolding reads a local DuckDB warehouse; MotherDuck ({config.warehouse_target}) isn't supported yet."
+        )
+        raise typer.Exit(1)
+
     result = scaffold_osi(
-        warehouse_db=config.local_db,
+        warehouse_db=warehouse_db,
         out_path=out_path,
         project_name=project_name,
         force=force,
