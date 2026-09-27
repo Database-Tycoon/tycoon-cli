@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import yaml
+
 from tycoon.project import (
     DatabaseConfig,
+    ResourceConfig,
     SCHEMA_VERSION,
     SourceConfig,
     TycoonProject,
@@ -227,6 +230,136 @@ class TestSchemaVersionEnforcement:
         reloaded = load_project(tmp_path)
         assert reloaded is not None
         assert reloaded.schema_version is None
+
+
+_COMMENTED_YML = """\
+# Project notes: keep this header.
+name: commented
+version: "0.1.0"
+
+sources:
+  api:
+    type: rest_api
+    schema: raw_api  # inline note on the schema
+    config:
+      base_url: https://example.com
+  files:
+    type: filesystem
+    schema: raw_files
+    resources:
+    - table_name: orders  # orders feed
+      path: data/orders
+      file_glob: "*.csv"
+    - table_name: users
+      path: data/users
+      file_glob: "*.csv"
+
+# Database section comment.
+database:
+  raw: data/raw.duckdb
+  warehouse: data/warehouse.duckdb
+"""
+
+
+class TestSavePreservesFormatting:
+    """gh-177: save_project keeps the user's comments, blank lines, and quoting."""
+
+    def test_add_source_keeps_comments_and_blank_lines(self, tmp_path):
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(_COMMENTED_YML)
+        project = load_project(tmp_path)
+        assert project is not None
+        project.sources["api2"] = SourceConfig(type="rest_api", schema="raw_api2", config={"base_url": "https://x"})
+
+        save_project(project, tmp_path)
+
+        on_disk = yml.read_text()
+        assert on_disk.startswith("# Project notes: keep this header.\n")
+        assert "schema: raw_api  # inline note on the schema" in on_disk
+        assert "- table_name: orders  # orders feed" in on_disk
+        assert "# Database section comment." in on_disk
+        assert "\n\n" in on_disk
+        assert 'version: "0.1.0"' in on_disk
+        reloaded = load_project(tmp_path)
+        assert reloaded is not None
+        assert reloaded.sources["api2"].schema_name == "raw_api2"
+
+    def test_remove_source_keeps_unrelated_comments(self, tmp_path):
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(_COMMENTED_YML)
+        project = load_project(tmp_path)
+        assert project is not None
+        del project.sources["api"]
+
+        save_project(project, tmp_path)
+
+        on_disk = yml.read_text()
+        assert "raw_api" not in on_disk
+        assert "inline note on the schema" not in on_disk
+        assert on_disk.startswith("# Project notes: keep this header.\n")
+        assert "- table_name: orders  # orders feed" in on_disk
+        assert "# Database section comment." in on_disk
+
+    def test_editing_a_resource_keeps_its_siblings(self, tmp_path):
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(_COMMENTED_YML)
+        project = load_project(tmp_path)
+        assert project is not None
+        resources = project.sources["files"].resources
+        assert resources is not None
+        resources[1] = ResourceConfig(table_name="users", path="data/people", file_glob="*.csv")
+
+        save_project(project, tmp_path)
+
+        on_disk = yml.read_text()
+        assert "path: data/people" in on_disk
+        assert "- table_name: orders  # orders feed" in on_disk
+        assert 'file_glob: "*.csv"' in on_disk
+
+    def test_unchanged_save_is_a_byte_for_byte_noop(self, tmp_path):
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(_COMMENTED_YML)
+        save_project(TycoonProject.model_validate(yaml.safe_load(_COMMENTED_YML)), tmp_path)
+        first = yml.read_text()
+        project = load_project(tmp_path)
+        assert project is not None
+
+        save_project(project, tmp_path)
+
+        assert yml.read_text() == first
+
+    def test_env_ref_survives_a_save(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("API_TOKEN", "tok-123")
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(
+            "name: env\nsources:\n  api:\n    type: rest_api\n    schema: raw_api\n"
+            "    config:\n      token: ${API_TOKEN}\n"
+        )
+        project = load_project(tmp_path)
+        assert project is not None
+        project.name = "env-renamed"
+
+        save_project(project, tmp_path)
+
+        on_disk = yml.read_text()
+        assert "token: ${API_TOKEN}" in on_disk
+        assert "tok-123" not in on_disk
+
+    def test_saved_key_set_matches_a_fresh_file(self, tmp_path):
+        project = TycoonProject(
+            name="keys",
+            sources={"api": SourceConfig(type="rest_api", schema="raw_api", config={"base_url": "https://x"})},
+        )
+        fresh_dir = tmp_path / "fresh"
+        fresh_dir.mkdir()
+        save_project(project, fresh_dir)
+        (tmp_path / "tycoon.yml").write_text("# minimal hand-written file\nname: keys\n")
+
+        save_project(project, tmp_path)
+
+        fresh = yaml.safe_load((fresh_dir / "tycoon.yml").read_text())
+        assert fresh == project.model_dump(by_alias=True, exclude_none=True, mode="json")
+        assert yaml.safe_load((tmp_path / "tycoon.yml").read_text()) == fresh
 
 
 class TestMigrateProject:

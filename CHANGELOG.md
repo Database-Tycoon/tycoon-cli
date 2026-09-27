@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file. The format 
 - **`--max-records` now caps `filesystem`, `rest_api`, and `sql_database` sources** ([#239][]). `tycoon data sources run --max-records N` and both `run-all` commands printed the record cap for these source types and then loaded every row. Each resource now lands at most N rows: `sql_database` pushes the cap into the query as a `LIMIT`, `rest_api` stops requesting pages once it has N rows, and `filesystem` still reads its matched files in full but loads only the first N rows.
 
 [#239]: https://github.com/Database-Tycoon/tycoon-cli/issues/239
+- Commands that save `tycoon.yml`, such as `tycoon data sources add` and `tycoon data sources remove`, no longer erase your comments and blank lines. The file is now updated in place with ruamel.yaml, so only the values tycoon changes are rewritten, and a `${ENV}` reference stays a reference instead of being written back as its expanded value (gh-177).
 
 ## [0.2.1] - 2026-09-16
 

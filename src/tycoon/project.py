@@ -480,25 +480,50 @@ def load_project(project_root: Path) -> TycoonProject | None:
 
 
 def save_project(project: TycoonProject, project_root: Path) -> None:
-    """Write tycoon.yml to disk.
+    """Write tycoon.yml to disk, keeping the user's comments and formatting.
+
+    An existing file is loaded with ruamel.yaml and the model's data is
+    merged onto it (gh-177), so comments, blank lines, key order, and
+    quoting survive and only the values tycoon changed are rewritten. A
+    save that changes nothing leaves the file untouched.
 
     Preserves the hand-authored ``stack.ingestion_metadata`` block from
     the existing file verbatim. Those credentials are ``SecretStr`` (a
     plain dump would mask them to ``**********``) and may be written as
-    ``${ENV}`` references that ``load_project`` has already expanded —
+    ``${ENV}`` references that ``load_project`` has already expanded;
     re-dumping the in-memory value would either corrupt the config or
     flatten an env-ref into its literal secret. tycoon never edits that
-    block, so round-tripping the on-disk form is always correct.
+    block, so round-tripping the on-disk form is always correct. The same
+    reasoning keeps any other ``${ENV}`` reference whose expansion still
+    matches the model's value.
     """
+    from tycoon.yaml_merge import merge_into, roundtrip_yaml
+
     path = project_root / PROJECT_FILENAME
     data = project.model_dump(by_alias=True, exclude_none=True, mode="json")
-    if path.exists():
-        existing = yaml.safe_load(path.read_text())
-        if isinstance(existing, dict):
-            existing_meta = (existing.get("stack") or {}).get("ingestion_metadata")
-            if existing_meta is not None and isinstance(data.get("stack"), dict):
-                data["stack"]["ingestion_metadata"] = existing_meta
-    path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+    ryaml = roundtrip_yaml()
+    existing = ryaml.load(path.read_text()) if path.exists() else None
+    if not isinstance(existing, dict):
+        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        return
+
+    existing_meta = (existing.get("stack") or {}).get("ingestion_metadata")
+    if existing_meta is not None and isinstance(data.get("stack"), dict):
+        data["stack"]["ingestion_metadata"] = existing_meta
+
+    _, changed = merge_into(existing, data, _same_scalar)
+    if changed:
+        with path.open("w") as f:
+            ryaml.dump(existing, f)
+
+
+def _same_scalar(old: Any, new: Any) -> bool:
+    # bool is an int subclass, so `1 == True` would hide a real type change.
+    if isinstance(old, bool) != isinstance(new, bool):
+        return False
+    if old == new:
+        return True
+    return isinstance(old, str) and isinstance(new, str) and _interpolate_env(old) == new
 
 
 def migrate_project(project_root: Path) -> bool:
@@ -511,14 +536,13 @@ def migrate_project(project_root: Path) -> bool:
     already up to date (idempotent). Comments and blank lines are
     preserved via ruamel.yaml.
     """
-    from ruamel.yaml import YAML
+    from tycoon.yaml_merge import roundtrip_yaml
 
     path = project_root / PROJECT_FILENAME
     if not path.exists():
         return False
 
-    ryaml = YAML()
-    ryaml.preserve_quotes = True
+    ryaml = roundtrip_yaml()
 
     with path.open() as f:
         raw = ryaml.load(f)
