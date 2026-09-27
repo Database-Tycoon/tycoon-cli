@@ -37,7 +37,7 @@ export default defineConfig({
     port: PORT,
     // Reuse is a local-dev convenience only. In CI it would attach to any
     // process squatting the port and verify code that is not this checkout's
-    // — the same trap the PORT comment above describes — so CI always starts
+    // (the same trap the PORT comment above describes), so CI always starts
     // its own server (and --strictPort makes a collision an error).
     reuseExistingServer: !process.env.CI,
   },

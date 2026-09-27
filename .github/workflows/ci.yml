@@ -154,7 +154,7 @@ jobs:
     # dependency order: typecheck (`vite build` strips types without
     # checking them, so tsc is the only type gate), the production build,
     # bundle freshness (the committed src/tycoon_city/web_dist must be
-    # exactly the build of web/ source — a stale bundle ships a UI nobody
+    # exactly the build of web/ source; a stale bundle ships a UI nobody
     # reviewed), and the Playwright e2e suite against a real
     # tycoon-city-export of the demo fixture. Uses the runner's
     # preinstalled Node and Google Chrome (playwright.config.ts pins
@@ -191,7 +191,7 @@ jobs:
         run: |
           uv run python scripts/sync_web_bundle.py
           git diff --exit-code -- src/tycoon_city/web_dist \
-            || { echo "::error::src/tycoon_city/web_dist is stale — run 'npm run build' in web/ then scripts/sync_web_bundle.py and commit"; exit 1; }
+            || { echo "::error::src/tycoon_city/web_dist is stale: run 'npm run build' in web/ then scripts/sync_web_bundle.py and commit"; exit 1; }
 
       - name: Generate e2e demo data
         working-directory: web
