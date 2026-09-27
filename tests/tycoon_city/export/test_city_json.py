@@ -338,14 +338,14 @@ def _inside(box: dict, lot: dict) -> bool:
 @pytest.mark.parametrize("name", CATALOG_IDS)
 def test_districts_house_every_lot_of_their_schema(name, theme):
     """A plate is the schema's ZONED NEIGHBOURHOOD, and zoning houses every
-    member — orphans included.
+    member, orphans included.
 
     Until the ring planner (2026-08-14) a plate was the bounding box of the
     schema's CONNECTED lots, and suburb orphans were excluded so one stray
     table could not stretch the rect across the map. Ring placement removed
     the suburb: `schema_precincts` allots land per schema up front and every
     member gets a slot inside it, so the plate is precinct geometry, not a
-    box over scattered lots — the stretched-plate failure mode is impossible
+    box over scattered lots; the stretched-plate failure mode is impossible
     by construction. The contract flips back to the pre-2026-08-06 reading,
     this time non-vacuously: `mixed_schema` (see the precondition test below)
     proves an orphan sharing a schema with connected lots stays IN the plate.
@@ -557,10 +557,10 @@ def test_street_features_dress_the_ends_of_a_real_street(theme):
 def test_a_big_lots_plaza_ships_its_frontage_geometry(theme):
     """`w`/`h` are how the renderer sizes a forecourt, so they are pinned on the
     emitted bytes for the one shape that produces a pad bigger than a tile: a
-    2x2 building's side frontage, two tiles TALL (h=2, w=1 — not the other way
+    2x2 building's side frontage, two tiles TALL (h=2, w=1, not the other way
     round), both of them paved in the decoded grid. Which side carries the door
     is the planner's call (v4 always doored west; the ring planner points doors
-    at the kerb it zoned), so the pad may flank either side — but it must hug
+    at the kerb it zoned), so the pad may flank either side, but it must hug
     the hub's full height and face it."""
     ctx = CATALOGS["big_plaza"]
     document = _document_for(ctx, theme)
