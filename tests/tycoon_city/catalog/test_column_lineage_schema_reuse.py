@@ -50,7 +50,7 @@ class TestSchemaIsBuiltOnceAndReused:
             )
 
     def test_every_call_gets_the_identical_object(self, monkeypatch) -> None:
-        """Not just equal — the same instance, so no rebuild happened."""
+        """Not just equal: the same instance, so no rebuild happened."""
         seen: list[object] = []
         real_lineage = cl.lineage
 

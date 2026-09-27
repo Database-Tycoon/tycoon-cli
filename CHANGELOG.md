@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Fixed
 
-- **`tycoon city`'s cold build no longer re-parses the whole schema per column** ([#274][], PR [#277][]). `derive_column_lineage` passed a plain `dict` as sqlglot's `schema=`, and `ensure_schema()` builds a fresh `MappingSchema` — normalizing, and so `parse_one`-ing, every identifier in the mapping — every time it is handed a dict. The entire warehouse schema was therefore re-parsed once per traced column. Building the `MappingSchema` once and reusing it cuts a cold `city.json` on an 87-object catalog from **43.6s to 10.3s** against sqlglot 27.29.0, and from 9.9s to 6.5s against 30.15.0. Column edges are byte-identical before and after (1,023 edges, same digest): this removes redundant work, it does not change lineage.
+- **`tycoon city`'s cold build no longer re-parses the whole schema per column** ([#274][], PR [#277][]). `derive_column_lineage` passed a plain `dict` as sqlglot's `schema=`, and `ensure_schema()` builds a fresh `MappingSchema` (normalizing, and so `parse_one`-ing, every identifier in the mapping) every time it is handed a dict. The entire warehouse schema was therefore re-parsed once per traced column. Building the `MappingSchema` once and reusing it cuts a cold `city.json` on an 87-object catalog from **43.6s to 10.3s** against sqlglot 27.29.0, and from 9.9s to 6.5s against 30.15.0. Column edges are byte-identical before and after (1,023 edges, same digest): this removes redundant work, it does not change lineage.
 
 ## [0.2.1] - 2026-09-16
 
