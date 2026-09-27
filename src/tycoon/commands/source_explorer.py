@@ -1,9 +1,9 @@
-"""tycoon data sources explore — interactive source inspection.
+"""tycoon data sources explore: interactive source inspection.
 
 Commands:
 
-* ``tycoon data sources explore``          — list all sources with metadata
-* ``tycoon data sources explore <name>``   — inspect schema, sample data, health
+* ``tycoon data sources explore``:          list all sources with metadata
+* ``tycoon data sources explore <name>``:   inspect schema, sample data, health
 """
 
 from __future__ import annotations
@@ -131,12 +131,12 @@ def explore(
         error("No sources registered. Run 'tycoon data sources add' first.")
         raise typer.Exit(1)
 
-    # No source name provided — list all sources
+    # No source name provided: list all sources
     if not source_name:
         _list_sources(sources)
         return
 
-    # Source name provided — inspect it
+    # Source name provided: inspect it
     if source_name not in sources:
         error(f"Source '{source_name}' not found. Available: {', '.join(sources.keys()) or '(none)'}")
         raise typer.Exit(1)
