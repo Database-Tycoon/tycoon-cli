@@ -63,7 +63,7 @@ export class Inspector {
     const pct = (n: number, d: number) => (d ? `${Math.round((100 * n) / d)}%` : "—");
     // Every shelf above is a dbt-manifest count. When the producer says the
     // manifest was never read (milestone state "unknown"), 0-of-N would show
-    // empty shelves for a library nobody has looked inside — unknown, not
+    // empty shelves for a library nobody has looked inside: unknown, not
     // bare. The milestone's own note names the missing artifact.
     const manifest = milestoneOf(this.doc, "documented_buildings");
     const manifestUnknown = manifest !== null && manifest.state === "unknown";

@@ -168,7 +168,7 @@ export const TOUR_STOPS: readonly import("./tour").TourStop[] = [
     requires: (doc) => doc.library !== null && doc.objects.length > 0,
     body: (doc) => {
       // Same rule as the library panel: shelves the manifest never reached
-      // are unknown, not empty — 0/N here would narrate an invented failure.
+      // are unknown, not empty; 0/N here would narrate an invented failure.
       const m = milestoneOf(doc, "documented_buildings");
       if (m !== null && m.state === "unknown") {
         return (

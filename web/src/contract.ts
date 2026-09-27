@@ -271,13 +271,13 @@ const weather = z.object({
 
 /**
  * Named coverage milestones (2026-08-06, additive): counts of real declared
- * artifacts, never invented points, and STATELESS — true right now, derived
+ * artifacts, never invented points, and STATELESS: true right now, derived
  * from this document alone.
  *
  * `state` is a plain string (`met` / `unmet` / `unknown`) for the same
  * forward-compat reason `weather.condition` is. The unknown state is the load-
  * bearing one: `met`, `have`, `need` are all null there, because a catalog
- * whose manifest was never read has UNKNOWN coverage, not 0% — a client that
+ * whose manifest was never read has UNKNOWN coverage, not 0%; a client that
  * recomputes these fractions from raw fields invents a failure out of an
  * absence. Key gauges off `id`, never off `name`.
  */
@@ -289,7 +289,7 @@ const milestone = z.object({
   met: z.boolean().nullable(),
   have: z.number().int().nullable(),
   need: z.number().int().nullable(),
-  // The object keys that fall short — the HUD's fly-to list. [] when met or unknown.
+  // The object keys that fall short: the HUD's fly-to list. [] when met or unknown.
   short: z.array(z.string()),
   note: z.string(),
 });

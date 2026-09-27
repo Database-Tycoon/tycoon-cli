@@ -192,7 +192,7 @@ export class Problems {
     const budget = this.doc.budget;
     // The producer's milestone is the authority on whether the evidence was
     // ever READ. state "unknown" means the manifest / verdicts were never
-    // joined — recomputing a fraction from raw fields there renders 0% for
+    // joined; recomputing a fraction from raw fields there renders 0% for
     // an absence, the exact lie city-json-v1.md's achievements block exists
     // to prevent. A document predating the block has no milestones, and the
     // derived numbers stay (nobody told us they are unknown).
