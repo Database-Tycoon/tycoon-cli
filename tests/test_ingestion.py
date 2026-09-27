@@ -154,16 +154,19 @@ class TestBuildRestApiSource:
 class TestBuildFilesystemSource:
     """Unit tests for _build_filesystem_source glob-based dispatch."""
 
-    def _make_source_config(self, file_glob: str) -> SourceConfig:
+    def _make_source_config(self, tmp_path, file_glob: str) -> SourceConfig:
+        """Seed one file the glob matches, since a local glob that matches
+        nothing builds no resource at all (gh-240)."""
         from tycoon.project import SourceConfig
 
+        (tmp_path / file_glob.replace("**/", "").replace("*", "sample")).write_text("")
         return SourceConfig(
             type="filesystem",
             schema="raw_files",
-            config={"path": "data/input", "file_glob": file_glob},
+            config={"path": str(tmp_path), "file_glob": file_glob},
         )
 
-    def test_csv_glob_returns_dlt_source(self):
+    def test_csv_glob_returns_dlt_source(self, tmp_path):
         """CSV glob should pipe through read_csv, producing a transformer resource.
 
         gh-223: the flat shape now goes through _build_filesystem_resource
@@ -174,30 +177,30 @@ class TestBuildFilesystemSource:
         """
         from tycoon.ingestion.runner import _build_filesystem_source
 
-        source_config = self._make_source_config("*.csv")
+        source_config = self._make_source_config(tmp_path, "*.csv")
         result = _build_filesystem_source(source_config)
         assert result is not None
         assert result.is_transformer is True
 
-    def test_parquet_glob_returns_dlt_source(self):
+    def test_parquet_glob_returns_dlt_source(self, tmp_path):
         """Parquet glob should pipe through read_parquet, producing a transformer resource."""
         from tycoon.ingestion.runner import _build_filesystem_source
 
-        source_config = self._make_source_config("*.parquet")
+        source_config = self._make_source_config(tmp_path, "*.parquet")
         result = _build_filesystem_source(source_config)
         assert result is not None
         assert result.is_transformer is True
 
-    def test_jsonl_glob_returns_dlt_source(self):
+    def test_jsonl_glob_returns_dlt_source(self, tmp_path):
         """JSONL glob should pipe through read_jsonl, producing a transformer resource."""
         from tycoon.ingestion.runner import _build_filesystem_source
 
-        source_config = self._make_source_config("*.jsonl")
+        source_config = self._make_source_config(tmp_path, "*.jsonl")
         result = _build_filesystem_source(source_config)
         assert result is not None
         assert result.is_transformer is True
 
-    def test_unknown_glob_returns_raw_filesystem_source(self, capsys):
+    def test_unknown_glob_returns_raw_filesystem_source(self, tmp_path, capsys):
         """An unrecognised glob should fall back to the raw filesystem
         resource, with a warning that it isn't parsed into rows (gh-228).
         Plain `.json` (not `.jsonl`) is deliberately still unrecognized:
@@ -206,25 +209,32 @@ class TestBuildFilesystemSource:
         """
         from tycoon.ingestion.runner import _build_filesystem_source
 
-        source_config = self._make_source_config("**/*.json")
+        source_config = self._make_source_config(tmp_path, "**/*.json")
         result = _build_filesystem_source(source_config)
         assert result is not None
         assert "isn't a recognized format" in capsys.readouterr().out.lower()
         # Raw filesystem source is not a transformer
         assert result.is_transformer is False
 
-    def test_resources_list_returns_one_named_resource_per_entry(self):
+    def test_resources_list_returns_one_named_resource_per_entry(self, tmp_path):
         """gh-224/gh-225: a multi-resource source builds one resource per
         entry, each renamed to its own table_name, not the shared source name."""
         from tycoon.ingestion.runner import _build_filesystem_source
         from tycoon.project import ResourceConfig, SourceConfig
 
+        games_dir = tmp_path / "input"
+        sensors_dir = tmp_path / "sensors" / "day1"
+        games_dir.mkdir()
+        sensors_dir.mkdir(parents=True)
+        (games_dir / "games.csv").write_text("id\n1\n")
+        (sensors_dir / "readings.parquet").write_text("")
+
         source_config = SourceConfig(
             type="filesystem",
             schema="raw_arcade",
             resources=[
-                ResourceConfig(table_name="arcade_games", path="data/input", file_glob="games.csv"),
-                ResourceConfig(table_name="sensor_readings", path="/tmp/data", file_glob="**/*.parquet"),
+                ResourceConfig(table_name="arcade_games", path=str(games_dir), file_glob="games.csv"),
+                ResourceConfig(table_name="sensor_readings", path=str(tmp_path / "sensors"), file_glob="**/*.parquet"),
             ],
         )
         result = _build_filesystem_source(source_config)
@@ -261,8 +271,10 @@ class TestFilesystemConfigValidation:
         with pytest.raises(IngestionError, match="games"):
             _build_filesystem_source(source_config)
 
-    def test_local_glob_with_no_matches_warns_not_fails(self, tmp_path, capsys):
-        """A typo'd glob shouldn't look identical to a genuinely empty source."""
+    def test_local_glob_with_no_matches_warns_and_skips(self, tmp_path, capsys):
+        """A typo'd glob shouldn't look identical to a genuinely empty source,
+        and must not build a resource whose empty "replace" load would
+        truncate an existing table (gh-240)."""
         from tycoon.ingestion.runner import _build_filesystem_source
         from tycoon.project import SourceConfig
 
@@ -275,7 +287,7 @@ class TestFilesystemConfigValidation:
             config={"path": str(empty_dir), "file_glob": "*.csv"},
         )
         result = _build_filesystem_source(source_config)  # must not raise
-        assert result is not None
+        assert result is None
         assert "no files matched" in capsys.readouterr().out.lower()
 
     def test_local_glob_with_matches_does_not_warn(self, tmp_path, capsys):
@@ -305,7 +317,8 @@ class TestFilesystemConfigValidation:
             schema="raw_files",
             config={"path": "s3://some-bucket/data", "file_glob": "*.csv"},
         )
-        _build_filesystem_source(source_config)  # must not raise or warn
+        result = _build_filesystem_source(source_config)  # must not raise or warn
+        assert result is not None
         assert "no files matched" not in capsys.readouterr().out.lower()
 
 

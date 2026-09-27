@@ -152,25 +152,20 @@ def _build_sql_database_source(source_config: SourceConfig) -> Any:
     return sql_database(connection_string)
 
 
-def _warn_if_local_glob_matches_nothing(bucket_url: str, file_glob: str, label: str) -> None:
-    """Warn when a local filesystem glob matches no files.
+def _local_glob_matches_nothing(bucket_url: str, file_glob: str) -> bool:
+    """Return True when a local filesystem glob matches no files.
 
     Only checks local paths (``bucket_url`` without a URI scheme). Remote
     buckets (``s3://``, ``gs://``, ``az://``) aren't supported yet and are
-    skipped rather than guessed at. Issue #223: a typo in the glob should
-    not look identical to a source with nothing new to load, since both
-    currently produce zero rows with no distinguishing signal.
+    never reported as empty rather than guessed at. Issue #223.
     """
     if "://" in bucket_url:
-        return
+        return False
 
     import glob as glob_module
 
     pattern = str(Path(bucket_url).expanduser() / file_glob)
-    if not glob_module.glob(pattern, recursive=True):
-        from tycoon.utils.console import warn
-
-        warn(f"'{label}': no files matched glob {file_glob!r} under {bucket_url!r}.")
+    return not glob_module.glob(pattern, recursive=True)
 
 
 def _local_fs_path(url: str) -> Path | None:
@@ -218,7 +213,7 @@ def _split_single_file_path(path: str, file_glob: str) -> tuple[str, str]:
     return str(target.parent), glob.escape(target.name)
 
 
-def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str, default_glob: str = "") -> Any:
+def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str, default_glob: str = "") -> Any | None:
     """Build one named dlt resource for a single (bucket_url, file_glob) pair.
 
     For CSV, Parquet, and JSONL globs the raw file metadata stream is piped
@@ -243,8 +238,11 @@ def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str,
     directory plus the file name (issue #238). ``default_glob`` applies only
     when no glob was given and the path is a directory.
 
-    Raises ``IngestionError`` if ``bucket_url`` or ``file_glob`` is empty,
-    and warns (doesn't fail) if a local glob matches no files. Issue #223.
+    Raises ``IngestionError`` if ``bucket_url`` or ``file_glob`` is empty.
+    Returns ``None``, with a warning, when a local glob matches no files:
+    running an empty resource under ``replace`` would truncate a table that
+    already holds rows, so the resource is left out of the run instead.
+    Issues #223 and #240.
     """
     bucket_url, file_glob = _split_single_file_path(bucket_url, file_glob)
     file_glob = file_glob or default_glob
@@ -254,7 +252,14 @@ def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str,
             "Both are required, e.g. `path: data/input`, `file_glob: '*.csv'`."
         )
 
-    _warn_if_local_glob_matches_nothing(bucket_url, file_glob, table_name)
+    if _local_glob_matches_nothing(bucket_url, file_glob):
+        from tycoon.utils.console import warn
+
+        warn(
+            f"'{table_name}': no files matched glob {file_glob!r} under {bucket_url!r}. "
+            "Nothing was loaded for it, and its existing table was left as it was."
+        )
+        return None
 
     from dlt.sources.filesystem import filesystem, read_csv, read_jsonl, read_parquet
 
@@ -296,9 +301,14 @@ def _build_filesystem_source(source_config: SourceConfig) -> Any:
     per-resource table name to use instead. Reusing that helper here (rather
     than duplicating the CSV/Parquet dispatch) also gets this path the same
     validation and zero-match warning as the multi-resource shape (gh-223).
+
+    Resources whose local glob matches no files are dropped, so this returns
+    ``None`` (flat shape) or an empty list when nothing is left to load
+    (gh-240).
     """
     if source_config.resources:
-        return [_build_filesystem_resource(r.path, r.file_glob, r.table_name) for r in source_config.resources]
+        built = [_build_filesystem_resource(r.path, r.file_glob, r.table_name) for r in source_config.resources]
+        return [resource for resource in built if resource is not None]
 
     cfg = source_config.config
     bucket_url = cfg.get("bucket_url") or cfg.get("path") or ""
@@ -493,7 +503,9 @@ def run_source(
        ``~/.tycoon/sources/<type>/``; we run them from there.
     4. **Dynamic fallback**: try ``dlt.sources.<type>`` directly.
 
-    Returns (pipeline, load_info).
+    Returns (pipeline, load_info). ``load_info`` is ``None`` when the
+    source had nothing to load (every local glob matched no files), in
+    which case the pipeline never ran and no table was touched.
     """
     _started = time.monotonic()
 
@@ -565,6 +577,10 @@ def run_source(
                 ) from exc
         else:
             dlt_source = builder(source_config)
+            if dlt_source is None or (isinstance(dlt_source, list) and not dlt_source):
+                # Running dlt with nothing extracted still applies "replace"
+                # to known tables and empties them, so skip the run (gh-240).
+                return pipeline, None
             legacy_rename = source_type == "filesystem" and not isinstance(dlt_source, list)
             if legacy_rename:
                 # dlt's read_csv()/read_parquet() transformers always name
