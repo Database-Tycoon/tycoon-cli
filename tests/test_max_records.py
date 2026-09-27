@@ -109,6 +109,22 @@ class TestFilesystemMaxRecords:
 
         assert _count(raw_db_path, "raw_test", pipeline_name) == 10
 
+    def test_zero_means_no_cap(self, tmp_path: Path, pipeline_name: str) -> None:
+        """Catalog shims treat `--max-records 0` as no cap; native builders must agree."""
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        (input_dir / "sales.csv").write_text(_TEN_ROW_CSV)
+        raw_db_path = tmp_path / "raw.duckdb"
+
+        source_config = SourceConfig(
+            type="filesystem",
+            schema="raw_test",
+            config={"path": str(input_dir), "file_glob": "*.csv"},
+        )
+        run_source(pipeline_name, source_config, raw_db_path=raw_db_path, max_records=0)
+
+        assert _count(raw_db_path, "raw_test", pipeline_name) == 10
+
 
 class TestSqlDatabaseMaxRecords:
     def test_caps_rows_from_sqlite(self, tmp_path: Path, pipeline_name: str) -> None:

@@ -526,7 +526,8 @@ def run_source(
                 # See _build_filesystem_source and _build_filesystem_resource.
                 dlt_source = dlt_source.with_name(name)
 
-        if max_records is not None:
+        # 0 means no cap, matching the catalog shims' `if max_records:`.
+        if max_records:
             _cap_records_per_resource(dlt_source, max_records)
 
         load_info = pipeline.run(dlt_source)
