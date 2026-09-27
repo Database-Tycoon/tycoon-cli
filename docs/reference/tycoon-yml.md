@@ -109,6 +109,12 @@ sources:
 | `tables` | list[string] | unset | Optional table-name list (for `sql_database` and similar) |
 | `dbt_package` | string | unset | Optional dbt package to install when this source is registered |
 
+A `filesystem` source's `path` (or `bucket_url`) can be a directory or a
+single local file. For a directory, `file_glob` picks the files under it
+(the flat shape defaults to `**/*`). For a single file, leave `file_glob`
+unset: tycoon reads the file's directory and matches just that file name.
+Setting both a file `path` and a `file_glob` is an error.
+
 Source types not in `tycoon data sources catalog` need to be installed
 via `tycoon data sources add <type>` first (it runs `dlt init`
 under the hood and stages the source files in `~/.tycoon/sources/`).
