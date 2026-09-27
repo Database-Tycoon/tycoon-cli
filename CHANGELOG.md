@@ -22,6 +22,10 @@ All notable changes to this project will be documented in this file. The format 
 [#268]: https://github.com/Database-Tycoon/tycoon-cli/pull/268
 [#269]: https://github.com/Database-Tycoon/tycoon-cli/pull/269
 [#273]: https://github.com/Database-Tycoon/tycoon-cli/pull/273
+### Changed
+
+- **A run that loads zero rows no longer reads as a healthy sync** ([#240][]). The `run_completed` ledger event now carries `zero_rows` (set when dlt's normalize counts are empty or all zero) and a `warnings` list. A filesystem run that skipped every resource because nothing matched now records a `run_completed` with `zero_rows: true` and a warning naming each unmatched glob, where it previously left a lone `run_started`. `tycoon data status` no longer counts a zero-row run as the Last Sync, so freshness stays at the last run that loaded something, and it flags a source whose latest run loaded nothing. `tycoon data history` shows such a run with a yellow `!` and "0 rows, nothing loaded" instead of a green tick, and `history show` prints its warnings. Events written before this change read back with `zero_rows: false`.
+
 ### Fixed
 
 - **A filesystem source whose `path` is a single file loads that file** ([#238][]). `tycoon data sources add filesystem` stores whatever you answer at the path prompt, so answering `data/sales.csv` produced a source that ran to a green "load complete" with zero rows, and with `replace` it emptied a table that had already loaded. A `path` naming an existing local file, as a plain path or a `file://` URL, is now read as its directory plus that file name, in both the flat `config` shape and each `resources:` entry, and a resource pointing at a file no longer needs a `file_glob`. Setting a `file_glob` alongside a file `path` fails with an error saying `path` must be a directory when `file_glob` is set, since that glob could never match anything. Remote URLs are unchanged.
