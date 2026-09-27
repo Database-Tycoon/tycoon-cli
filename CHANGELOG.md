@@ -25,8 +25,10 @@ All notable changes to this project will be documented in this file. The format 
 ### Fixed
 
 - **A filesystem source whose `path` is a single file loads that file** ([#238][]). `tycoon data sources add filesystem` stores whatever you answer at the path prompt, so answering `data/sales.csv` produced a source that ran to a green "load complete" with zero rows, and with `replace` it emptied a table that had already loaded. A `path` naming an existing local file, as a plain path or a `file://` URL, is now read as its directory plus that file name, in both the flat `config` shape and each `resources:` entry, and a resource pointing at a file no longer needs a `file_glob`. Setting a `file_glob` alongside a file `path` fails with an error saying `path` must be a directory when `file_glob` is set, since that glob could never match anything. Remote URLs are unchanged.
+- **A glob that matches no local files no longer empties the table** ([#240][]). Filesystem sources load with `replace`, so a rerun whose glob matched nothing (a typo, or a directory that emptied out) still ran and truncated the table that already held rows, while reporting "load complete". A local resource whose glob matches no files is now left out of the run, with a warning that its existing table was left as it was. Other resources in the same source still load. When nothing in the source matched, the pipeline doesn't run at all and `tycoon data sources run` exits 0 with "nothing to load" instead of "load complete". Remote buckets behave as before.
 
 [#238]: https://github.com/Database-Tycoon/tycoon-cli/issues/238
+[#240]: https://github.com/Database-Tycoon/tycoon-cli/issues/240
 
 ## [0.2.1] - 2026-09-16
 

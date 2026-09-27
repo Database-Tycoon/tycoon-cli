@@ -728,6 +728,9 @@ def run_source(
             raw_db_path=cfg.raw_db,
             max_records=max_records,
         )
+        if load_info is None:
+            info(f"{source_name}: nothing to load. No tables were changed.")
+            return
         success(f"{source_name} load complete. {load_info}")
         _maybe_auto_scaffold(source_name, source_config, cfg=cfg, scaffold=not no_scaffold)
         next_steps(
@@ -779,6 +782,9 @@ def run_all(
                 raw_db_path=cfg.raw_db,
                 max_records=max_records,
             )
+            if load_info is None:
+                info(f"{name}: nothing to load. No tables were changed.")
+                continue
             success(f"{name} complete. {load_info}")
             _maybe_auto_scaffold(name, source_config, cfg=cfg, scaffold=not no_scaffold)
         except Exception as exc:

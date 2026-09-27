@@ -96,7 +96,10 @@ def run_all_cmd(
                     raw_db_path=cfg.raw_db,
                     max_records=max_records,
                 )
-                success(f"{name}: {load_info}")
+                if load_info is None:
+                    info(f"{name}: nothing to load. No tables were changed.")
+                else:
+                    success(f"{name}: {load_info}")
             except Exception as exc:
                 error(f"{name} failed: {exc}")
                 _emit("error", f"run-all failed during ingest of '{name}'", stage="ingest", error=str(exc)[:300])
