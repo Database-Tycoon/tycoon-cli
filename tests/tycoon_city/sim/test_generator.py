@@ -88,11 +88,11 @@ def test_a_plaza_forecourt_is_paved_and_carried_on_the_map():
     pad tile comes out ROAD on the painted map.
 
     Until the radial inversion (2026-08-14) this also asserted the pad's
-    second tile started as GRASS — proof the plaza added pavement. With gold
+    second tile started as GRASS: proof the plaza added pavement. With gold
     downtown, a 2x2 hub's kerb IS a through-street: on every fixture tried
     (hub fed, hub feeding, hub mid-ring) both pad tiles sit on routed street,
     so the grass-start precondition is not constructible any more. What
-    remains guaranteed — and asserted — is the pad's existence, its two-tile
+    remains guaranteed (and asserted) is the pad's existence, its two-tile
     frontage span, and its pavement on the map."""
     objects = [_obj("s", f"t{i}", 10 + i) for i in range(9)] + [
         _obj("m", "hub", 90_000),

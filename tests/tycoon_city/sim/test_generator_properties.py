@@ -183,7 +183,7 @@ def _assert_sound(label: str, ctx: PipelineContext, *, complete_routes: bool = T
     # road_tiles = {(x, y) for y in range(city.height) for x in range(city.width) if city.tiles[y][x] is TileKind.ROAD}
     # dressed = {(f.x + dx, f.y + dy) for f in city.street_features for dx in range(f.w) for dy in range(f.h)}
     # # A pad is a claim about ground: every tile a feature covers must have come
-    # # out PAVED. This is what keeps a plaza's frontage honest — a pad reaching
+    # # out PAVED. This is what keeps a plaza's frontage honest: a pad reaching
     # # onto a building or into open grass would land on a LOT or GRASS tile,
     # # because the generator's paint guard refuses to overwrite a building.
     # for x, y in sorted(dressed):
@@ -196,12 +196,12 @@ def _assert_sound(label: str, ctx: PipelineContext, *, complete_routes: bool = T
     # for x, y in ends:
     #     near = [(x, y)] + [(x + dx, y + dy) for dx, dy in _ORTHOGONAL]
     #     assert any(t in dressed for t in near), (
-    #         f"{label}: naked stub at {(x, y)} — a road ends there with nothing to end at"
+    #         f"{label}: naked stub at {(x, y)}: a road ends there with nothing to end at"
     #     )
     # if road_tiles:
     #     # A city with streets always ends at least one of them somewhere, so
     #     # S7 cannot pass by having no ending to inspect.
-    #     assert ends, f"{label}: roads but no ending at all — S7 examined nothing"
+    #     assert ends, f"{label}: roads but no ending at all; S7 examined nothing"
     #     assert city.street_features, f"{label}: roads but no street features"
     # else:
     #     assert not city.street_features, f"{label}: features without roads"

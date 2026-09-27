@@ -10,7 +10,7 @@ the BFS tie-break in `_bfs` is the thing that could break it); frontage is 0
 resolves to a route; and street features dress every ending.
 
 S8 (no consecutive intersection tiles, `road_junctions.check_junctions`)
-is asserted over ROAD tiles — the adjacency `road_mask.ts` draws. The old
+is asserted over ROAD tiles, the adjacency `road_mask.ts` draws. The old
 "fails on small catalogs" finding was a measurement artifact that counted
 POWER tiles as road; road-only, the property holds everywhere (2026-08-10).
 KNOWN GAP, kept honest below: S8 (no consecutive intersection tiles,
@@ -80,7 +80,7 @@ def _multi_schema_ctx():
 
 
 def _fan_in_ctx():
-    """Many sources into one destination — tests route convergence."""
+    """Many sources into one destination; tests route convergence."""
     return _ctx(
         [_obj("raw", f"s{i}", 100) for i in range(5)] + [_obj("marts", "sink", 1000)],
         [Edge(f"raw.s{i}", "marts.sink") for i in range(5)],
@@ -88,7 +88,7 @@ def _fan_in_ctx():
 
 
 def _single_object_ctx():
-    """A catalog with one object and no edges — the simplest possible case."""
+    """A catalog with one object and no edges: the simplest possible case."""
     return _ctx([_obj("s", "lonely")])
 
 
@@ -98,9 +98,9 @@ def _empty_ctx():
 
 
 # ---------------------------------------------------------------------------
-# Property: S8 (no consecutive intersection tiles) — HOLDS, road tiles only
+# Property: S8 (no consecutive intersection tiles): HOLDS, road tiles only
 # ---------------------------------------------------------------------------
-# Measured over ROAD tiles, matching what `road_mask.ts` draws — which is
+# Measured over ROAD tiles, matching what `road_mask.ts` draws, which is
 # `road_junctions`' own doctrine ("a rule measured on a different adjacency
 # than the one drawn is a rule about a city nobody is looking at"). The old
 # "S8 fails on small catalogs" finding (2026-08-08) was a measurement
@@ -134,7 +134,7 @@ def test_s8_holds_on_chain():
     assert report.ok, f"S8 regressed on chain: {report.violations}"
 
 
-# Property: S8 (no consecutive intersection tiles) — KNOWN GAP on fixtures
+# Property: S8 (no consecutive intersection tiles): KNOWN GAP on fixtures
 # ---------------------------------------------------------------------------
 # S8 holds by construction at real-catalog scale (dogfood, 42 objects:
 # 0 violations, measured 2026-08-09) but small fixture catalogs DO produce
@@ -154,7 +154,7 @@ def test_s8_violations_documented_for_small_catalogs():
     """S8 violations DO occur on small multi-schema fixtures. Documented,
     not accepted: fix the planner on small catalogs, then assert report.ok."""
     report = check_junctions(_all_road(plan_dag_layout(_multi_schema_ctx())))
-    assert not report.ok, "S8 unexpectedly holds on small catalog — flip this test to assert ok"
+    assert not report.ok, "S8 unexpectedly holds on small catalog; flip this test to assert ok"
     assert len(report.violations) > 0
 
 
@@ -169,7 +169,7 @@ def test_s8_holds_under_fan_in_since_the_radial_inversion():
 def test_s8_violations_on_chain_documented():
     """S8 violations on a simple chain fixture."""
     report = check_junctions(_all_road(plan_dag_layout(_chain_ctx())))
-    assert not report.ok, "S8 unexpectedly holds on chain — flip this test to assert ok"
+    assert not report.ok, "S8 unexpectedly holds on chain; flip this test to assert ok"
     assert len(report.violations) > 0
 
 
@@ -251,7 +251,7 @@ def _assert_frontage(plan):
 
 def test_every_lot_has_frontage():
     """The city-sim planner (ring placement + thinned streets) does NOT
-    guarantee frontage by construction — the old channel/rows planner did.
+    guarantee frontage by construction; the old channel/rows planner did.
     The city-sim planner routes door-to-door over a thinned network, which
     can leave lots without adjacent roads. This test is skipped to match
     the city-sim branch's behaviour (which has no frontage tests)."""
@@ -270,7 +270,7 @@ def test_every_lot_has_frontage_chain():
 
 def test_every_measured_edge_resolves_to_a_route():
     """Every edge whose endpoints exist in the catalog must have a route.
-    An edge without a route is a road that doesn't exist — the city has
+    An edge without a route is a road that doesn't exist; the city has
     a gap."""
     ctx = _multi_schema_ctx()
     plan = plan_dag_layout(ctx)
@@ -410,7 +410,7 @@ def test_a_tiny_mart_is_still_downtown():
 def test_ring_rank_is_schema_chain_depth_not_mean_member_depth():
     """The ring comes from the cross-schema longest chain. A schema whose
     members average shallow but which consumes another schema's output must
-    still sit INSIDE its supplier — mean member depth would tie or invert
+    still sit INSIDE its supplier. Mean member depth would tie or invert
     them (the dogfood mart/int collision that motivated the rule)."""
     ctx = _ctx(
         # int has many shallow members (mean depth pulled toward 1);
@@ -479,7 +479,7 @@ def test_power_tiles_exist_for_sources():
 
 
 def test_lane_tiles_can_be_empty():
-    """A simple chain may leave lattice tiles unclaimed or not — either way
+    """A simple chain may leave lattice tiles unclaimed or not; either way
     the attribute is a tuple the generator can paint."""
     plan = plan_dag_layout(_chain_ctx())
     assert isinstance(plan.lane_tiles, tuple)
@@ -546,7 +546,7 @@ def test_access_road_created_for_bare_city():
 
 
 # ---------------------------------------------------------------------------
-# Property: Street features (endings) — planner-level facts
+# Property: Street features (endings): planner-level facts
 # ---------------------------------------------------------------------------
 
 
