@@ -1,4 +1,4 @@
-"""`tycoon-city` — the renderer's own console script — is a Typer app, so its
+"""`tycoon-city`, the renderer's own console script, is a Typer app, so its
 help renders the way `tycoon city --help` does.
 
 Emmanuel, reviewing the city stack: `tycoon-city demo --help` rendered
@@ -143,7 +143,7 @@ class TestDemo:
 
 class TestArgparseSurfacesStillLand:
     """`python -m tycoon_city.webserve [demo]` keeps working and shares the
-    implementation — one demo, one server, two ways to type each."""
+    implementation: one demo, one server, two ways to type each."""
 
     def test_webserve_main_delegates_to_run_server(self, fake_server):
         assert webserve.main(["/tmp/x.duckdb", "--port", "8123"]) == 0
