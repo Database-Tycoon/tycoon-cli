@@ -1,5 +1,11 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Commands that save `tycoon.yml`, such as `tycoon data sources add` and `tycoon data sources remove`, no longer erase your comments and blank lines. The file is now updated in place with ruamel.yaml, so only the values tycoon changes are rewritten, and a `${ENV}` reference stays a reference instead of being written back as its expanded value (gh-177).
+
 ## [0.2.1] - 2026-09-16
 
 _Headline: **multi-resource filesystem sources + validated config**. A filesystem source can now declare several named resources and load them all in a single run, `sources add` walks you through them interactively, and JSONL joins CSV and Parquet. Config that used to be quietly defaulted is validated instead — the one change here that can break an existing project. Also here: `tycoon city` lays the city out by pipeline depth, so the city looks different from 0.2.0 while the `city.json` contract stays the same._
