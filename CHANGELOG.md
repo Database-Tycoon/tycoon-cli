@@ -22,6 +22,11 @@ All notable changes to this project will be documented in this file. The format 
 [#268]: https://github.com/Database-Tycoon/tycoon-cli/pull/268
 [#269]: https://github.com/Database-Tycoon/tycoon-cli/pull/269
 [#273]: https://github.com/Database-Tycoon/tycoon-cli/pull/273
+### Fixed
+
+- **A filesystem source whose `path` is a single file loads that file** ([#238][]). `tycoon data sources add filesystem` stores whatever you answer at the path prompt, so answering `data/sales.csv` produced a source that ran to a green "load complete" with zero rows, and with `replace` it emptied a table that had already loaded. A `path` naming an existing local file is now read as its directory plus that file name, in both the flat `config` shape and each `resources:` entry, and a resource pointing at a file no longer needs a `file_glob`. Setting a `file_glob` alongside a file `path` fails with an error saying `path` must be a directory when `file_glob` is set, since that glob could never match anything. Remote URLs are unchanged.
+
+[#238]: https://github.com/Database-Tycoon/tycoon-cli/issues/238
 
 ## [0.2.1] - 2026-09-16
 

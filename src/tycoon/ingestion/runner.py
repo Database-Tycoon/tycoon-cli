@@ -171,7 +171,36 @@ def _warn_if_local_glob_matches_nothing(bucket_url: str, file_glob: str, label: 
         warn(f"'{label}': no files matched glob {file_glob!r} under {bucket_url!r}.")
 
 
-def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str) -> Any:
+def _split_single_file_path(path: str, file_glob: str) -> tuple[str, str]:
+    """Turn a ``path`` that names one local file into ``(parent_dir, file_name)``.
+
+    dlt's filesystem source treats ``bucket_url`` as a directory and
+    evaluates ``file_glob`` underneath it, so a file passed as the bucket
+    matches nothing and the run loads zero rows while reporting success.
+    `tycoon data sources add filesystem` writes exactly that shape when the
+    user answers the path prompt with a file. Issue #238.
+
+    A glob alongside a file path is ambiguous (it can never match anything
+    under a file), so it fails rather than guessing which one was meant.
+    Remote URLs and anything that isn't an existing local file pass through
+    unchanged.
+    """
+    if "://" in path:
+        return path, file_glob
+    target = Path(path).expanduser()
+    if not target.is_file():
+        return path, file_glob
+    if file_glob:
+        raise IngestionError(
+            f"Filesystem path {path!r} is a file, but file_glob {file_glob!r} is also set. "
+            "path must be a directory when file_glob is set. Either point path at the "
+            f"directory ({str(target.parent)!r}) and keep the glob, or remove file_glob "
+            "to load just this file."
+        )
+    return str(target.parent), target.name
+
+
+def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str, default_glob: str = "") -> Any:
     """Build one named dlt resource for a single (bucket_url, file_glob) pair.
 
     For CSV, Parquet, and JSONL globs the raw file metadata stream is piped
@@ -192,9 +221,15 @@ def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str)
     Matches the convention used by every other tycoon-shipped pipeline
     (nyc_dot, mta, mta_bus_speeds). Issue #22.
 
+    A ``bucket_url`` naming a single local file is split into its parent
+    directory plus the file name (issue #238). ``default_glob`` applies only
+    when no glob was given and the path is a directory.
+
     Raises ``IngestionError`` if ``bucket_url`` or ``file_glob`` is empty,
     and warns (doesn't fail) if a local glob matches no files. Issue #223.
     """
+    bucket_url, file_glob = _split_single_file_path(bucket_url, file_glob)
+    file_glob = file_glob or default_glob
     if not bucket_url or not file_glob:
         raise IngestionError(
             f"Resource '{table_name}' is missing a path or file_glob. "
@@ -249,8 +284,8 @@ def _build_filesystem_source(source_config: SourceConfig) -> Any:
 
     cfg = source_config.config
     bucket_url = cfg.get("bucket_url") or cfg.get("path") or ""
-    file_glob = cfg.get("file_glob", "**/*")
-    return _build_filesystem_resource(bucket_url, file_glob, "resource")
+    file_glob = cfg.get("file_glob") or ""
+    return _build_filesystem_resource(bucket_url, file_glob, "resource", default_glob="**/*")
 
 
 # Table names dlt's read_csv()/read_parquet() produced before this fix
