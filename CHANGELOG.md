@@ -25,7 +25,7 @@ All notable changes to this project will be documented in this file. The format 
 ### Fixed
 
 - **Rill source YAMLs no longer hard-code an absolute path** ([#275][], PR [#276][]). `tycoon` wrote its generated Rill `local_file` sources with the full path to the exported Parquet (`path: /Users/you/project/data/parquet/_tycoon/dbt_nodes.parquet`). Those files are committed to the project repo, so the absolute path broke on every other clone and in CI, and rewrote itself into the diff each time observability regenerated. The emitted path is now relative to the Rill project directory (`path: ../data/parquet/_tycoon/dbt_nodes.parquet`), which is what Rill resolves `local_file` paths against anyway. Affects both the observability sources and the per-table sources from `data analyze --rill`. A project carrying absolute paths picks up the portable form on its next regeneration.
-- **`tycoon city`'s cold build no longer re-parses the whole schema per column** ([#274][], PR [#277][]). `derive_column_lineage` passed a plain `dict` as sqlglot's `schema=`, and `ensure_schema()` builds a fresh `MappingSchema` — normalizing, and so `parse_one`-ing, every identifier in the mapping — every time it is handed a dict. The entire warehouse schema was therefore re-parsed once per traced column. Building the `MappingSchema` once and reusing it cuts a cold `city.json` on an 87-object catalog from **43.6s to 10.3s** against sqlglot 27.29.0, and from 9.9s to 6.5s against 30.15.0. Column edges are byte-identical before and after (1,023 edges, same digest): this removes redundant work, it does not change lineage.
+- **`tycoon city`'s cold build no longer re-parses the whole schema per column** ([#274][], PR [#276][]). `derive_column_lineage` passed a plain `dict` as sqlglot's `schema=`, and `ensure_schema()` builds a fresh `MappingSchema` (normalizing, and so `parse_one`-ing, every identifier in the mapping) every time it is handed a dict. The entire warehouse schema was therefore re-parsed once per traced column. Building the `MappingSchema` once and reusing it cuts a cold `city.json` on an 87-object catalog from **43.6s to 10.3s** against sqlglot 27.29.0, and from 9.9s to 6.5s against 30.15.0. Column edges are byte-identical before and after (1,023 edges, same digest): this removes redundant work, it does not change lineage.
 
 ## [0.2.1] - 2026-09-16
 
@@ -104,7 +104,6 @@ _Headline: **multi-resource filesystem sources + validated config**. A filesyste
 [#275]: https://github.com/Database-Tycoon/tycoon-cli/issues/275
 [#276]: https://github.com/Database-Tycoon/tycoon-cli/pull/276
 [#274]: https://github.com/Database-Tycoon/tycoon-cli/issues/274
-[#277]: https://github.com/Database-Tycoon/tycoon-cli/pull/277
 
 ## [0.2.0] - 2026-08-28
 
