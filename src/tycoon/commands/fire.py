@@ -1,4 +1,4 @@
-"""tycoon fire / firehouse / repair — CLI views of the city's fire-and-response system.
+"""tycoon fire / firehouse / repair: CLI views of the city's fire-and-response system.
 
 These commands read from the **same data sources** the 3D city renders: dbt
 run artifacts for test results, the observability metadata DB for run history
@@ -9,16 +9,16 @@ The city's vocabulary, kept exactly (see `web/src/ui/legend.ts` and the tour):
 a failing test sets its building ON FIRE and the firehouse dispatches one red
 **fire truck** per fire; a source past its freshness SLA is a **worn building**
 that gets one amber **contractor van** (and fogs the districts it feeds). Both
-fleets restate a measured, unresolved fact — a vehicle on the street means a
+fleets restate a measured, unresolved fact: a vehicle on the street means a
 problem is AWAITING response, never that a fix is running.
 
 Four commands:
 
-* ``tycoon fire``            — what's burning right now (test_status = "fail")
-* ``tycoon fire --run <id>`` — what was burning in a specific run (replay)
-* ``tycoon repair``          — the contractor call sheet: sources past SLA
-* ``tycoon firehouse``       — dispatch stats: station location, trucks and
-                               vans on duty
+* ``tycoon fire``:            what's burning right now (test_status = "fail")
+* ``tycoon fire --run <id>``: what was burning in a specific run (replay)
+* ``tycoon repair``:          the contractor call sheet: sources past SLA
+* ``tycoon firehouse``:       dispatch stats: station location, trucks and
+                                vans on duty
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ def _metadata_db() -> Path | None:
 def _failing_tests_from_run_results(path: Path) -> list[tuple[str, str]]:
     """Failing results from dbt's latest ``run_results.json``.
 
-    Statuses live in ``run_results.json`` — ``manifest.json`` describes the
+    Statuses live in ``run_results.json``; ``manifest.json`` describes the
     project and never carries them (the same distinction the city's loader
     makes). Returns ``[(node_name, status), ...]`` for every result with
     ``status == 'fail'`` or ``status == 'error'``.
@@ -170,12 +170,12 @@ def _firehouse_info(city_path: Path) -> dict:
 def _dispatch_stats_from_city(city_path: Path) -> dict:
     """Dispatch stats from an exported city.json.
 
-    Counts lots with ``test_status == 'fail'`` (fires — one truck each) and
-    ``freshness_status in ('warn', 'error')`` (repair calls — one contractor
+    Counts lots with ``test_status == 'fail'`` (fires, one truck each) and
+    ``freshness_status in ('warn', 'error')`` (repair calls, one contractor
     van each). These are the exact fleet-selection rules the renderer uses
     (`web/src/scene/firetrucks.ts`). No "unreachable" count: the contract
     carries no such field, and the current planner guarantees every lot
-    fronts the one connected street network — the renderer independently
+    fronts the one connected street network; the renderer independently
     re-checks by routing each vehicle over roads.
     """
     import json
@@ -227,7 +227,7 @@ def fire(
     """Show what's burning: failing tests from the latest run.
 
     Each failing test sets its building ON FIRE in the 3D city (the legend's
-    words) — the CLI and the city show the **same data**, just in different
+    words): the CLI and the city show the **same data**, just in different
     formats. A fire is a fact awaiting response, never a fix in progress.
 
     Use ``--run`` to inspect failures from a specific invocation instead of
@@ -304,7 +304,7 @@ def fire(
                 console.print(table)
                 console.print()
                 info(f"[red]{len(failures_from_artifacts)}[/red] building(s) on fire.")
-                info("See them burning in the 3D city — a truck is dispatched per fire.")
+                info("See them burning in the 3D city: a truck is dispatched per fire.")
                 return
 
         info("No failures. All green. (No fires in the city.)")
@@ -321,7 +321,7 @@ def fire(
     console.print(table)
     console.print()
     info(f"[red]{len(failures)}[/red] building(s) on fire.")
-    info("Each has a fire truck en route in the 3D city — awaiting response, not being fixed.")
+    info("Each has a fire truck en route in the 3D city, awaiting response, not being fixed.")
 
 
 @app.command()
@@ -331,7 +331,7 @@ def firehouse() -> None:
     Mirrors the firehouse and its two fleets in the 3D city: one red fire
     truck per burning building (failing test), one amber contractor van per
     stale source (freshness SLA warn/error). A vehicle on the street restates
-    a measured, unresolved fact — it never means a fix is running.
+    a measured, unresolved fact; it never means a fix is running.
 
     The station's map location comes from an exported ``city.json`` when one
     exists; the fleet counts fall back to the metadata DB otherwise, because
@@ -346,12 +346,12 @@ def firehouse() -> None:
     city_path = config.root / "city.json"
     metadata_db = _metadata_db()
 
-    # Station location — a map fact, so it needs an exported map.
+    # Station location: a map fact, so it needs an exported map.
     fh = _firehouse_info(city_path)
     if fh:
         console.print(Panel(f"Firehouse at ({fh['x']}, {fh['y']})", expand=False))
     else:
-        info("No exported city.json, so no station coordinates — run [bold]tycoon city[/bold] to see it on the map.")
+        info("No exported city.json, so no station coordinates; run [bold]tycoon city[/bold] to see it on the map.")
 
     # Dispatch stats from city.json
     stats = _dispatch_stats_from_city(city_path)
@@ -368,7 +368,7 @@ def firehouse() -> None:
 
         console.print(table)
         console.print()
-        info("A vehicle on the street means a problem is awaiting response — never that a fix is running.")
+        info("A vehicle on the street means a problem is awaiting response, never that a fix is running.")
         return
 
     # Fallback: compute from metadata DB
@@ -385,7 +385,7 @@ def firehouse() -> None:
 
         console.print(table)
         console.print()
-        info("A vehicle on the street means a problem is awaiting response — never that a fix is running.")
+        info("A vehicle on the street means a problem is awaiting response, never that a fix is running.")
         return
 
     info("No data available. Run [bold]tycoon data transform[/bold] to capture data.")
@@ -395,7 +395,7 @@ def firehouse() -> None:
 def repair() -> None:
     """The contractor call sheet: stale sources past their freshness SLA.
 
-    Mirrors the amber contractor vans in the 3D city — each source past its
+    Mirrors the amber contractor vans in the 3D city: each source past its
     SLA (warn or error) gets one van dispatched, its building weathers to a
     worn facade, and the districts it feeds sit under fog. The CLI and the
     city show the **same data**, just in different formats; a van restates

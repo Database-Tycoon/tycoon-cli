@@ -1,4 +1,4 @@
-"""tycoon data layers — CLI view of the layered architecture with vendor info.
+"""tycoon data layers: CLI view of the layered architecture with vendor info.
 
 This command mirrors the **same data** the 3D city renders (via city.json)
 but presents it in text form. It shows every classified object with its
@@ -13,10 +13,10 @@ grouped by vendor (dlt vs. fivetran) in the Sources panel.
 
 Two commands:
 
-* ``tycoon data layers``            — full architecture with vendor info
-* ``tycoon data health``            — health chips (tests, builds, freshness,
-                                        staleness, drift) matching the UI's
-                                        health strip
+* ``tycoon data layers``:            full architecture with vendor info
+* ``tycoon data health``:            health chips (tests, builds, freshness,
+                                         staleness, drift) matching the UI's
+                                         health strip
 """
 
 from __future__ import annotations
@@ -158,12 +158,12 @@ def layers() -> None:
 
     Layers are the city's RINGS: marts build downtown against the civic
     core, intermediate and staging ring outward from it, and sources sit on
-    the outskirts. (Districts are a different thing on the map — one plate
+    the outskirts. (Districts are a different thing on the map: one plate
     per schema.) This command lists the same objects ring by ring and adds
     the vendor each one comes from: dlt sources, Fivetran connectors, and
     dbt models.
 
-    This is the **same data** the 3D city renders — the CLI and the city
+    This is the **same data** the 3D city renders; the CLI and the city
     show the same architecture, just in different formats.
     """
     if not config.has_project_file:
@@ -192,7 +192,7 @@ def layers() -> None:
     if project.stack.transformation == TransformationTool.none:
         console.print()
         info(
-            "No dbt project — set up via [bold]tycoon register dbt[/bold] "
+            "No dbt project; set up via [bold]tycoon register dbt[/bold] "
             "or [bold]tycoon register dbt --create[/bold] to surface the "
             "staging / intermediate / marts layers."
         )
@@ -202,7 +202,7 @@ def layers() -> None:
     if manifest is None:
         console.print()
         info(
-            "No dbt manifest yet — run [bold]tycoon data transform run[/bold] "
+            "No dbt manifest yet; run [bold]tycoon data transform run[/bold] "
             "(or [bold]dbt compile[/bold]) to surface staging / intermediate / "
             "marts panels."
         )
@@ -221,7 +221,7 @@ def layers() -> None:
         "Intermediate",
         filter_by_layer(models, Layer.INTERMEDIATE),
         metadata_db,
-        empty_hint=("No intermediate models. Optional layer — typically used to combine staging models before marts."),
+        empty_hint=("No intermediate models. Optional layer, typically used to combine staging models before marts."),
     )
     _render_layer_panel(
         "Marts",
@@ -240,11 +240,11 @@ def health() -> None:
     """Show pipeline health: failing tests, build errors, late sources, stale builds, schema drift.
 
     Mirrors the **health strip** visible at the top of the 3D city UI.
-    Every chip is a count of problematic objects — failing tests, build
+    Every chip is a count of problematic objects: failing tests, build
     errors, late sources, test warnings, stale builds (14+ days), and
     schema drift (7 days).
 
-    This is the **same data** the 3D city renders — the CLI and the city
+    This is the **same data** the 3D city renders; the CLI and the city
     show the same health, just in different formats.
     """
     if not config.has_project_file:
@@ -306,7 +306,7 @@ def health() -> None:
     if project.stack.transformation == TransformationTool.none:
         console.print()
         info(
-            "No dbt project — set up via [bold]tycoon register dbt[/bold] "
+            "No dbt project; set up via [bold]tycoon register dbt[/bold] "
             "or [bold]tycoon register dbt --create[/bold] to surface the "
             "staging / intermediate / marts layers."
         )
@@ -316,7 +316,7 @@ def health() -> None:
     if manifest is None:
         console.print()
         info(
-            "No dbt manifest yet — run [bold]tycoon data transform run[/bold] "
+            "No dbt manifest yet; run [bold]tycoon data transform run[/bold] "
             "(or [bold]dbt compile[/bold]) to surface staging / intermediate / "
             "marts panels."
         )
@@ -335,7 +335,7 @@ def health() -> None:
         "Intermediate",
         filter_by_layer(models, Layer.INTERMEDIATE),
         metadata_db,
-        empty_hint=("No intermediate models. Optional layer — typically used to combine staging models before marts."),
+        empty_hint=("No intermediate models. Optional layer, typically used to combine staging models before marts."),
     )
     _render_layer_panel(
         "Marts",
@@ -444,6 +444,6 @@ def _render_layer_panel(
     for m in models:
         table.add_row(m.name, m.schema or "—", m.vendor.value)
 
-    summary = f"{len(models)} model(s) — last build [{fresh_style}]{fresh_label}[/{fresh_style}]"
+    summary = f"{len(models)} model(s), last build [{fresh_style}]{fresh_label}[/{fresh_style}]"
     console.print(table)
     console.print(summary)

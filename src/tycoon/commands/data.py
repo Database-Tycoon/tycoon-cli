@@ -17,7 +17,7 @@ def _register() -> None:
     from tycoon.commands.sync_cmd import sync_cmd
 
     # `explore` rides inside the sources group (`tycoon data sources explore`),
-    # and layers/health are plain commands — a one-command sub-app would force
+    # and layers/health are plain commands; a one-command sub-app would force
     # the doubled `data layers layers` invocation.
     sources.app.command(name="explore")(explore_cmd)
     app.add_typer(sources.app, name="sources")
