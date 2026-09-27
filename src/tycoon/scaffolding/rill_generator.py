@@ -123,7 +123,7 @@ def _source_yaml_path(parquet_path: Path, rill_dir: Path) -> str:
     """``parquet_path`` expressed relative to the Rill project directory.
 
     Rill resolves a ``local_file`` ``path:`` against its own project root, so
-    either form loads locally — but an absolute path pins the generated
+    either form loads locally, but an absolute path pins the generated
     project to one machine. These YAMLs get committed, so an absolute path
     breaks every other clone and CI, and rewrites itself into the diff each
     time the project is regenerated. A relative path stays portable and

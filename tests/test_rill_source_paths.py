@@ -2,7 +2,7 @@
 into Rill ``local_file`` source YAMLs.
 
 Regression cover for gh-275: these YAMLs are committed to the user's project
-repo, so an absolute path pins the generated project to one machine — it
+repo, so an absolute path pins the generated project to one machine: it
 breaks on every other clone and in CI, and rewrites itself into the diff on
 each regeneration.
 """
