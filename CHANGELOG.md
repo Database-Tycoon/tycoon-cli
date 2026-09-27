@@ -30,11 +30,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Changed
 
-- **The city renderer is CI-gated** (PRs [#256][], [#253][]). `tests/tycoon_city`, including the `city.json` contract golden, joins the default `pytest` run and `src/tycoon_city` counts toward coverage (floor re-baselined to 73). A new `web` job runs `tsc --noEmit`, the production build, a check that the shipped `web_dist/` is exactly the build of `web/`, and the Playwright suite. Through 0.2.1 the CLI was gated and the renderer was not.
+- **The city renderer is CI-gated** (PRs [#256][], [#252][]). `tests/tycoon_city`, including the `city.json` contract golden, joins the default `pytest` run and `src/tycoon_city` counts toward coverage (floor re-baselined to 73). A new `web` job runs `tsc --noEmit`, the production build, a check that the shipped `web_dist/` is exactly the build of `web/`, and the Playwright suite. Through 0.2.1 the CLI was gated and the renderer was not.
 
 [#250]: https://github.com/Database-Tycoon/tycoon-cli/pull/250
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
-[#253]: https://github.com/Database-Tycoon/tycoon-cli/pull/253
+[#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
 
 ## [0.2.1] - 2026-09-16
