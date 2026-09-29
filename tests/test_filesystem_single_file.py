@@ -68,6 +68,32 @@ class TestSingleFilePath:
 
         assert _row_count(raw_db_path, "raw_files", "test_gh238_sales") == 3
 
+    def test_file_url_to_a_file_loads_its_rows(self, tmp_path, sales_csv, pipeline_cleanup):
+        """A ``file://`` URL is local, so it gets the same single-file split."""
+        name = "test_gh238_file_url"
+        pipeline_cleanup.append(name)
+        raw_db_path = tmp_path / "raw.duckdb"
+        source_config = SourceConfig(type="filesystem", schema="raw_files", config={"path": sales_csv.as_uri()})
+
+        run_source(name, source_config, raw_db_path=raw_db_path)
+
+        assert _row_count(raw_db_path, "raw_files", name) == 3
+
+    def test_bracketed_file_name_loads_its_rows(self, tmp_path, pipeline_cleanup):
+        """Glob metacharacters in the file name are escaped, so it matches itself."""
+        name = "test_gh238_brackets"
+        pipeline_cleanup.append(name)
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        csv = data_dir / "sales[1].csv"
+        csv.write_text("id,amount\n1,10\n2,20\n")
+        raw_db_path = tmp_path / "raw.duckdb"
+        source_config = SourceConfig(type="filesystem", schema="raw_files", config={"path": str(csv)})
+
+        run_source(name, source_config, raw_db_path=raw_db_path)
+
+        assert _row_count(raw_db_path, "raw_files", name) == 2
+
     def test_flat_file_path_with_glob_fails_clearly(self, sales_csv):
         source_config = SourceConfig(
             type="filesystem",

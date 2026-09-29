@@ -110,7 +110,7 @@ sources:
 | `dbt_package` | string | unset | Optional dbt package to install when this source is registered |
 
 A `filesystem` source's `path` (or `bucket_url`) can be a directory or a
-single local file. For a directory, `file_glob` picks the files under it
+single local file, given as a plain path or a `file://` URL. For a directory, `file_glob` picks the files under it
 (the flat shape defaults to `**/*`). For a single file, leave `file_glob`
 unset: tycoon reads the file's directory and matches just that file name.
 Setting both a file `path` and a `file_glob` is an error.
