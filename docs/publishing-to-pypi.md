@@ -1,6 +1,6 @@
 # Publishing to PyPI
 
-This guide walks through publishing `database-tycoon` to PyPI for the first time using GitHub's trusted publishing (no API tokens needed).
+This guide walks through publishing a `database-tycoon` release to PyPI using GitHub's trusted publishing (no API tokens needed).
 
 ---
 
@@ -108,7 +108,7 @@ your own.
 
 4. Watch the run, then create the GitHub Release:
    ```bash
-   gh run watch "$(gh run list --workflow publish.yml --limit 1 --json databaseId --jq '.[0].databaseId')" --exit-status
+   gh run watch "$(gh run list --workflow publish.yml --commit "$(git rev-parse 'v0.2.2^{commit}')" --limit 1 --json databaseId --jq '.[0].databaseId')" --exit-status
    git show refs/tags/v0.2.2:docs/releases/v0.2.2.md > /tmp/notes.md
    gh release create v0.2.2 --verify-tag --title "v0.2.2: <headline>" --notes-file /tmp/notes.md
    ```
@@ -153,7 +153,7 @@ Run the build locally from a clean checkout before pushing a tag, and check
 the artifacts the way the publisher will:
 ```bash
 uv build
-uvx twine check dist/*
+uvx --from twine==7.0.0 twine check dist/*   # the twine gh-action-pypi-publish v1.14.2 bundles
 unzip -p dist/*.whl '*/METADATA' | head -2   # Metadata-Version the pinned publisher accepts
 ```
 A green build is not a green publish: v0.2.0 built cleanly and was rejected
