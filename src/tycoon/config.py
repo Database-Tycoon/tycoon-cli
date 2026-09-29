@@ -84,10 +84,39 @@ class TycoonConfig:
         return self.root / "data"
 
     @property
-    def raw_db(self) -> Path:
+    def _raw_setting(self) -> str:
         if self._project:
-            return self.root / self._project.database.raw
-        return self.root / _DEFAULT_RAW_DB
+            return self._project.database.raw
+        return _DEFAULT_RAW_DB
+
+    @property
+    def raw_is_motherduck(self) -> bool:
+        return self._raw_setting.startswith(MOTHERDUCK_PREFIX)
+
+    @property
+    def raw_target(self) -> str:
+        """What ``duckdb.connect`` opens for the raw database, resolved like ``warehouse_target``."""
+        if self.raw_is_motherduck:
+            return self._raw_setting
+        return str(self.root / self._raw_setting)
+
+    @property
+    def raw_db(self) -> Path:
+        """The raw database's local DuckDB file.
+
+        Ingestion and scaffolding only write local files so far, so an ``md:``
+        raw database exits with a clear error instead of becoming a local
+        file named after the connection string. Check ``raw_is_motherduck``
+        first to handle MotherDuck without exiting.
+        """
+        if self.raw_is_motherduck:
+            _error_console(
+                f"database.raw is MotherDuck ({display_target(self._raw_setting)}), and this command only "
+                "works with a local raw DuckDB file so far. Set database.raw to a local path such as "
+                f"{_DEFAULT_RAW_DB} in tycoon.yml."
+            )
+            raise SystemExit(1)
+        return self.root / self._raw_setting
 
     @property
     def _warehouse_setting(self) -> str:

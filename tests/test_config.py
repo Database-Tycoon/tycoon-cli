@@ -130,6 +130,20 @@ class TestWarehouseTarget:
         assert not cfg.warehouse_is_motherduck
         assert cfg.local_db == tmp_path / "data" / "wh.duckdb"
 
+    def test_motherduck_raw_passes_through(self, tmp_path, capsys):
+        (tmp_path / "tycoon.yml").write_text(
+            "name: test\nsources: {}\ndatabase:\n  warehouse: 'md:x'\n  raw: 'md:x_raw?motherduck_token=SECRET123'\n"
+        )
+        cfg = TycoonConfig(project_root=tmp_path)
+        assert cfg.raw_is_motherduck
+        assert cfg.raw_target == "md:x_raw?motherduck_token=SECRET123"
+        # Ingestion only writes local files, so the file path exits clearly.
+        with pytest.raises(SystemExit):
+            _ = cfg.raw_db
+        out = capsys.readouterr()
+        assert "MotherDuck (md:x_raw)" in out.out + out.err
+        assert "SECRET123" not in out.out + out.err
+
 
 class TestRedaction:
     @pytest.mark.parametrize(

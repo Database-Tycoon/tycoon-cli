@@ -27,15 +27,19 @@ def _resolve_source_db(source_name: str) -> Path | None:
     normalized = source_name.replace("-", "_")
     source_schema = f"raw_{normalized}"
 
-    if config.raw_db.exists() and _has_schema(config.raw_db, source_schema):
-        return config.raw_db
+    # A MotherDuck raw database is not a file, so only local candidates apply.
+    raw_db = None if config.raw_is_motherduck else config.raw_db
+    if raw_db is not None and raw_db.exists() and _has_schema(raw_db, source_schema):
+        return raw_db
 
     per_source = config.data_dir / f"raw_{normalized}.duckdb"
     if per_source.exists():
         return per_source
 
     if config.data_dir.exists():
-        skip = {config.raw_db.resolve(), per_source.resolve()}
+        skip = {per_source.resolve()}
+        if raw_db is not None:
+            skip.add(raw_db.resolve())
         for candidate in sorted(config.data_dir.glob("*.duckdb")):
             if candidate.resolve() in skip:
                 continue
@@ -70,11 +74,15 @@ def schema() -> None:
     header("Database Schema")
 
     rows: list[tuple[str, str, str]] = []
+    raw_db = None if config.raw_is_motherduck else config.raw_db
     local_db = config.local_db
 
-    for db_path, label in [(config.raw_db, "Raw"), (local_db, "Warehouse")]:
+    for db_path, label, target in [
+        (raw_db, "Raw", config.raw_target),
+        (local_db, "Warehouse", config.warehouse_target),
+    ]:
         if db_path is None:
-            rows.extend(_motherduck_schema_rows(config.warehouse_target))
+            rows.extend(_motherduck_schema_rows(target, label))
             continue
         size = db_file_size_mb(db_path)
         if size is not None:
@@ -95,9 +103,7 @@ def schema() -> None:
 
     # Also scan for any other .duckdb files in the data directory
     data_dir = config.data_dir
-    seen = {config.raw_db.resolve()}
-    if local_db is not None:
-        seen.add(local_db.resolve())
+    seen = {p.resolve() for p in (raw_db, local_db) if p is not None}
     if data_dir.exists():
         for db_file in sorted(data_dir.glob("*.duckdb")):
             if db_file.resolve() in seen:
@@ -121,13 +127,13 @@ def schema() -> None:
     console.print(status_table(rows, title="Database Schema"))
 
 
-def _motherduck_schema_rows(target: str) -> list[tuple[str, str, str]]:
-    """Schema rows for a MotherDuck warehouse, read over one connection."""
+def _motherduck_schema_rows(target: str, label: str) -> list[tuple[str, str, str]]:
+    """Schema rows for a MotherDuck database, read over one connection."""
     try:
         con = duckdb.connect(target)
         try:
             # An md: connection attaches every database on the account, so
-            # scope the listing to the one the warehouse names.
+            # scope the listing to the one the target names.
             tables = con.execute(
                 "SELECT table_schema, table_name FROM information_schema.tables "
                 "WHERE table_catalog = current_database() "
@@ -135,7 +141,7 @@ def _motherduck_schema_rows(target: str) -> list[tuple[str, str, str]]:
                 "ORDER BY table_schema, table_name"
             ).fetchall()
             rows = [
-                ("Warehouse database", "OK", f"MotherDuck {display_target(target)}"),
+                (f"{label} database", "OK", f"MotherDuck {display_target(target)}"),
                 ("  Tables", "", f"{len(tables)}"),
             ]
             for s, table in tables:
@@ -144,7 +150,7 @@ def _motherduck_schema_rows(target: str) -> list[tuple[str, str, str]]:
         finally:
             con.close()
     except duckdb.Error as exc:
-        return [("Warehouse database", "WARN", f"MotherDuck {display_target(target)}: {redact_secrets(str(exc))}")]
+        return [(f"{label} database", "WARN", f"MotherDuck {display_target(target)}: {redact_secrets(str(exc))}")]
     return rows
 
 
@@ -170,7 +176,7 @@ def query(
 ) -> None:
     """Run a SQL query against the warehouse, raw, or a source database.
 
-    Local DuckDB files open read-only. A MotherDuck warehouse runs with the
+    Local DuckDB files open read-only. A MotherDuck database runs with the
     permissions of your MotherDuck token.
     """
     is_warehouse = False
@@ -187,13 +193,16 @@ def query(
         db_path = resolved
         label = f"raw ({source})"
     elif raw:
-        db_path = config.raw_db
+        db_path = None if config.raw_is_motherduck else config.raw_db
         label = "raw"
     else:
         db_path = config.local_db
         label = "warehouse"
         is_warehouse = True
-    target = str(db_path) if db_path is not None else config.warehouse_target
+    if db_path is not None:
+        target = str(db_path)
+    else:
+        target = config.raw_target if raw else config.warehouse_target
 
     # When a Quack server is holding the warehouse (e.g. `tycoon start` is
     # running), the file is exclusively locked — opening it in-process would
@@ -290,7 +299,8 @@ def clean(
 
     targets: list[tuple[Path, str]] = []
 
-    if raw or all_:
+    raw_remote = (raw or all_) and config.raw_is_motherduck
+    if (raw or all_) and not raw_remote:
         targets.append((config.raw_db, "raw database"))
     local_db = config.local_db
     if (local or all_) and local_db is not None:
@@ -300,6 +310,11 @@ def clean(
 
     # Show what will be deleted
     header("Database Cleanup")
+    if raw_remote:
+        warn(
+            f"Raw database is MotherDuck ({display_target(config.raw_target)}): skipped, "
+            "tycoon never deletes a remote database."
+        )
     if (local or all_) and local_db is None:
         warn(
             f"Warehouse is MotherDuck ({display_target(config.warehouse_target)}): skipped, "
