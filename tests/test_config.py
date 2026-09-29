@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tycoon.config import TycoonConfig, load_config
+import pytest
+
+from tycoon.config import TycoonConfig, display_target, load_config, redact_secrets
 from tycoon.project import SCHEMA_VERSION
 
 
@@ -127,3 +129,23 @@ class TestWarehouseTarget:
         assert cfg.warehouse_target == str(tmp_path / "data" / "wh.duckdb")
         assert not cfg.warehouse_is_motherduck
         assert cfg.local_db == tmp_path / "data" / "wh.duckdb"
+
+
+class TestRedaction:
+    @pytest.mark.parametrize(
+        ("target", "shown"),
+        [
+            ("md:", "md:"),
+            ("md:db", "md:db"),
+            ("md:db?motherduck_token=x&saas_mode=true", "md:db"),
+            ("/tmp/proj/data/warehouse.duckdb", "/tmp/proj/data/warehouse.duckdb"),
+        ],
+    )
+    def test_display_target(self, target, shown):
+        assert display_target(target) == shown
+
+    def test_redact_secrets_in_error_text(self):
+        msg = "IO Error: can't open 'md:db?motherduck_token=SECRET123&x=1' (motherduck_token=SECRET123)"
+        out = redact_secrets(msg)
+        assert "SECRET123" not in out
+        assert "'md:db'" in out

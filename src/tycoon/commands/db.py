@@ -9,7 +9,7 @@ import duckdb
 import typer
 from rich.table import Table
 
-from tycoon.config import config
+from tycoon.config import config, display_target, redact_secrets
 from tycoon.utils.console import console, error, header, info, status_table, success, warn
 from tycoon.utils.duckdb_utils import db_file_size_mb, get_row_count, get_tables, quote_identifier
 
@@ -134,14 +134,17 @@ def _motherduck_schema_rows(target: str) -> list[tuple[str, str, str]]:
                 "AND table_schema NOT IN ('information_schema', 'pg_catalog') "
                 "ORDER BY table_schema, table_name"
             ).fetchall()
-            rows = [("Warehouse database", "OK", f"MotherDuck {target}"), ("  Tables", "", f"{len(tables)}")]
+            rows = [
+                ("Warehouse database", "OK", f"MotherDuck {display_target(target)}"),
+                ("  Tables", "", f"{len(tables)}"),
+            ]
             for s, table in tables:
                 count = con.execute(f"SELECT count(*) FROM {quote_identifier(s)}.{quote_identifier(table)}").fetchone()
                 rows.append((f"  {s}.{table}", "", f"{count[0]:,} rows" if count else "empty"))
         finally:
             con.close()
     except duckdb.Error as exc:
-        return [("Warehouse database", "WARN", f"MotherDuck {target}: {exc}")]
+        return [("Warehouse database", "WARN", f"MotherDuck {display_target(target)}: {redact_secrets(str(exc))}")]
     return rows
 
 
@@ -225,7 +228,7 @@ def query(
         rows = result.fetchall()
         con.close()
     except duckdb.Error as exc:
-        error(f"Query failed: {exc}")
+        error(f"Query failed: {redact_secrets(str(exc))}")
         raise typer.Exit(1) from exc
 
     # Build Rich table
@@ -298,7 +301,10 @@ def clean(
     # Show what will be deleted
     header("Database Cleanup")
     if (local or all_) and local_db is None:
-        warn(f"Warehouse is MotherDuck ({config.warehouse_target}): skipped, tycoon never deletes a remote warehouse.")
+        warn(
+            f"Warehouse is MotherDuck ({display_target(config.warehouse_target)}): skipped, "
+            "tycoon never deletes a remote warehouse."
+        )
     if not targets:
         success("Nothing to remove")
         raise typer.Exit(0)

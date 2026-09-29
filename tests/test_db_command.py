@@ -142,11 +142,11 @@ class TestCleanMetadataPreservation:
 class TestMotherDuckWarehouse:
     """An ``md:`` warehouse is a DuckDB connection string, never a local file (#70)."""
 
-    def _setup(self, tmp_path: Path, monkeypatch) -> list[tuple[str, dict]]:
+    def _setup(self, tmp_path: Path, monkeypatch, warehouse: str = "md:x") -> list[tuple[str, dict]]:
         from tycoon.config import TycoonConfig
 
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
-        (tmp_path / "tycoon.yml").write_text("name: test\nsources: {}\ndatabase:\n  warehouse: 'md:x'\n")
+        (tmp_path / "tycoon.yml").write_text(f"name: test\nsources: {{}}\ndatabase:\n  warehouse: '{warehouse}'\n")
         cfg = TycoonConfig(project_root=tmp_path)
         monkeypatch.setattr("tycoon.commands.db.config", cfg)
 
@@ -209,3 +209,30 @@ class TestMotherDuckWarehouse:
         assert result.exit_code == 0, result.stdout
         assert bogus.exists()
         assert "MotherDuck" in result.stdout
+
+    def test_schema_hides_motherduck_token(self, tmp_path, monkeypatch, cli_runner):
+        calls = self._setup(tmp_path, monkeypatch, warehouse="md:x?motherduck_token=SECRET123")
+        result = cli_runner.invoke(app, ["data", "schema"])
+        assert result.exit_code == 0, result.stdout
+        assert "md:x?motherduck_token=SECRET123" in [c[0] for c in calls]
+        assert "SECRET123" not in result.stdout
+        assert "motherduck_token" not in result.stdout
+
+    def test_schema_error_hides_motherduck_token(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch, warehouse="md:x?motherduck_token=SECRET123")
+
+        def failing_connect(database: str = ":memory:", **kwargs):
+            raise duckdb.IOException(f"can't open '{database}'")
+
+        monkeypatch.setattr(duckdb, "connect", failing_connect)
+        result = cli_runner.invoke(app, ["data", "schema"])
+        assert result.exit_code == 0, result.stdout
+        assert "WARN" in result.stdout
+        assert "SECRET123" not in result.stdout
+
+    def test_clean_warning_hides_motherduck_token(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch, warehouse="md:x?motherduck_token=SECRET123")
+        result = cli_runner.invoke(app, ["data", "clean", "--local"], input="y\n")
+        assert result.exit_code == 0, result.stdout
+        assert "MotherDuck (md:x)" in result.stdout
+        assert "SECRET123" not in result.stdout

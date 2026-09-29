@@ -19,7 +19,7 @@ from pathlib import Path
 
 import typer
 
-from tycoon.config import config
+from tycoon.config import config, display_target
 from tycoon.project import TransformationTool
 from tycoon.scaffolding.osi_generator import (
     scaffold_osi,
@@ -88,9 +88,8 @@ def scaffold(
 
     warehouse_db = config.local_db
     if warehouse_db is None:
-        error(
-            f"OSI scaffolding reads a local DuckDB warehouse; MotherDuck ({config.warehouse_target}) isn't supported yet."
-        )
+        target = display_target(config.warehouse_target)
+        error(f"OSI scaffolding reads a local DuckDB warehouse; MotherDuck ({target}) isn't supported yet.")
         raise typer.Exit(1)
 
     result = scaffold_osi(

@@ -6,6 +6,7 @@ for backwards compatibility.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from tycoon.project import PROJECT_FILENAME, SCHEMA_VERSION, TycoonProject, load_project
@@ -18,6 +19,26 @@ _DEFAULT_DBT_DIR = "dbt_project"
 _DEFAULT_RILL_DIR = "rill"
 
 MOTHERDUCK_PREFIX = "md:"
+
+# The query part of an md: string can carry motherduck_token=<secret>.
+_MD_QUERY_RE = re.compile(r"(md:[^\s'\"?]*)\?[^\s'\"]*")
+_MD_TOKEN_RE = re.compile(r"(motherduck_token=)[^\s&'\"]+", re.IGNORECASE)
+
+
+def display_target(target: str) -> str:
+    """A connection target that is safe to print.
+
+    An ``md:`` string loses everything from ``?`` onwards, where a
+    ``motherduck_token`` can sit; a local path is returned unchanged.
+    """
+    if target.startswith(MOTHERDUCK_PREFIX):
+        return target.split("?", 1)[0]
+    return target
+
+
+def redact_secrets(text: str) -> str:
+    """Strip md: query strings and motherduck_token values from free text, such as a DuckDB error."""
+    return _MD_TOKEN_RE.sub(r"\1***", _MD_QUERY_RE.sub(r"\1", text))
 
 
 def _find_project_root() -> Path:
