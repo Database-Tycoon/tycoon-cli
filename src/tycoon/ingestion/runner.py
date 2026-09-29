@@ -155,16 +155,17 @@ def _build_sql_database_source(source_config: SourceConfig) -> Any:
 def _local_glob_matches_nothing(bucket_url: str, file_glob: str) -> bool:
     """Return True when a local filesystem glob matches no files.
 
-    Only checks local paths (``bucket_url`` without a URI scheme). Remote
+    Only checks local paths (a plain path or a ``file://`` URL). Remote
     buckets (``s3://``, ``gs://``, ``az://``) aren't supported yet and are
     never reported as empty rather than guessed at. Issue #223.
     """
-    if "://" in bucket_url:
+    local_dir = _local_fs_path(bucket_url)
+    if local_dir is None:
         return False
 
     import glob as glob_module
 
-    pattern = str(Path(bucket_url).expanduser() / file_glob)
+    pattern = str(local_dir / file_glob)
     return not glob_module.glob(pattern, recursive=True)
 
 
