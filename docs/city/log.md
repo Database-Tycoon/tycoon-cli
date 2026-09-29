@@ -3,10 +3,21 @@ title: Documentation log
 description: Chronological record of documentation changes
 tags: [log]
 related: []
-updated: '2026-09-16'
+updated: '2026-09-29'
 ---
 
 # Log
+
+- 2026-09-29: **A mental model of the city map (gh-323).** Asked for in the
+  2026-09-29 weekly sync so reviewers can map large city PRs onto the
+  picture. New `mental-model.md`: the concept to map element to `city.json`
+  field table, a worked example generated from the `csv-import` template with
+  the real CLI, a "which part a PR touches" table and a reviewer checklist.
+  Listed in `index.md` and the mkdocs nav. PRs #250/#251 are flagged where
+  the page describes behaviour not yet on `v0.2.2`. Noted, not fixed here:
+  `guide.md` says height is one level per decade of rows, but the 3D
+  renderer draws height from the real row count (cube root) and keeps
+  `target_density` for the contract and guest attraction.
 
 - 2026-09-16: **The ring planner ships in 0.2.1 on its own; the rest of the
   city stream moves to 0.2.2.** #247, the engine half of #206 split at the

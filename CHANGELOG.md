@@ -22,6 +22,9 @@ All notable changes to this project will be documented in this file. The format 
 [#268]: https://github.com/Database-Tycoon/tycoon-cli/pull/268
 [#269]: https://github.com/Database-Tycoon/tycoon-cli/pull/269
 [#273]: https://github.com/Database-Tycoon/tycoon-cli/pull/273
+- **A mental model of the city map** ([#323][]). `docs/city/mental-model.md` maps each data-stack concept (source, table, dbt model, test, run, freshness SLA, docs coverage) to what it becomes on the `tycoon city` map and the `city.json` field it comes from, walks one worked example from the `csv-import` template to the rendered city, and gives reviewers a table of which layer a PR touches plus a short checklist.
+
+[#323]: https://github.com/Database-Tycoon/tycoon-cli/issues/323
 
 ## [0.2.1] - 2026-09-16
 
