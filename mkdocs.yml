@@ -101,6 +101,7 @@ nav:
     - Services:
       - "tycoon start / stop": commands/start.md
       - "tycoon city": commands/city.md
+      - "The city map, a mental model": city/mental-model.md
     - Tools:
       - "tycoon run": commands/run.md
       - "tycoon notify": commands/notify.md

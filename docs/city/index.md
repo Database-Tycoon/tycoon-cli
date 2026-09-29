@@ -3,7 +3,7 @@ title: Database Tycoon docs
 description: Index of the Database Tycoon documentation bundle
 tags: [index]
 related: []
-updated: '2026-08-09'
+updated: '2026-09-29'
 ---
 
 # Database Tycoon — Documentation
@@ -12,6 +12,7 @@ updated: '2026-08-09'
 - [conventions.md](conventions.md) — working conventions carried from the renderer's own repo: the mutation-testing rule, the contract-change process, and the render-and-look rule
 - [handover.md](handover.md) — **start here in a new session**: what this is, current state, what to do next, and the traps this repo has already sprung
 - [hud-design.md](hud-design.md) — the HUD design brief: Stephen's standing priority (HUD over visual quality), principles, and the component build order
+- [mental-model.md](mental-model.md) - what each thing on the map stands for and which `city.json` field it comes from, one worked example from `tycoon.yml` to screen, which layer a PR touches, and a checklist for reviewing a city PR
 - [city-json-v1.md](city-json-v1.md) — normative `city.json` contract: the seam between the Python side and any renderer, with the measurements behind each decision
 - [run-json-v1.md](run-json-v1.md) — normative `runs.json` / `runs/<id>.json` contract: replaying one specific dbt run step by step, and why these id- and timestamp-bearing documents live outside byte-stable `city.json`
 - [agent_tasks/](agent_tasks/index.md) — the CRLF master spec and active blueprints: Markdown tasks agents pick up, each with requirements and acceptance criteria
