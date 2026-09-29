@@ -623,7 +623,7 @@ _FailOnEmptyOption = typer.Option(
     "--fail-on-empty",
     help=(
         "Exit non-zero, and record the run as failed, when a local glob "
-        "matches no files or a run loads zero rows. For orchestrated runs "
+        "matches no files or a replace load brings in zero rows. For orchestrated runs "
         "where the exit code is the only signal anyone sees."
     ),
 )

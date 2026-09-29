@@ -11,7 +11,7 @@ Options:
   --max-records INTEGER    Cap rows per source (passed to every source's run)
   --skip-dbt               Don't run dbt build after ingest
   --skip-on-error          Continue past failed sources instead of aborting
-  --fail-on-empty          Fail when a local glob matches no files or a source loads zero rows
+  --fail-on-empty          Fail when a local glob matches no files or a replace load brings in zero rows
   -h, --help               Show this message and exit
 ```
 
@@ -38,7 +38,7 @@ After all sources run (or all that survived `--skip-on-error`):
 
 3. Calls `tycoon data transform build` (skipped with `--skip-dbt`).
 
-With `--fail-on-empty`, a source whose local glob matches no files, or that loads zero rows, counts as a failed source, so the command exits 1 before `dbt build` runs. See [`tycoon data sources run`](sources.md#run-ingest) for the details.
+With `--fail-on-empty`, a source whose local glob matches no files, or that loads zero rows with `replace`, counts as a failed source, so the command exits 1 before `dbt build` runs. See [`tycoon data sources run`](sources.md#run-ingest) for the details.
 
 If `dbt build` fails, the command exits non-zero. Any test failures from `dbt build` show up in `tycoon data history show <invocation_id>`.
 

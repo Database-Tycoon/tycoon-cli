@@ -557,7 +557,8 @@ def run_source(
 
     With ``fail_on_empty``, a local glob that matches no files raises
     ``IngestionError`` before anything loads, and a run that loads zero
-    rows raises after it; both record ``RunFailed`` rather than
+    rows in a way that can empty a table (see ``_build_run_completed``)
+    raises after it; both record ``RunFailed`` rather than
     ``RunCompleted``. Orchestrated runs rely on the exit code (gh-240).
     """
     _started = time.monotonic()
@@ -692,8 +693,6 @@ def _run_legacy(
     name: str,
     raw_db_path: Path,
     max_records: int | None = None,
-    *,
-    fail_on_empty: bool = False,
     **kwargs: Any,
 ) -> tuple[dlt.Pipeline, Any]:
     """Run a legacy NYC transit pipeline by importing its module."""
