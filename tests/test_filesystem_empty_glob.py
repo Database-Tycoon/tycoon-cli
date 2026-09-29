@@ -64,6 +64,28 @@ class TestEmptyGlobLeavesTableUntouched:
         assert load_info is None
         assert "left as it was" in capsys.readouterr().out
 
+    def test_empty_glob_under_file_url_keeps_previously_loaded_rows(self, tmp_path, pipeline_cleanup):
+        """A ``file://`` bucket is local, so the empty-glob guard applies to it too."""
+        name = "test_gh240_file_url"
+        pipeline_cleanup.append(name)
+        input_dir = tmp_path / "input"
+        input_dir.mkdir()
+        _write_csv(input_dir / "sales.csv", rows=6)
+        raw_db_path = tmp_path / "raw.duckdb"
+
+        def config(file_glob: str) -> SourceConfig:
+            return SourceConfig(
+                type="filesystem", schema="raw_files", config={"path": input_dir.as_uri(), "file_glob": file_glob}
+            )
+
+        run_source(name, config("*.csv"), raw_db_path=raw_db_path)
+        assert _row_count(raw_db_path, "raw_files", name) == 6
+
+        _pipeline, load_info = run_source(name, config("nomatch*.csv"), raw_db_path=raw_db_path)
+
+        assert load_info is None
+        assert _row_count(raw_db_path, "raw_files", name) == 6
+
     def test_one_empty_resource_does_not_stop_the_others(self, tmp_path, pipeline_cleanup):
         name = "test_gh240_arcade"
         pipeline_cleanup.append(name)
