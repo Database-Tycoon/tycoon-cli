@@ -8,6 +8,7 @@ legacy pipelines, it delegates to the existing pipeline modules.
 
 from __future__ import annotations
 
+import glob
 import re
 import sys
 import time
@@ -171,6 +172,22 @@ def _warn_if_local_glob_matches_nothing(bucket_url: str, file_glob: str, label: 
         warn(f"'{label}': no files matched glob {file_glob!r} under {bucket_url!r}.")
 
 
+def _local_fs_path(url: str) -> Path | None:
+    """Return the local filesystem path ``url`` points at, or ``None`` if remote.
+
+    A plain path and a ``file://`` URL are both local; any other scheme
+    (``s3://``, ``gs://``, ``https://``) is remote.
+    """
+    if url.startswith("file://"):
+        from urllib.parse import urlparse
+        from urllib.request import url2pathname
+
+        return Path(url2pathname(urlparse(url).path))
+    if "://" in url:
+        return None
+    return Path(url).expanduser()
+
+
 def _split_single_file_path(path: str, file_glob: str) -> tuple[str, str]:
     """Turn a ``path`` that names one local file into ``(parent_dir, file_name)``.
 
@@ -182,13 +199,13 @@ def _split_single_file_path(path: str, file_glob: str) -> tuple[str, str]:
 
     A glob alongside a file path is ambiguous (it can never match anything
     under a file), so it fails rather than guessing which one was meant.
+    A ``file://`` URL counts as local. The file name comes back
+    glob-escaped so a name like ``sales[1].csv`` matches only itself.
     Remote URLs and anything that isn't an existing local file pass through
     unchanged.
     """
-    if "://" in path:
-        return path, file_glob
-    target = Path(path).expanduser()
-    if not target.is_file():
+    target = _local_fs_path(path)
+    if target is None or not target.is_file():
         return path, file_glob
     if file_glob:
         raise IngestionError(
@@ -197,7 +214,7 @@ def _split_single_file_path(path: str, file_glob: str) -> tuple[str, str]:
             f"directory ({str(target.parent)!r}) and keep the glob, or remove file_glob "
             "to load just this file."
         )
-    return str(target.parent), target.name
+    return str(target.parent), glob.escape(target.name)
 
 
 def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str, default_glob: str = "") -> Any:
