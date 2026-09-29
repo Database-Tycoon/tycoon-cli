@@ -212,3 +212,21 @@ class TestRestApiMaxRecords:
 
         assert _count(raw_db_path, "raw_test", "items") == 3
         assert requested_pages == [0, 1]
+
+
+class TestMaxRecordsRejectsNegative:
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["data", "sources", "run", "anything"],
+            ["data", "sources", "run-all"],
+            ["data", "run-all"],
+        ],
+    )
+    def test_negative_cap_is_a_usage_error(self, cli_runner, args: list[str]) -> None:
+        from tycoon.cli import app
+
+        result = cli_runner.invoke(app, [*args, "--max-records", "-1"])
+
+        assert result.exit_code == 2
+        assert "--max-records" in result.output

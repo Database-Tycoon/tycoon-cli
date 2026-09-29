@@ -613,6 +613,7 @@ _MaxRecordsOption = typer.Option(
     None,
     "--max-records",
     "-n",
+    min=0,
     help="Cap the total number of records fetched per resource (useful for testing).",
     show_default=False,
 )
