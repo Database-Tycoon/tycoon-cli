@@ -501,8 +501,9 @@ def save_project(project: TycoonProject, project_root: Path) -> None:
 
     path = project_root / PROJECT_FILENAME
     data = project.model_dump(by_alias=True, exclude_none=True, mode="json")
-    ryaml = roundtrip_yaml()
-    existing = ryaml.load(path.read_text()) if path.exists() else None
+    text = path.read_text() if path.exists() else ""
+    ryaml = roundtrip_yaml(text)
+    existing = ryaml.load(text) if text else None
     if not isinstance(existing, dict):
         path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
         return
@@ -542,10 +543,9 @@ def migrate_project(project_root: Path) -> bool:
     if not path.exists():
         return False
 
-    ryaml = roundtrip_yaml()
-
-    with path.open() as f:
-        raw = ryaml.load(f)
+    text = path.read_text()
+    ryaml = roundtrip_yaml(text)
+    raw = ryaml.load(text)
 
     if not isinstance(raw, dict):
         return False
