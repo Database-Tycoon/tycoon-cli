@@ -128,9 +128,14 @@ def _source_yaml_path(parquet_path: Path, rill_dir: Path) -> str:
     breaks every other clone and CI, and rewrites itself into the diff each
     time the project is regenerated. A relative path stays portable and
     keeps the committed file stable (gh-275).
+
+    ``os.path.abspath`` rather than ``Path.resolve`` so a symlinked ``data/``
+    stays inside the project in the YAML instead of leaking the link target,
+    and ``as_posix`` so a Windows checkout writes the same forward slashes.
     """
     try:
-        return os.path.relpath(parquet_path.resolve(), rill_dir.resolve())
+        rel = os.path.relpath(os.path.abspath(parquet_path), os.path.abspath(rill_dir))
+        return Path(rel).as_posix()
     except ValueError:
         # Windows: no relative path exists across drives. An absolute path is
         # wrong-but-working, which beats emitting nothing.

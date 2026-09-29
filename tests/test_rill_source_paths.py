@@ -38,9 +38,7 @@ class TestSourceYamlPathIsRelative:
         rill_dir = tmp_path / "rill"
         parquet = tmp_path / "data" / "parquet" / "_tycoon" / "dbt_nodes.parquet"
 
-        assert _source_yaml_path(parquet, rill_dir) == str(
-            Path("..") / "data" / "parquet" / "_tycoon" / "dbt_nodes.parquet"
-        )
+        assert _source_yaml_path(parquet, rill_dir) == "../data/parquet/_tycoon/dbt_nodes.parquet"
 
     def test_generated_yaml_carries_no_absolute_path(self, tmp_path: Path) -> None:
         rill_dir = tmp_path / "rill"
@@ -58,7 +56,7 @@ class TestSourceYamlPathIsRelative:
         rill_dir = tmp_path / "rill"
         parquet = rill_dir / "data" / "orders.parquet"
 
-        assert _source_yaml_path(parquet, rill_dir) == str(Path("data") / "orders.parquet")
+        assert _source_yaml_path(parquet, rill_dir) == "data/orders.parquet"
 
     def test_path_resolves_back_to_the_original_file(self, tmp_path: Path) -> None:
         """The relative path must still point at the same file from rill_dir."""
@@ -71,6 +69,32 @@ class TestSourceYamlPathIsRelative:
         emitted = _source_yaml_path(parquet, rill_dir)
 
         assert (rill_dir / emitted).resolve() == parquet.resolve()
+
+    def test_symlinked_data_dir_stays_inside_the_project(self, tmp_path: Path) -> None:
+        """A ``data/`` symlinked to another disk must not leak its target."""
+        project = tmp_path / "proj"
+        rill_dir = project / "rill"
+        rill_dir.mkdir(parents=True)
+        external = tmp_path / "ext" / "data"
+        (external / "parquet").mkdir(parents=True)
+        (project / "data").symlink_to(external, target_is_directory=True)
+        parquet = project / "data" / "parquet" / "orders.parquet"
+        parquet.write_bytes(b"PAR1")
+
+        emitted = _source_yaml_path(parquet, rill_dir)
+
+        assert emitted == "../data/parquet/orders.parquet"
+        assert (rill_dir / emitted).resolve() == parquet.resolve()
+
+    def test_emitted_path_uses_forward_slashes_only(self, tmp_path: Path) -> None:
+        """Committed YAML must not change when a Windows checkout regenerates it."""
+        rill_dir = tmp_path / "rill"
+        parquet = tmp_path / "data" / "parquet" / "_tycoon" / "dbt_nodes.parquet"
+
+        yaml_text = _generate_source_yaml(parquet, rill_dir)
+
+        assert "\\" not in yaml_text
+        assert _path_line(yaml_text) == "../data/parquet/_tycoon/dbt_nodes.parquet"
 
 
 class TestWrittenObservabilitySourcesArePortable:
