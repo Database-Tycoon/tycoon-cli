@@ -75,7 +75,9 @@ class TestRunSourceFailOnEmpty:
         assert not (tmp_path / "raw.duckdb").exists()
 
     def test_zero_row_load_fails_after_the_run(self, tmp_path, ledger_path, monkeypatch):
-        pipeline = SimpleNamespace(last_trace=SimpleNamespace(last_normalize_info=SimpleNamespace(row_counts={})))
+        extract_info = SimpleNamespace(metrics={"1": [{"hints": {"issues": {"write_disposition": "replace"}}}]})
+        trace = SimpleNamespace(last_normalize_info=SimpleNamespace(row_counts={}), last_extract_info=extract_info)
+        pipeline = SimpleNamespace(last_trace=trace)
         load_info = SimpleNamespace(loads_ids=["1"])
         monkeypatch.setattr(runner, "_run_catalog", lambda *_args, **_kwargs: (pipeline, load_info))
         monkeypatch.setattr(runner, "_capture_and_refresh_safe", lambda *_args, **_kwargs: None)
@@ -84,6 +86,31 @@ class TestRunSourceFailOnEmpty:
             run_source("gh", SourceConfig(type="github", schema="raw_gh"), tmp_path / "raw.duckdb", fail_on_empty=True)
 
         assert [type(e) for e in _ledger(ledger_path)] == [RunStarted, RunFailed]
+
+    def test_incremental_run_with_no_new_records_passes(self, tmp_path, ledger_path, monkeypatch):
+        """A quiet incremental merge is a normal sync, not an empty run."""
+        import dlt
+
+        @dlt.resource(name="issues", write_disposition="merge", primary_key="id")
+        def issues(updated=dlt.sources.incremental("updated")):
+            yield from [{"id": 1, "updated": 1}, {"id": 2, "updated": 2}]
+
+        pipeline = dlt.pipeline(
+            pipeline_name="gh240_foe_incremental",
+            destination=dlt.destinations.duckdb(str(tmp_path / "incremental.duckdb")),
+            dataset_name="raw_gh",
+            pipelines_dir=str(tmp_path / "pipelines"),
+        )
+        pipeline.run(issues())
+        monkeypatch.setattr(runner, "_run_catalog", lambda *_args, **_kwargs: (pipeline, pipeline.run(issues())))
+        monkeypatch.setattr(runner, "_capture_and_refresh_safe", lambda *_args, **_kwargs: None)
+
+        run_source("gh", SourceConfig(type="github", schema="raw_gh"), tmp_path / "raw.duckdb", fail_on_empty=True)
+
+        events = _ledger(ledger_path)
+        assert [type(e) for e in events] == [RunStarted, RunCompleted]
+        assert events[1].rows_loaded == {}
+        assert events[1].zero_rows is False
 
     def test_default_still_records_zero_row_completion(self, tmp_path, ledger_path, pipeline_cleanup):
         name = "test_gh240_foe_default"

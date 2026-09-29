@@ -51,7 +51,7 @@ def run_all_cmd(
             "--fail-on-empty",
             help=(
                 "Exit non-zero, and record the run as failed, when a local glob "
-                "matches no files or a source loads zero rows."
+                "matches no files or a replace load brings in zero rows."
             ),
         ),
     ] = False,
