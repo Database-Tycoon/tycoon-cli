@@ -21,9 +21,13 @@ from tests.test_history import _seed_events, _write_tycoon_yml
 from tests.test_templates_e2e import _init_template, _rebind_config, _seed_widgets_csv
 
 
-def _fake_pipeline(row_counts: dict[str, int] | None) -> SimpleNamespace:
+def _fake_pipeline(row_counts: dict[str, int] | None, write_disposition: str | dict = "replace") -> SimpleNamespace:
     normalize_info = SimpleNamespace(row_counts=row_counts)
-    return SimpleNamespace(last_trace=SimpleNamespace(last_normalize_info=normalize_info))
+    hints = {"files": {"write_disposition": write_disposition}, "_dlt_pipeline_state": {"write_disposition": "append"}}
+    extract_info = SimpleNamespace(metrics={"1": [{"hints": hints}]})
+    return SimpleNamespace(
+        last_trace=SimpleNamespace(last_normalize_info=normalize_info, last_extract_info=extract_info)
+    )
 
 
 def _write_csv(path: Path, rows: int) -> None:
@@ -83,6 +87,71 @@ class TestRunCompletedEvent:
         event = _build_run_completed("files", _fake_pipeline({"files": 0, "other": 3}), None, 0.1)
 
         assert event.zero_rows is False
+
+    @pytest.mark.parametrize(
+        "write_disposition", ["append", "merge", {"disposition": "merge", "strategy": "delete-insert"}]
+    )
+    def test_zero_rows_without_replace_are_not_flagged(self, write_disposition):
+        """Append and merge runs with no new records leave the table as it was."""
+        event = _build_run_completed("files", _fake_pipeline({}, write_disposition), None, 0.1)
+
+        assert event.zero_rows is False
+
+    def test_dict_replace_disposition_is_flagged(self):
+        event = _build_run_completed("files", _fake_pipeline({}, {"disposition": "replace"}), None, 0.1)
+
+        assert event.zero_rows is True
+
+    def test_unmatched_glob_is_flagged_without_replace(self):
+        warning = "'files': no files matched glob 'nomatch*.csv' under 'data'."
+        event = _build_run_completed("files", _fake_pipeline({}, "append"), None, 0.1, [warning])
+
+        assert event.zero_rows is True
+
+
+class TestRealDltPipelines:
+    """The flag against a real dlt pipeline loading into a temp DuckDB."""
+
+    @staticmethod
+    def _pipeline(tmp_path: Path, name: str):
+        import dlt
+
+        return dlt.pipeline(
+            pipeline_name=name,
+            destination=dlt.destinations.duckdb(str(tmp_path / f"{name}.duckdb")),
+            dataset_name="raw",
+            pipelines_dir=str(tmp_path / "pipelines"),
+        )
+
+    def test_incremental_merge_with_no_new_records_is_not_flagged(self, tmp_path):
+        import dlt
+
+        @dlt.resource(name="orders", write_disposition="merge", primary_key="id")
+        def orders(updated=dlt.sources.incremental("updated")):
+            yield from [{"id": 1, "updated": 1}, {"id": 2, "updated": 2}]
+
+        pipeline = self._pipeline(tmp_path, "gh240_incremental")
+        first = _build_run_completed("orders", pipeline, pipeline.run(orders()), 0.1)
+        load_info = pipeline.run(orders())
+        second = _build_run_completed("orders", pipeline, load_info, 0.1)
+
+        assert first.zero_rows is False
+        assert second.rows_loaded == {}
+        assert second.zero_rows is False
+
+    def test_replace_with_no_records_is_flagged(self, tmp_path):
+        import dlt
+
+        @dlt.resource(name="orders", write_disposition="replace")
+        def orders(rows):
+            yield from rows
+
+        pipeline = self._pipeline(tmp_path, "gh240_replace")
+        pipeline.run(orders([{"id": 1}]))
+        load_info = pipeline.run(orders([]))
+        event = _build_run_completed("orders", pipeline, load_info, 0.1)
+
+        assert event.zero_rows is True
 
 
 class TestRunnerLedger:
@@ -204,6 +273,23 @@ class TestStatusZeroRows:
 
         assert result.exit_code == 0
         assert "2026-09-03 10:00" in result.stdout
+        assert "0 rows" not in result.stdout
+
+    def test_quiet_incremental_run_advances_last_sync(self, status_project, cli_runner):
+        """An unflagged run with no new records is a normal sync."""
+        quiet = RunCompleted(
+            source_id="src_a",
+            runtime_id="dlt-managed",
+            load_id="quiet-001",
+            timestamp=datetime(2026, 9, 2, 10, 0, tzinfo=UTC),
+        )
+        _seed_events(status_project, [_healthy_then_empty()[0], quiet])
+
+        result = cli_runner.invoke(app, ["data", "status"])
+
+        assert result.exit_code == 0
+        row = next(line for line in result.stdout.splitlines() if "src_a" in line)
+        assert "2026-09-02 10:00" in row
         assert "0 rows" not in result.stdout
 
 
