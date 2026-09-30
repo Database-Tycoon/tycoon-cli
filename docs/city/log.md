@@ -3,10 +3,17 @@ title: Documentation log
 description: Chronological record of documentation changes
 tags: [log]
 related: []
-updated: '2026-09-29'
+updated: '2026-09-30'
 ---
 
 # Log
+
+- 2026-09-30: mental-model page corrected and cut down after fact-check.
+  Reordered so the PR-layer table and checklist come first; the document diff
+  step now drops wall-clock ages with a jq filter; fixed the power plant
+  position, the list of what the city reads, street-ending precedence and the
+  height source; the layering-test reference now says what it guards (#332);
+  v0.2.2 caveats moved to a dated Known gaps note.
 
 - 2026-09-29: **A mental model of the city map (gh-323).** Asked for in the
   2026-09-29 weekly sync so reviewers can map large city PRs onto the
