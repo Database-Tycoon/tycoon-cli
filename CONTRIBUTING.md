@@ -206,9 +206,10 @@ always reflects the latest published version.
 2. Early in the cycle, the maintainer runs `uv tree --outdated` and opens a
    single dependency-review PR against the release branch, bumping the pins
    and SHA-pinned actions that are worth taking. Include the build backend
-   pin in `[build-system] requires`, which `uv tree --outdated` doesn't list. Runtime pins are exact and
-   propagate to downstream consumers, so each bump is a deliberate call —
-   check what a version change drags into the lockfile, not just its number.
+   pin in `[build-system] requires`, which `uv tree --outdated` doesn't list.
+   Runtime pins are exact and propagate to downstream consumers, so each
+   bump is a deliberate call — check what a version change drags into the
+   lockfile, not just its number.
 3. When the cycle is done, the maintainer finalizes `CHANGELOG.md` and the
    `docs/releases/v<ver>.md` long-form narrative on the branch.
 4. The release branch merges into `main` via PR, then the version tag is
