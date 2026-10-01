@@ -91,54 +91,64 @@ def venv_path(project_root: Path) -> Path:
     return project_root / ".venv"
 
 
-def venv_python(project_root: Path) -> Path:
-    """Path to the venv's interpreter (POSIX ``bin/`` layout)."""
-    return venv_path(project_root) / "bin" / "python"
-
-
 def _project_name(project_root: Path) -> str:
-    """Derive a PEP 508-safe project name from the project directory name."""
-    name = _INVALID_NAME_CHARS.sub("-", project_root.name).strip("-")
-    return name or "tycoon-project"
+    """Derive a PEP 508-safe project name from the project directory name.
+
+    A PEP 508 name must start and end with a letter or digit; mid-string
+    `.`/`_`/`-` are fine. Also guards against colliding with the
+    `database-tycoon` dependency itself (a project directory literally
+    named that would otherwise self-reference).
+    """
+    name = _INVALID_NAME_CHARS.sub("-", project_root.name).strip("._-")
+    if not name or name == DEFAULT_INSTALL_SPEC:
+        return "tycoon-project"
+    return name
 
 
-def _write_pyproject(project_root: Path, install_spec: str | None) -> None:
+def _write_pyproject(project_root: Path) -> None:
     """Seed a minimal pyproject.toml, if this project doesn't already have one.
 
     An existing pyproject.toml (hand-written, or from an earlier `tycoon
-    setup`) is left untouched. ``install_spec`` is only pre-declared here
-    when it's the plain default (`database-tycoon`) — a custom override
-    (dev checkout, pinned version) is layered on afterward via `uv add`
-    instead, so it isn't installed from PyPI first just to be replaced.
+    setup`) is left untouched. Dependencies are never pre-declared here,
+    `create_venv` always installs `install_spec` afterward via `uv add`,
+    which is idempotent and handles both the fresh-skeleton case and an
+    existing pyproject that doesn't yet declare it.
     """
     target = project_root / "pyproject.toml"
     if target.exists():
         return
-    deps = f'    "{DEFAULT_INSTALL_SPEC}",\n' if install_spec == DEFAULT_INSTALL_SPEC else ""
     target.write_text(
         "[project]\n"
         f'name = "{_project_name(project_root)}"\n'
         'version = "0.1.0"\n'
         f'requires-python = "{python_range_str()}"\n'
         "dependencies = [\n"
-        f"{deps}"
         "]\n"
     )
 
 
-def _add_command(uv: str, project_root: Path, install_spec: str) -> list[str]:
-    """Build the `uv add` command for a custom install_spec override.
+def _add_command(uv: str, project_root: Path, python_version: str, install_spec: str) -> list[str]:
+    """Build the `uv add` command for an install_spec.
 
-    Mirrors the pip-style forms `--from` already documented: `-e <path>`,
-    a bare local path, or a plain (optionally version-pinned) requirement.
+    Only the explicit pip-style `-e <path>` form needs translation (uv's
+    own flag is `--editable`, not `-e`); everything else, including a bare
+    local path to a wheel/sdist or a source checkout, passes straight
+    through for uv to classify itself.
     """
     spec = install_spec.strip()
-    base = [uv, "--project", str(project_root), "add"]
+    base = [uv, "--project", str(project_root), "add", "--python", python_version]
     if spec.startswith("-e "):
-        return [*base, "--editable", spec[3:].strip()]
-    if spec in (".", "..") or spec.startswith(("./", "../", "/", "~")):
-        return [*base, "--editable", spec]
+        path = str(Path(spec[3:].strip()).expanduser())
+        return [*base, "--editable", path]
     return [*base, spec]
+
+
+def _run(cmd: list[str]) -> tuple[bool, str]:
+    """Run a uv subprocess, returning (ok, stderr-or-stdout on failure)."""
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode == 0:
+        return True, ""
+    return False, result.stderr.strip() or result.stdout.strip()
 
 
 def create_venv(
@@ -154,15 +164,22 @@ def create_venv(
 
     1. Validate ``python_version`` is in the supported range.
     2. Require ``uv`` on PATH (point at the installer otherwise).
-    3. Refuse to clobber an existing ``.venv`` unless ``force`` (which
-       removes it, and any ``uv.lock``, for a clean re-resolve).
+    3. Refuse to clobber an existing ``.venv`` unless ``force``.
     4. Write ``.python-version`` in the project dir to pin the interpreter.
-    5. Seed ``pyproject.toml`` if this project doesn't already have one.
-    6. ``uv sync`` — creates ``.venv`` (uv fetches the interpreter if
-       needed), resolves, and installs whatever the project declares.
-    7. A custom ``install_spec`` (dev checkout, pinned version) is layered
-       on via ``uv add`` (skipped for the plain default, already declared
-       in step 5, and skipped entirely when ``install_spec`` is None).
+    5. Seed ``pyproject.toml`` if this project doesn't already have one
+       (no dependencies declared yet, so this is safe even when one
+       already exists with its own unrelated dependencies).
+    6. ``uv sync --python <version>``, creates ``.venv`` (uv fetches the
+       interpreter if needed) and installs whatever the project already
+       declares. ``force`` adds ``--upgrade`` so an existing `.venv`/
+       `uv.lock` is reconciled and re-resolved in place rather than
+       deleted outright, uv's own job, and safe for a stray non-directory
+       `.venv` (a symlink, a plain file) that a manual `rmtree` isn't.
+    7. ``install_spec`` (the default `database-tycoon`, a pinned version,
+       or a dev checkout) is installed via ``uv add --python <version>``,
+       idempotent, so it runs every time ``install_spec`` is given rather
+       than only when it differs from the default, skipped entirely when
+       ``install_spec`` is None (``--no-install``).
 
     Pure orchestration — all I/O is ``subprocess.run`` or small file writes,
     so it's exercised in tests with ``subprocess.run`` patched.
@@ -199,54 +216,50 @@ def create_venv(
             return VenvResult(
                 ok=False,
                 venv_path=target,
-                message=(
-                    f"{target} already exists. Re-run with --force to recreate it "
-                    "(this removes the existing environment)."
-                ),
+                message=f"{target} already exists. Re-run with --force to rebuild it.",
             )
-        shutil.rmtree(target)
-        lock = project_root / "uv.lock"
-        if lock.exists():
-            lock.unlink()
 
     # Step 4: pin the interpreter for the project dir. Safe here — it only ever
     # broke CI when placed at the package repo root.
     (project_root / ".python-version").write_text(f"{python_version}\n")
 
     # Step 5: seed pyproject.toml (no-op if the project already has one).
-    _write_pyproject(project_root, install_spec)
+    _write_pyproject(project_root)
 
-    # Step 6: create + populate the venv from pyproject.toml. `uv sync`
-    # downloads a python-build-standalone CPython if none matching is
-    # installed, then resolves and installs, writing uv.lock.
-    sync = subprocess.run(
-        [uv, "--project", str(project_root), "sync"],
-        capture_output=True,
-        text=True,
-    )
-    if sync.returncode != 0:
+    # Step 6: create + reconcile the venv. `--python` pins the exact
+    # interpreter explicitly rather than relying on `.python-version` alone,
+    # which `UV_PYTHON` would otherwise silently outrank. `--upgrade` under
+    # `force` re-resolves fresh instead of deleting `.venv`/`uv.lock`.
+    sync_cmd = [uv, "--project", str(project_root), "sync", "--python", python_version]
+    if force:
+        sync_cmd.append("--upgrade")
+    ok, err = _run(sync_cmd)
+    if not ok:
+        return VenvResult(ok=False, venv_path=target, message=f"`uv sync` failed:\n{err}")
+
+    # `UV_PROJECT_ENVIRONMENT` or a `[tool.uv.workspace]` root above this
+    # project can redirect uv to build the environment somewhere other than
+    # `<project_root>/.venv`, don't claim success for a path that isn't real.
+    if not target.exists():
         return VenvResult(
             ok=False,
             venv_path=target,
-            message=f"`uv sync` failed:\n{sync.stderr.strip() or sync.stdout.strip()}",
+            message=(
+                f"`uv sync` succeeded but {target} doesn't exist. Something in this "
+                "project's uv configuration (UV_PROJECT_ENVIRONMENT, a [tool.uv.workspace] "
+                "root above it, or similar) is redirecting where the environment gets built."
+            ),
         )
 
-    # Step 7: a custom install_spec (dev checkout, pinned version) replaces
-    # the default `database-tycoon` dependency via `uv add`.
-    if install_spec and install_spec != DEFAULT_INSTALL_SPEC:
-        add = subprocess.run(
-            _add_command(uv, project_root, install_spec),
-            capture_output=True,
-            text=True,
-        )
-        if add.returncode != 0:
+    # Step 7: install_spec (default, pinned version, or dev checkout) via
+    # `uv add`, idempotent, so an already-declared dependency is a no-op.
+    if install_spec:
+        ok, err = _run(_add_command(uv, project_root, python_version, install_spec))
+        if not ok:
             return VenvResult(
                 ok=False,
                 venv_path=target,
-                message=(
-                    f"Created {target} but installing '{install_spec}' failed:\n"
-                    f"{add.stderr.strip() or add.stdout.strip()}"
-                ),
+                message=f"Created {target} but installing '{install_spec}' failed:\n{err}",
             )
 
     pinned = "" if not install_spec else f" with '{install_spec}'"
