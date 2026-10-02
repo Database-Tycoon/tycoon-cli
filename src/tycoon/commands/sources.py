@@ -526,7 +526,7 @@ def add_source(
             # runner.py, never the catalog/shim path.
             _maybe_install_catalog_source(source_type, cfg.root)
         elif not catalog_entry:
-            _maybe_install_dlt_extra(source_type)
+            _maybe_install_dlt_extra(source_type, cfg.root)
 
     next_steps(
         (f"tycoon data sources run {source_name}", "load data into DuckDB"),
@@ -551,6 +551,7 @@ def _maybe_install_catalog_source(source_type: str, project_root: Path) -> None:
         info(f"Running dlt init {source_type} ...")
         if install_source(source_type, sources_dir):
             success(f"Source '{source_type}' installed to {sources_dir}")
+            _maybe_install_source_requirements(source_type, sources_dir, project_root)
         else:
             warn(
                 f"Failed to install '{source_type}'. "
@@ -560,7 +561,38 @@ def _maybe_install_catalog_source(source_type: str, project_root: Path) -> None:
         info(f"Skipped. Install later with: tycoon data sources catalog install {source_type}")
 
 
-def _maybe_install_dlt_extra(source_type: str) -> None:
+def _maybe_install_source_requirements(source_type: str, sources_dir: Path, project_root: Path) -> None:
+    """Install exactly what the just-downloaded source's requirements.txt lists.
+
+    `dlt init` writes this file alongside the source package. Installing it
+    is what makes a freshly-added source actually runnable on the first try,
+    rather than failing on the first missing import (gh-264).
+    """
+    from tycoon.ingestion.source_installer import install_requirements
+
+    requirements_path = sources_dir / "requirements.txt"
+    if not requirements_path.exists():
+        return
+
+    # `uv add` needs a pyproject.toml to add into, not just a `.venv` — a
+    # `.venv` made by hand (e.g. plain `python -m venv`) has no pyproject.toml
+    # and `uv add` fails on it with "No pyproject.toml found". `.venv` and
+    # pyproject.toml are written together by create_venv (gh-262), so this
+    # only diverges from a `.venv`-only check in that hand-made case.
+    has_project = (project_root / "pyproject.toml").exists()
+    info(f"Installing '{source_type}' dependencies ({requirements_path.name})...")
+    if install_requirements(requirements_path, project_root if has_project else None):
+        success(f"Dependencies for '{source_type}' installed.")
+    else:
+        retry = (
+            f"uv --project {project_root} add -r {requirements_path}"
+            if has_project
+            else f"uv pip install -r {requirements_path}"
+        )
+        warn(f"Failed to install dependencies for '{source_type}'. You can retry with: {retry}")
+
+
+def _maybe_install_dlt_extra(source_type: str, project_root: Path) -> None:
     """Check if the dlt extra is available and offer to install if not."""
     from tycoon.ingestion.source_installer import (
         DLT_EXTRAS,
@@ -574,9 +606,12 @@ def _maybe_install_dlt_extra(source_type: str) -> None:
     if is_dlt_extra_available(source_type):
         return
 
+    # See _maybe_install_source_requirements: `uv add` needs pyproject.toml,
+    # not just `.venv`.
+    has_project = (project_root / "pyproject.toml").exists()
     install = typer.confirm(f"dlt[{source_type}] is not installed. Install it now?", default=True)
     if install:
-        if install_dlt_extra(source_type):
+        if install_dlt_extra(source_type, project_root if has_project else None):
             success(f"dlt[{source_type}] installed successfully.")
         else:
             warn(f"Failed to install dlt[{source_type}]. You can install it manually.")
