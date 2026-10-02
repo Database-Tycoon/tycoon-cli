@@ -452,8 +452,18 @@ def _mode_next_steps(
         )
 
 
+_EXISTING_ENV_MARKERS = ("pyproject.toml", ".python-version", ".venv")
+
+
 def _build_project_venv(target: Path) -> None:
     """Build the project's own ``.venv`` right after scaffolding (gh-262).
+
+    Skipped when the directory already has its own ``pyproject.toml``,
+    ``.python-version``, or ``.venv``: ``create_venv`` would otherwise treat
+    it as the project to manage, rewriting ``.python-version`` to tycoon's
+    default and syncing into whatever's already there, or refusing on an
+    existing ``.venv`` with a ``--force`` hint ``init`` doesn't expose.
+    ``tycoon setup`` is the explicit, opt-in way to do that instead.
 
     `find_uv()` was already checked before any scaffolding started, so uv
     itself being missing isn't a case handled here. A failure at this point
@@ -462,6 +472,14 @@ def _build_project_venv(target: Path) -> None:
     user to retry via `tycoon setup`, the same command this delegates to.
     """
     console.print()
+    existing = [marker for marker in _EXISTING_ENV_MARKERS if (target / marker).exists()]
+    if existing:
+        warn(
+            f"This directory already has its own {', '.join(existing)}, leaving it alone. "
+            "Run `tycoon setup` if you want tycoon to manage this project's environment."
+        )
+        return
+
     info("Building the project's own environment via uv...")
     result = create_venv(target)
     if result.ok:
@@ -576,11 +594,13 @@ def init_cmd(
         error("Use a different directory or remove the existing tycoon.yml first.")
         raise typer.Exit(1)
 
-    # Test-only escape hatch, mirrors TYCOON_DISABLE_LLM_PROBE: subprocess
-    # e2e tests exercise the real installed binary against real recipe
-    # commands, and shouldn't pay for a real `uv venv` + PyPI install on
-    # every run. Never documented to end users; --no-venv is the real flag.
-    no_venv = no_venv or bool(os.environ.get("TYCOON_INIT_NO_VENV"))
+    # Test-only escape hatch: subprocess e2e tests exercise the real
+    # installed binary against real recipe commands, and shouldn't pay for
+    # a real `uv sync` + PyPI install on every run. Never documented to end
+    # users; --no-venv is the real flag. Checked for the literal "1" rather
+    # than any truthy string, so e.g. `TYCOON_INIT_NO_VENV=0` doesn't
+    # unexpectedly skip the build too.
+    no_venv = no_venv or os.environ.get("TYCOON_INIT_NO_VENV") == "1"
 
     if not no_venv:
         if find_uv() is None:

@@ -400,7 +400,10 @@ class TestInitBuildsVenv:
 
         assert result.exit_code == 0, result.stdout
         assert calls == [project]
-        assert "Created .venv" in result.stdout or "Building the project's own environment" in result.stdout
+        # "Building the project's own environment..." always prints before
+        # create_venv runs, success or not, so only "Created .venv" actually
+        # distinguishes the success path.
+        assert "Created .venv" in result.stdout
 
     def test_venv_build_invoked_after_template_scaffold(self, cli_runner, tmp_path, monkeypatch):
         project = self._project_dir(tmp_path, monkeypatch)
@@ -476,6 +479,37 @@ class TestInitBuildsVenv:
         out = " ".join(result.stdout.split())
         assert "uv venv failed: disk full" in out
         assert "tycoon setup" in out
+
+    @pytest.mark.parametrize("marker", ["pyproject.toml", ".python-version", ".venv"])
+    def test_skips_venv_build_when_directory_already_has_one(self, cli_runner, tmp_path, monkeypatch, marker):
+        """Regression: `init` used to call `create_venv` unconditionally,
+        which rewrote `.python-version`, seeded a `pyproject.toml`, and
+        synced into whatever `.venv` was already there, on a directory that
+        already had its own, unrelated Python project set up, and reported
+        success (gh-266 review)."""
+        from unittest.mock import MagicMock
+
+        project = self._project_dir(tmp_path, monkeypatch)
+        existing = project / marker
+        if marker == ".venv":
+            existing.mkdir()
+        else:
+            existing.write_text("existing\n")
+
+        fake_create_venv = MagicMock()
+        monkeypatch.setattr("tycoon.commands.init.create_venv", fake_create_venv)
+
+        result = cli_runner.invoke(app, ["init", "--name", "gh262-project"], input="3\n1\n3\n3\n")
+
+        assert result.exit_code == 0, result.stdout
+        assert (project / "tycoon.yml").exists()
+        fake_create_venv.assert_not_called()
+        out = " ".join(result.stdout.split())
+        assert marker in out
+        assert "tycoon setup" in out
+        # The pre-existing file/dir is untouched, not rewritten.
+        if marker != ".venv":
+            assert existing.read_text() == "existing\n"
 
 
 def _ok_venv(target):

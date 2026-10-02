@@ -45,11 +45,12 @@ def fake_venv(monkeypatch):
 
     `tycoon init` builds the project's own environment as part of scaffolding
     (gh-262), so every test that invokes `init` end to end would otherwise
-    try to run a real `uv venv` + `uv pip install database-tycoon` against
-    PyPI. Opt a module in with `pytestmark = pytest.mark.usefixtures("fake_venv")`
-    rather than making this autouse repo-wide; tests that specifically
-    exercise venv-building (find_uv missing, create_venv failing, ...)
-    override this locally with their own patch.
+    try to run a real `uv sync` (seeding a `pyproject.toml` and installing
+    `database-tycoon` from it) against PyPI. Opt a module in with
+    `pytestmark = pytest.mark.usefixtures("fake_venv")` rather than making
+    this autouse repo-wide; tests that specifically exercise venv-building
+    (find_uv missing, create_venv failing, ...) override this locally with
+    their own patch.
     """
     from tycoon import venv as venv_mod
 
