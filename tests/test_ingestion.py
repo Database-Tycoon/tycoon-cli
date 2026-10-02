@@ -416,6 +416,83 @@ class TestRunCatalogProjectLocalSourcesDir:
         assert pipeline is fake_pipeline
         assert str(SOURCES_DIR) in sys.path
 
+    def test_real_import_from_project_local_dir(self, tmp_path, monkeypatch, sys_path_copy):
+        """Unmocked: installs a real shim on disk via `install_source` and
+        lets `_run_catalog`'s own `sys.path.insert` + `importlib.import_module`
+        find and run it, rather than stubbing `sys.modules` directly. Every
+        other test in this class patches `is_source_installed` and
+        `get_run_module_path` and injects a fake module, so the actual
+        resolved-directory import path was never exercised for real
+        (gh-263 review)."""
+        import sys
+
+        import tycoon.config as cfg_mod
+        from tycoon.config import TycoonConfig
+        from tycoon.ingestion import runner
+        from tycoon.ingestion.source_manager import install_source
+        from tycoon.project import SourceConfig
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr(cfg_mod, "config", TycoonConfig(project_root=tmp_path))
+
+        sources_dir = tmp_path / ".tycoon" / "sources"
+        assert install_source("rest_api", sources_dir) is True
+        # install_source writes the real production shim, which would hit
+        # the network when run_pipeline() builds a live rest_api_source.
+        # Overwrite it with a stub so this test stays fast and offline while
+        # still exercising the real sys.path insert + importlib resolution
+        # against the file install_source actually wrote to disk.
+        (sources_dir / "rest_api" / "_run.py").write_text(
+            "def run_pipeline(name, source_config, raw_db_path, max_records=None):\n"
+            "    class _FakeLoadInfo:\n"
+            "        def raise_on_failed_jobs(self):\n"
+            "            pass\n"
+            "    return ('real-pipeline', _FakeLoadInfo())\n"
+        )
+
+        source_config = SourceConfig(type="rest_api", schema="raw_api", config={})
+        try:
+            pipeline, _load_info = runner._run_catalog("rest_api", "api", source_config, tmp_path / "raw.duckdb")
+            assert pipeline == "real-pipeline"
+            assert str(sources_dir) in sys.path
+        finally:
+            # "rest_api._run" is the real module name the production code
+            # resolves to, not a test-local fake name — drop it from the
+            # import cache so later tests re-resolve from their own sources
+            # dir instead of reusing this test's stub.
+            sys.modules.pop("rest_api._run", None)
+            sys.modules.pop("rest_api", None)
+
+    def test_installed_globally_but_not_project_local_points_at_migrate(self, tmp_path, monkeypatch, sys_path_copy):
+        """The must-fix: a source installed before the project had its own
+        `.venv` stops resolving once `resolve_sources_dir` switches to the
+        project-local directory. The error must say where it actually is and
+        give a real command to recover, not just "not installed" (gh-263
+        review)."""
+        import tycoon.config as cfg_mod
+        from tycoon.config import TycoonConfig
+        from tycoon.ingestion import runner
+        from tycoon.ingestion.runner import IngestionError
+        from tycoon.ingestion.source_manager import install_source
+        from tycoon.project import SourceConfig
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr(cfg_mod, "config", TycoonConfig(project_root=tmp_path))
+
+        global_dir = tmp_path / "global-sources"
+        monkeypatch.setattr(runner, "SOURCES_DIR", global_dir)
+        assert install_source("rest_api", global_dir) is True
+
+        source_config = SourceConfig(type="rest_api", schema="raw_api", config={})
+
+        with pytest.raises(IngestionError) as exc_info:
+            runner._run_catalog("rest_api", "api", source_config, tmp_path / "raw.duckdb")
+
+        message = str(exc_info.value)
+        assert "installed globally" in message
+        assert str(global_dir) in message
+        assert "tycoon data sources migrate rest_api" in message
+
 
 class TestUnexpandedEnvVarCheck:
     """Regression test for Stephen's review on gh-224 / PR #230: a resource's
