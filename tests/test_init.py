@@ -506,8 +506,14 @@ class TestPromptDbt:
         assert managed is False  # registered/detected, not freshly scaffolded
         assert path == str(target / "dbt_project")
 
-        out = capsys.readouterr().out
-        assert out.count("dbt_project") == 1  # listed once, not twice
+        # Avoid matching the full tmp_path-based path, or a substring that
+        # could fall inside it: Rich hard-wraps a long path to the detected
+        # terminal width, which differs in CI, and can split a word like
+        # "dbt_project" across the break (gh-259 review CI failure).
+        # Normalize whitespace too, in case the wrap falls between these
+        # words instead.
+        out = " ".join(capsys.readouterr().out.split())
+        assert out.count("Use detected project") == 1  # listed once, not twice
         assert "Create new" not in out
 
     def test_create_new_still_offered_without_a_colliding_detection(self, tmp_path, monkeypatch, capsys):
@@ -569,11 +575,13 @@ class TestPromptRill:
         assert tool is BITool.rill
         assert managed is False
         assert path == str(target / "rill")
-        # Avoid matching the full tmp_path-based path: Rich hard-wraps a
-        # long path with no word boundary, and normalizing via split()/join()
-        # (used elsewhere in this file for wrapped output) would corrupt the
-        # path itself by inserting a space where the wrap broke it.
-        out = capsys.readouterr().out
+        # Match a short, stable phrase rather than the full tmp_path-based
+        # path or a substring that could fall inside it (e.g. "rill"):
+        # Rich hard-wraps a long path to the detected terminal width, which
+        # differs in CI, and can split a word across the break (gh-259
+        # review CI failure). Normalize whitespace too, in case the wrap
+        # falls between these words instead.
+        out = " ".join(capsys.readouterr().out.split())
         assert out.count("Use detected project") == 1  # listed once, not twice
         assert "Create new" not in out
 
