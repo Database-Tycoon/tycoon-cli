@@ -123,8 +123,8 @@ class TestPythonVersionCheck:
 
 class TestProjectVenvCheck:
     """`_check_project_venv` (gh-265) reports plainly whether this project
-    has picked up its own `.venv` (gh-262+), a runtime filesystem fact, not
-    a schema field."""
+    has picked up its own `.venv` (gh-262+) and whether tycoon is actually
+    running from it, a runtime filesystem fact, not a schema field."""
 
     def _patch_config(self, monkeypatch, tmp_path):
         from tycoon.commands import doctor
@@ -135,15 +135,48 @@ class TestProjectVenvCheck:
         monkeypatch.setattr(doctor, "config", cfg)
         return cfg
 
-    def test_reports_success_when_venv_exists(self, monkeypatch, tmp_path, capsys):
+    def test_reports_success_when_running_from_project_venv(self, monkeypatch, tmp_path, capsys):
+        import sys
+
         from tycoon.commands import doctor
 
         self._patch_config(monkeypatch, tmp_path)
-        (tmp_path / ".venv").mkdir()
+        venv = tmp_path / ".venv"
+        venv.mkdir()
+        monkeypatch.setattr(sys, "prefix", str(venv.resolve()))
 
         doctor._check_project_venv()
         out = capsys.readouterr().out
         assert "using its own .venv" in out
+
+    def test_warns_when_venv_exists_but_tycoon_not_running_from_it(self, monkeypatch, tmp_path, capsys):
+        """Review must-fix: the old check was "`.venv` exists", not "tycoon
+        is executing from this project's `.venv`" (the actual gh-265
+        premise). An empty `.venv` (a failed/partial setup, or `tycoon
+        setup` leaving one beside an existing pyproject.toml, gh-262 review)
+        used to report OK while tycoon kept running from the ambient
+        interpreter, with no warning before the next catalog-source run
+        failed "not installed" (gh-263)."""
+        import sys
+
+        from tycoon.commands import doctor
+
+        self._patch_config(monkeypatch, tmp_path)
+        venv = tmp_path / ".venv"
+        venv.mkdir()
+        # The running interpreter is NOT this project's `.venv` — a
+        # different path entirely, same as the real ambient-interpreter case.
+        monkeypatch.setattr(sys, "prefix", str((tmp_path / "somewhere-else").resolve()))
+
+        doctor._check_project_venv()
+        captured = capsys.readouterr()
+        # Rich hard-wraps a long temp-dir path with no word boundary, so
+        # normalizing via split()/join() (used elsewhere for wrapped output)
+        # would corrupt the path itself here — check un-normalized instead.
+        combined = captured.out + captured.err
+        assert ".venv" in combined
+        assert "running from" in combined
+        assert "activate" in combined.lower()
 
     def test_warns_when_venv_missing(self, monkeypatch, tmp_path, capsys):
         from tycoon.commands import doctor
@@ -155,6 +188,17 @@ class TestProjectVenvCheck:
         combined = " ".join((captured.out + captured.err).split())
         assert "doesn't have its own .venv yet" in combined
         assert "tycoon setup" in combined
+
+    def test_doctor_cmd_skips_venv_check_outside_project(self, cli_runner, tmp_path, monkeypatch):
+        """Should-fix: outside any project this used to warn 'run tycoon
+        setup' right above a 'tycoon.yml not found, run tycoon init' panel —
+        `setup` itself refuses without a tycoon.yml, so the first piece of
+        advice was a dead end. Gated behind `config.has_project_file`, same
+        as the stack checks below it."""
+        monkeypatch.chdir(tmp_path)
+        result = cli_runner.invoke(app, ["doctor"])
+
+        assert "doesn't have its own .venv yet" not in (result.stdout + (result.stderr or ""))
 
 
 class TestDoctorObservabilityCheck:

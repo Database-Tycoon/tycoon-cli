@@ -64,23 +64,39 @@ def _check_python_version(version_info: tuple[int, int] | None = None) -> bool:
 
 
 def _check_project_venv() -> None:
-    """Report plainly whether this project has its own `.venv` (gh-262+).
+    """Report plainly whether this project has its own `.venv` (gh-262+) and
+    whether tycoon is actually running from it.
 
-    Detection is a runtime fact, whether `.venv` exists beside `tycoon.yml`,
-    not a schema field, so this reflects reality even for a project that
-    predates gh-262 and has never touched tycoon.yml since. Purely
-    informational: doesn't affect doctor's overall pass/fail.
+    #265's detection is meant to be "the running tycoon is executing from
+    this project's `.venv`", not just that a `.venv` directory happens to
+    exist beside `tycoon.yml` — a failed/partial `uv venv`, or `tycoon
+    setup` run against a project that already had its own `pyproject.toml`
+    (gh-262 review), can leave an empty or foreign `.venv` there. An
+    exists-only check reports OK in both cases while tycoon keeps running
+    from the ambient interpreter, and the next catalog-source run then
+    fails with "not installed" (gh-263) with no warning ever having fired.
+    Purely informational either way: doesn't affect doctor's overall
+    pass/fail.
     """
     from tycoon.venv import venv_path
 
     target = venv_path(config.root)
-    if target.exists():
-        success(f"Project environment: using its own .venv at {target}.")
-    else:
+    if not target.exists():
         warn(
             "Project environment: this project doesn't have its own .venv yet, "
             "it's on tycoon's older shared/ambient environment model. "
             "Run `tycoon setup` to build one."
+        )
+        return
+
+    running_prefix = Path(sys.prefix).resolve()
+    if running_prefix == target.resolve():
+        success(f"Project environment: using its own .venv at {target}.")
+    else:
+        warn(
+            f"Project environment: {target} exists, but tycoon is running from "
+            f"{running_prefix} instead. Activate it with `source {target}/bin/activate`, "
+            f"or run it directly with `{target}/bin/tycoon`."
         )
 
 
@@ -471,8 +487,9 @@ def doctor_cmd(
         console.print(Panel("Checking Python interpreter...", expand=False))
         python_ok = _check_python_version()
 
-        console.print(Panel("Checking project environment...", expand=False))
-        _check_project_venv()
+        if config.has_project_file:
+            console.print(Panel("Checking project environment...", expand=False))
+            _check_project_venv()
 
         console.print(Panel("Checking scheduled runs...", expand=False))
         _check_schedules()
