@@ -81,6 +81,49 @@ class TestBlankScaffold:
         content = (tmp_path / ".gitignore").read_text()
         assert ".tycoon/metadata.duckdb" in content
 
+    def test_gitignore_does_not_exclude_managed_dbt_profile(self, tmp_path, monkeypatch):
+        """gh-259 review must-fix: `**/profiles.yml` (any dbt profile could
+        hold real credentials) used to also exclude the one profiles.yml
+        tycoon itself writes for the managed inline dbt project, which holds
+        relative DuckDB paths only, no secrets. Before gh-259 moved dbt
+        inline, that project lived outside the tycoon repo so the rule never
+        touched it; after, a fresh clone's `tycoon data transform run` fails
+        with dbt's "Could not find profile" since the file tycoon.yml's
+        story promises ("one clone, one git init, ready to go") was never
+        actually committed. Verified against real git, not just the
+        .gitignore text, since gitignore negation ordering is easy to get
+        subtly wrong."""
+        import subprocess
+
+        monkeypatch.chdir(tmp_path)
+        scaffold_blank_project(tmp_path, "test-project")
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+
+        # Exit 1 means "not ignored" (trackable); exit 0 means "ignored".
+        result = subprocess.run(
+            ["git", "check-ignore", "dbt_project/profiles.yml"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1, (
+            f"dbt_project/profiles.yml is gitignored (stdout: {result.stdout!r}), "
+            "so a fresh clone can't run `tycoon data transform`"
+        )
+
+        # A profiles.yml anywhere else (a registered, non-inline dbt
+        # project) must still be protected by the blanket rule.
+        other = tmp_path / "some_other_dbt_project"
+        other.mkdir()
+        (other / "profiles.yml").write_text("secret: stuff\n")
+        result = subprocess.run(
+            ["git", "check-ignore", "some_other_dbt_project/profiles.yml"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+
     def test_scaffolded_yml_loads_with_load_project(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         scaffold_blank_project(tmp_path, "test-project")
@@ -358,3 +401,339 @@ class TestUpgrade:
 
         assert result.exit_code != 0
         assert "newer than this tycoon supports" in result.output
+
+
+class TestPromptDbt:
+    """gh-259: `tycoon init`'s "create new dbt project" now defaults inline,
+    matching `_prompt_rill`'s existing shape, instead of a sibling repo."""
+
+    def test_create_new_defaults_to_inline_path(self, tmp_path, monkeypatch):
+        from tycoon.commands.init import DetectionResults, _prompt_dbt
+        from tycoon.project import TransformationTool
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+
+        prompts = iter(["1"])  # "Create new inline at ..." is the only non-skip option
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        tool, managed, path = _prompt_dbt(target, "myproj", DetectionResults())
+
+        assert tool is TransformationTool.dbt
+        assert managed is True
+        assert path == str(target / "dbt_project")
+
+    def test_create_new_option_label_says_inline_not_sibling(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.init import DetectionResults, _prompt_dbt
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+
+        prompts = iter(["1"])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        _prompt_dbt(target, "myproj", DetectionResults())
+
+        out = capsys.readouterr().out
+        assert "inline" in out.lower()
+        assert "sibling" not in out.lower()
+
+    def test_register_existing_local_path_within_bounds_accepted(self, tmp_path, monkeypatch):
+        from tycoon.commands.init import DetectionResults, _prompt_dbt
+        from tycoon.project import TransformationTool
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+        existing = tmp_path / "myproj-dbt"  # sibling, still a valid *registered* location
+        existing.mkdir()
+
+        prompts = iter(["2", str(existing)])  # "Register existing project..."
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        tool, managed, path = _prompt_dbt(target, "myproj", DetectionResults())
+
+        assert tool is TransformationTool.dbt
+        assert managed is False
+        assert path == str(existing)
+
+    def test_register_existing_path_outside_boundary_rejected(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.init import DetectionResults, _prompt_dbt
+        from tycoon.project import TransformationTool
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+        # Not created: the containment check runs before .exists(), and
+        # creating it would land outside tmp_path in pytest's shared
+        # basetemp (gh-259 review nit).
+        outside = tmp_path.parent / "definitely-outside"
+
+        prompts = iter(["2", str(outside)])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        tool, managed, path = _prompt_dbt(target, "myproj", DetectionResults())
+
+        assert tool is TransformationTool.none
+        assert path is None
+        # Rich wraps console output to the detected terminal width, which
+        # differs between a local run and CI -- normalize whitespace so the
+        # match doesn't depend on where a line break happened to land.
+        out = " ".join(capsys.readouterr().out.split())
+        assert "outside the project's parent" in out
+
+    def test_create_new_not_offered_when_it_collides_with_detected(self, tmp_path, monkeypatch, capsys):
+        """gh-259 review must-fix: a dbt project already detected at exactly
+        `target/dbt_project` used to show "Use detected project at
+        .../dbt_project (inline)" and "Create new inline at .../dbt_project"
+        as two separate menu options for the same path. Picking the second
+        called scaffold_blank_project, which found dbt_already_exists and
+        scaffolded nothing, yet still returned managed=True for a project
+        tycoon never created, so tycoon.yml recorded transformation_managed:
+        true for someone else's existing dbt project. "Create new" must not
+        be offered at all when it would duplicate a detected path."""
+        from tycoon.commands.init import DetectedItem, DetectionResults, _prompt_dbt
+        from tycoon.project import TransformationTool
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+        detected = DetectionResults(dbt=[DetectedItem(path=target / "dbt_project", kind="inline")])
+
+        prompts = iter(["1"])  # the detected project is now the only non-register, non-skip option
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        tool, managed, path = _prompt_dbt(target, "myproj", detected)
+
+        assert tool is TransformationTool.dbt
+        assert managed is False  # registered/detected, not freshly scaffolded
+        assert path == str(target / "dbt_project")
+
+        # Avoid matching the full tmp_path-based path, or a substring that
+        # could fall inside it: Rich hard-wraps a long path to the detected
+        # terminal width, which differs in CI, and can split a word like
+        # "dbt_project" across the break (gh-259 review CI failure).
+        # Normalize whitespace too, in case the wrap falls between these
+        # words instead.
+        out = " ".join(capsys.readouterr().out.split())
+        assert out.count("Use detected project") == 1  # listed once, not twice
+        assert "Create new" not in out
+
+    def test_create_new_still_offered_without_a_colliding_detection(self, tmp_path, monkeypatch, capsys):
+        """Sanity check alongside the collision test: a detected project at
+        a *different* path doesn't suppress "Create new"."""
+        from tycoon.commands.init import DetectedItem, DetectionResults, _prompt_dbt
+        from tycoon.project import TransformationTool
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+        detected = DetectionResults(dbt=[DetectedItem(path=target.parent / "myproj-dbt", kind="sibling")])
+
+        prompts = iter(["2"])  # 1 = detected sibling, 2 = create new inline
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        tool, managed, path = _prompt_dbt(target, "myproj", detected)
+
+        assert tool is TransformationTool.dbt
+        assert managed is True
+        assert path == str(target / "dbt_project")
+        assert "Create new" in capsys.readouterr().out
+
+
+class TestPromptRill:
+    """`_prompt_rill` shares `_prompt_dbt`'s shape (and its gh-259 review
+    fixes): inline "create new" default, the same create-new/detected
+    collision guard, and the shared register-existing sub-flow."""
+
+    def test_create_new_defaults_to_inline_path(self, tmp_path, monkeypatch):
+        from tycoon.commands.init import DetectionResults, _prompt_rill
+        from tycoon.project import BITool
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+
+        prompts = iter(["1"])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        tool, managed, path = _prompt_rill(target, "myproj", DetectionResults())
+
+        assert tool is BITool.rill
+        assert managed is True
+        assert path == str(target / "rill")
+
+    def test_create_new_not_offered_when_it_collides_with_detected(self, tmp_path, monkeypatch, capsys):
+        """Same gh-259 review must-fix as _prompt_dbt's equivalent test."""
+        from tycoon.commands.init import DetectedItem, DetectionResults, _prompt_rill
+        from tycoon.project import BITool
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+        detected = DetectionResults(rill=[DetectedItem(path=target / "rill", kind="inline")])
+
+        prompts = iter(["1"])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        tool, managed, path = _prompt_rill(target, "myproj", detected)
+
+        assert tool is BITool.rill
+        assert managed is False
+        assert path == str(target / "rill")
+        # Match a short, stable phrase rather than the full tmp_path-based
+        # path or a substring that could fall inside it (e.g. "rill"):
+        # Rich hard-wraps a long path to the detected terminal width, which
+        # differs in CI, and can split a word across the break (gh-259
+        # review CI failure). Normalize whitespace too, in case the wrap
+        # falls between these words instead.
+        out = " ".join(capsys.readouterr().out.split())
+        assert out.count("Use detected project") == 1  # listed once, not twice
+        assert "Create new" not in out
+
+    def test_register_existing_clone_default_lands_beside_not_inline(self, tmp_path, monkeypatch):
+        """gh-259 review should-fix: `_prompt_rill`'s clone default changed
+        from inline (`target/rill`) to sibling (via the shared
+        `_prompt_register_project`, same as dbt) when this PR moved
+        "create new" inline — a real behavior change for Rill that the PR
+        didn't name and nothing pinned. Justified (a cloned URL brings its
+        own `.git`, same nested-repo concern `_prompt_register_project`
+        documents for dbt), but needs a test."""
+        from tycoon.commands.init import DetectionResults, _prompt_rill
+        from tycoon.project import BITool
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+
+        cloned = []
+        monkeypatch.setattr(
+            "tycoon.commands.init._clone_repo",
+            lambda url, dest: (cloned.append((url, dest)), True)[1],
+        )
+
+        prompts = iter(["2", "https://github.com/example/rill-project.git"])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)  # accept the default destination
+
+        tool, managed, path = _prompt_rill(target, "myproj", DetectionResults())
+
+        expected = tmp_path / "myproj-rill"
+        assert tool is BITool.rill
+        assert managed is False
+        assert path == str(expected)
+        assert expected.parent == target.parent  # sibling, not inline
+        assert not expected.is_relative_to(target)
+
+
+class TestPromptRegisterProjectContainment:
+    """gh-259: the register-existing sub-flow (shared by dbt and Rill) now
+    rejects a path outside the project's parent directory at prompt time,
+    instead of only failing the first time a command tries to use it."""
+
+    def test_clone_destination_outside_boundary_rejected(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.init import _prompt_register_project
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+        outside = tmp_path.parent / "way-outside"
+
+        # URL branch: decline the default clone destination, type an out-of-bounds one.
+        prompts = iter(["https://github.com/example/dbt-project.git", str(outside)])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: False)
+
+        result = _prompt_register_project("dbt", target, "myproj")
+
+        assert result is None
+        out = " ".join(capsys.readouterr().out.split())
+        assert "outside the project's parent" in out
+        # Wizard-specific remediation (gh-259 review): the shared function's
+        # message only states the fact, this caller appends what to do.
+        assert "Enter a path under that directory" in out
+        assert "treating this component as skipped" in out.lower()
+
+    def test_clone_destination_defaults_beside_the_project_not_inside_it(self, tmp_path, monkeypatch):
+        """A cloned URL brings its own .git; defaulting inside `target` would
+        nest one git repo inside another. Must default beside it instead,
+        even though "create new" (no .git of its own) now defaults inline."""
+        from tycoon.commands.init import _prompt_register_project
+
+        target = tmp_path / "myproj"
+        target.mkdir()
+
+        cloned = []
+        monkeypatch.setattr(
+            "tycoon.commands.init._clone_repo",
+            lambda url, dest: (cloned.append((url, dest)), True)[1],
+        )
+
+        prompts = iter(["https://github.com/example/dbt-project.git"])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)  # accept the default destination
+
+        result = _prompt_register_project("dbt", target, "myproj")
+
+        expected = tmp_path / "myproj-dbt"
+        assert result == str(expected)
+        assert cloned == [("https://github.com/example/dbt-project.git", expected)]
+        assert expected.parent == target.parent  # sibling, not nested inside target
+        assert not expected.is_relative_to(target)
+
+    def test_clone_default_uses_project_name_not_directory_name(self, tmp_path, monkeypatch):
+        """gh-259 review: the old code built the default from `target.name`
+        (the directory tycoon was run in), not the project's actual name.
+        `tycoon init --name analytics` run from a directory called `repo`
+        offered `repo-dbt` here, while `tycoon register dbt <url>` in that
+        same project (which uses tycoon.yml's `name`) offered
+        `analytics-dbt` -- two different defaults for the same project."""
+        from tycoon.commands.init import _prompt_register_project
+
+        target = tmp_path / "repo"
+        target.mkdir()
+
+        cloned = []
+        monkeypatch.setattr(
+            "tycoon.commands.init._clone_repo",
+            lambda url, dest: (cloned.append((url, dest)), True)[1],
+        )
+
+        prompts = iter(["https://github.com/example/dbt-project.git"])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+
+        result = _prompt_register_project("dbt", target, "analytics")
+
+        expected = tmp_path / "analytics-dbt"
+        assert result == str(expected)
+
+    def test_clone_default_skipped_for_top_level_project_root(self, tmp_path, monkeypatch):
+        """gh-259 review: for a top-level root (/app, /workspace),
+        resolve_contained_path falls back to root-scoped containment, so a
+        "beside the project" default always lands outside it and is
+        guaranteed to be rejected. No default should be offered there;
+        prompt outright instead. Simulated by pointing containment_boundary
+        (the same helper resolve_contained_path uses) at `target` itself,
+        exactly what it returns for a real top-level root, rather than
+        trying to construct one on the real filesystem."""
+        import tycoon.commands.init as init_mod
+        from tycoon.commands.init import _prompt_register_project
+
+        target = tmp_path / "workspace"
+        target.mkdir()
+        monkeypatch.setattr(init_mod, "containment_boundary", lambda root: root.resolve())
+
+        dest = tmp_path / "workspace" / "dbt_registered"
+        dest.mkdir()
+
+        cloned = []
+        monkeypatch.setattr(
+            "tycoon.commands.init._clone_repo",
+            lambda url, d: (cloned.append((url, d)), True)[1],
+        )
+
+        prompts = iter(["https://github.com/example/dbt-project.git", str(dest)])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+        # No default is offered in the top-level case, so there's nothing
+        # to confirm; typer.confirm must not be called here.
+        monkeypatch.setattr(
+            "typer.confirm", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no default to confirm"))
+        )
+
+        result = _prompt_register_project("dbt", target, "analytics")
+
+        assert result == str(dest)
+        assert cloned == [("https://github.com/example/dbt-project.git", dest)]

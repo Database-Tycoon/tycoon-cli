@@ -142,21 +142,23 @@ class TestWizardGreenfield:
         assert "dbt_project_dir" not in data
         assert "rill_dir" not in data
 
-    def test_creates_dbt_at_sibling_path(self, cli_runner, tmp_path, monkeypatch):
+    def test_creates_dbt_inline(self, cli_runner, tmp_path, monkeypatch):
+        """gh-259: "create new" now lands inside the project, not beside it."""
         project_dir = tmp_path / "myproj"
         project_dir.mkdir()
         monkeypatch.chdir(project_dir)
         result = cli_runner.invoke(
             app,
             ["init", "--name", "myproj"],
-            input="1\n1\n1\n1\n",  # dbt "create" = sibling
+            input="1\n1\n1\n1\n",  # dbt "create" = inline
         )
         assert result.exit_code == 0, result.stdout
 
-        sibling = tmp_path / "myproj-dbt"
-        assert sibling.exists()
-        assert (sibling / "dbt_project.yml").exists()
-        assert (sibling / "profiles.yml").exists()
+        inline = project_dir / "dbt_project"
+        assert inline.exists()
+        assert (inline / "dbt_project.yml").exists()
+        assert (inline / "profiles.yml").exists()
+        assert not (tmp_path / "myproj-dbt").exists()
 
 
 class TestWizardDetection:

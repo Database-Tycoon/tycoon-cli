@@ -85,6 +85,11 @@ _GITIGNORE_CONTENT = """\
 .env
 .dlt/secrets.toml
 **/profiles.yml
+# ...except the one tycoon itself writes for the managed inline dbt project
+# (gh-259 review): it holds relative DuckDB paths only, no secrets, and a
+# fresh clone needs it to run `tycoon data transform` at all. A profiles.yml
+# anywhere else (a registered, non-inline dbt project) stays ignored.
+!dbt_project/profiles.yml
 
 # Tycoon
 data/*.duckdb

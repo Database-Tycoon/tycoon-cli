@@ -1,5 +1,14 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`tycoon init` scaffolds a new dbt project inline, not as a sibling repo** ([#259][], PR [#260][]). "Create new" in the dbt wizard step now defaults to `<project>/dbt_project` instead of `../<project>-dbt`, matching the Rill step's existing inline default and the `dbt_project_dir` schema default, so a fresh `tycoon init` produces one folder, one `git init`, instead of two repos that have to be cloned and tracked separately. Registering an *existing* dbt project (local path or GitHub URL) is unaffected and still accepts a sibling location; a cloned URL still defaults beside the project rather than inside it, since cloning brings its own `.git`. The project's parent-directory boundary (#65) is now enforced the moment a path is entered in the wizard, not only the first time a command reads it from `tycoon.yml`. The scaffolded `.gitignore`'s blanket `**/profiles.yml` rule no longer excludes the managed inline project's own `dbt_project/profiles.yml` (it holds relative DuckDB paths only, no secrets), so a fresh clone can run `tycoon data transform` without regenerating it by hand.
+
+[#259]: https://github.com/Database-Tycoon/tycoon-cli/issues/259
+[#260]: https://github.com/Database-Tycoon/tycoon-cli/pull/260
+
 ## [0.2.1] - 2026-09-16
 
 _Headline: **multi-resource filesystem sources + validated config**. A filesystem source can now declare several named resources and load them all in a single run, `sources add` walks you through them interactively, and JSONL joins CSV and Parquet. Config that used to be quietly defaulted is validated instead — the one change here that can break an existing project. Also here: `tycoon city` lays the city out by pipeline depth, so the city looks different from 0.2.0 while the `city.json` contract stays the same._
