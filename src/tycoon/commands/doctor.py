@@ -44,8 +44,8 @@ def _check_python_version(version_info: tuple[int, int] | None = None) -> bool:
         error(
             f"Python {label} is too old. tycoon needs "
             f">={_fmt_ver(_MIN_PYTHON)},<{_fmt_ver(_MAX_PYTHON_EXCLUSIVE)}. "
-            f"Recreate the environment on a supported interpreter, e.g. "
-            f"`tycoon setup` (or `uv venv --python {_fmt_ver(_MIN_PYTHON)}`)."
+            f"Recreate the environment on a supported interpreter: "
+            f"`tycoon setup --python {_fmt_ver(_MIN_PYTHON)}`."
         )
         return False
 
@@ -54,8 +54,8 @@ def _check_python_version(version_info: tuple[int, int] | None = None) -> bool:
             f"Python {label} is too new for tycoon's dbt stack "
             f"(dbt-core / dbt-duckdb have no {label} wheels yet). "
             f"Supported range is >={_fmt_ver(_MIN_PYTHON)},<{_fmt_ver(_MAX_PYTHON_EXCLUSIVE)}. "
-            f"Recreate the environment on 3.13 — run `tycoon setup` "
-            f"(or `uv venv --python 3.13`; uv will fetch it if needed)."
+            f"Recreate the environment on 3.13: `tycoon setup --python 3.13` "
+            f"(uv fetches it if needed)."
         )
         return False
 
@@ -72,6 +72,10 @@ def _fix_python_env() -> None:
     """
     from tycoon.constants import DEFAULT_SETUP_PYTHON
     from tycoon.venv import create_venv, find_uv
+
+    if not config.has_project_file:
+        warn("Can't auto-fix: no tycoon.yml found here. Run `tycoon init` first.")
+        return
 
     if find_uv() is None:
         warn(

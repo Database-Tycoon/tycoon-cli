@@ -109,7 +109,7 @@ class TestPythonVersionCheck:
         combined = captured.out + captured.err
         assert "too new" in combined
         # The remediation points at the managed-venv direction (#57).
-        assert "uv venv --python 3.13" in " ".join(combined.split())
+        assert "tycoon setup --python 3.13" in " ".join(combined.split())
 
     def test_defaults_to_running_interpreter(self, capsys):
         """With no argument it inspects the live interpreter — and since the

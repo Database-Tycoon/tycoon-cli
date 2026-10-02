@@ -1,5 +1,28 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Every project gets its own uv-managed environment** ([#261][], [#262][], PRs [#270][], [#266][], [#271][]). `tycoon init` now seeds a `pyproject.toml` and builds a project-local `.venv` automatically right after scaffolding, via `uv sync`, instead of requiring a separate manual `tycoon setup` call. Adding a source used to succeed while leaving its actual dependencies uninstalled, the first `tycoon data sources run` would fail on a missing import with nothing having warned beforehand; an isolated, reproducible environment per project is what closes that gap. `tycoon setup`/`tycoon doctor --fix` build the same way. `tycoon init --no-venv` opts out entirely.
+- **Downloaded source code and a source's dependencies are now project-local and durably tracked** ([#263][], [#264][], PRs [#267][], [#268][]). A catalog source's code used to live in a single `~/.tycoon/sources/` shared across every tycoon project on the machine; once a project has its own `.venv`, it downloads into `<project>/.tycoon/sources/` instead. Its dependencies install via `uv add` into the project's own `pyproject.toml`, not an ephemeral `pip install`, so deleting `.venv` and running `uv sync` reproduces the exact same environment, source dependencies included. A project without its own `.venv` yet keeps the old shared-location behavior unchanged.
+- **A project on the old environment model gets a warning, not silence** ([#265][], PR [#269][]). `tycoon doctor` reports plainly whether a project has its own `.venv`, and the same warning fires right before a pipeline run or a source install falls back to the old shared/ambient behavior, pointing at `tycoon setup`. Nothing forces a migration.
+- **`--no-prompt` installs a source's dependencies instead of silently skipping them** ([#272][], PR [#273][]). `tycoon data sources add <type> --no-prompt` used to register the source in `tycoon.yml` without ever downloading or installing anything, since the whole install step was skipped along with the confirmation prompt, the same CI flag that's supposed to make this unattended. It now installs automatically, matching every other `--no-prompt` default in this command.
+
+[#261]: https://github.com/Database-Tycoon/tycoon-cli/issues/261
+[#262]: https://github.com/Database-Tycoon/tycoon-cli/issues/262
+[#263]: https://github.com/Database-Tycoon/tycoon-cli/issues/263
+[#264]: https://github.com/Database-Tycoon/tycoon-cli/issues/264
+[#265]: https://github.com/Database-Tycoon/tycoon-cli/issues/265
+[#272]: https://github.com/Database-Tycoon/tycoon-cli/issues/272
+[#270]: https://github.com/Database-Tycoon/tycoon-cli/pull/270
+[#266]: https://github.com/Database-Tycoon/tycoon-cli/pull/266
+[#271]: https://github.com/Database-Tycoon/tycoon-cli/pull/271
+[#267]: https://github.com/Database-Tycoon/tycoon-cli/pull/267
+[#268]: https://github.com/Database-Tycoon/tycoon-cli/pull/268
+[#269]: https://github.com/Database-Tycoon/tycoon-cli/pull/269
+[#273]: https://github.com/Database-Tycoon/tycoon-cli/pull/273
+
 ## [0.2.1] - 2026-09-16
 
 _Headline: **multi-resource filesystem sources + validated config**. A filesystem source can now declare several named resources and load them all in a single run, `sources add` walks you through them interactively, and JSONL joins CSV and Parquet. Config that used to be quietly defaulted is validated instead — the one change here that can break an existing project. Also here: `tycoon city` lays the city out by pipeline depth, so the city looks different from 0.2.0 while the `city.json` contract stays the same._

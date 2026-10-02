@@ -24,7 +24,8 @@ def setup_cmd(
         "--from",
         help=(
             "Package spec to install into the new env. Defaults to the published "
-            "`database-tycoon`; pass `-e .` (or a path) for a dev checkout."
+            "`database-tycoon`; pass `-e <path>` for an editable dev checkout "
+            "(an absolute path, not `-e .`, which would self-reference this project)."
         ),
     ),
     no_install: bool = typer.Option(
@@ -35,7 +36,7 @@ def setup_cmd(
     force: bool = typer.Option(
         False,
         "--force",
-        help="Recreate the `.venv` if one already exists (removes the existing env).",
+        help="Rebuild the `.venv` if one already exists (re-resolves dependencies fresh).",
     ),
     no_prompt: bool = typer.Option(
         False,
@@ -47,9 +48,10 @@ def setup_cmd(
 
     tycoon runs dbt out of the same interpreter it lives in, so a mismatched
     Python is the most common first-mile failure. ``setup`` owns the
-    environment: it builds one ``.venv`` beside ``tycoon.yml`` on a supported
-    interpreter (``uv venv --python``), pins it with ``.python-version``, and
-    installs tycoon + its dbt/dlt/duckdb stack into it.
+    environment: it seeds a ``pyproject.toml`` beside ``tycoon.yml`` (if one
+    doesn't already exist), builds one ``.venv`` on a supported interpreter
+    via ``uv sync``, pins it with ``.python-version``, and installs tycoon +
+    its dbt/dlt/duckdb stack into it, writing ``uv.lock`` for reproducibility.
     """
     if not config.has_project_file:
         error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
@@ -71,7 +73,7 @@ def setup_cmd(
     target = venv_path(project_root)
     if target.exists() and not force and not no_prompt:
         recreate = typer.confirm(
-            f"{target} already exists. Recreate it? (removes the existing environment)",
+            f"{target} already exists. Rebuild it? (re-resolves dependencies fresh)",
             default=False,
         )
         if not recreate:
