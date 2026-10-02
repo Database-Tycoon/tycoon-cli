@@ -8,11 +8,15 @@ A project with its own `.venv` (gh-262) gets its own project-local
 `<project>/.tycoon/sources/` instead of the shared, global
 `~/.tycoon/sources/`, see `resolve_sources_dir()`. A project that hasn't
 picked up a `.venv` yet keeps resolving from the global directory, unchanged,
-so anything already downloaded there keeps working (gh-261).
+so anything already downloaded there keeps working (gh-261). A source
+already downloaded globally before the project picked up a `.venv` doesn't
+move on its own, `migrate_source()` copies it into the new project-local
+directory on request (`tycoon data sources migrate <type>`).
 """
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -288,6 +292,33 @@ def install_source(source_type: str, sources_dir: Path = SOURCES_DIR) -> bool:
         shim_path = source_pkg / "_run.py"
         shim_path.write_text(shim)
 
+    return True
+
+
+def migrate_source(source_type: str, old_dir: Path, new_dir: Path) -> bool:
+    """Copy an already-installed source package + shim from old_dir to new_dir.
+
+    A source installed before a project had its own `.venv` lands in the
+    shared global directory; once the project gains a `.venv`,
+    `resolve_sources_dir` starts pointing at a project-local directory that
+    doesn't have it, and the "not installed" check in `_run_catalog` has no
+    way to recover without a real copy of what's already on disk. Returns
+    False if the source isn't present in old_dir to copy from.
+    """
+    if source_type in _BUILTIN_SOURCES:
+        pkg_name = source_type
+    else:
+        pkg_name = _DLT_INIT_NAME.get(source_type, source_type)
+
+    src = old_dir / pkg_name
+    if not (src.is_dir() and (src / "_run.py").exists()):
+        return False
+
+    new_dir.mkdir(parents=True, exist_ok=True)
+    dst = new_dir / pkg_name
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst)
     return True
 
 

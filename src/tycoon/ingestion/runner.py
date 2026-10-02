@@ -20,7 +20,12 @@ import dlt
 
 from tycoon.core.events import RunCompleted, RunFailed, RunStarted
 from tycoon.ingestion.catalog import CATALOG
-from tycoon.ingestion.source_manager import get_run_module_path, is_source_installed, resolve_sources_dir
+from tycoon.ingestion.source_manager import (
+    SOURCES_DIR,
+    get_run_module_path,
+    is_source_installed,
+    resolve_sources_dir,
+)
 from tycoon.project import SourceConfig
 
 _UNEXPANDED_ENV_VAR = re.compile(r"\$\{[^}]+\}")
@@ -501,7 +506,9 @@ def run_source(
        path would wrongly error with "not installed".
     3. **Catalog sources** (``github`` / ``stripe`` / ``slack`` etc.)
        require ``dlt init`` to have populated
-       ``~/.tycoon/sources/<type>/``; we run them from there.
+       ``~/.tycoon/sources/<type>/`` (or, once the project has its own
+       ``.venv``, ``<project>/.tycoon/sources/<type>/`` instead, see
+       ``resolve_sources_dir``); we run them from wherever that resolves to.
     4. **Dynamic fallback**: try ``dlt.sources.<type>`` directly.
 
     Returns (pipeline, load_info). ``load_info`` is ``None`` when the
@@ -641,6 +648,17 @@ def _run_catalog(
     sources_dir = resolve_sources_dir(_cfg.root)
 
     if not is_source_installed(source_type, sources_dir):
+        # This project may have just picked up its own `.venv` (gh-262/263),
+        # which flips resolve_sources_dir() from the old shared global
+        # directory to this project-local one. A source downloaded before
+        # that doesn't move on its own, point at the real fix (migrate it)
+        # rather than "not installed" when it's sitting right there globally.
+        if sources_dir != SOURCES_DIR and is_source_installed(source_type, SOURCES_DIR):
+            raise IngestionError(
+                f"Source '{source_type}' is installed globally ({SOURCES_DIR}) but not in "
+                f"this project's own sources dir ({sources_dir}). "
+                f"Migrate it with: tycoon data sources migrate {source_type}"
+            )
         raise IngestionError(f"Source '{source_type}' is not installed. Run: tycoon data sources add {source_type}")
 
     # Warn about unexpanded env vars before hitting the API

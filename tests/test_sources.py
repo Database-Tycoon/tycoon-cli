@@ -934,3 +934,71 @@ class TestProjectLocalSourcesDir:
         _maybe_install_catalog_source("github", tmp_path)
 
         assert seen["sources_dir"] == source_manager.SOURCES_DIR
+
+
+class TestMigrateSource:
+    """A source downloaded into the shared global dir before a project
+    picked up its own `.venv` doesn't move on its own once
+    `resolve_sources_dir` switches to the project-local dir; `migrate_source`
+    (and the `tycoon data sources migrate` command) is the recovery path
+    (gh-263 review)."""
+
+    def test_migrate_source_copies_package_and_shim(self, tmp_path):
+        from tycoon.ingestion.source_manager import install_source, is_source_installed, migrate_source
+
+        old_dir = tmp_path / "old"
+        new_dir = tmp_path / "new"
+        install_source("rest_api", old_dir)
+
+        assert migrate_source("rest_api", old_dir, new_dir) is True
+        assert is_source_installed("rest_api", new_dir) is True
+        # The original stays in place — this is a copy, not a move.
+        assert is_source_installed("rest_api", old_dir) is True
+
+    def test_migrate_source_returns_false_when_not_in_old_dir(self, tmp_path):
+        from tycoon.ingestion.source_manager import migrate_source
+
+        assert migrate_source("rest_api", tmp_path / "old", tmp_path / "new") is False
+
+    def test_migrate_cmd_moves_global_install_into_project_dir(self, cli_runner, tmp_path, monkeypatch):
+        import tycoon.ingestion.source_manager as source_manager
+
+        _setup_project(tmp_path)
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.chdir(tmp_path)
+
+        global_dir = tmp_path / "global"
+        monkeypatch.setattr(source_manager, "SOURCES_DIR", global_dir)
+        source_manager.install_source("rest_api", global_dir)
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "Migrated" in result.stdout
+        project_dir = tmp_path / ".tycoon" / "sources"
+        assert source_manager.is_source_installed("rest_api", project_dir) is True
+
+    def test_migrate_cmd_errors_without_project_venv(self, cli_runner, tmp_path, monkeypatch):
+        _setup_project(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 1
+        assert "doesn't have its own" in (result.stderr or result.output)
+
+    def test_migrate_cmd_errors_when_not_installed_anywhere(self, cli_runner, tmp_path, monkeypatch):
+        import tycoon.ingestion.source_manager as source_manager
+
+        _setup_project(tmp_path)
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.chdir(tmp_path)
+        # Isolate from whatever the real ~/.tycoon/sources on the dev
+        # machine actually has installed — this test asserts on "not
+        # installed anywhere", which only holds for an empty global dir.
+        monkeypatch.setattr(source_manager, "SOURCES_DIR", tmp_path / "empty-global")
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 1
+        assert "isn't installed anywhere" in (result.stderr or result.output)

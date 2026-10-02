@@ -117,7 +117,9 @@ Setting both a file `path` and a `file_glob` is an error.
 
 Source types not in `tycoon data sources catalog` need to be installed
 via `tycoon data sources add <type>` first (it runs `dlt init`
-under the hood and stages the source files in `~/.tycoon/sources/`).
+under the hood and stages the source files under the resolved sources
+dir, project-local once the project has its own `.venv`, otherwise the
+shared `~/.tycoon/sources/`).
 
 ## `sync`
 

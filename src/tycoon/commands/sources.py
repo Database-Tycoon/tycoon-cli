@@ -607,6 +607,43 @@ def remove_source(
     success(f"Source [bold]{name}[/bold] removed from tycoon.yml")
 
 
+@app.command("migrate")
+def migrate_source_cmd(
+    source_type: str = typer.Argument(help="Source type to migrate, e.g. github."),
+) -> None:
+    """Copy a globally-installed catalog source into this project's own sources dir.
+
+    Once a project has its own `.venv` (gh-262), downloaded source code
+    resolves to `<project>/.tycoon/sources/` instead of the shared
+    `~/.tycoon/sources/`. A source installed before that switch doesn't move
+    on its own; this copies it across so `tycoon data sources run` can find
+    it again without re-downloading from scratch.
+    """
+    from tycoon.ingestion.source_manager import SOURCES_DIR, is_source_installed, migrate_source, resolve_sources_dir
+
+    cfg = _require_project()
+    sources_dir = resolve_sources_dir(cfg.root)
+
+    if sources_dir == SOURCES_DIR:
+        error("This project doesn't have its own `.venv` yet, so there's no project-local dir to migrate into.")
+        info("Run `tycoon setup` first, then retry.")
+        raise typer.Exit(1)
+
+    if is_source_installed(source_type, sources_dir):
+        info(f"Source '{source_type}' is already installed in {sources_dir}.")
+        return
+
+    if not is_source_installed(source_type, SOURCES_DIR):
+        error(f"Source '{source_type}' isn't installed anywhere. Run: tycoon data sources add {source_type}")
+        raise typer.Exit(1)
+
+    if migrate_source(source_type, SOURCES_DIR, sources_dir):
+        success(f"Migrated '{source_type}' from {SOURCES_DIR} to {sources_dir}")
+    else:
+        warn(f"Failed to migrate '{source_type}'.")
+        raise typer.Exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Ingestion commands
 # ---------------------------------------------------------------------------
