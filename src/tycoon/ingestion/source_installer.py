@@ -1,12 +1,16 @@
 """Install dlt extras and a catalog source's own requirements.txt on demand.
 
-Both install paths go through uv. When the project has its own `.venv` (and
-so its own `pyproject.toml`, gh-262), they go through `uv add`, so the
-dependency lands somewhere durable, not just installed into `.venv` and
-forgotten -- a fresh `uv sync` elsewhere reproduces it. A project without its
-own `.venv` yet falls back to installing into the ambient environment via
-`uv pip install`, exactly as before gh-264. Neither falls back to plain
-`pip` if uv isn't on PATH, tycoon is uv-only end to end.
+Both install paths go through uv. When the project has its own
+`pyproject.toml` (written alongside `.venv` by `create_venv`, gh-262), they
+go through `uv add`, so the dependency lands somewhere durable, not just
+installed into `.venv` and forgotten -- a fresh `uv sync` elsewhere
+reproduces it. The check is on `pyproject.toml` specifically, not `.venv`
+alone: `uv add` needs a `pyproject.toml` to add into, and a `.venv` made by
+hand (e.g. plain `python -m venv`, with no `pyproject.toml`) makes it fail
+outright (gh-264 review). A project without a `pyproject.toml` yet falls
+back to installing into the ambient environment via `uv pip install`,
+exactly as before gh-264. Neither falls back to plain `pip` if uv isn't on
+PATH, tycoon is uv-only end to end.
 """
 
 from __future__ import annotations
@@ -80,9 +84,23 @@ def _run_install(cmd: list[str]) -> bool:
             text=True,
             timeout=120,
         )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+    except subprocess.TimeoutExpired:
+        error("uv timed out after 120s.")
         return False
+    except (FileNotFoundError, OSError) as exc:
+        error(f"Failed to run uv: {exc}")
+        return False
+
+    if result.returncode != 0:
+        # The caller's own warn()+retry-command message looks identical for
+        # every failure (bad pin, missing pyproject.toml, offline) unless
+        # uv's own explanation is shown alongside it.
+        tail = "\n".join(result.stderr.strip().splitlines()[-10:])
+        if tail:
+            error(f"uv failed:\n{escape(tail)}")
+        return False
+
+    return True
 
 
 def install_dlt_extra(source_type: str, project_root: Path | None = None) -> bool:
