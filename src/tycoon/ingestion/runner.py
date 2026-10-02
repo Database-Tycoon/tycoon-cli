@@ -18,7 +18,12 @@ import dlt
 
 from tycoon.core.events import RunCompleted, RunFailed, RunStarted
 from tycoon.ingestion.catalog import CATALOG
-from tycoon.ingestion.source_manager import SOURCES_DIR, get_run_module_path, is_source_installed
+from tycoon.ingestion.source_manager import (
+    SOURCES_DIR,
+    get_run_module_path,
+    is_source_installed,
+    resolve_sources_dir,
+)
 from tycoon.project import SourceConfig
 
 _UNEXPANDED_ENV_VAR = re.compile(r"\$\{[^}]+\}")
@@ -399,7 +404,9 @@ def run_source(
        path would wrongly error with "not installed".
     3. **Catalog sources** (``github`` / ``stripe`` / ``slack`` etc.)
        require ``dlt init`` to have populated
-       ``~/.tycoon/sources/<type>/``; we run them from there.
+       ``~/.tycoon/sources/<type>/`` (or, once the project has its own
+       ``.venv``, ``<project>/.tycoon/sources/<type>/`` instead, see
+       ``resolve_sources_dir``); we run them from wherever that resolves to.
     4. **Dynamic fallback**: try ``dlt.sources.<type>`` directly.
 
     Returns (pipeline, load_info).
@@ -521,10 +528,25 @@ def _run_catalog(
     raw_db_path: Path,
     max_records: int | None = None,
 ) -> tuple[dlt.Pipeline, Any]:
-    """Load a catalog source from ~/.tycoon/sources/ and run its pipeline."""
+    """Load a catalog source from its resolved sources dir and run its pipeline."""
     import importlib
 
-    if not is_source_installed(source_type):
+    from tycoon.config import config as _cfg
+
+    sources_dir = resolve_sources_dir(_cfg.root)
+
+    if not is_source_installed(source_type, sources_dir):
+        # This project may have just picked up its own `.venv` (gh-262/263),
+        # which flips resolve_sources_dir() from the old shared global
+        # directory to this project-local one. A source downloaded before
+        # that doesn't move on its own, point at the real fix (migrate it)
+        # rather than "not installed" when it's sitting right there globally.
+        if sources_dir != SOURCES_DIR and is_source_installed(source_type, SOURCES_DIR):
+            raise IngestionError(
+                f"Source '{source_type}' is installed globally ({SOURCES_DIR}) but not in "
+                f"this project's own sources dir ({sources_dir}). "
+                f"Migrate it with: tycoon data sources migrate {source_type}"
+            )
         raise IngestionError(f"Source '{source_type}' is not installed. Run: tycoon data sources add {source_type}")
 
     # Warn about unexpanded env vars before hitting the API
@@ -538,8 +560,8 @@ def _run_catalog(
                 f"  Set it with: export {var[2:-1]}=<your-value>"
             )
 
-    # Add ~/.tycoon/sources/ to sys.path so dlt-init'd packages are importable
-    sources_str = str(SOURCES_DIR)
+    # Add the resolved sources dir to sys.path so dlt-init'd packages are importable
+    sources_str = str(sources_dir)
     if sources_str not in sys.path:
         sys.path.insert(0, sources_str)
 

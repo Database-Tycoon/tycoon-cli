@@ -1,20 +1,43 @@
 """Download and manage dlt verified sources on demand.
 
-Sources are installed into ~/.tycoon/sources/ via `dlt init`, then a thin
-_run.py shim is written alongside the source package to bridge dlt's native
-API with tycoon's run_pipeline(name, source_config, raw_db_path, max_records)
-interface.
+Sources are installed via `dlt init`, then a thin _run.py shim is written
+alongside the source package to bridge dlt's native API with tycoon's
+run_pipeline(name, source_config, raw_db_path, max_records) interface.
+
+A project with its own `.venv` (gh-262) gets its own project-local
+`<project>/.tycoon/sources/` instead of the shared, global
+`~/.tycoon/sources/`, see `resolve_sources_dir()`. A project that hasn't
+picked up a `.venv` yet keeps resolving from the global directory, unchanged,
+so anything already downloaded there keeps working (gh-261). A source
+already downloaded globally before the project picked up a `.venv` doesn't
+move on its own, `migrate_source()` copies it into the new project-local
+directory on request (`tycoon data sources migrate <type>`).
 """
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from tycoon.utils.console import info
+from tycoon.venv import venv_path
 
 SOURCES_DIR = Path.home() / ".tycoon" / "sources"
+
+
+def resolve_sources_dir(project_root: Path) -> Path:
+    """Where downloaded source code and _run.py shims live for this project.
+
+    A project with its own `.venv` gets its own project-local sources
+    directory; a project without one keeps resolving from the shared global
+    location, so nothing already downloaded there stops working.
+    """
+    if venv_path(project_root).exists():
+        return project_root / ".tycoon" / "sources"
+    return SOURCES_DIR
+
 
 # Per-source shim: imports from the dlt-init'd package, maps tycoon config keys
 # to the dlt source function's parameters, and exposes run_pipeline().
@@ -214,16 +237,16 @@ _DLT_INIT_NAME: dict[str, str] = {
 }
 
 
-def is_source_installed(source_type: str) -> bool:
+def is_source_installed(source_type: str, sources_dir: Path = SOURCES_DIR) -> bool:
     """Return True if the source package AND its _run.py shim are both present."""
     if source_type in _BUILTIN_SOURCES:
-        return (SOURCES_DIR / source_type / "_run.py").exists()
+        return (sources_dir / source_type / "_run.py").exists()
     dlt_name = _DLT_INIT_NAME.get(source_type, source_type)
-    source_pkg = SOURCES_DIR / dlt_name
+    source_pkg = sources_dir / dlt_name
     return source_pkg.is_dir() and (source_pkg / "__init__.py").exists() and (source_pkg / "_run.py").exists()
 
 
-def install_source(source_type: str) -> bool:
+def install_source(source_type: str, sources_dir: Path = SOURCES_DIR) -> bool:
     """Install a source and write its _run.py shim.
 
     For built-in dlt sources (rest_api) this just writes the shim.
@@ -232,18 +255,18 @@ def install_source(source_type: str) -> bool:
 
     Returns True on success, False on failure.
     """
-    SOURCES_DIR.mkdir(parents=True, exist_ok=True)
+    sources_dir.mkdir(parents=True, exist_ok=True)
 
     if source_type in _BUILTIN_SOURCES:
         shim = _SHIMS.get(source_type)
         if shim:
-            shim_dir = SOURCES_DIR / source_type
+            shim_dir = sources_dir / source_type
             shim_dir.mkdir(exist_ok=True)
             (shim_dir / "_run.py").write_text(shim)
         return True
 
     dlt_name = _DLT_INIT_NAME.get(source_type, source_type)
-    source_pkg = SOURCES_DIR / dlt_name
+    source_pkg = sources_dir / dlt_name
 
     # Only run `dlt init` if the package isn't already downloaded.
     # Re-running dlt init with captured stdin on an existing package can fail
@@ -251,11 +274,11 @@ def install_source(source_type: str) -> bool:
     if not (source_pkg.is_dir() and (source_pkg / "__init__.py").exists()):
         info(
             f"Downloading verified source '{dlt_name}' from dlt-hub/verified-sources "
-            f"(github.com) into {SOURCES_DIR} — this code runs during ingestion."
+            f"(github.com) into {sources_dir} — this code runs during ingestion."
         )
         result = subprocess.run(
             [sys.executable, "-m", "dlt", "init", dlt_name, "duckdb"],
-            cwd=SOURCES_DIR,
+            cwd=sources_dir,
             capture_output=True,
             text=True,
             timeout=120,
@@ -269,6 +292,33 @@ def install_source(source_type: str) -> bool:
         shim_path = source_pkg / "_run.py"
         shim_path.write_text(shim)
 
+    return True
+
+
+def migrate_source(source_type: str, old_dir: Path, new_dir: Path) -> bool:
+    """Copy an already-installed source package + shim from old_dir to new_dir.
+
+    A source installed before a project had its own `.venv` lands in the
+    shared global directory; once the project gains a `.venv`,
+    `resolve_sources_dir` starts pointing at a project-local directory that
+    doesn't have it, and the "not installed" check in `_run_catalog` has no
+    way to recover without a real copy of what's already on disk. Returns
+    False if the source isn't present in old_dir to copy from.
+    """
+    if source_type in _BUILTIN_SOURCES:
+        pkg_name = source_type
+    else:
+        pkg_name = _DLT_INIT_NAME.get(source_type, source_type)
+
+    src = old_dir / pkg_name
+    if not (src.is_dir() and (src / "_run.py").exists()):
+        return False
+
+    new_dir.mkdir(parents=True, exist_ok=True)
+    dst = new_dir / pkg_name
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst)
     return True
 
 
