@@ -1059,7 +1059,18 @@ class TestGoogleSheetsCatalog:
         assert get_run_module_path("google_sheets") == "google_sheets._run"
 
     def test_no_prompt_add_registers_source(self, cli_runner, tmp_path, monkeypatch):
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.ingestion import source_installer
+
         TestSourcesAddNoPrompt()._bind(tmp_path, monkeypatch)
+        # This test asserts on the registered tycoon.yml fields, not on the
+        # real dlt-init download/install chain (that's covered elsewhere,
+        # e.g. TestInstallRequirementsRealUv) — mock it so the test can't
+        # depend on real network access or on google_sheets already being
+        # installed in the real shared ~/.tycoon/sources on a dev machine.
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+        monkeypatch.setattr(source_manager, "install_source", lambda *a, **k: True)
+        monkeypatch.setattr(source_installer, "install_requirements", lambda *a, **k: True)
         result = cli_runner.invoke(
             app,
             [
