@@ -569,20 +569,24 @@ def _maybe_install_source_requirements(source_type: str, sources_dir: Path, proj
     rather than failing on the first missing import (gh-264).
     """
     from tycoon.ingestion.source_installer import install_requirements
-    from tycoon.venv import venv_path
 
     requirements_path = sources_dir / "requirements.txt"
     if not requirements_path.exists():
         return
 
-    has_venv = venv_path(project_root).exists()
+    # `uv add` needs a pyproject.toml to add into, not just a `.venv` — a
+    # `.venv` made by hand (e.g. plain `python -m venv`) has no pyproject.toml
+    # and `uv add` fails on it with "No pyproject.toml found". `.venv` and
+    # pyproject.toml are written together by create_venv (gh-262), so this
+    # only diverges from a `.venv`-only check in that hand-made case.
+    has_project = (project_root / "pyproject.toml").exists()
     info(f"Installing '{source_type}' dependencies ({requirements_path.name})...")
-    if install_requirements(requirements_path, project_root if has_venv else None):
+    if install_requirements(requirements_path, project_root if has_project else None):
         success(f"Dependencies for '{source_type}' installed.")
     else:
         retry = (
             f"uv --project {project_root} add -r {requirements_path}"
-            if has_venv
+            if has_project
             else f"uv pip install -r {requirements_path}"
         )
         warn(f"Failed to install dependencies for '{source_type}'. You can retry with: {retry}")
@@ -595,7 +599,6 @@ def _maybe_install_dlt_extra(source_type: str, project_root: Path) -> None:
         install_dlt_extra,
         is_dlt_extra_available,
     )
-    from tycoon.venv import venv_path
 
     if source_type not in DLT_EXTRAS:
         return
@@ -603,10 +606,12 @@ def _maybe_install_dlt_extra(source_type: str, project_root: Path) -> None:
     if is_dlt_extra_available(source_type):
         return
 
-    has_venv = venv_path(project_root).exists()
+    # See _maybe_install_source_requirements: `uv add` needs pyproject.toml,
+    # not just `.venv`.
+    has_project = (project_root / "pyproject.toml").exists()
     install = typer.confirm(f"dlt[{source_type}] is not installed. Install it now?", default=True)
     if install:
-        if install_dlt_extra(source_type, project_root if has_venv else None):
+        if install_dlt_extra(source_type, project_root if has_project else None):
             success(f"dlt[{source_type}] installed successfully.")
         else:
             warn(f"Failed to install dlt[{source_type}]. You can install it manually.")
