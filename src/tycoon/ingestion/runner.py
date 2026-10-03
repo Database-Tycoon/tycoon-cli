@@ -213,6 +213,38 @@ def _split_single_file_path(path: str, file_glob: str) -> tuple[str, str]:
     return str(target.parent), glob.escape(target.name)
 
 
+def _unmatched_glob_message(table_name: str, bucket_url: str, file_glob: str) -> str:
+    return f"'{table_name}': no files matched glob {file_glob!r} under {bucket_url!r}."
+
+
+def _unmatched_local_globs(name: str, source_config: SourceConfig) -> list[str]:
+    """Describe each local filesystem glob in ``source_config`` that matches no files.
+
+    Mirrors the targets ``_build_filesystem_source`` builds, so the ledger
+    can name what was skipped (gh-240). The flat shape is reported under
+    the source's own name, which is the table it lands in.
+    """
+    if source_config.type != "filesystem":
+        return []
+    if source_config.resources:
+        targets = [(r.table_name, r.path, r.file_glob, "") for r in source_config.resources]
+    else:
+        cfg = source_config.config
+        bucket_url = cfg.get("bucket_url") or cfg.get("path") or ""
+        targets = [(name, bucket_url, cfg.get("file_glob") or "", "**/*")]
+
+    messages: list[str] = []
+    for table_name, path, file_glob, default_glob in targets:
+        try:
+            bucket_url, file_glob = _split_single_file_path(path, file_glob)
+        except IngestionError:
+            continue
+        file_glob = file_glob or default_glob
+        if bucket_url and file_glob and _local_glob_matches_nothing(bucket_url, file_glob):
+            messages.append(_unmatched_glob_message(table_name, bucket_url, file_glob))
+    return messages
+
+
 def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str, default_glob: str = "") -> Any | None:
     """Build one named dlt resource for a single (bucket_url, file_glob) pair.
 
@@ -256,7 +288,7 @@ def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str,
         from tycoon.utils.console import warn
 
         warn(
-            f"'{table_name}': no files matched glob {file_glob!r} under {bucket_url!r}. "
+            f"{_unmatched_glob_message(table_name, bucket_url, file_glob)} "
             "Nothing was loaded for it, and its existing table was left as it was."
         )
         return None
@@ -371,14 +403,50 @@ def _emit_event_safe(metadata_db: Path | None, event: Any) -> None:
         pass
 
 
-def _build_run_completed(name: str, pipeline: Any, load_info: Any, elapsed: float) -> RunCompleted:
-    """Build a RunCompleted event from dlt pipeline trace + load_info."""
+def _last_run_used_replace(pipeline: Any) -> bool:
+    """Return True when a resource in the pipeline's last extract used ``replace``.
+
+    Reads the per-resource hints dlt records in the extract trace. dlt
+    stores ``write_disposition`` either as a string or as a dict with a
+    ``disposition`` key. An unreadable trace counts as not ``replace``.
+    """
+    try:
+        step_metrics = pipeline.last_trace.last_extract_info.metrics
+    except Exception:
+        return False
+    for metrics in step_metrics.values():
+        for m in metrics:
+            for resource_name, hints in (m.get("hints") or {}).items():
+                if resource_name.startswith("_dlt"):
+                    continue
+                disposition = hints.get("write_disposition")
+                if isinstance(disposition, dict):
+                    disposition = disposition.get("disposition")
+                if disposition == "replace":
+                    return True
+    return False
+
+
+def _build_run_completed(
+    name: str, pipeline: Any, load_info: Any, elapsed: float, warnings: list[str] | None = None
+) -> RunCompleted:
+    """Build a RunCompleted event from dlt pipeline trace + load_info.
+
+    ``zero_rows`` is set when the normalize counts are empty or all zero
+    and the run could have emptied a table: a resource loaded with
+    ``replace``, or a glob matched no files (``warnings`` names each such
+    glob). An append, merge, or incremental run with no new records is a
+    normal sync and stays unflagged (gh-240).
+    """
     rows_by_table: dict[str, int] = {}
     try:
         ni = pipeline.last_trace.last_normalize_info
         rows_by_table = {t: c for t, c in (ni.row_counts or {}).items() if not t.startswith("_dlt")}
     except Exception:
+        # No normalize trace (the run extracted nothing, or the trace could
+        # not be read) leaves rows_by_table empty, which reads as zero rows.
         pass
+    loaded_nothing = not any(rows_by_table.values())
     loads_ids = getattr(load_info, "loads_ids", []) or []
     return RunCompleted(
         source_id=name,
@@ -388,16 +456,23 @@ def _build_run_completed(name: str, pipeline: Any, load_info: Any, elapsed: floa
         rows_loaded=rows_by_table,
         tables_created=list(rows_by_table),
         tables_updated=[],
+        zero_rows=loaded_nothing and (bool(warnings) or _last_run_used_replace(pipeline)),
+        warnings=list(warnings or []),
     )
 
 
 def _emit_run_completed_safe(
-    metadata_db: Path | None, name: str, pipeline: Any, load_info: Any, elapsed: float
+    metadata_db: Path | None,
+    name: str,
+    pipeline: Any,
+    load_info: Any,
+    elapsed: float,
+    warnings: list[str] | None = None,
 ) -> None:
     """Build and emit a RunCompleted event; swallows all exceptions so observability
     code never fails a successful pipeline run."""
     try:
-        event = _build_run_completed(name, pipeline, load_info, elapsed)
+        event = _build_run_completed(name, pipeline, load_info, elapsed, warnings)
         _emit_event_safe(metadata_db, event)
     except Exception:
         pass
@@ -522,6 +597,7 @@ def run_source(
         )
 
         legacy_rename = False
+        unmatched_globs: list[str] = []
         builder = _NATIVE_BUILDERS.get(source_type)
         if builder is None:
             # Try dynamic import: dlt.sources.<source_type>
@@ -538,10 +614,21 @@ def run_source(
                     f"Unknown source type '{source_type}'. Install with: tycoon sources add {source_type}"
                 ) from exc
         else:
+            unmatched_globs = _unmatched_local_globs(name, source_config)
             dlt_source = builder(source_config)
             if dlt_source is None or (isinstance(dlt_source, list) and not dlt_source):
                 # Running dlt with nothing extracted still applies "replace"
                 # to known tables and empties them, so skip the run (gh-240).
+                _emit_event_safe(
+                    _metadata_db,
+                    RunCompleted(
+                        source_id=name,
+                        runtime_id="dlt-managed",
+                        duration_seconds=round(time.monotonic() - _started, 2),
+                        zero_rows=True,
+                        warnings=unmatched_globs,
+                    ),
+                )
                 return pipeline, None
             legacy_rename = source_type == "filesystem" and not isinstance(dlt_source, list)
             if legacy_rename:
@@ -561,7 +648,7 @@ def run_source(
         if legacy_rename:
             _warn_if_legacy_filesystem_table_exists(raw_db_path, source_config.schema_name, name)
         _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-        _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
+        _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started, unmatched_globs)
         return pipeline, load_info
 
     except Exception as exc:
