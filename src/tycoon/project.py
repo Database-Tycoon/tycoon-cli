@@ -196,7 +196,10 @@ class ResourceConfig(BaseModel):
 
     table_name: str = Field(description="Destination table name for this resource")
     path: str = Field(description="Directory, file, or bucket URL to read from")
-    file_glob: str = Field(description="Glob pattern for files to include, relative to path")
+    file_glob: str = Field(
+        default="",
+        description="Glob pattern for files to include, relative to path. Leave unset when path is a single file.",
+    )
 
     @field_validator("table_name")
     @classmethod
