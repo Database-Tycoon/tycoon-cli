@@ -22,6 +22,9 @@ All notable changes to this project will be documented in this file. The format 
 [#268]: https://github.com/Database-Tycoon/tycoon-cli/pull/268
 [#269]: https://github.com/Database-Tycoon/tycoon-cli/pull/269
 [#273]: https://github.com/Database-Tycoon/tycoon-cli/pull/273
+- **Fire & Response in the terminal: `tycoon fire`, `tycoon repair`, `tycoon firehouse`** (PTC-126). The city's fire-and-dispatch system as text, reading the same data the renderer draws: one fire per failing test, one contractor van per source past its freshness SLA. A vehicle restates a measured, unresolved fact; it never means a fix is running.
+- **`tycoon data layers` and `tycoon data health`** (PTC-126). The layered architecture ring by ring (marts downtown, sources on the outskirts) with the vendor of every object (dlt / Fivetran / dbt), and the city UI's health strip as one count per problem class.
+- **`tycoon data sources explore`** (PTC-126). Inspect a source's schema, sample rows and health without leaving the terminal.
 
 ## [0.2.1] - 2026-09-16
 

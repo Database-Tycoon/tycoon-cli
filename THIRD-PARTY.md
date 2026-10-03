@@ -2,7 +2,7 @@
 
 Database Tycoon is MIT licensed (see [`LICENSE`](LICENSE)). It redistributes
 the runtime dependencies listed below — the web bundle the wheel ships at
-`src/tycoon_city/web_dist/` (built from the renderer's TypeScript sources) is
+`src/pipeline_city/web_dist/` (built from the renderer's TypeScript sources) is
 compiled *with three.js and zod inside it*, and the wheel carries the Python
 packages alongside — so their copyright notices travel here, which is what each
 of their licences asks for.
@@ -25,7 +25,7 @@ which file, and the versions are the ones this repo currently pins.
 
 ## Runtime dependencies
 
-### Web (bundled into `src/tycoon_city/web_dist/`, the copy the wheel ships and `tycoon city` serves)
+### Web (bundled into `src/pipeline_city/web_dist/`, the copy the wheel ships and `pipeline city` serves)
 
 | Package | Version | Licence | Copyright | Verified from |
 |---|---|---|---|---|
