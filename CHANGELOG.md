@@ -22,6 +22,20 @@ All notable changes to this project will be documented in this file. The format 
 [#268]: https://github.com/Database-Tycoon/tycoon-cli/pull/268
 [#269]: https://github.com/Database-Tycoon/tycoon-cli/pull/269
 [#273]: https://github.com/Database-Tycoon/tycoon-cli/pull/273
+### Fixed
+
+- **The city's traffic actually drives** (PR [#250][]). The animation loop ticked the vehicle and guest simulations but never called the layers' `update()`, the only writers of the instance matrices, so both meshes sat at count 0 over a fully simulated street. Listed as a known limitation in 0.2.0 and 0.2.1. The verification hooks counted the simulation arrays and hid it; they now answer from the drawn mesh.
+- **`R` refresh repaints the document-derived chrome** (PR [#250][]). The footer status line, the degradation-notes popover and the legend were painted once at boot, so a refresh showed a fresh "exported N ago" over the previous city's name, counts, notes and legend.
+- **Coverage renders unknown, not zero, when the evidence was never read** (PR [#251][]). The renderer's schema was missing the `achievements` block the exporter has emitted since 2026-08-06, so it was silently stripped and the problems gauges, library panel and library tour recomputed coverage from raw fields, reporting "columns documented 0%" for a catalog with no dbt manifest. All three now honour the unknown state.
+
+### Changed
+
+- **The city renderer is CI-gated** (PRs [#256][], [#252][]). `tests/tycoon_city`, including the `city.json` contract golden, joins the default `pytest` run and `src/tycoon_city` counts toward coverage (floor re-baselined to 73). A new `web` job runs `tsc --noEmit`, the production build, a check that the shipped `web_dist/` is exactly the build of `web/`, and the Playwright suite. Through 0.2.1 the CLI was gated and the renderer was not.
+
+[#250]: https://github.com/Database-Tycoon/tycoon-cli/pull/250
+[#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
+[#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
+[#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
 
 ## [0.2.1] - 2026-09-16
 
