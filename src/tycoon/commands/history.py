@@ -108,7 +108,12 @@ def _render_history_table(runs: list[RunSummary]) -> Table:
                 detail += f" · {s.rows_total} models"
         else:
             ref = f"{s.source_id}/{_short(s.run_id)}"
-            detail = "[yellow]0 rows, nothing loaded[/yellow]" if s.zero_rows else f"{s.rows_total:,} rows"
+            if not s.zero_rows:
+                detail = f"{s.rows_total:,} rows"
+            elif s.rows_total:
+                detail = f"[yellow]{s.rows_total:,} rows, a table got 0[/yellow]"
+            else:
+                detail = "[yellow]0 rows, nothing loaded[/yellow]"
 
         table.add_row(_fmt_ts(s.started_at), tool_style, ref, status_str, detail)
 
@@ -245,6 +250,8 @@ def _show_run(id_prefix: str) -> None:
 
     if s.status != "success":
         status_str = "[red]failed[/red]"
+    elif s.zero_rows and s.rows_total:
+        status_str = "[yellow]success, but a table got zero rows[/yellow]"
     elif s.zero_rows:
         status_str = "[yellow]success, zero rows loaded[/yellow]"
     else:

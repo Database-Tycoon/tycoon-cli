@@ -85,6 +85,7 @@ def _sources_from_backend(metadata_db: Path) -> dict[str, dict]:
         for source_id, newest in last_run.items():
             if newest.zero_rows:
                 result[source_id]["zero_row_warnings"] = list(newest.warnings)
+                result[source_id]["zero_row_partial"] = any((newest.rows_loaded or {}).values())
         return result
     except Exception:
         return {}
@@ -196,9 +197,14 @@ def _render_sources_panel(
             total_rows = f"{sum(row_counts.values()):,}" if row_counts else "—"
             zero_row_warnings = data.get("zero_row_warnings")
             if zero_row_warnings is not None:
-                fresh_label = f"{fresh_label}\n[yellow]last run loaded 0 rows[/yellow]"
+                # A run where one replace table got 0 rows while others loaded
+                # isn't "nothing loaded", so say which kind it was.
+                what = (
+                    "a table in the last run got 0 rows" if data.get("zero_row_partial") else "last run loaded 0 rows"
+                )
+                fresh_label = f"{fresh_label}\n[yellow]{what}[/yellow]"
                 detail = "; ".join(zero_row_warnings) or "the run completed but loaded nothing."
-                zero_row_notes.append(f"{src.name}: last run loaded 0 rows. {detail}")
+                zero_row_notes.append(f"{src.name}: {what}. {detail}")
         else:
             # Fivetran rows + un-materialised dlt rows: detail comes from the
             # Fivetran snapshot view below (or the source hasn't run yet).

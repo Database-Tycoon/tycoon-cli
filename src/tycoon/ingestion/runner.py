@@ -404,17 +404,29 @@ def _emit_event_safe(metadata_db: Path | None, event: Any) -> None:
         pass
 
 
-def _last_run_used_replace(pipeline: Any) -> bool:
-    """Return True when a resource in the pipeline's last extract used ``replace``.
+def _last_run_replace_tables(pipeline: Any) -> tuple[bool, list[str]]:
+    """Find the resources in the pipeline's last extract that used ``replace``.
 
-    Reads the per-resource hints dlt records in the extract trace. dlt
-    stores ``write_disposition`` either as a string or as a dict with a
-    ``disposition`` key. An unreadable trace counts as not ``replace``.
+    Reads the per-resource hints dlt records in the extract trace; a resource
+    that yielded nothing still has hints there. dlt stores
+    ``write_disposition`` either as a string or as a dict with a
+    ``disposition`` key. Returns whether any resource used ``replace``, plus
+    the table each such resource writes: its ``table_name`` hint, or the
+    resource name, through the schema's naming convention, which is how the
+    normalize row counts are keyed. A dynamic (callable) table name can't be
+    resolved, so it only counts toward the first value. An unreadable trace
+    counts as no ``replace``.
     """
     try:
         step_metrics = pipeline.last_trace.last_extract_info.metrics
     except Exception:
-        return False
+        return False, []
+    try:
+        normalize = pipeline.default_schema.naming.normalize_table_identifier
+    except Exception:
+        normalize = None
+    used_replace = False
+    tables: list[str] = []
     for metrics in step_metrics.values():
         for m in metrics:
             for resource_name, hints in (m.get("hints") or {}).items():
@@ -423,9 +435,13 @@ def _last_run_used_replace(pipeline: Any) -> bool:
                 disposition = hints.get("write_disposition")
                 if isinstance(disposition, dict):
                     disposition = disposition.get("disposition")
-                if disposition == "replace":
-                    return True
-    return False
+                if disposition != "replace":
+                    continue
+                used_replace = True
+                table = hints.get("table_name") or resource_name
+                if isinstance(table, str):
+                    tables.append(normalize(table) if normalize else table)
+    return used_replace, tables
 
 
 def _build_run_completed(
@@ -433,11 +449,13 @@ def _build_run_completed(
 ) -> RunCompleted:
     """Build a RunCompleted event from dlt pipeline trace + load_info.
 
-    ``zero_rows`` is set when the normalize counts are empty or all zero
-    and the run could have emptied a table: a resource loaded with
-    ``replace``, or a glob matched no files (``warnings`` names each such
-    glob). An append, merge, or incremental run with no new records is a
-    normal sync and stays unflagged (gh-240).
+    ``zero_rows`` is set when the run could have emptied a table: a
+    ``replace`` resource loaded zero rows, even if another resource in the
+    same run loaded some (its table is named in ``warnings``), or the whole
+    run loaded nothing and a resource used ``replace`` or a glob matched no
+    files (``warnings`` names each such glob). An append, merge, or
+    incremental run with no new records is a normal sync and stays
+    unflagged (gh-240).
     """
     rows_by_table: dict[str, int] = {}
     try:
@@ -448,6 +466,13 @@ def _build_run_completed(
         # not be read) leaves rows_by_table empty, which reads as zero rows.
         pass
     loaded_nothing = not any(rows_by_table.values())
+    used_replace, replace_tables = _last_run_replace_tables(pipeline)
+    warnings = list(warnings or [])
+    zero_rows = loaded_nothing and (bool(warnings) or used_replace)
+    for table in dict.fromkeys(replace_tables):
+        if not rows_by_table.get(table):
+            zero_rows = True
+            warnings.append(f"'{table}' loaded 0 rows with write_disposition 'replace', so its table is now empty.")
     loads_ids = getattr(load_info, "loads_ids", []) or []
     return RunCompleted(
         source_id=name,
@@ -457,8 +482,8 @@ def _build_run_completed(
         rows_loaded=rows_by_table,
         tables_created=list(rows_by_table),
         tables_updated=[],
-        zero_rows=loaded_nothing and (bool(warnings) or _last_run_used_replace(pipeline)),
-        warnings=list(warnings or []),
+        zero_rows=zero_rows,
+        warnings=warnings,
     )
 
 

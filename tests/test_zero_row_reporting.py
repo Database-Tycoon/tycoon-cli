@@ -84,9 +84,16 @@ class TestRunCompletedEvent:
         assert event.zero_rows is True
 
     def test_loaded_rows_are_not_flagged(self):
-        event = _build_run_completed("files", _fake_pipeline({"files": 0, "other": 3}), None, 0.1)
+        event = _build_run_completed("files", _fake_pipeline({"files": 2, "other": 3}), None, 0.1)
 
         assert event.zero_rows is False
+
+    def test_empty_replace_table_is_flagged_when_another_table_loaded(self):
+        """Rows in a sibling table don't hide a replace table that was emptied."""
+        event = _build_run_completed("files", _fake_pipeline({"files": 0, "other": 3}), None, 0.1)
+
+        assert event.zero_rows is True
+        assert event.warnings == ["'files' loaded 0 rows with write_disposition 'replace', so its table is now empty."]
 
     @pytest.mark.parametrize(
         "write_disposition", ["append", "merge", {"disposition": "merge", "strategy": "delete-insert"}]
@@ -152,6 +159,72 @@ class TestRealDltPipelines:
         event = _build_run_completed("orders", pipeline, load_info, 0.1)
 
         assert event.zero_rows is True
+
+    def test_empty_replace_resource_beside_one_that_loaded_is_flagged(self, tmp_path):
+        """A replace dimension emptied in the same run as an append fact table that loaded (review of #299)."""
+        import dlt
+
+        @dlt.resource(name="res_a", write_disposition="replace")
+        def res_a():
+            yield from []
+
+        @dlt.resource(name="res_b", write_disposition="append")
+        def res_b():
+            yield from [{"id": 1}, {"id": 2}]
+
+        pipeline = self._pipeline(tmp_path, "gh240_mixed")
+        event = _build_run_completed("mixed", pipeline, pipeline.run([res_a(), res_b()]), 0.1)
+
+        assert event.rows_loaded == {"res_b": 2}
+        assert event.zero_rows is True
+        assert any("'res_a' loaded 0 rows" in w for w in event.warnings)
+
+    def test_quiet_append_beside_a_replace_that_loaded_is_not_flagged(self, tmp_path):
+        import dlt
+
+        @dlt.resource(name="dim", write_disposition="replace")
+        def dim():
+            yield from [{"id": 1}]
+
+        @dlt.resource(name="facts", write_disposition="append")
+        def facts():
+            yield from []
+
+        pipeline = self._pipeline(tmp_path, "gh240_quiet_append")
+        event = _build_run_completed("mixed", pipeline, pipeline.run([dim(), facts()]), 0.1)
+
+        assert event.zero_rows is False
+        assert event.warnings == []
+
+    def test_empty_replace_resource_with_its_own_table_name_is_flagged(self, tmp_path):
+        """Row counts are keyed by the normalized table name, not the resource name."""
+        import dlt
+
+        @dlt.resource(name="Customers", table_name="DimCustomers", write_disposition="replace")
+        def customers():
+            yield from []
+
+        @dlt.resource(name="orders", write_disposition="append")
+        def orders():
+            yield from [{"id": 1}]
+
+        pipeline = self._pipeline(tmp_path, "gh240_table_name")
+        event = _build_run_completed("mixed", pipeline, pipeline.run([customers(), orders()]), 0.1)
+
+        assert event.zero_rows is True
+        assert any("'dim_customers' loaded 0 rows" in w for w in event.warnings)
+
+    def test_replace_parent_with_rows_is_not_flagged_by_its_child_tables(self, tmp_path):
+        import dlt
+
+        @dlt.resource(name="orders", write_disposition="replace")
+        def orders():
+            yield from [{"id": 1, "lines": [{"sku": "a"}, {"sku": "b"}]}]
+
+        pipeline = self._pipeline(tmp_path, "gh240_nested")
+        event = _build_run_completed("orders", pipeline, pipeline.run(orders()), 0.1)
+
+        assert event.zero_rows is False
 
 
 class TestRunnerLedger:
@@ -315,6 +388,50 @@ class TestHistoryZeroRows:
         assert result.exit_code == 0
         assert "zero rows" in result.stdout
         assert "nomatch*.csv" in result.stdout
+
+
+def _healthy_then_partly_empty() -> list[RunCompleted]:
+    """A replace table got 0 rows in a run where another table loaded."""
+    healthy, _ = _healthy_then_empty()
+    return [
+        healthy,
+        RunCompleted(
+            source_id="src_a",
+            runtime_id="dlt-managed",
+            load_id="",
+            event_id="partrun-0001",
+            rows_loaded={"facts": 2},
+            zero_rows=True,
+            warnings=["'dim' loaded 0 rows with write_disposition 'replace', so its table is now empty."],
+            timestamp=datetime(2026, 9, 2, 10, 0, tzinfo=UTC),
+        ),
+    ]
+
+
+class TestPartlyEmptyRun:
+    """A run that loaded rows but left a replace table with none isn't labelled 'nothing loaded'."""
+
+    def test_status_names_the_empty_table_without_claiming_nothing_loaded(self, status_project, cli_runner):
+        _seed_events(status_project, _healthy_then_partly_empty())
+
+        result = cli_runner.invoke(app, ["data", "status"])
+
+        assert result.exit_code == 0
+        assert "a table in the last run got 0 rows" in result.stdout
+        assert "last run loaded 0 rows" not in result.stdout
+        assert "'dim' loaded 0 rows" in result.stdout
+
+    def test_history_shows_rows_and_the_empty_table(self, status_project, cli_runner):
+        _seed_events(status_project, _healthy_then_partly_empty())
+
+        listing = cli_runner.invoke(app, ["data", "history"])
+        shown = cli_runner.invoke(app, ["data", "history", "show", "partrun"])
+
+        part_line = next(line for line in listing.stdout.splitlines() if "partrun" in line)
+        assert "!" in part_line
+        assert "2 rows, a table got 0" in part_line
+        assert "nothing loaded" not in part_line
+        assert "a table got zero rows" in shown.stdout
 
 
 @pytest.mark.offline_e2e
