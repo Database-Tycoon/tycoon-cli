@@ -3,10 +3,20 @@ title: Documentation log
 description: Chronological record of documentation changes
 tags: [log]
 related: []
-updated: '2026-09-16'
+updated: '2026-09-22'
 ---
 
 # Log
+
+- 2026-09-22: **The retired v5 planner is deleted.** `sim/town_v5_plan.py`,
+  `tests/tycoon_city/sim/test_town_v5_plan.py` and
+  `agent_tasks/task_v5_reconciliation.md` are gone. The v4/v5 split was
+  dissolved into the single ring planner that shipped in 0.2.1 (#247), and
+  `DATABASE_TYCOON_PLANNER` is already a documented no-op; the module and
+  its 35 tests survived only because nothing imported them. Removing them
+  before the renderer suite joins the default `pytest` run (#256) keeps a
+  test for dead code out of the gate. `handover.md` still narrates the v5
+  era; that page is history and is left as written.
 
 - 2026-09-16: **The ring planner ships in 0.2.1 on its own; the rest of the
   city stream moves to 0.2.2.** #247, the engine half of #206 split at the
