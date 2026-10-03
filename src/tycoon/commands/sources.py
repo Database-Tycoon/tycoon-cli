@@ -618,6 +618,17 @@ _MaxRecordsOption = typer.Option(
 )
 
 
+_FailOnEmptyOption = typer.Option(
+    False,
+    "--fail-on-empty",
+    help=(
+        "Exit non-zero, and record the run as failed, when a local glob "
+        "matches no files or a replace load brings in zero rows. For orchestrated runs "
+        "where the exit code is the only signal anyone sees."
+    ),
+)
+
+
 def _source_already_referenced(dbt_dir: Path, source_name: str) -> bool:
     """Return True if any .sql under models/ already references this dbt
     source — meaning the user has wired it up, by hand or via a previous
@@ -692,6 +703,7 @@ def run_source(
             "set `transform.auto_scaffold: false` in tycoon.yml."
         ),
     ),
+    fail_on_empty: bool = _FailOnEmptyOption,
 ) -> None:
     """Ingest data from a registered source by name."""
     from tycoon.ingestion.runner import run_source as _run_source
@@ -727,6 +739,7 @@ def run_source(
             source_config=source_config,
             raw_db_path=cfg.raw_db,
             max_records=max_records,
+            fail_on_empty=fail_on_empty,
         )
         if load_info is None:
             info(f"{source_name}: nothing to load. No tables were changed.")
@@ -755,6 +768,7 @@ def run_all(
             "for every source. See `tycoon data sources run --help`."
         ),
     ),
+    fail_on_empty: bool = _FailOnEmptyOption,
 ) -> None:
     """Run all registered source pipelines sequentially."""
     from tycoon.ingestion.runner import run_source as _run_source
@@ -781,6 +795,7 @@ def run_all(
                 source_config=source_config,
                 raw_db_path=cfg.raw_db,
                 max_records=max_records,
+                fail_on_empty=fail_on_empty,
             )
             if load_info is None:
                 info(f"{name}: nothing to load. No tables were changed.")

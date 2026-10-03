@@ -44,6 +44,16 @@ def run_all_cmd(
             ),
         ),
     ] = False,
+    fail_on_empty: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-empty",
+            help=(
+                "Exit non-zero, and record the run as failed, when a local glob "
+                "matches no files or a replace load brings in zero rows."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Ingest all registered sources then run dbt build."""
     cfg = load_config()
@@ -95,6 +105,7 @@ def run_all_cmd(
                     source_config=source_config,
                     raw_db_path=cfg.raw_db,
                     max_records=max_records,
+                    fail_on_empty=fail_on_empty,
                 )
                 if load_info is None:
                     info(f"{name}: nothing to load. No tables were changed.")
