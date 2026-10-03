@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -370,6 +371,44 @@ def _capture_and_refresh_safe(
         pass
 
 
+def _keep_first_rows(max_rows: int) -> Callable[[Any], bool]:
+    seen = 0
+
+    def keep(_row: Any) -> bool:
+        nonlocal seen
+        seen += 1
+        return seen <= max_rows
+
+    return keep
+
+
+def _cap_records_per_resource(dlt_source: Any, max_records: int) -> None:
+    """Cap each resource of a built source at ``max_records`` rows. gh-239.
+
+    dlt's ``add_limit`` alone can't deliver that: by default it counts
+    yields (pages, file chunks, SQL batches), with ``count_rows=True`` it
+    still lets the final page through untrimmed, and on a transformer such
+    as a filesystem ``files | read_csv()`` pipe it is a logged no-op. So
+    ``add_limit(count_rows=True)`` stops paginated reads early (and becomes a
+    SQL ``LIMIT`` for ``sql_database``), and a row filter trims the last
+    page to the exact count. A filesystem transformer still parses its
+    whole input; only the filter caps what lands.
+    """
+    from dlt.extract import DltSource
+
+    if isinstance(dlt_source, DltSource):
+        resources = list(dlt_source.resources.selected.values())
+    elif isinstance(dlt_source, list):
+        resources = dlt_source
+    else:
+        resources = [dlt_source]
+
+    for resource in resources:
+        if not resource.is_transformer:
+            resource.add_limit(max_records, count_rows=True)
+        resource.add_filter(_keep_first_rows(max_records))
+
+
 _NATIVE_BUILDERS = {
     "rest_api": _build_rest_api_source,
     "sql_database": _build_sql_database_source,
@@ -486,6 +525,10 @@ def run_source(
                 # the older single-resource shape still needs renaming here.
                 # See _build_filesystem_source and _build_filesystem_resource.
                 dlt_source = dlt_source.with_name(name)
+
+        # 0 means no cap, matching the catalog shims' `if max_records:`.
+        if max_records:
+            _cap_records_per_resource(dlt_source, max_records)
 
         load_info = pipeline.run(dlt_source)
         load_info.raise_on_failed_jobs()

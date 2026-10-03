@@ -18,6 +18,7 @@ def run_all_cmd(
         typer.Option(
             "--max-records",
             "-n",
+            min=0,
             help="Cap records fetched per resource (useful for testing).",
             show_default=False,
         ),
