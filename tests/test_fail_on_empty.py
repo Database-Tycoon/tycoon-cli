@@ -87,6 +87,36 @@ class TestRunSourceFailOnEmpty:
 
         assert [type(e) for e in _ledger(ledger_path)] == [RunStarted, RunFailed]
 
+    def test_empty_replace_resource_fails_even_when_a_sibling_loaded(self, tmp_path, ledger_path, monkeypatch):
+        """Emmanuel's #300 repro: a replace table emptied beside an append table that loaded."""
+        import dlt
+
+        @dlt.resource(name="res_a", write_disposition="replace")
+        def res_a():
+            yield from []
+
+        @dlt.resource(name="res_b", write_disposition="append")
+        def res_b():
+            yield from [{"id": 1}, {"id": 2}]
+
+        pipeline = dlt.pipeline(
+            pipeline_name="gh240_foe_mixed",
+            destination=dlt.destinations.duckdb(str(tmp_path / "mixed.duckdb")),
+            dataset_name="raw_mixed",
+            pipelines_dir=str(tmp_path / "pipelines"),
+        )
+        monkeypatch.setattr(
+            runner, "_run_catalog", lambda *_args, **_kwargs: (pipeline, pipeline.run([res_a(), res_b()]))
+        )
+        monkeypatch.setattr(runner, "_capture_and_refresh_safe", lambda *_args, **_kwargs: None)
+
+        with pytest.raises(IngestionError, match=r"left a table with 0 rows.*'res_a' loaded 0 rows"):
+            run_source(
+                "mixed", SourceConfig(type="github", schema="raw_mixed"), tmp_path / "raw.duckdb", fail_on_empty=True
+            )
+
+        assert [type(e) for e in _ledger(ledger_path)] == [RunStarted, RunFailed]
+
     def test_incremental_run_with_no_new_records_passes(self, tmp_path, ledger_path, monkeypatch):
         """A quiet incremental merge is a normal sync, not an empty run."""
         import dlt

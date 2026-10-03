@@ -22,7 +22,7 @@ All notable changes to this project will be documented in this file. The format 
 [#268]: https://github.com/Database-Tycoon/tycoon-cli/pull/268
 [#269]: https://github.com/Database-Tycoon/tycoon-cli/pull/269
 [#273]: https://github.com/Database-Tycoon/tycoon-cli/pull/273
-- **`--fail-on-empty` for orchestrated runs** ([#240][]). `tycoon data sources run`, `tycoon data sources run-all` and `tycoon data run-all` accept an opt-in `--fail-on-empty`. With it, a local filesystem glob that matches no files stops the source before anything loads, and a run that loads zero rows where that can empty a table (a `replace` load) fails after it. An append, merge, or incremental run with no new records still passes. Either way the command exits 1 with an error naming the problem, and the ledger records `run_failed` instead of `run_completed`. Without the flag, behaviour is unchanged: an empty match exits 0 with "nothing to load".
+- **`--fail-on-empty` for orchestrated runs** ([#240][]). `tycoon data sources run`, `tycoon data sources run-all` and `tycoon data run-all` accept an opt-in `--fail-on-empty`. With it, a local filesystem glob that matches no files stops the source before anything loads, and a run where a `replace` resource loads zero rows fails after it, even if other resources in the run loaded some. An append, merge, or incremental run with no new records still passes. Either way the command exits 1 with an error naming the problem, and the ledger records `run_failed` instead of `run_completed`. Without the flag, behaviour is unchanged: an empty match exits 0 with "nothing to load".
 
 ### Changed
 

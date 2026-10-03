@@ -509,7 +509,9 @@ def _complete_run(
     except Exception:
         return
     if fail_on_empty and event.zero_rows:
-        raise IngestionError(f"'{name}' loaded 0 rows, and --fail-on-empty is set.")
+        what = "left a table with 0 rows" if any(event.rows_loaded.values()) else "loaded 0 rows"
+        detail = " ".join(event.warnings)
+        raise IngestionError(f"'{name}' {what}, and --fail-on-empty is set.{' ' + detail if detail else ''}")
     _emit_event_safe(metadata_db, event)
 
 
