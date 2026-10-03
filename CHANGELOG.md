@@ -31,6 +31,9 @@ All notable changes to this project will be documented in this file. The format 
 
 [#177]: https://github.com/Database-Tycoon/tycoon-cli/issues/177
 [#239]: https://github.com/Database-Tycoon/tycoon-cli/issues/239
+- **`tycoon data query`, `data schema` and `data clean` work with a MotherDuck warehouse or raw database** ([#70][]). With `database.warehouse: md:<name>` or `database.raw: md:<name>_raw` in tycoon.yml, tycoon joined the connection string onto the project root and looked for a local file of that name, so `data query` failed with "Database not found" and `data clean --all` could delete a local file called `md:<name>_raw`. The config now has `warehouse_target` and `raw_target`, which pass an `md:` string through to DuckDB unchanged, and `local_db` is `None` for a MotherDuck warehouse instead of a made-up path. `data query` (including `--raw`) and `data schema` connect to MotherDuck directly. A MotherDuck query isn't opened with `read_only=True`, since DuckDB only supports that flag for local files, so what it can change depends on your token's permissions. `data clean` skips a MotherDuck warehouse or raw database with a message and still removes the local files, and `tycoon semantics scaffold` says MotherDuck isn't supported yet rather than reporting a missing file. Commands that still need a local raw file, such as `data sources run` and `data analyze`, now stop with a clear error for an `md:` raw database instead of writing a local file named after it. Printed MotherDuck targets and DuckDB errors drop the `?` query string, so a `motherduck_token` in tycoon.yml never reaches the terminal.
+
+[#70]: https://github.com/Database-Tycoon/tycoon-cli/issues/70
 
 ## [0.2.1] - 2026-09-16
 

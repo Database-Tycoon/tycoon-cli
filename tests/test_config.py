@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tycoon.config import TycoonConfig, load_config
+import pytest
+
+from tycoon.config import TycoonConfig, display_target, load_config, redact_secrets
 from tycoon.project import SCHEMA_VERSION
 
 
@@ -107,3 +109,57 @@ class TestLoadConfigSchemaWarning:
         assert exc_info.value.code == 1
         assert len(errors) == 1
         assert "newer than this tycoon supports" in errors[0]
+
+
+class TestWarehouseTarget:
+    def _config(self, tmp_path, warehouse: str):
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "tycoon.yml").write_text(f"name: test\nsources: {{}}\ndatabase:\n  warehouse: '{warehouse}'\n")
+        return TycoonConfig(project_root=tmp_path)
+
+    def test_motherduck_target_passes_through(self, tmp_path):
+        cfg = self._config(tmp_path, "md:dogfood_dbt_prod")
+        assert cfg.warehouse_target == "md:dogfood_dbt_prod"
+        assert cfg.warehouse_is_motherduck
+        assert cfg.local_db is None
+
+    def test_local_target_resolves_under_root(self, tmp_path):
+        cfg = self._config(tmp_path, "data/wh.duckdb")
+        assert cfg.warehouse_target == str(tmp_path / "data" / "wh.duckdb")
+        assert not cfg.warehouse_is_motherduck
+        assert cfg.local_db == tmp_path / "data" / "wh.duckdb"
+
+    def test_motherduck_raw_passes_through(self, tmp_path, capsys):
+        (tmp_path / "tycoon.yml").write_text(
+            "name: test\nsources: {}\ndatabase:\n  warehouse: 'md:x'\n  raw: 'md:x_raw?motherduck_token=SECRET123'\n"
+        )
+        cfg = TycoonConfig(project_root=tmp_path)
+        assert cfg.raw_is_motherduck
+        assert cfg.raw_target == "md:x_raw?motherduck_token=SECRET123"
+        # Ingestion only writes local files, so the file path exits clearly.
+        with pytest.raises(SystemExit):
+            _ = cfg.raw_db
+        out = capsys.readouterr()
+        assert "MotherDuck (md:x_raw)" in out.out + out.err
+        assert "SECRET123" not in out.out + out.err
+
+
+class TestRedaction:
+    @pytest.mark.parametrize(
+        ("target", "shown"),
+        [
+            ("md:", "md:"),
+            ("md:db", "md:db"),
+            ("md:db?motherduck_token=x&saas_mode=true", "md:db"),
+            ("/tmp/proj/data/warehouse.duckdb", "/tmp/proj/data/warehouse.duckdb"),
+        ],
+    )
+    def test_display_target(self, target, shown):
+        assert display_target(target) == shown
+
+    def test_redact_secrets_in_error_text(self):
+        msg = "IO Error: can't open 'md:db?motherduck_token=SECRET123&x=1' (motherduck_token=SECRET123)"
+        out = redact_secrets(msg)
+        assert "SECRET123" not in out
+        assert "'md:db'" in out
