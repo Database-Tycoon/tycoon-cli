@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
@@ -22,6 +23,7 @@ from tycoon.scaffolding.templates import (
     scaffold_from_template,
 )
 from tycoon.utils.console import console, error, header, info, next_steps, success, warn
+from tycoon.venv import UV_INSTALL_HINT, create_venv, find_uv
 
 
 def _prompt_choice(prompt: str, options: list[str]) -> int:
@@ -450,6 +452,43 @@ def _mode_next_steps(
         )
 
 
+_EXISTING_ENV_MARKERS = ("pyproject.toml", ".python-version", ".venv")
+
+
+def _build_project_venv(target: Path) -> None:
+    """Build the project's own ``.venv`` right after scaffolding (gh-262).
+
+    Skipped when the directory already has its own ``pyproject.toml``,
+    ``.python-version``, or ``.venv``: ``create_venv`` would otherwise treat
+    it as the project to manage, rewriting ``.python-version`` to tycoon's
+    default and syncing into whatever's already there, or refusing on an
+    existing ``.venv`` with a ``--force`` hint ``init`` doesn't expose.
+    ``tycoon setup`` is the explicit, opt-in way to do that instead.
+
+    `find_uv()` was already checked before any scaffolding started, so uv
+    itself being missing isn't a case handled here. A failure at this point
+    (network, disk, an environmental subprocess failure) doesn't roll back
+    the scaffold that already succeeded, it's reported and left for the
+    user to retry via `tycoon setup`, the same command this delegates to.
+    """
+    console.print()
+    existing = [marker for marker in _EXISTING_ENV_MARKERS if (target / marker).exists()]
+    if existing:
+        warn(
+            f"This directory already has its own {', '.join(existing)}, leaving it alone. "
+            "Run `tycoon setup` if you want tycoon to manage this project's environment."
+        )
+        return
+
+    info("Building the project's own environment via uv...")
+    result = create_venv(target)
+    if result.ok:
+        success(result.message)
+    else:
+        warn(f"Project scaffolded, but building its environment failed: {result.message}")
+        warn("Retry any time with: tycoon setup")
+
+
 def _parse_param_pairs(raw: list[str]) -> dict[str, str]:
     """Parse repeated --param name=value options into a dict.
 
@@ -512,6 +551,13 @@ def init_cmd(
             help="Migrate tycoon.yml to the current schema version and exit.",
         ),
     ] = False,
+    no_venv: Annotated[
+        bool,
+        typer.Option(
+            "--no-venv",
+            help="Scaffold the project without building its own .venv. Run `tycoon setup` later to add one.",
+        ),
+    ] = False,
 ) -> None:
     """Initialize a new tycoon project in the current directory."""
     if upgrade:
@@ -548,6 +594,23 @@ def init_cmd(
         error("Use a different directory or remove the existing tycoon.yml first.")
         raise typer.Exit(1)
 
+    # Test-only escape hatch: subprocess e2e tests exercise the real
+    # installed binary against real recipe commands, and shouldn't pay for
+    # a real `uv sync` + PyPI install on every run. Never documented to end
+    # users; --no-venv is the real flag. Checked for the literal "1" rather
+    # than any truthy string, so e.g. `TYCOON_INIT_NO_VENV=0` doesn't
+    # unexpectedly skip the build too.
+    no_venv = no_venv or os.environ.get("TYCOON_INIT_NO_VENV") == "1"
+
+    if not no_venv:
+        if find_uv() is None:
+            error(
+                "uv is not installed. tycoon builds every project its own environment via uv.\n"
+                f"  Install it with:  {UV_INSTALL_HINT}\n"
+                "  then re-run `tycoon init`, or pass --no-venv to scaffold without one."
+            )
+            raise typer.Exit(1)
+
     header(f"Initializing tycoon project: {project_name}")
 
     if template:
@@ -563,6 +626,8 @@ def init_cmd(
             raise typer.Exit(1)
         console.print()
         success(f"Project '{project_name}' initialized from template '{template}'!")
+        if not no_venv:
+            _build_project_venv(target)
         next_steps(
             ("tycoon data sources catalog", "browse available data sources"),
             ("tycoon data sources add", "add your first data source"),
@@ -580,4 +645,6 @@ def init_cmd(
         )
         console.print()
         success(f"Project '{project_name}' initialized successfully!")
+        if not no_venv:
+            _build_project_venv(target)
         _mode_next_steps(result.stack, result.dbt_path)
