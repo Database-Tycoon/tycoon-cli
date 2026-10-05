@@ -39,6 +39,9 @@ All notable changes to this project will be documented in this file. The format 
 
 [#238]: https://github.com/Database-Tycoon/tycoon-cli/issues/238
 [#240]: https://github.com/Database-Tycoon/tycoon-cli/issues/240
+- **A quoted `motherduck_token` value is masked in printed errors** ([#345][]). tycoon masks `motherduck_token=` values in DuckDB error text before printing it, but a quoted value such as `motherduck_token='...'`, `motherduck_token="..."` or `SET motherduck_token = '...'` passed through with the token intact. The value is now masked inside its quotes, with the key and the quotes kept, for any key case and with spaces around `=`. Other keys are not touched.
+
+[#345]: https://github.com/Database-Tycoon/tycoon-cli/issues/345
 
 ## [0.2.1] - 2026-09-16
 

@@ -22,7 +22,9 @@ MOTHERDUCK_PREFIX = "md:"
 
 # The query part of an md: string can carry motherduck_token=<secret>.
 _MD_QUERY_RE = re.compile(r"(md:[^\s'\"?]*)\?[^\s'\"]*")
-_MD_TOKEN_RE = re.compile(r"(motherduck_token=)[^\s&'\"]+", re.IGNORECASE)
+# The key, any spaces around "=", and an opening quote stay; the value is masked
+# and stops at a quote, so a closing quote survives too (SET motherduck_token = '...').
+_MD_TOKEN_RE = re.compile(r"(motherduck_token\s*=\s*['\"]?)[^\s&'\"]+", re.IGNORECASE)
 
 
 def display_target(target: str) -> str:
