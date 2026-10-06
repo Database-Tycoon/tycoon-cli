@@ -5,7 +5,7 @@ mutation-testing discipline.
 
 Properties asserted: the plan is deterministic (same catalog twice →
 identical `DagPlan`, which is what `city.json` byte-stability rests on, and
-the BFS tie-break in `_bfs` is the thing that could break it); frontage is 0
+the BFS tie-break in `town_network.bfs_route` is the thing that could break it); frontage is 0
 (every lot has a road tile orthogonally adjacent); every measured edge
 resolves to a route; and street features dress every ending.
 
@@ -24,13 +24,13 @@ depth cannot tell schema grouping from depth grouping.
 
 from tycoon_city.catalog.models import CatalogObject, Edge, PipelineContext
 from tycoon_city.sim.road_junctions import check_junctions
+from tycoon_city.sim.town_network import bfs_route
 from tycoon_city.sim.town_plan import (
     CELL_SIZE,
     CIVIC_CORE_CELLS,
     NEIGHBOURHOOD_GAP,
     WEST_MARGIN,
     _anchor,
-    _bfs,
     plan_dag_layout,
     schema_precincts,
 )
@@ -209,23 +209,23 @@ def test_determinism_across_multiple_catalogs():
 
 
 def test_bfs_tie_break_is_deterministic():
-    """_bfs must always resolve equal-length paths the same way. A set-
+    """bfs_route must always resolve equal-length paths the same way. A set-
     iteration order would break byte-stability on the first rehash."""
     road = {(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1), (0, 2), (1, 2), (2, 2)}
-    path1 = _bfs(frozenset(road), (0, 0), (2, 2))
-    path2 = _bfs(frozenset(road), (0, 0), (2, 2))
+    path1 = bfs_route(frozenset(road), (0, 0), (2, 2))
+    path2 = bfs_route(frozenset(road), (0, 0), (2, 2))
     assert path1 == path2
     assert len(path1) > 0
 
 
 def test_bfs_returns_empty_for_unreachable():
-    """If goal is not on the road, _bfs returns empty, not a crash."""
-    assert _bfs(frozenset({(0, 0), (1, 0), (2, 0)}), (0, 0), (5, 5)) == ()
+    """If goal is not on the road, bfs_route returns empty, not a crash."""
+    assert bfs_route(frozenset({(0, 0), (1, 0), (2, 0)}), (0, 0), (5, 5)) == ()
 
 
 def test_bfs_returns_single_tile_when_start_equals_goal():
-    """When start == goal, _bfs returns a single-tuple path."""
-    assert _bfs(frozenset({(0, 0), (1, 0)}), (0, 0), (0, 0)) == ((0, 0),)
+    """When start == goal, bfs_route returns a single-tuple path."""
+    assert bfs_route(frozenset({(0, 0), (1, 0)}), (0, 0), (0, 0)) == ((0, 0),)
 
 
 # ---------------------------------------------------------------------------
