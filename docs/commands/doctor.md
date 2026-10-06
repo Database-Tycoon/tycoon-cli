@@ -34,9 +34,10 @@ This is the first check because tycoon runs dbt out of the *same* interpreter it
 
 Reports whether this project has its own `.venv` (built by [`tycoon init`](init.md) or [`tycoon setup`](setup.md)), and whether tycoon is actually running from it, not just whether a `.venv` directory happens to exist:
 
-- `OK Project environment: using its own .venv at <path>.` — tycoon is running from this project's own `.venv`.
-- `WARN Project environment: <path> exists, but tycoon is running from <other path> instead. Activate it with ... or run it directly with ....` — the `.venv` is there (from a failed/partial setup, or one made by hand) but tycoon isn't executing from it, so a catalog source resolved against that `.venv`'s project-local directory can fail "not installed" with no earlier warning.
-- `WARN Project environment: this project doesn't have its own .venv yet ... Run tycoon setup to build one.` — no `.venv` at all; tycoon falls back to the older shared/ambient environment model.
+- `OK Project environment: using its own .venv at <path>.` tycoon is running from this project's own `.venv`.
+- `WARN Project environment: <path> exists, but tycoon is running from <other path> instead. Activate it with ... or run it directly with ....` The `.venv` has tycoon installed in it, but tycoon isn't executing from it, so a catalog source resolved against that `.venv`'s project-local directory can fail "not installed" with no earlier warning.
+- `WARN Project environment: <path> exists, but tycoon is running from <other path> instead, and <path> has no tycoon installed in it (empty or broken). Run tycoon setup --force to rebuild it.` A failed/partial setup, or a `.venv` made by hand, left the directory there with nothing usable in it.
+- `WARN Project environment: this project doesn't have its own .venv yet ... Run tycoon setup to build one.` No `.venv` at all, so tycoon falls back to the older shared/ambient environment model.
 
 Only runs when a `tycoon.yml` is present. Purely informational either way: doesn't affect doctor's overall pass/fail.
 

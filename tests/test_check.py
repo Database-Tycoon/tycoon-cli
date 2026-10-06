@@ -152,19 +152,19 @@ class TestProjectVenvCheck:
     def test_warns_when_venv_exists_but_tycoon_not_running_from_it(self, monkeypatch, tmp_path, capsys):
         """Review must-fix: the old check was "`.venv` exists", not "tycoon
         is executing from this project's `.venv`" (the actual gh-265
-        premise). An empty `.venv` (a failed/partial setup, or `tycoon
-        setup` leaving one beside an existing pyproject.toml, gh-262 review)
-        used to report OK while tycoon kept running from the ambient
-        interpreter, with no warning before the next catalog-source run
-        failed "not installed" (gh-263)."""
+        premise). A `.venv` with tycoon installed in it (just not the one
+        currently running) used to report OK while tycoon kept running from
+        the ambient interpreter, with no warning before the next
+        catalog-source run failed "not installed" (gh-263)."""
         import sys
 
         from tycoon.commands import doctor
 
         self._patch_config(monkeypatch, tmp_path)
         venv = tmp_path / ".venv"
-        venv.mkdir()
-        # The running interpreter is NOT this project's `.venv` — a
+        (venv / "bin").mkdir(parents=True)
+        (venv / "bin" / "tycoon").touch()
+        # The running interpreter is NOT this project's `.venv`, a
         # different path entirely, same as the real ambient-interpreter case.
         monkeypatch.setattr(sys, "prefix", str((tmp_path / "somewhere-else").resolve()))
 
@@ -172,11 +172,32 @@ class TestProjectVenvCheck:
         captured = capsys.readouterr()
         # Rich hard-wraps a long temp-dir path with no word boundary, so
         # normalizing via split()/join() (used elsewhere for wrapped output)
-        # would corrupt the path itself here — check un-normalized instead.
+        # would corrupt the path itself here, check un-normalized instead.
         combined = captured.out + captured.err
         assert ".venv" in combined
         assert "running from" in combined
         assert "activate" in combined.lower()
+
+    def test_warns_when_venv_exists_but_empty_or_broken(self, monkeypatch, tmp_path, capsys):
+        """gh-265 re-review: an empty `.venv` (a failed/partial setup, or
+        `tycoon setup` leaving one beside an existing pyproject.toml,
+        gh-262 review) has no `bin/tycoon` to activate or run, so the
+        advice can't be "activate it". Points at rebuilding it instead."""
+        import sys
+
+        from tycoon.commands import doctor
+
+        self._patch_config(monkeypatch, tmp_path)
+        venv = tmp_path / ".venv"
+        venv.mkdir()
+        monkeypatch.setattr(sys, "prefix", str((tmp_path / "somewhere-else").resolve()))
+
+        doctor._check_project_venv()
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "no tycoon installed in it" in combined
+        assert "tycoon setup --force" in combined
+        assert "activate" not in combined.lower()
 
     def test_warns_when_venv_missing(self, monkeypatch, tmp_path, capsys):
         from tycoon.commands import doctor
@@ -191,7 +212,7 @@ class TestProjectVenvCheck:
 
     def test_doctor_cmd_skips_venv_check_outside_project(self, cli_runner, tmp_path, monkeypatch):
         """Should-fix: outside any project this used to warn 'run tycoon
-        setup' right above a 'tycoon.yml not found, run tycoon init' panel —
+        setup' right above a 'tycoon.yml not found, run tycoon init' panel.
         `setup` itself refuses without a tycoon.yml, so the first piece of
         advice was a dead end. Gated behind `config.has_project_file`, same
         as the stack checks below it."""

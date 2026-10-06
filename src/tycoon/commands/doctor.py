@@ -69,7 +69,7 @@ def _check_project_venv() -> None:
 
     #265's detection is meant to be "the running tycoon is executing from
     this project's `.venv`", not just that a `.venv` directory happens to
-    exist beside `tycoon.yml` — a failed/partial `uv venv`, or `tycoon
+    exist beside `tycoon.yml`. A failed/partial `uv venv`, or `tycoon
     setup` run against a project that already had its own `pyproject.toml`
     (gh-262 review), can leave an empty or foreign `.venv` there. An
     exists-only check reports OK in both cases while tycoon keeps running
@@ -92,11 +92,17 @@ def _check_project_venv() -> None:
     running_prefix = Path(sys.prefix).resolve()
     if running_prefix == target.resolve():
         success(f"Project environment: using its own .venv at {target}.")
-    else:
+    elif (target / "bin" / "tycoon").exists():
         warn(
             f"Project environment: {target} exists, but tycoon is running from "
             f"{running_prefix} instead. Activate it with `source {target}/bin/activate`, "
             f"or run it directly with `{target}/bin/tycoon`."
+        )
+    else:
+        warn(
+            f"Project environment: {target} exists, but tycoon is running from "
+            f"{running_prefix} instead, and {target} has no tycoon installed in it "
+            "(empty or broken). Run `tycoon setup --force` to rebuild it."
         )
 
 
