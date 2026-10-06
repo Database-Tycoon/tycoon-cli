@@ -491,7 +491,7 @@ class TestInstallRequirements:
             assert install_requirements(requirements, project_root=tmp_path) is True
 
         cmd = mock_run.call_args.args[0]
-        assert cmd == ["uv", "--project", str(tmp_path), "add", "-r", str(requirements)]
+        assert cmd == ["uv", "--project", str(tmp_path), "add", "--python", "3.13", "-r", str(requirements)]
 
     def test_returns_false_on_failure(self, tmp_path):
         from unittest.mock import MagicMock, patch
@@ -1295,7 +1295,7 @@ class TestInstallDepsIntoProjectVenv:
         """gh-264 review: `uv add` needs a pyproject.toml, not just a `.venv`.
         A `.venv` made by hand (e.g. plain `python -m venv`) has no
         pyproject.toml, and `uv --project <root> add` fails on it with
-        "No pyproject.toml found" — checking `.venv` alone took this path
+        "No pyproject.toml found", checking `.venv` alone took this path
         and hit that failure. Falls back to ambient `uv pip install`
         instead, same as a project with no `.venv` at all."""
         from tycoon.commands.sources import _maybe_install_source_requirements
@@ -1317,6 +1317,33 @@ class TestInstallDepsIntoProjectVenv:
         _maybe_install_source_requirements("google_sheets", sources_dir, tmp_path)
 
         assert seen["project_root"] is None
+
+    def test_maybe_install_source_requirements_falls_back_without_venv(self, tmp_path, monkeypatch):
+        """gh-262 made `init` skip building a `.venv` when a pyproject.toml
+        already exists, so a project can now have one without the other.
+        Targeting project_root on pyproject.toml alone would run `uv add`
+        against a project with no `.venv`, creating one and writing into
+        the user's own pyproject.toml unprompted."""
+        from tycoon.commands.sources import _maybe_install_source_requirements
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        (sources_dir / "requirements.txt").write_text("google-api-python-client\n")
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(requirements_path, project_root=None):
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_requirements", _fake_install)
+
+        _maybe_install_source_requirements("google_sheets", sources_dir, tmp_path)
+
+        assert seen["project_root"] is None
+        assert not (tmp_path / ".venv").exists()
 
     def test_maybe_install_source_requirements_noop_when_file_absent(self, tmp_path, monkeypatch):
         """dlt didn't write a requirements.txt for this source, nothing to install."""
@@ -1376,6 +1403,30 @@ class TestInstallDepsIntoProjectVenv:
         _maybe_install_dlt_extra("google_sheets", tmp_path)
 
         assert seen["project_root"] is None
+
+    def test_maybe_install_dlt_extra_falls_back_without_venv(self, tmp_path, monkeypatch):
+        """Same gh-262 gap as the requirements.txt path: a pyproject.toml
+        with no `.venv` falls back to ambient `uv pip install` rather than
+        running `uv add` against a project that never built one."""
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(source_type, project_root=None):
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_dlt_extra", _fake_install)
+
+        _maybe_install_dlt_extra("google_sheets", tmp_path)
+
+        assert seen["project_root"] is None
+        assert not (tmp_path / ".venv").exists()
 
     def test_maybe_install_dlt_extra_falls_back_to_ambient_without_venv(self, tmp_path, monkeypatch):
         from tycoon.commands.sources import _maybe_install_dlt_extra

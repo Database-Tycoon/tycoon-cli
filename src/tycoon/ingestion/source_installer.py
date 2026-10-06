@@ -1,16 +1,16 @@
 """Install dlt extras and a catalog source's own requirements.txt on demand.
 
-Both install paths go through uv. When the project has its own
-`pyproject.toml` (written alongside `.venv` by `create_venv`, gh-262), they
-go through `uv add`, so the dependency lands somewhere durable, not just
-installed into `.venv` and forgotten -- a fresh `uv sync` elsewhere
-reproduces it. The check is on `pyproject.toml` specifically, not `.venv`
-alone: `uv add` needs a `pyproject.toml` to add into, and a `.venv` made by
-hand (e.g. plain `python -m venv`, with no `pyproject.toml`) makes it fail
-outright (gh-264 review). A project without a `pyproject.toml` yet falls
-back to installing into the ambient environment via `uv pip install`,
-exactly as before gh-264. Neither falls back to plain `pip` if uv isn't on
-PATH, tycoon is uv-only end to end.
+Both install paths go through uv. When the caller passes a project root with
+its own `pyproject.toml` and `.venv` (written together by `create_venv`,
+gh-262), they go through `uv add --python <version>`, so the dependency
+lands somewhere durable, not just installed into `.venv` and forgotten --
+a fresh `uv sync` elsewhere reproduces it. The explicit `--python` pins the
+same interpreter `create_venv` wrote to `.python-version`, so a `UV_PYTHON`
+override on the caller's machine can't silently resolve `uv add` against a
+different interpreter than the project's own `.venv` (gh-264 review).
+A project without its own `.venv` yet falls back to installing into the
+ambient environment via `uv pip install`, exactly as before gh-264. Neither
+falls back to plain `pip` if uv isn't on PATH, tycoon is uv-only end to end.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from pathlib import Path
 
 from rich.markup import escape
 
+from tycoon.constants import DEFAULT_SETUP_PYTHON
 from tycoon.utils.console import error, info
 
 # dlt pip extras for generic source types (rest_api, sql_database, filesystem).
@@ -44,6 +45,21 @@ DLT_EXTRAS: dict[str, str] = {
     "shopify": "shopify",
     "zendesk": "zendesk",
 }
+
+
+def _python_version(project_root: Path) -> str:
+    """The interpreter `create_venv` pinned for this project, or the default.
+
+    Mirrors `venv.py`'s own `_add_command`: an explicit `--python` on `uv
+    add` so a `UV_PYTHON` override can't resolve against a different
+    interpreter than the project's own `.venv` (gh-264 review).
+    """
+    version_file = project_root / ".python-version"
+    if version_file.exists():
+        version = version_file.read_text().strip()
+        if version:
+            return version
+    return DEFAULT_SETUP_PYTHON
 
 
 def _require_uv() -> str | None:
@@ -123,7 +139,7 @@ def install_dlt_extra(source_type: str, project_root: Path | None = None) -> boo
         return False
 
     if project_root is not None:
-        cmd = ["uv", "--project", str(project_root), "add", package]
+        cmd = ["uv", "--project", str(project_root), "add", "--python", _python_version(project_root), package]
     else:
         cmd = ["uv", "pip", "install", package]
 
@@ -142,7 +158,16 @@ def install_requirements(requirements_path: Path, project_root: Path | None = No
         return False
 
     if project_root is not None:
-        cmd = ["uv", "--project", str(project_root), "add", "-r", str(requirements_path)]
+        cmd = [
+            "uv",
+            "--project",
+            str(project_root),
+            "add",
+            "--python",
+            _python_version(project_root),
+            "-r",
+            str(requirements_path),
+        ]
     else:
         cmd = ["uv", "pip", "install", "-r", str(requirements_path)]
 
