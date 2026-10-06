@@ -214,6 +214,49 @@ always reflects the latest published version.
 Contributors don't cut releases — maintainers do. If you want to propose one,
 open an issue first.
 
+## Merging into the release branch
+
+These are notes for maintainers merging reviewed PRs into the active release
+branch. They come from the v0.2.2 cycle, where most of them were learned the
+hard way.
+
+- **Use merge commits, not squash.** A squash rewrites the merged commits, so
+  any PR stacked on top suddenly conflicts with its own base. A merge commit
+  leaves the stack above intact.
+- **Pin the merge to the commit that was reviewed.** Pass
+  `--match-head-commit <sha>` to `gh pr merge` (or `sha=<sha>` to the API
+  call below), so a push that lands between review and merge can't sneak in.
+- **Stacked PRs need the asynchronous merge API.** `gh pr merge` refuses a PR
+  that belongs to a stack. Use:
+
+  ```shell
+  gh api -X PUT repos/Database-Tycoon/tycoon-cli/pulls/<N>/merge-async \
+    -f merge_method=merge -f merge_action=direct_merge -f sha=<head-sha>
+  gh api repos/Database-Tycoon/tycoon-cli/pulls/<N>/merge-async/<uuid>   # poll until "merged"
+  ```
+
+  This call also merges every open PR **below** the one you name, so merge
+  a stack from the bottom up, one layer at a time.
+- **Check the next layer's base before merging it.** After a layer merges,
+  GitHub sometimes retargets the PR above it to the release branch and
+  sometimes doesn't. If `gh pr view <N> --json baseRefName` still names the
+  merged branch, run `gh pr edit <N> --base <release-branch>`, wait for CI to
+  rerun, then merge. Merging without retargeting lands the PR in the dead
+  branch instead of the release.
+- **Expect a `CHANGELOG.md` conflict after every merge.** Each PR adds lines
+  under `[Unreleased]`, so every merge conflicts the next PR in that section.
+  Rebase the PR onto the release branch keeping both sides, then check two
+  things before pushing:
+  - Outside `CHANGELOG.md`, the PR's diff is byte-identical to what was
+    reviewed (compare `git diff <old-base> <old-head> -- . ':(exclude)CHANGELOG.md'`
+    with the same diff for the rebased branch).
+  - The PR adds exactly its own CHANGELOG lines. If a later commit in the PR
+    reworded its own entry, a keep-both rebase leaves the old and new wording
+    side by side; delete the stale one.
+
+  Push with `git push --force-with-lease=<branch>:<sha-you-rebased-from>` so
+  the push fails if someone else pushed in the meantime.
+
 ## Questions?
 
 Open an issue on [GitHub](https://github.com/Database-Tycoon/tycoon-cli/issues)
