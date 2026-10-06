@@ -60,7 +60,7 @@ Then type-specific config:
 - **filesystem** — directory path + glob pattern
 - **sql_database** — connection string + table list
 
-The new source is written to `tycoon.yml`'s `sources:` map. For non-native types, `add` also offers to install the dlt source files (one-time `dlt init <type>` to `~/.tycoon/sources/`).
+The new source is written to `tycoon.yml`'s `sources:` map. For non-native types, `add` also offers to install the dlt source files (one-time `dlt init <type>`). Where those files land depends on whether the project has its own `.venv`: a project with one gets its own `<project>/.tycoon/sources/`, a project without one still shares `~/.tycoon/sources/` across every tycoon project on the machine. A source installed into the shared location before a project picked up a `.venv` doesn't move on its own; `tycoon data sources migrate <type>` copies it into the project-local directory.
 
 ### Non-interactive mode (`--no-prompt`)
 
@@ -128,7 +128,7 @@ tycoon data sources add google_sheets \
 - **`range_names`** — comma-separated tab names and/or A1 ranges. Leave blank to load **every** sheet in the spreadsheet.
 - **`credentials_path`** — defaults to `${GOOGLE_APPLICATION_CREDENTIALS}`. Leave it blank to fall back to dlt's own credential resolution (env / `secrets.toml`), which is where the **OAuth / Application Default Credentials** path lives if you'd rather not use a service account.
 
-**4. Ingest:** `tycoon data sources run marketing-sheet`. The first run downloads the dlt `google_sheets` verified source to `~/.tycoon/sources/` (or `tycoon data sources catalog install google_sheets` under `--no-prompt`), then loads into `raw_<name>` and auto-scaffolds a staging dbt model.
+**4. Ingest:** `tycoon data sources run marketing-sheet`. The first run downloads the dlt `google_sheets` verified source (to the project's own `.tycoon/sources/` if it has a `.venv`, otherwise the shared `~/.tycoon/sources/`), then loads into `raw_<name>` and auto-scaffolds a staging dbt model.
 
 ## `list` — list registered sources
 
@@ -189,10 +189,12 @@ The runner picks how to ingest each source in this order:
 
 1. **Legacy pipeline modules** (keyed by source name) — currently `nyc-dot`, `mta-gtfs`, `mta-bus-speeds`. These have hand-tuned dlt code in `tycoon.ingestion.<name>_pipeline`.
 2. **Native dlt builders** — `rest_api`, `sql_database`, `filesystem` ship with dlt core.
-3. **Catalog sources** — `github`, `slack`, `stripe`, etc. require `~/.tycoon/sources/<type>/` to be populated (run `dlt init <type>` once via `tycoon data sources add`).
+3. **Catalog sources**: `github`, `slack`, `stripe`, etc. require `<type>/` to be populated under the resolved sources dir (`<project>/.tycoon/sources/` once the project has its own `.venv`, otherwise the shared `~/.tycoon/sources/`), via `dlt init <type>` once through `tycoon data sources add`.
 4. **Dynamic fallback** — `dlt.sources.<type>` import attempt.
 
-If none match, you get a clear error pointing you at `tycoon data sources add <type>`.
+If none match, you get a clear error pointing you at `tycoon data sources add <type>`. If the source is installed in the shared global directory but the project has since picked up its own `.venv`, the error points at `tycoon data sources migrate <type>` instead.
+
+Project-local `.tycoon/sources/` holds the downloaded dlt source code itself, not just config, and nothing in a scaffolded project excludes `.tycoon/` from version control. The first `dlt init` into a given sources dir writes a `.gitignore` there that keeps secrets, credentials, and local `.duckdb` files out, but it doesn't exclude the downloaded source packages themselves, those are tracked and committed by default if the project is a git repo. Add `.tycoon/sources/` to the project's own `.gitignore` if you'd rather not commit that third-party code.
 
 ## Related
 
