@@ -785,10 +785,20 @@ def migrate_source_cmd(
     Once a project has its own `.venv` (gh-262), downloaded source code
     resolves to `<project>/.tycoon/sources/` instead of the shared
     `~/.tycoon/sources/`. A source installed before that switch doesn't move
-    on its own; this copies it across so `tycoon data sources run` can find
-    it again without re-downloading from scratch.
+    on its own; this copies it across, with its requirements.txt and the
+    dir's `.gitignore`, then installs those requirements the same way
+    `sources add` does, so `tycoon data sources run` can find and import it
+    without re-downloading from scratch (gh-358).
     """
-    from tycoon.ingestion.source_manager import SOURCES_DIR, is_source_installed, migrate_source, resolve_sources_dir
+    import shutil
+
+    from tycoon.ingestion.source_manager import (
+        SOURCES_DIR,
+        is_source_installed,
+        migrate_source,
+        resolve_sources_dir,
+        source_package_dir,
+    )
 
     cfg = _require_project()
     sources_dir = resolve_sources_dir(cfg.root)
@@ -806,11 +816,33 @@ def migrate_source_cmd(
         error(f"Source '{source_type}' isn't installed anywhere. Run: tycoon data sources add {source_type}")
         raise typer.Exit(1)
 
-    if migrate_source(source_type, SOURCES_DIR, sources_dir):
-        success(f"Migrated '{source_type}' from {SOURCES_DIR} to {sources_dir}")
-    else:
+    package_dir = source_package_dir(source_type, sources_dir)
+    copied_package = not package_dir.exists()
+    try:
+        migrated = migrate_source(source_type, SOURCES_DIR, sources_dir)
+    except FileExistsError as exc:
+        error(
+            f"{exc} already exists but has no _run.py, so it isn't a migrated copy of '{source_type}'. "
+            "Nothing was changed. Move or delete that directory yourself, then retry."
+        )
+        raise typer.Exit(1) from None
+    if not migrated:
         warn(f"Failed to migrate '{source_type}'.")
         raise typer.Exit(1)
+
+    if not _maybe_install_source_requirements(source_type, sources_dir, cfg.root, auto=True):
+        # Only a package dir this run created is removed, so nothing the
+        # user had is deleted. The carried requirements.txt and .gitignore
+        # stay, and a rerun retries cleanly.
+        if copied_package:
+            shutil.rmtree(package_dir)
+        error(
+            f"'{source_type}' was not migrated: its dependencies failed to install. "
+            f"Fix the error above, then rerun: tycoon data sources migrate {source_type}"
+        )
+        raise typer.Exit(1)
+
+    success(f"Migrated '{source_type}' from {SOURCES_DIR} to {sources_dir}")
 
 
 # ---------------------------------------------------------------------------

@@ -1320,6 +1320,205 @@ class TestMigrateSource:
         assert "isn't installed anywhere" in (result.stderr or result.output)
 
 
+def _global_install_with_scaffolding(global_dir: Path) -> None:
+    """A shared sources dir the way the first `dlt init` into it leaves it:
+    the package, plus requirements.txt, .gitignore and .dlt/ at its root."""
+    import tycoon.ingestion.source_manager as source_manager
+
+    source_manager.install_source("rest_api", global_dir)
+    (global_dir / "requirements.txt").write_text("six>=1.16\n")
+    (global_dir / ".gitignore").write_text("secrets.toml\n*.duckdb\n")
+    (global_dir / ".dlt").mkdir()
+    (global_dir / ".dlt" / "config.toml").write_text("[runtime]\n")
+    (global_dir / ".dlt" / "secrets.toml").write_text('token = "real-secret"\n')
+
+
+class TestMigrateCarriesDepsAndScaffolding:
+    """`migrate` used to copy only the package dir: the source's
+    requirements never reached the project's `.venv`, a partly-filled
+    destination was deleted wholesale, and the protective `.gitignore` was
+    left behind (gh-358)."""
+
+    def _project(self, tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+        import tycoon.ingestion.source_manager as source_manager
+
+        _setup_project(tmp_path)
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.chdir(tmp_path)
+        global_dir = tmp_path / "global"
+        monkeypatch.setattr(source_manager, "SOURCES_DIR", global_dir)
+        _global_install_with_scaffolding(global_dir)
+        return global_dir, tmp_path / ".tycoon" / "sources"
+
+    def test_migrate_cmd_carries_and_installs_requirements(self, cli_runner, tmp_path, monkeypatch):
+        from tycoon.ingestion import source_installer
+
+        _, project_dir = self._project(tmp_path, monkeypatch)
+        seen: dict[str, object] = {}
+
+        def _fake_install(requirements_path, project_root=None):
+            seen["requirements_path"] = requirements_path
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_requirements", _fake_install)
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 0, result.output
+        assert (project_dir / "requirements.txt").read_text() == "six>=1.16\n"
+        assert seen["requirements_path"] == project_dir / "requirements.txt"
+        assert seen["project_root"] == tmp_path
+
+    def test_migrate_cmd_merges_into_existing_requirements(self, cli_runner, tmp_path, monkeypatch):
+        from tycoon.ingestion import source_installer
+
+        _, project_dir = self._project(tmp_path, monkeypatch)
+        project_dir.mkdir(parents=True)
+        (project_dir / "requirements.txt").write_text("requests\n")
+        monkeypatch.setattr(source_installer, "install_requirements", lambda *a, **k: True)
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 0, result.output
+        assert (project_dir / "requirements.txt").read_text().splitlines() == ["requests", "six>=1.16"]
+
+    def test_migrate_cmd_failed_install_exits_nonzero_and_rolls_back_package(self, cli_runner, tmp_path, monkeypatch):
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.ingestion import source_installer
+
+        global_dir, project_dir = self._project(tmp_path, monkeypatch)
+        monkeypatch.setattr(source_installer, "install_requirements", lambda *a, **k: False)
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 1
+        assert "Migrated" not in result.output
+        # Not left half-registered: a rerun retries the whole migrate.
+        assert not (project_dir / "rest_api").exists()
+        assert source_manager.is_source_installed("rest_api", project_dir) is False
+        assert source_manager.is_source_installed("rest_api", global_dir) is True
+
+    def test_migrate_cmd_refuses_partial_destination_and_keeps_it(self, cli_runner, tmp_path, monkeypatch):
+        from tycoon.ingestion import source_installer
+
+        _, project_dir = self._project(tmp_path, monkeypatch)
+        partial = project_dir / "rest_api"
+        partial.mkdir(parents=True)
+        (partial / "my_notes.py").write_text("# mine\n")
+        monkeypatch.setattr(source_installer, "install_requirements", lambda *a, **k: True)
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 1
+        # Rich wraps long paths mid-word, so compare with all whitespace removed.
+        assert str(partial) in "".join((result.stderr or result.output).split())
+        assert (partial / "my_notes.py").read_text() == "# mine\n"
+        assert not (partial / "_run.py").exists()
+
+    def test_migrate_source_raises_on_partial_destination(self, tmp_path):
+        import pytest
+
+        from tycoon.ingestion.source_manager import install_source, migrate_source
+
+        old_dir = tmp_path / "old"
+        install_source("rest_api", old_dir)
+        partial = tmp_path / "new" / "rest_api"
+        partial.mkdir(parents=True)
+        (partial / "keep.txt").write_text("keep")
+
+        with pytest.raises(FileExistsError):
+            migrate_source("rest_api", old_dir, tmp_path / "new")
+        assert (partial / "keep.txt").read_text() == "keep"
+
+    def test_migrate_cmd_carries_gitignore_and_dlt_config(self, cli_runner, tmp_path, monkeypatch):
+        from tycoon.ingestion import source_installer
+
+        _, project_dir = self._project(tmp_path, monkeypatch)
+        monkeypatch.setattr(source_installer, "install_requirements", lambda *a, **k: True)
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 0, result.output
+        assert (project_dir / ".gitignore").read_text() == "secrets.toml\n*.duckdb\n"
+        assert (project_dir / ".dlt" / "config.toml").read_text() == "[runtime]\n"
+        # Secrets stay where the user put them; migrate never copies them.
+        assert not (project_dir / ".dlt" / "secrets.toml").exists()
+
+    def test_migrate_cmd_never_overwrites_existing_gitignore(self, cli_runner, tmp_path, monkeypatch):
+        from tycoon.ingestion import source_installer
+
+        _, project_dir = self._project(tmp_path, monkeypatch)
+        (project_dir / ".dlt").mkdir(parents=True)
+        (project_dir / ".gitignore").write_text("my own rules\n")
+        (project_dir / ".dlt" / "config.toml").write_text("[mine]\n")
+        monkeypatch.setattr(source_installer, "install_requirements", lambda *a, **k: True)
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 0, result.output
+        assert (project_dir / ".gitignore").read_text() == "my own rules\n"
+        assert (project_dir / ".dlt" / "config.toml").read_text() == "[mine]\n"
+
+
+class TestMigrateRealUv:
+    """Seat of someone upgrading: a source sits in the shared global dir
+    with a requirements.txt, the project has since gained a real
+    uv-managed `.venv`, and the real `tycoon` binary runs `migrate` with
+    no mocks. The dependency must import from the project's own `.venv`
+    afterwards (gh-358). Skipped if uv or the `tycoon` binary isn't on
+    PATH, or PyPI isn't reachable."""
+
+    def test_migrated_requirement_imports_from_project_venv(self, tmp_path):
+        import os
+        import shutil
+        import socket
+        import subprocess
+
+        import pytest
+
+        from tycoon.ingestion.source_manager import is_source_installed
+
+        tycoon_bin = shutil.which("tycoon")
+        if shutil.which("uv") is None or tycoon_bin is None:
+            pytest.skip("uv or the tycoon binary is not on PATH")
+        try:
+            socket.create_connection(("pypi.org", 443), timeout=3).close()
+        except OSError:
+            pytest.skip("no network access to PyPI")
+
+        home = tmp_path / "home"
+        _global_install_with_scaffolding(home / ".tycoon" / "sources")
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "tycoon.yml").write_text(_SAMPLE_YML)
+        (project / "pyproject.toml").write_text(
+            '[project]\nname = "gh358-real-uv-test"\nversion = "0.1.0"\nrequires-python = ">=3.12"\ndependencies = []\n'
+        )
+        env = {**os.environ, "HOME": str(home)}
+        env.pop("VIRTUAL_ENV", None)
+        sync = subprocess.run(
+            ["uv", "--project", str(project), "sync"], capture_output=True, text=True, timeout=120, env=env
+        )
+        assert sync.returncode == 0, sync.stderr
+
+        result = subprocess.run(
+            [tycoon_bin, "data", "sources", "migrate", "rest_api"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert is_source_installed("rest_api", project / ".tycoon" / "sources") is True
+        check = subprocess.run(
+            [str(project / ".venv" / "bin" / "python"), "-c", "import six"], capture_output=True, text=True
+        )
+        assert check.returncode == 0, check.stderr
+
+
 # ---------------------------------------------------------------------------
 # Install deps into the project's own venv (gh-264)
 # ---------------------------------------------------------------------------
