@@ -492,21 +492,32 @@ def _build_run_completed(
     )
 
 
-def _emit_run_completed_safe(
+def _complete_run(
     metadata_db: Path | None,
     name: str,
     pipeline: Any,
     load_info: Any,
     elapsed: float,
     warnings: list[str] | None = None,
+    *,
+    fail_on_empty: bool = False,
 ) -> None:
-    """Build and emit a RunCompleted event; swallows all exceptions so observability
-    code never fails a successful pipeline run."""
+    """Record a finished run as RunCompleted, or fail it under ``fail_on_empty``.
+
+    Building and emitting the event is best-effort, so observability code
+    never fails a successful pipeline run. The one deliberate failure is a
+    zero-row run with ``fail_on_empty`` set: the ``IngestionError`` reaches
+    ``run_source``'s handler, which records ``RunFailed`` instead (gh-240).
+    """
     try:
         event = _build_run_completed(name, pipeline, load_info, elapsed, warnings)
-        _emit_event_safe(metadata_db, event)
     except Exception:
-        pass
+        return
+    if fail_on_empty and event.zero_rows:
+        what = "left a table with 0 rows" if any(event.rows_loaded.values()) else "loaded 0 rows"
+        detail = " ".join(event.warnings)
+        raise IngestionError(f"'{name}' {what}, and --fail-on-empty is set.{' ' + detail if detail else ''}")
+    _emit_event_safe(metadata_db, event)
 
 
 def _capture_and_refresh_safe(
@@ -589,6 +600,8 @@ def run_source(
     source_config: SourceConfig,
     raw_db_path: Path,
     max_records: int | None = None,
+    *,
+    fail_on_empty: bool = False,
     **kwargs: Any,
 ) -> tuple[dlt.Pipeline, Any]:
     """Run a dlt pipeline for a registered source.
@@ -614,6 +627,12 @@ def run_source(
     Returns (pipeline, load_info). ``load_info`` is ``None`` when the
     source had nothing to load (every local glob matched no files), in
     which case the pipeline never ran and no table was touched.
+
+    With ``fail_on_empty``, a local glob that matches no files raises
+    ``IngestionError`` before anything loads, and a run that loads zero
+    rows in a way that can empty a table (see ``_build_run_completed``)
+    raises after it; both record ``RunFailed`` rather than
+    ``RunCompleted``. Orchestrated runs rely on the exit code (gh-240).
     """
     _started = time.monotonic()
 
@@ -634,7 +653,9 @@ def run_source(
             pipeline, load_info = _run_legacy(name, raw_db_path=raw_db_path, max_records=max_records, **kwargs)
             load_info.raise_on_failed_jobs()
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-            _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
+            _complete_run(
+                _metadata_db, name, pipeline, load_info, time.monotonic() - _started, fail_on_empty=fail_on_empty
+            )
             return pipeline, load_info
 
         # 2. Native builders win over the catalog path. These types ship with
@@ -644,7 +665,9 @@ def run_source(
             # 3. Catalog source dispatch — load from ~/.tycoon/sources/
             pipeline, load_info = _run_catalog(source_type, name, source_config, raw_db_path, max_records)
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-            _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
+            _complete_run(
+                _metadata_db, name, pipeline, load_info, time.monotonic() - _started, fail_on_empty=fail_on_empty
+            )
             return pipeline, load_info
 
         # Warn about unexpanded env vars before building the source. Native
@@ -686,6 +709,10 @@ def run_source(
                 ) from exc
         else:
             unmatched_globs = _unmatched_local_globs(name, source_config)
+            if fail_on_empty and unmatched_globs:
+                raise IngestionError(
+                    " ".join(unmatched_globs) + " --fail-on-empty is set, so nothing was loaded and no table changed."
+                )
             dlt_source = builder(source_config)
             if dlt_source is None or (isinstance(dlt_source, list) and not dlt_source):
                 # Running dlt with nothing extracted still applies "replace"
@@ -723,7 +750,15 @@ def run_source(
         if legacy_rename:
             _warn_if_legacy_filesystem_table_exists(raw_db_path, source_config.schema_name, name)
         _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-        _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started, unmatched_globs)
+        _complete_run(
+            _metadata_db,
+            name,
+            pipeline,
+            load_info,
+            time.monotonic() - _started,
+            unmatched_globs,
+            fail_on_empty=fail_on_empty,
+        )
         return pipeline, load_info
 
     except Exception as exc:
