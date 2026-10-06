@@ -470,7 +470,7 @@ class TestRunCatalogProjectLocalSourcesDir:
             assert str(sources_dir) in sys.path
         finally:
             # "rest_api._run" is the real module name the production code
-            # resolves to, not a test-local fake name — drop it from the
+            # resolves to, not a test-local fake name. Drop it from the
             # import cache so later tests re-resolve from their own sources
             # dir instead of reusing this test's stub.
             sys.modules.pop("rest_api._run", None)

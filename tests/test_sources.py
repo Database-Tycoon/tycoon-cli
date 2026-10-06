@@ -952,7 +952,7 @@ class TestMigrateSource:
 
         assert migrate_source("rest_api", old_dir, new_dir) is True
         assert is_source_installed("rest_api", new_dir) is True
-        # The original stays in place — this is a copy, not a move.
+        # The original stays in place: this is a copy, not a move.
         assert is_source_installed("rest_api", old_dir) is True
 
     def test_migrate_source_returns_false_when_not_in_old_dir(self, tmp_path):
@@ -994,7 +994,7 @@ class TestMigrateSource:
         (tmp_path / ".venv").mkdir()
         monkeypatch.chdir(tmp_path)
         # Isolate from whatever the real ~/.tycoon/sources on the dev
-        # machine actually has installed — this test asserts on "not
+        # machine actually has installed. This test asserts on "not
         # installed anywhere", which only holds for an empty global dir.
         monkeypatch.setattr(source_manager, "SOURCES_DIR", tmp_path / "empty-global")
 

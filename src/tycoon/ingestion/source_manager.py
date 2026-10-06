@@ -274,7 +274,7 @@ def install_source(source_type: str, sources_dir: Path = SOURCES_DIR) -> bool:
     if not (source_pkg.is_dir() and (source_pkg / "__init__.py").exists()):
         info(
             f"Downloading verified source '{dlt_name}' from dlt-hub/verified-sources "
-            f"(github.com) into {sources_dir} — this code runs during ingestion."
+            f"(github.com) into {sources_dir}. This code runs during ingestion."
         )
         result = subprocess.run(
             [sys.executable, "-m", "dlt", "init", dlt_name, "duckdb"],
