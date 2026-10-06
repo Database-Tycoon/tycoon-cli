@@ -163,3 +163,23 @@ class TestRedaction:
         out = redact_secrets(msg)
         assert "SECRET123" not in out
         assert "'md:db'" in out
+
+    @pytest.mark.parametrize(
+        ("text", "redacted"),
+        [
+            ("motherduck_token=abc123", "motherduck_token=***"),
+            ("motherduck_token='abc123'", "motherduck_token='***'"),
+            ('motherduck_token="abc123"', 'motherduck_token="***"'),
+            ("SET motherduck_token = 'abc123'", "SET motherduck_token = '***'"),
+            ("MotherDuck_Token='abc123'", "MotherDuck_Token='***'"),
+            ("md:db?motherduck_token=abc123&saas_mode=true", "md:db"),
+            (
+                "Error: SET motherduck_token = 'abc123' failed (token expired)",
+                "Error: SET motherduck_token = '***' failed (token expired)",
+            ),
+            ("motherduck_token=abc123&saas_mode=true", "motherduck_token=***&saas_mode=true"),
+            ("access_token='abc123' was rejected", "access_token='abc123' was rejected"),
+        ],
+    )
+    def test_redact_secrets_token_forms(self, text, redacted):
+        assert redact_secrets(text) == redacted
