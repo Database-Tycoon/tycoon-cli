@@ -283,7 +283,10 @@ def install_source(source_type: str, sources_dir: Path = SOURCES_DIR) -> bool:
             text=True,
             timeout=120,
         )
-        if result.returncode != 0:
+        # A network failure or other partial run can exit 0 without ever
+        # writing the package: the exit code alone isn't proof the package
+        # is actually there to write the shim into (gh-272 review).
+        if result.returncode != 0 or not (source_pkg.is_dir() and (source_pkg / "__init__.py").exists()):
             return False
 
     # Always (re)write the shim — idempotent.

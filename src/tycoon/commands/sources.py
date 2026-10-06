@@ -517,6 +517,7 @@ def add_source(
                 info("Cancelled.")
                 raise typer.Exit(0)
 
+    previous_source = project.sources.get(source_name)
     project.sources[source_name] = new_source
     save_project(project, cfg.root)
 
@@ -533,13 +534,26 @@ def add_source(
 
     if no_prompt and not installed:
         # A source registered but not installed is exactly the state gh-272
-        # set out to remove — under --no-prompt (the CI path) a failed
+        # set out to remove. Under --no-prompt (the CI path) a failed
         # install fails the command and rolls back the entry just written,
         # instead of exiting 0 with tycoon.yml carrying a source that can't
         # actually run yet.
-        del project.sources[source_name]
-        save_project(project, cfg.root)
-        error(f"Removed '{source_name}' from tycoon.yml: install failed under --no-prompt. Fix the issue and retry.")
+        # --force over an existing source must restore it, not delete it:
+        # a failed install on the new source shouldn't cost the user their
+        # working one (gh-272 review).
+        if previous_source is not None:
+            project.sources[source_name] = previous_source
+            save_project(project, cfg.root)
+            error(
+                f"Install failed under --no-prompt: restored '{source_name}' to what it was before "
+                "--force. Fix the issue and retry."
+            )
+        else:
+            del project.sources[source_name]
+            save_project(project, cfg.root)
+            error(
+                f"Removed '{source_name}' from tycoon.yml: install failed under --no-prompt. Fix the issue and retry."
+            )
         raise typer.Exit(1)
 
     next_steps(
@@ -557,8 +571,8 @@ def _maybe_install_catalog_source(source_type: str, project_root: Path, *, auto:
     sensible default.
 
     Returns False only when ``auto`` is set and the download (or its
-    dependency install) fails — the signal ``add_source`` uses to fail the
-    command and roll back the tycoon.yml entry it just wrote, rather than
+    dependency install) fails. This is the signal ``add_source`` uses to
+    fail the command and roll back the tycoon.yml entry it just wrote, rather than
     leaving a source registered but not installed under ``--no-prompt``
     (gh-272). Returns True in every other case: already installed, skipped,
     or installed successfully.
@@ -569,7 +583,11 @@ def _maybe_install_catalog_source(source_type: str, project_root: Path, *, auto:
     sources_dir = resolve_sources_dir(project_root)
 
     if is_source_installed(source_type, sources_dir):
-        return True
+        # The code is there, but a retry after an earlier failed attempt
+        # (or a source whose deps were never installed to begin with) must
+        # still try its requirements.txt, not exit 0 having installed
+        # nothing (gh-272 review).
+        return _maybe_install_source_requirements(source_type, sources_dir, project_root, auto=auto)
 
     if not venv_path(project_root).exists():
         warn(
@@ -670,9 +688,9 @@ def _maybe_install_dlt_extra(source_type: str, project_root: Path, *, auto: bool
     ``auto`` (set for ``--no-prompt``) skips the confirmation and installs
     directly instead of skipping the install entirely, matching every
     other ``--no-prompt`` behavior in this command: don't ask, just do the
-    sensible default — except when the project has no `.venv`/pyproject.toml
-    of its own, where auto-installing would mutate the shared/ambient
-    environment with no one asking; that case skips instead (gh-272 review).
+    sensible default, except when the project has no `.venv` of its own,
+    where auto-installing would mutate the shared/ambient environment with
+    no one asking; that case skips instead (gh-272 review).
 
     Returns False only when ``auto`` is set and the install fails, same
     contract as ``_maybe_install_catalog_source``.
@@ -691,26 +709,23 @@ def _maybe_install_dlt_extra(source_type: str, project_root: Path, *, auto: bool
         return True
 
     dlt_label = escape(f"dlt[{source_type}]")
-    # See _maybe_install_source_requirements: both pyproject.toml and
-    # .venv are required, not either alone.
-    has_project = (project_root / "pyproject.toml").exists() and venv_path(project_root).exists()
-
-    if auto and not has_project:
-        warn(
-            f"Skipping automatic install of {dlt_label} under --no-prompt: this project doesn't "
-            "have its own pyproject.toml and .venv yet, and installing into the shared/ambient "
-            f"environment unattended isn't safe. Run `tycoon setup` first, or install manually "
-            f"with: uv pip install '{dlt_label}'"
-        )
-        return True
-
-    if not has_project:
+    if not venv_path(project_root).exists():
+        if auto:
+            warn(
+                f"Skipping automatic install of {dlt_label} under --no-prompt: this project doesn't "
+                "have its own .venv yet, and installing into the shared/ambient environment unattended "
+                f"isn't safe. Run `tycoon setup` first, or install manually with: uv pip install '{dlt_label}'"
+            )
+            return True
         warn(
             "This project doesn't have its own .venv yet, "
             f"{dlt_label} will be installed into the shared/ambient environment. "
             "Run `tycoon setup` to give this project its own isolated environment."
         )
 
+    # See _maybe_install_source_requirements: both pyproject.toml and
+    # .venv are required, not either alone.
+    has_project = (project_root / "pyproject.toml").exists() and venv_path(project_root).exists()
     install = auto or typer.confirm(f"{dlt_label} is not installed. Install it now?", default=True)
     if not install:
         info(f"Skipped. Install later with: uv pip install '{dlt_label}'")
