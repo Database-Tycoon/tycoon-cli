@@ -524,7 +524,7 @@ def add_source(
             # filesystem ships with dlt core and never needs a dlt-init
             # download; it always runs through the native builder in
             # runner.py, never the catalog/shim path.
-            _maybe_install_catalog_source(source_type)
+            _maybe_install_catalog_source(source_type, cfg.root)
         elif not catalog_entry:
             _maybe_install_dlt_extra(source_type)
 
@@ -534,11 +534,13 @@ def add_source(
     )
 
 
-def _maybe_install_catalog_source(source_type: str) -> None:
+def _maybe_install_catalog_source(source_type: str, project_root: Path) -> None:
     """Offer to download the dlt verified source if not already installed."""
-    from tycoon.ingestion.source_manager import install_source, is_source_installed
+    from tycoon.ingestion.source_manager import install_source, is_source_installed, resolve_sources_dir
 
-    if is_source_installed(source_type):
+    sources_dir = resolve_sources_dir(project_root)
+
+    if is_source_installed(source_type, sources_dir):
         return
 
     install = typer.confirm(
@@ -547,8 +549,8 @@ def _maybe_install_catalog_source(source_type: str) -> None:
     )
     if install:
         info(f"Running dlt init {source_type} ...")
-        if install_source(source_type):
-            success(f"Source '{source_type}' installed to ~/.tycoon/sources/")
+        if install_source(source_type, sources_dir):
+            success(f"Source '{source_type}' installed to {sources_dir}")
         else:
             warn(
                 f"Failed to install '{source_type}'. "
@@ -603,6 +605,43 @@ def remove_source(
     save_project(project, cfg.root)
 
     success(f"Source [bold]{name}[/bold] removed from tycoon.yml")
+
+
+@app.command("migrate")
+def migrate_source_cmd(
+    source_type: str = typer.Argument(help="Source type to migrate, e.g. github."),
+) -> None:
+    """Copy a globally-installed catalog source into this project's own sources dir.
+
+    Once a project has its own `.venv` (gh-262), downloaded source code
+    resolves to `<project>/.tycoon/sources/` instead of the shared
+    `~/.tycoon/sources/`. A source installed before that switch doesn't move
+    on its own; this copies it across so `tycoon data sources run` can find
+    it again without re-downloading from scratch.
+    """
+    from tycoon.ingestion.source_manager import SOURCES_DIR, is_source_installed, migrate_source, resolve_sources_dir
+
+    cfg = _require_project()
+    sources_dir = resolve_sources_dir(cfg.root)
+
+    if sources_dir == SOURCES_DIR:
+        error("This project doesn't have its own `.venv` yet, so there's no project-local dir to migrate into.")
+        info("Run `tycoon setup` first, then retry.")
+        raise typer.Exit(1)
+
+    if is_source_installed(source_type, sources_dir):
+        info(f"Source '{source_type}' is already installed in {sources_dir}.")
+        return
+
+    if not is_source_installed(source_type, SOURCES_DIR):
+        error(f"Source '{source_type}' isn't installed anywhere. Run: tycoon data sources add {source_type}")
+        raise typer.Exit(1)
+
+    if migrate_source(source_type, SOURCES_DIR, sources_dir):
+        success(f"Migrated '{source_type}' from {SOURCES_DIR} to {sources_dir}")
+    else:
+        warn(f"Failed to migrate '{source_type}'.")
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
