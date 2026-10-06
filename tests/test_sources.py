@@ -1160,6 +1160,28 @@ class TestProjectLocalSourcesDir:
 
         assert not (custom_dir / "github").exists()
 
+    def test_install_source_fails_without_crashing_when_dlt_init_hangs(self, tmp_path, monkeypatch):
+        """gh-272 re-review: a network that accepts connections but never
+        answers (a captive portal, a dead proxy) hits the 120s timeout
+        instead of exiting. Unhandled, that crashed with a raw
+        subprocess.TimeoutExpired instead of returning False like every
+        other failure here."""
+        import subprocess as subprocess_module
+        from unittest.mock import patch
+
+        from tycoon.ingestion import source_manager
+        from tycoon.ingestion.source_manager import install_source
+
+        custom_dir = tmp_path / "custom-sources"
+
+        def _hangs(*args, **kwargs):
+            raise subprocess_module.TimeoutExpired(cmd="dlt init", timeout=120)
+
+        with patch.object(source_manager.subprocess, "run", side_effect=_hangs):
+            assert install_source("github", custom_dir) is False
+
+        assert not (custom_dir / "github").exists()
+
     def test_maybe_install_catalog_source_resolves_project_local_dir(self, tmp_path, monkeypatch):
         import tycoon.ingestion.source_manager as source_manager
         from tycoon.commands.sources import _maybe_install_catalog_source
@@ -1905,6 +1927,25 @@ class TestNoPromptNoUnattendedAmbientInstall:
 
         assert result is True
         assert install_called == [1]
+
+    def test_dlt_extra_skips_ambient_install_with_hand_made_venv_under_no_prompt(self, tmp_path, monkeypatch):
+        """gh-272 re-review: this gate used to check `.venv` alone, so a
+        hand-made `.venv` with no `pyproject.toml` passed it under
+        --no-prompt and installed into whatever environment was ambient
+        instead of skipping, the same gap #268 already closed on the
+        requirements.txt path."""
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+        install_called = []
+        monkeypatch.setattr(source_installer, "install_dlt_extra", lambda *a, **k: install_called.append(1) or True)
+
+        result = _maybe_install_dlt_extra("google_sheets", tmp_path, auto=True)
+
+        assert result is True
+        assert install_called == []
 
     def test_source_requirements_skips_ambient_install_under_no_prompt(self, tmp_path, monkeypatch):
         from tycoon.commands.sources import _maybe_install_source_requirements

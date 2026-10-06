@@ -276,13 +276,21 @@ def install_source(source_type: str, sources_dir: Path = SOURCES_DIR) -> bool:
             f"Downloading verified source '{dlt_name}' from dlt-hub/verified-sources "
             f"(github.com) into {sources_dir}. This code runs during ingestion."
         )
-        result = subprocess.run(
-            [sys.executable, "-m", "dlt", "init", dlt_name, "duckdb"],
-            cwd=sources_dir,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "dlt", "init", dlt_name, "duckdb"],
+                cwd=sources_dir,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            # A network that accepts connections but never answers (a
+            # captive portal, a dead proxy) hits the timeout instead of
+            # exiting; unhandled, this crashed with a raw traceback instead
+            # of returning False like every other failure here (gh-272
+            # re-review).
+            return False
         # A network failure or other partial run can exit 0 without ever
         # writing the package: the exit code alone isn't proof the package
         # is actually there to write the shim into (gh-272 review).

@@ -688,9 +688,9 @@ def _maybe_install_dlt_extra(source_type: str, project_root: Path, *, auto: bool
     ``auto`` (set for ``--no-prompt``) skips the confirmation and installs
     directly instead of skipping the install entirely, matching every
     other ``--no-prompt`` behavior in this command: don't ask, just do the
-    sensible default, except when the project has no `.venv` of its own,
-    where auto-installing would mutate the shared/ambient environment with
-    no one asking; that case skips instead (gh-272 review).
+    sensible default, except when the project has no `pyproject.toml`/`.venv`
+    of its own, where auto-installing would mutate the shared/ambient
+    environment with no one asking; that case skips instead (gh-272 review).
 
     Returns False only when ``auto`` is set and the install fails, same
     contract as ``_maybe_install_catalog_source``.
@@ -709,23 +709,29 @@ def _maybe_install_dlt_extra(source_type: str, project_root: Path, *, auto: bool
         return True
 
     dlt_label = escape(f"dlt[{source_type}]")
+    # See _maybe_install_source_requirements: both pyproject.toml and
+    # .venv are required, not either alone. A hand-made .venv with no
+    # pyproject.toml used to pass this gate under --no-prompt (it only
+    # checked .venv), installing into whatever environment happened to be
+    # ambient instead of skipping (gh-272 re-review).
+    has_project = (project_root / "pyproject.toml").exists() and venv_path(project_root).exists()
+
+    if auto and not has_project:
+        warn(
+            f"Skipping automatic install of {dlt_label} under --no-prompt: this project doesn't "
+            "have its own pyproject.toml and .venv yet, and installing into the shared/ambient "
+            f"environment unattended isn't safe. Run `tycoon setup` first, or install manually "
+            f"with: uv pip install '{dlt_label}'"
+        )
+        return True
+
     if not venv_path(project_root).exists():
-        if auto:
-            warn(
-                f"Skipping automatic install of {dlt_label} under --no-prompt: this project doesn't "
-                "have its own .venv yet, and installing into the shared/ambient environment unattended "
-                f"isn't safe. Run `tycoon setup` first, or install manually with: uv pip install '{dlt_label}'"
-            )
-            return True
         warn(
             "This project doesn't have its own .venv yet, "
             f"{dlt_label} will be installed into the shared/ambient environment. "
             "Run `tycoon setup` to give this project its own isolated environment."
         )
 
-    # See _maybe_install_source_requirements: both pyproject.toml and
-    # .venv are required, not either alone.
-    has_project = (project_root / "pyproject.toml").exists() and venv_path(project_root).exists()
     install = auto or typer.confirm(f"{dlt_label} is not installed. Install it now?", default=True)
     if not install:
         info(f"Skipped. Install later with: uv pip install '{dlt_label}'")
