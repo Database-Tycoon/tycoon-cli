@@ -43,6 +43,62 @@ def redact_secrets(text: str) -> str:
     return _MD_TOKEN_RE.sub(r"\1***", _MD_QUERY_RE.sub(r"\1", text))
 
 
+def containment_boundary(root: Path) -> Path:
+    """The directory `resolve_contained_path` enforces containment against.
+
+    `root`'s parent, except for a project sitting in a top-level dir
+    (`/app`, `/workspace`), where the parent is the filesystem root itself
+    and would contain every path -- falls back to `root` there (PR #153
+    review). Exposed so a caller computing a *default* path (not just
+    validating one, e.g. the `tycoon init` wizard's clone destination) can
+    use the same boundary the check itself will apply, instead of always
+    assuming `root`'s parent and having the default rejected by its own
+    check on a top-level root (gh-259 review).
+    """
+    boundary = root.resolve().parent
+    if boundary == boundary.parent:
+        boundary = root.resolve()
+    return boundary
+
+
+def resolve_contained_path(value: str, root: Path, field: str) -> Path:
+    """Resolve a path field, rejecting escapes from the project area.
+
+    Containment is enforced against `root`'s *parent*, not `root` itself: an
+    existing dbt or Rill project can legitimately live beside the tycoon
+    project rather than inside it, so a root-scoped check would reject a
+    normal "point at my existing sibling project" setup. Parent scoping
+    still rejects a malicious tycoon.yml pointing at system locations like
+    `/etc/cron.d` or traversing out via `../../..` (#65).
+
+    Used at runtime by `TycoonConfig` (reading an existing tycoon.yml) and
+    at prompt time by the `tycoon init` wizard, before tycoon.yml exists, so
+    a path outside the boundary is rejected the moment it's entered there
+    rather than only the first time a command tries to use it. `tycoon
+    register`'s own prompt flow doesn't call this yet (gh-259 review), so a
+    path it accepts can still only fail later, the first time something
+    reads tycoon.yml.
+
+    The raised message states the fact (what's outside, and the boundary)
+    without prescribing a fix: `field` identifies which caller raised this,
+    not what the fix looks like, and "point tycoon.yml at ..." only makes
+    sense once a tycoon.yml exists to point. Callers append their own
+    remediation (see `TycoonConfig._resolve_contained_path` and the wizard's
+    `_prompt_register_project`).
+    """
+    p = Path(value)
+    resolved = p.resolve() if p.is_absolute() else (root / p).resolve()
+    boundary = containment_boundary(root)
+    if not resolved.is_relative_to(boundary):
+        raise ValueError(
+            f"{field} ({value!r}) resolves to {resolved}, outside the project's parent directory {boundary}. "
+            "tycoon keeps dbt/Rill project paths inside the tycoon project or its parent directory as a "
+            "security boundary, so a shared tycoon.yml can't be used to reach unrelated locations on your "
+            "machine."
+        )
+    return resolved
+
+
 def _find_project_root() -> Path:
     """Walk up from CWD to find the directory containing tycoon.yml or pyproject.toml."""
     current = Path.cwd()
@@ -161,29 +217,16 @@ class TycoonConfig:
         return self.root / _DEFAULT_RILL_DIR
 
     def _resolve_contained_path(self, value: str, field: str) -> Path:
-        """Resolve a tycoon.yml path field, rejecting escapes from the project area.
+        """Resolve a tycoon.yml path field via `resolve_contained_path`.
 
-        Containment is enforced against the project root's *parent*, not the
-        root itself: the init wizard's default layout puts the dbt project in
-        a sibling directory of the root (e.g. ``../myproj-dbt``), so a
-        root-scoped check would break every standard project. Parent scoping
-        still rejects a malicious tycoon.yml pointing at system locations
-        like ``/etc/cron.d`` or traversing out via ``../../..`` (#65).
+        Appends the runtime-specific fix to the shared fact-only message: a
+        tycoon.yml already exists here, so pointing it elsewhere is a real
+        option, unlike at wizard prompt time before one is written.
         """
-        p = Path(value)
-        resolved = p.resolve() if p.is_absolute() else (self.root / p).resolve()
-        boundary = self.root.resolve().parent
-        # A project sitting in a top-level dir (/app, /workspace) would make
-        # the boundary the filesystem root, which contains every path — fall
-        # back to root-scoped containment there (PR #153 review).
-        if boundary == boundary.parent:
-            boundary = self.root.resolve()
-        if not resolved.is_relative_to(boundary):
-            raise ValueError(
-                f"tycoon.yml {field} ({value!r}) resolves to {resolved}, "
-                f"outside the project's parent directory {boundary}"
-            )
-        return resolved
+        try:
+            return resolve_contained_path(value, self.root, f"tycoon.yml {field}")
+        except ValueError as exc:
+            raise ValueError(f"{exc} Move the project there, or point tycoon.yml at a path within it.") from exc
 
     # -- Sources --
 

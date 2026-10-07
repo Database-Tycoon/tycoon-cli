@@ -9,6 +9,7 @@ from typing import Annotated
 
 import typer
 
+from tycoon.config import containment_boundary, resolve_contained_path
 from tycoon.project import (
     BITool,
     IngestionTool,
@@ -149,8 +150,27 @@ def _clone_repo(url: str, dest: Path) -> bool:
         return False
 
 
-def _prompt_register_project(component: str, default_sibling: Path) -> str | None:
-    """Shared sub-flow for "register existing" — returns absolute path string or None on failure."""
+def _prompt_register_project(component: str, target: Path, project_name: str) -> str | None:
+    """Shared sub-flow for "register existing" — returns absolute path string or None on failure.
+
+    `target` is the tycoon project root, used to reject a path outside its
+    parent directory (#65) at prompt time rather than only the first time a
+    command tries to use it.
+
+    A cloned URL always defaults beside `target`, never inside it: cloning
+    brings the source's own `.git`, and a clone landing inside `target`
+    nests one git repo inside another -- the outer repo can't track it
+    normally, and a fresh clone of the tycoon project won't bring the dbt
+    or Rill project's files along without submodule wiring nobody set up.
+    That's a different concern from where a freshly *scaffolded* (no
+    `.git` of its own) project defaults to, which is inline (gh-259).
+
+    `project_name` (not `target.name`) names the default clone, matching
+    `register.py`'s own `default_clone` so the two don't disagree on where
+    a component with the same name lands (gh-259 review) -- `tycoon init
+    --name analytics` run from a directory called `repo` would otherwise
+    offer `repo-dbt` here and `analytics-dbt` from `tycoon register` later.
+    """
     raw = typer.prompt(
         f"Local path or GitHub URL for your {component} project",
         default="",
@@ -159,27 +179,48 @@ def _prompt_register_project(component: str, default_sibling: Path) -> str | Non
         warn("No path provided; treating this component as skipped.")
         return None
 
-    if raw.startswith(("http://", "https://", "git@")):
-        clone_here = typer.confirm(
-            f"Clone into {default_sibling}?",
-            default=True,
-        )
-        dest = (
-            default_sibling
-            if clone_here
-            else Path(typer.prompt(f"Where should the {component} project be cloned?", default=str(default_sibling)))
-            .expanduser()
-            .resolve()
-        )
-        if not _clone_repo(raw, dest):
-            return None
-        return str(dest)
+    is_url = raw.startswith(("http://", "https://", "git@"))
 
-    path = Path(raw).expanduser().resolve()
-    if not path.exists():
-        warn(f"Path {path} does not exist; treating this component as skipped.")
+    if is_url:
+        boundary = containment_boundary(target)
+        if boundary == target.resolve():
+            # Top-level project root (/app, /workspace): containment_boundary
+            # falls back to root-scoped there, so any "beside the project"
+            # default is guaranteed outside it. No default to offer; ask
+            # outright instead of proposing one resolve_contained_path will
+            # always reject.
+            dest_input = typer.prompt(f"Where should the {component} project be cloned?")
+        else:
+            clone_default = target.parent / f"{project_name}-{component.lower()}"
+            clone_here = typer.confirm(f"Clone into {clone_default}?", default=True)
+            dest_input = (
+                str(clone_default)
+                if clone_here
+                else typer.prompt(f"Where should the {component} project be cloned?", default=str(clone_default))
+            )
+    else:
+        dest_input = raw
+
+    # expanduser() before containment: resolve_contained_path's own
+    # resolve() doesn't expand `~`, and the pre-gh-259-review code did this
+    # for both branches before the check ran.
+    dest_input = str(Path(dest_input).expanduser())
+
+    try:
+        resolved = resolve_contained_path(dest_input, target, f"{component} project path")
+    except ValueError as exc:
+        warn(f"{exc} Enter a path under that directory, or leave it blank to skip. Treating this component as skipped.")
         return None
-    return str(path)
+
+    if is_url:
+        if not _clone_repo(raw, resolved):
+            return None
+        return str(resolved)
+
+    if not resolved.exists():
+        warn(f"Path {resolved} does not exist; treating this component as skipped.")
+        return None
+    return str(resolved)
 
 
 def _prompt_ingestion() -> tuple[IngestionTool, bool]:
@@ -246,8 +287,15 @@ def _prompt_dbt(
     for item in detected.dbt:
         options.append(f"Use detected project at {item.path} ({item.kind})")
 
-    default_new = target.parent / f"{project_name}-dbt"
-    options.append(f"Create new dbt project at {default_new} (sibling repo)")
+    default_new = target / "dbt_project"
+    # A detected inline project already sitting at the same path "create
+    # new" would scaffold to is the same option twice: picking "create new"
+    # there calls scaffold_blank_project, which finds dbt_already_exists and
+    # scaffolds nothing, but still returns managed=True for a project tycoon
+    # never created (gh-259 review).
+    offer_create_new = default_new not in detected_paths
+    if offer_create_new:
+        options.append(f"Create new inline at {default_new}")
     options.append("Register existing project (local path or GitHub URL)")
     options.append("Skip — `tycoon data transform` becomes a no-op")
 
@@ -256,12 +304,15 @@ def _prompt_dbt(
     # Detected
     if choice <= len(detected_paths):
         return TransformationTool.dbt, False, str(detected_paths[choice - 1])
-    # Create new (sibling)
-    if choice == len(detected_paths) + 1:
-        return TransformationTool.dbt, True, str(default_new)
+    next_choice = len(detected_paths) + 1
+    # Create new (inline)
+    if offer_create_new:
+        if choice == next_choice:
+            return TransformationTool.dbt, True, str(default_new)
+        next_choice += 1
     # Register existing
-    if choice == len(detected_paths) + 2:
-        registered = _prompt_register_project("dbt", default_new)
+    if choice == next_choice:
+        registered = _prompt_register_project("dbt", target, project_name)
         if registered:
             return TransformationTool.dbt, False, registered
         return TransformationTool.none, False, None
@@ -271,6 +322,7 @@ def _prompt_dbt(
 
 def _prompt_rill(
     target: Path,
+    project_name: str,
     detected: DetectionResults,
 ) -> tuple[BITool, bool, str | None]:
     """Returns (tool, managed, path)."""
@@ -283,7 +335,11 @@ def _prompt_rill(
         options.append(f"Use detected project at {item.path} ({item.kind})")
 
     default_new = target / "rill"
-    options.append(f"Create new inline at {default_new}")
+    # See _prompt_dbt: a detected project at the same path "create new"
+    # would use is the same option twice.
+    offer_create_new = default_new not in detected_paths
+    if offer_create_new:
+        options.append(f"Create new inline at {default_new}")
     options.append("Register existing project (local path)")
     options.append("Skip — `tycoon data analyze --rill` becomes a no-op")
 
@@ -292,12 +348,15 @@ def _prompt_rill(
     # Detected
     if choice <= len(detected_paths):
         return BITool.rill, False, str(detected_paths[choice - 1])
+    next_choice = len(detected_paths) + 1
     # Create new (inline)
-    if choice == len(detected_paths) + 1:
-        return BITool.rill, True, str(default_new)
+    if offer_create_new:
+        if choice == next_choice:
+            return BITool.rill, True, str(default_new)
+        next_choice += 1
     # Register
-    if choice == len(detected_paths) + 2:
-        registered = _prompt_register_project("Rill", default_new)
+    if choice == next_choice:
+        registered = _prompt_register_project("Rill", target, project_name)
         if registered:
             return BITool.rill, False, registered
         return BITool.none, False, None
@@ -408,7 +467,7 @@ def _run_wizard(target: Path, project_name: str) -> WizardResult:
             else:
                 warehouse = WarehouseType.duckdb
 
-    bi, bi_managed, rill_path = _prompt_rill(target, detected)
+    bi, bi_managed, rill_path = _prompt_rill(target, project_name, detected)
 
     stack = StackConfig(
         ingestion=ingestion,
