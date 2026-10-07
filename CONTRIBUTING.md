@@ -65,10 +65,10 @@ aren't suitable for per-PR gating.
 ## Testing for upgrade safety
 
 Most of tycoon's users on any given day are not running `tycoon init` for
-the first time, they're running a newer tycoon against a project a previous
+the first time. They're running a newer tycoon against a project a previous
 version already created. Write and test every change from that person's
 seat, not a brand-new user's. A fresh `rm -rf demo && tycoon init` test
-proves the happy path works, it proves nothing about whether the change
+proves the happy path works; it proves nothing about whether the change
 is safe to land on a directory, environment, or `tycoon.yml` that already
 has something in it, and that's exactly where regressions ship from.
 
