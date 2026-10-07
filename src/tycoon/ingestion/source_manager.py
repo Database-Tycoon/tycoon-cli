@@ -21,10 +21,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from tycoon.utils.console import info
+from tycoon.utils.console import info, warn
 from tycoon.venv import venv_path
 
 SOURCES_DIR = Path.home() / ".tycoon" / "sources"
+
+# `dlt init` reaches out to github.com; cap it so a network that accepts
+# connections but never answers fails instead of hanging the command.
+_DLT_INIT_TIMEOUT = 120
 
 
 def resolve_sources_dir(project_root: Path) -> Path:
@@ -282,19 +286,27 @@ def install_source(source_type: str, sources_dir: Path = SOURCES_DIR) -> bool:
                 cwd=sources_dir,
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=_DLT_INIT_TIMEOUT,
             )
-        except (subprocess.TimeoutExpired, OSError):
+        except (subprocess.TimeoutExpired, OSError) as exc:
             # A network that accepts connections but never answers (a
             # captive portal, a dead proxy) hits the timeout instead of
             # exiting; unhandled, this crashed with a raw traceback instead
             # of returning False like every other failure here (gh-272
             # re-review).
+            reason = f"timed out after {_DLT_INIT_TIMEOUT}s" if isinstance(exc, subprocess.TimeoutExpired) else str(exc)
+            warn(f"`dlt init {dlt_name}` {reason}.")
             return False
         # A network failure or other partial run can exit 0 without ever
         # writing the package: the exit code alone isn't proof the package
         # is actually there to write the shim into (gh-272 review).
         if result.returncode != 0 or not (source_pkg.is_dir() and (source_pkg / "__init__.py").exists()):
+            # Surface dlt's own reason ("Failed to connect...") rather than
+            # swallowing it: the caller only knows the download failed, not
+            # why (gh-272 re-review).
+            detail = (result.stderr or result.stdout or "").strip()
+            if detail:
+                warn(f"`dlt init {dlt_name}` failed: {detail.splitlines()[-1]}")
             return False
 
     # Always (re)write the shim — idempotent.
