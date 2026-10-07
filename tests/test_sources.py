@@ -406,6 +406,239 @@ class TestSourceInstaller:
         cmd = mock_run.call_args.args[0]
         assert cmd[-1] == expected
 
+    def test_install_dlt_extra_targets_given_project_root(self, tmp_path):
+        """gh-262/gh-264: a `project_root` arg threads `uv --project <root>
+        add` into the command, landing the extra durably in that project's
+        own pyproject.toml instead of an ephemeral `uv pip install`."""
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_dlt_extra
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result) as mock_run:
+            assert install_dlt_extra("rest_api", project_root=tmp_path) is True
+
+        cmd = mock_run.call_args.args[0]
+        assert cmd[:4] == ["uv", "--project", str(tmp_path), "add"]
+
+    def test_install_dlt_extra_omits_project_flag_when_not_given(self):
+        """No `project_root` arg (pre-gh-262 project, no `.venv` yet): same
+        ambient `uv pip install` as before gh-264."""
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_dlt_extra
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result) as mock_run:
+            assert install_dlt_extra("rest_api") is True
+
+        cmd = mock_run.call_args.args[0]
+        assert cmd[:3] == ["uv", "pip", "install"]
+        assert "--project" not in cmd
+
+    def test_install_dlt_extra_fails_without_uv_no_pip_fallback(self, monkeypatch):
+        """gh-264: no silent `pip` fallback, uv missing is a hard failure."""
+        from unittest.mock import patch
+
+        from tycoon.ingestion.source_installer import install_dlt_extra
+
+        monkeypatch.setattr("tycoon.ingestion.source_installer.shutil.which", lambda name: None)
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run") as mock_run:
+            assert install_dlt_extra("rest_api") is False
+            mock_run.assert_not_called()
+
+
+class TestInstallRequirements:
+    """`install_requirements` (gh-264): installs exactly what a dlt-init'd
+    source's requirements.txt lists, no filtering."""
+
+    def test_installs_via_uv_pip_install_dash_r(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_requirements
+
+        requirements = tmp_path / "requirements.txt"
+        requirements.write_text("google-api-python-client\n")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result) as mock_run:
+            assert install_requirements(requirements) is True
+
+        cmd = mock_run.call_args.args[0]
+        assert cmd[:3] == ["uv", "pip", "install"]
+        assert cmd[-2:] == ["-r", str(requirements)]
+        assert "--python" not in cmd
+
+    def test_targets_given_project_root(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_requirements
+
+        requirements = tmp_path / "requirements.txt"
+        requirements.write_text("google-api-python-client\n")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result) as mock_run:
+            assert install_requirements(requirements, project_root=tmp_path) is True
+
+        cmd = mock_run.call_args.args[0]
+        assert cmd == ["uv", "--project", str(tmp_path), "add", "--python", "3.13", "-r", str(requirements)]
+
+    def test_returns_false_on_failure(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_requirements
+
+        requirements = tmp_path / "requirements.txt"
+        requirements.write_text("google-api-python-client\n")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result):
+            assert install_requirements(requirements) is False
+
+    def test_fails_without_uv_no_pip_fallback(self, tmp_path, monkeypatch):
+        from unittest.mock import patch
+
+        from tycoon.ingestion.source_installer import install_requirements
+
+        requirements = tmp_path / "requirements.txt"
+        requirements.write_text("google-api-python-client\n")
+
+        monkeypatch.setattr("tycoon.ingestion.source_installer.shutil.which", lambda name: None)
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run") as mock_run:
+            assert install_requirements(requirements) is False
+            mock_run.assert_not_called()
+
+
+class TestRunInstallSurfacesUvError:
+    """gh-264 review must-fix: `_run_install` used to capture uv's stderr
+    and drop it, so a version conflict, a missing pyproject.toml, and a
+    timeout all surfaced as the exact same generic "Failed to install"
+    message, with no way for the user to tell which one happened."""
+
+    def test_prints_stderr_tail_on_failure(self, tmp_path, capsys):
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_requirements
+
+        requirements = tmp_path / "requirements.txt"
+        requirements.write_text("some-package\n")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "line one\nline two\n  × No solution found when resolving dependencies\n"
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result):
+            assert install_requirements(requirements) is False
+
+        captured = capsys.readouterr()
+        assert "No solution found when resolving dependencies" in captured.out + captured.err
+
+    def test_prints_timeout_message(self, tmp_path, capsys):
+        import subprocess
+        from unittest.mock import patch
+
+        from tycoon.ingestion.source_installer import install_requirements
+
+        requirements = tmp_path / "requirements.txt"
+        requirements.write_text("some-package\n")
+
+        with patch(
+            "tycoon.ingestion.source_installer.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="uv", timeout=120),
+        ):
+            assert install_requirements(requirements) is False
+
+        captured = capsys.readouterr()
+        assert "timed out" in (captured.out + captured.err).lower()
+
+    def test_no_crash_when_stderr_empty(self, tmp_path):
+        """A failure with nothing on stderr (e.g. a bare non-zero exit)
+        shouldn't crash while building the tail to print."""
+        from unittest.mock import MagicMock, patch
+
+        from tycoon.ingestion.source_installer import install_requirements
+
+        requirements = tmp_path / "requirements.txt"
+        requirements.write_text("some-package\n")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = ""
+
+        with patch("tycoon.ingestion.source_installer.subprocess.run", return_value=mock_result):
+            assert install_requirements(requirements) is False
+
+
+class TestInstallRequirementsRealUv:
+    """Durability check against the real uv binary, no mocks: the
+    dependency actually lands in pyproject.toml and survives a fresh
+    `uv sync --exact`, not just that the right subprocess command gets
+    built. Every other test in this class patches subprocess.run, so none
+    of them would catch a regression in what uv actually does with the
+    command (gh-264 review should-fix). Skipped if uv isn't on PATH or
+    PyPI isn't reachable."""
+
+    def test_dependency_survives_fresh_sync(self, tmp_path):
+        import shutil
+        import socket
+        import subprocess
+        import tomllib
+
+        import pytest
+
+        from tycoon.ingestion.source_installer import install_requirements
+
+        if shutil.which("uv") is None:
+            pytest.skip("uv not on PATH")
+        try:
+            socket.create_connection(("pypi.org", 443), timeout=3).close()
+        except OSError:
+            pytest.skip("no network access to PyPI")
+
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "gh264-real-uv-test"\nversion = "0.1.0"\nrequires-python = ">=3.12"\ndependencies = []\n'
+        )
+        requirements = tmp_path / "requirements.txt"
+        requirements.write_text("six>=1.16\n")
+
+        assert install_requirements(requirements, project_root=tmp_path) is True
+
+        pyproject = tomllib.loads((tmp_path / "pyproject.toml").read_text())
+        deps = pyproject["project"]["dependencies"]
+        six_deps = [d for d in deps if d.lower().startswith("six")]
+        assert len(six_deps) == 1
+
+        # Installing again doesn't add a second, duplicate entry.
+        assert install_requirements(requirements, project_root=tmp_path) is True
+        pyproject_again = tomllib.loads((tmp_path / "pyproject.toml").read_text())
+        six_deps_again = [d for d in pyproject_again["project"]["dependencies"] if d.lower().startswith("six")]
+        assert len(six_deps_again) == 1
+
+        sync = subprocess.run(
+            ["uv", "--project", str(tmp_path), "sync", "--exact"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert sync.returncode == 0, sync.stderr
+
+        venv_python = tmp_path / ".venv" / "bin" / "python"
+        check = subprocess.run([str(venv_python), "-c", "import six"], capture_output=True, text=True)
+        assert check.returncode == 0, check.stderr
+
 
 # ---------------------------------------------------------------------------
 # Auto-scaffold (`_maybe_auto_scaffold` — used by `data sources run`)
@@ -852,3 +1085,434 @@ class TestGoogleSheetsCatalog:
         assert src.config["range_names"] == "Sheet1"
         # Credential defaults to the env-var reference (set GOOGLE_APPLICATION_CREDENTIALS).
         assert src.config["credentials_path"] == "${GOOGLE_APPLICATION_CREDENTIALS}"
+
+
+# ---------------------------------------------------------------------------
+# Project-local sources dir (gh-263)
+# ---------------------------------------------------------------------------
+
+
+class TestProjectLocalSourcesDir:
+    """Downloaded source code and _run.py shims live project-local once a
+    project has its own `.venv` (gh-262); a project without one keeps
+    resolving from the shared global location, so anything already
+    downloaded there keeps working (gh-261)."""
+
+    def test_resolve_sources_dir_project_local_when_venv_exists(self, tmp_path):
+        from tycoon.ingestion.source_manager import resolve_sources_dir
+
+        (tmp_path / ".venv").mkdir()
+        assert resolve_sources_dir(tmp_path) == tmp_path / ".tycoon" / "sources"
+
+    def test_resolve_sources_dir_falls_back_to_global_without_venv(self, tmp_path):
+        from tycoon.ingestion.source_manager import SOURCES_DIR, resolve_sources_dir
+
+        assert resolve_sources_dir(tmp_path) == SOURCES_DIR
+
+    def test_is_source_installed_checks_given_sources_dir(self, tmp_path):
+        from tycoon.ingestion.source_manager import is_source_installed
+
+        custom_dir = tmp_path / "custom-sources"
+        assert is_source_installed("rest_api", custom_dir) is False
+        shim_dir = custom_dir / "rest_api"
+        shim_dir.mkdir(parents=True)
+        (shim_dir / "_run.py").write_text("# shim")
+        assert is_source_installed("rest_api", custom_dir) is True
+
+    def test_install_source_writes_into_given_sources_dir(self, tmp_path):
+        from tycoon.ingestion.source_manager import install_source, is_source_installed
+
+        custom_dir = tmp_path / "custom-sources"
+        assert install_source("rest_api", custom_dir) is True
+        assert (custom_dir / "rest_api" / "_run.py").exists()
+        assert is_source_installed("rest_api", custom_dir) is True
+
+    def test_maybe_install_catalog_source_resolves_project_local_dir(self, tmp_path, monkeypatch):
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.commands.sources import _maybe_install_catalog_source
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+
+        seen: dict[str, Path] = {}
+
+        def _fake_install(source_type: str, sources_dir: Path) -> bool:
+            seen["sources_dir"] = sources_dir
+            return True
+
+        monkeypatch.setattr(source_manager, "install_source", _fake_install)
+
+        _maybe_install_catalog_source("github", tmp_path)
+
+        assert seen["sources_dir"] == tmp_path / ".tycoon" / "sources"
+
+    def test_maybe_install_catalog_source_falls_back_to_global_dir(self, tmp_path, monkeypatch):
+        """No project-local `.venv` yet, keeps installing into the shared
+        global directory, unchanged from before gh-263."""
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.commands.sources import _maybe_install_catalog_source
+
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+
+        seen: dict[str, Path] = {}
+
+        def _fake_install(source_type: str, sources_dir: Path) -> bool:
+            seen["sources_dir"] = sources_dir
+            return True
+
+        monkeypatch.setattr(source_manager, "install_source", _fake_install)
+
+        _maybe_install_catalog_source("github", tmp_path)
+
+        assert seen["sources_dir"] == source_manager.SOURCES_DIR
+
+
+class TestMigrateSource:
+    """A source downloaded into the shared global dir before a project
+    picked up its own `.venv` doesn't move on its own once
+    `resolve_sources_dir` switches to the project-local dir; `migrate_source`
+    (and the `tycoon data sources migrate` command) is the recovery path
+    (gh-263 review)."""
+
+    def test_migrate_source_copies_package_and_shim(self, tmp_path):
+        from tycoon.ingestion.source_manager import install_source, is_source_installed, migrate_source
+
+        old_dir = tmp_path / "old"
+        new_dir = tmp_path / "new"
+        install_source("rest_api", old_dir)
+
+        assert migrate_source("rest_api", old_dir, new_dir) is True
+        assert is_source_installed("rest_api", new_dir) is True
+        # The original stays in place: this is a copy, not a move.
+        assert is_source_installed("rest_api", old_dir) is True
+
+    def test_migrate_source_returns_false_when_not_in_old_dir(self, tmp_path):
+        from tycoon.ingestion.source_manager import migrate_source
+
+        assert migrate_source("rest_api", tmp_path / "old", tmp_path / "new") is False
+
+    def test_migrate_cmd_moves_global_install_into_project_dir(self, cli_runner, tmp_path, monkeypatch):
+        import tycoon.ingestion.source_manager as source_manager
+
+        _setup_project(tmp_path)
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.chdir(tmp_path)
+
+        global_dir = tmp_path / "global"
+        monkeypatch.setattr(source_manager, "SOURCES_DIR", global_dir)
+        source_manager.install_source("rest_api", global_dir)
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "Migrated" in result.stdout
+        project_dir = tmp_path / ".tycoon" / "sources"
+        assert source_manager.is_source_installed("rest_api", project_dir) is True
+
+    def test_migrate_cmd_errors_without_project_venv(self, cli_runner, tmp_path, monkeypatch):
+        _setup_project(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 1
+        assert "doesn't have its own" in (result.stderr or result.output)
+
+    def test_migrate_cmd_errors_when_not_installed_anywhere(self, cli_runner, tmp_path, monkeypatch):
+        import tycoon.ingestion.source_manager as source_manager
+
+        _setup_project(tmp_path)
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.chdir(tmp_path)
+        # Isolate from whatever the real ~/.tycoon/sources on the dev
+        # machine actually has installed. This test asserts on "not
+        # installed anywhere", which only holds for an empty global dir.
+        monkeypatch.setattr(source_manager, "SOURCES_DIR", tmp_path / "empty-global")
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 1
+        assert "isn't installed anywhere" in (result.stderr or result.output)
+
+
+# ---------------------------------------------------------------------------
+# Install deps into the project's own venv (gh-264)
+# ---------------------------------------------------------------------------
+
+
+class TestInstallDepsIntoProjectVenv:
+    """By the time `sources add` finishes, whatever a source needs is
+    already installed into the project's own `.venv`, not wherever tycoon
+    happens to be running (gh-264)."""
+
+    def test_maybe_install_source_requirements_installs_when_present(self, tmp_path, monkeypatch):
+        from tycoon.commands.sources import _maybe_install_source_requirements
+        from tycoon.ingestion import source_installer
+
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        (sources_dir / "requirements.txt").write_text("google-api-python-client\n")
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(requirements_path, project_root=None):
+            seen["requirements_path"] = requirements_path
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_requirements", _fake_install)
+
+        _maybe_install_source_requirements("google_sheets", sources_dir, tmp_path)
+
+        assert seen["requirements_path"] == sources_dir / "requirements.txt"
+        assert seen["project_root"] is None
+
+    def test_maybe_install_source_requirements_targets_project_root_with_pyproject(self, tmp_path, monkeypatch):
+        from tycoon.commands.sources import _maybe_install_source_requirements
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / ".venv").mkdir()
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        (sources_dir / "requirements.txt").write_text("google-api-python-client\n")
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(requirements_path, project_root=None):
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_requirements", _fake_install)
+
+        _maybe_install_source_requirements("google_sheets", sources_dir, tmp_path)
+
+        assert seen["project_root"] == tmp_path
+
+    def test_maybe_install_source_requirements_falls_back_without_pyproject(self, tmp_path, monkeypatch):
+        """gh-264 review: `uv add` needs a pyproject.toml, not just a `.venv`.
+        A `.venv` made by hand (e.g. plain `python -m venv`) has no
+        pyproject.toml, and `uv --project <root> add` fails on it with
+        "No pyproject.toml found", checking `.venv` alone took this path
+        and hit that failure. Falls back to ambient `uv pip install`
+        instead, same as a project with no `.venv` at all."""
+        from tycoon.commands.sources import _maybe_install_source_requirements
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / ".venv").mkdir()
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        (sources_dir / "requirements.txt").write_text("google-api-python-client\n")
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(requirements_path, project_root=None):
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_requirements", _fake_install)
+
+        _maybe_install_source_requirements("google_sheets", sources_dir, tmp_path)
+
+        assert seen["project_root"] is None
+
+    def test_maybe_install_source_requirements_falls_back_without_venv(self, tmp_path, monkeypatch):
+        """gh-262 made `init` skip building a `.venv` when a pyproject.toml
+        already exists, so a project can now have one without the other.
+        Targeting project_root on pyproject.toml alone would run `uv add`
+        against a project with no `.venv`, creating one and writing into
+        the user's own pyproject.toml unprompted."""
+        from tycoon.commands.sources import _maybe_install_source_requirements
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        (sources_dir / "requirements.txt").write_text("google-api-python-client\n")
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(requirements_path, project_root=None):
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_requirements", _fake_install)
+
+        _maybe_install_source_requirements("google_sheets", sources_dir, tmp_path)
+
+        assert seen["project_root"] is None
+        assert not (tmp_path / ".venv").exists()
+
+    def test_maybe_install_source_requirements_noop_when_file_absent(self, tmp_path, monkeypatch):
+        """dlt didn't write a requirements.txt for this source, nothing to install."""
+        from tycoon.commands.sources import _maybe_install_source_requirements
+        from tycoon.ingestion import source_installer
+
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+
+        called = []
+        monkeypatch.setattr(source_installer, "install_requirements", lambda *a, **k: called.append(1) or True)
+
+        _maybe_install_source_requirements("github", sources_dir, tmp_path)
+
+        assert called == []
+
+    def test_maybe_install_dlt_extra_targets_project_root_with_pyproject(self, tmp_path, monkeypatch):
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / ".venv").mkdir()
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(source_type, project_root=None):
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_dlt_extra", _fake_install)
+
+        _maybe_install_dlt_extra("google_sheets", tmp_path)
+
+        assert seen["project_root"] == tmp_path
+
+    def test_maybe_install_dlt_extra_falls_back_without_pyproject(self, tmp_path, monkeypatch):
+        """Same gh-264 review fix as the requirements.txt path: a bare
+        `.venv` with no pyproject.toml falls back to ambient `uv pip
+        install` rather than taking the `uv add` path and failing."""
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(source_type, project_root=None):
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_dlt_extra", _fake_install)
+
+        _maybe_install_dlt_extra("google_sheets", tmp_path)
+
+        assert seen["project_root"] is None
+
+    def test_maybe_install_dlt_extra_falls_back_without_venv(self, tmp_path, monkeypatch):
+        """Same gh-262 gap as the requirements.txt path: a pyproject.toml
+        with no `.venv` falls back to ambient `uv pip install` rather than
+        running `uv add` against a project that never built one."""
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(source_type, project_root=None):
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_dlt_extra", _fake_install)
+
+        _maybe_install_dlt_extra("google_sheets", tmp_path)
+
+        assert seen["project_root"] is None
+        assert not (tmp_path / ".venv").exists()
+
+    def test_maybe_install_dlt_extra_falls_back_to_ambient_without_venv(self, tmp_path, monkeypatch):
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+
+        seen: dict[str, object] = {}
+
+        def _fake_install(source_type, project_root=None):
+            seen["project_root"] = project_root
+            return True
+
+        monkeypatch.setattr(source_installer, "install_dlt_extra", _fake_install)
+
+        _maybe_install_dlt_extra("google_sheets", tmp_path)
+
+        assert seen["project_root"] is None
+
+
+# ---------------------------------------------------------------------------
+# Warn on the old, global environment model (gh-265)
+# ---------------------------------------------------------------------------
+
+
+class TestWarnOnOldEnvironmentModel:
+    """A project without its own `.venv` sees a clear, actionable nudge at
+    the moment it's actually using the old, shared/global behavior (gh-265).
+    Purely additive: never raises, never blocks the action it's warning
+    about."""
+
+    def test_maybe_install_catalog_source_warns_without_venv(self, tmp_path, monkeypatch, capsys):
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.commands.sources import _maybe_install_catalog_source
+
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+        monkeypatch.setattr(source_manager, "install_source", lambda *a, **k: True)
+
+        _maybe_install_catalog_source("github", tmp_path)
+
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "doesn't have its own .venv yet" in combined
+        assert "tycoon setup" in combined
+
+    def test_maybe_install_catalog_source_no_warning_with_venv(self, tmp_path, monkeypatch, capsys):
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.commands.sources import _maybe_install_catalog_source
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+        monkeypatch.setattr(source_manager, "install_source", lambda *a, **k: True)
+
+        _maybe_install_catalog_source("github", tmp_path)
+
+        captured = capsys.readouterr()
+        assert "doesn't have its own .venv yet" not in (captured.out + captured.err)
+
+    def test_maybe_install_dlt_extra_warns_without_venv(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+        monkeypatch.setattr(source_installer, "install_dlt_extra", lambda *a, **k: True)
+
+        _maybe_install_dlt_extra("google_sheets", tmp_path)
+
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "doesn't have its own .venv yet" in combined
+        assert "tycoon setup" in combined
+
+    def test_maybe_install_dlt_extra_no_warning_with_venv(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+        monkeypatch.setattr(source_installer, "install_dlt_extra", lambda *a, **k: True)
+
+        _maybe_install_dlt_extra("google_sheets", tmp_path)
+
+        captured = capsys.readouterr()
+        assert "doesn't have its own .venv yet" not in (captured.out + captured.err)

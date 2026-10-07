@@ -6,6 +6,7 @@ for backwards compatibility.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from tycoon.project import PROJECT_FILENAME, SCHEMA_VERSION, TycoonProject, load_project
@@ -16,6 +17,30 @@ _DEFAULT_RAW_DB = "data/raw.duckdb"
 _DEFAULT_LOCAL_DB = "data/warehouse.duckdb"
 _DEFAULT_DBT_DIR = "dbt_project"
 _DEFAULT_RILL_DIR = "rill"
+
+MOTHERDUCK_PREFIX = "md:"
+
+# The query part of an md: string can carry motherduck_token=<secret>.
+_MD_QUERY_RE = re.compile(r"(md:[^\s'\"?]*)\?[^\s'\"]*")
+# The key, any spaces around "=", and an opening quote stay; the value is masked
+# and stops at a quote, so a closing quote survives too (SET motherduck_token = '...').
+_MD_TOKEN_RE = re.compile(r"(motherduck_token\s*=\s*['\"]?)[^\s&'\"]+", re.IGNORECASE)
+
+
+def display_target(target: str) -> str:
+    """A connection target that is safe to print.
+
+    An ``md:`` string loses everything from ``?`` onwards, where a
+    ``motherduck_token`` can sit; a local path is returned unchanged.
+    """
+    if target.startswith(MOTHERDUCK_PREFIX):
+        return target.split("?", 1)[0]
+    return target
+
+
+def redact_secrets(text: str) -> str:
+    """Strip md: query strings and motherduck_token values from free text, such as a DuckDB error."""
+    return _MD_TOKEN_RE.sub(r"\1***", _MD_QUERY_RE.sub(r"\1", text))
 
 
 def containment_boundary(root: Path) -> Path:
@@ -117,16 +142,67 @@ class TycoonConfig:
         return self.root / "data"
 
     @property
-    def raw_db(self) -> Path:
+    def _raw_setting(self) -> str:
         if self._project:
-            return self.root / self._project.database.raw
-        return self.root / _DEFAULT_RAW_DB
+            return self._project.database.raw
+        return _DEFAULT_RAW_DB
 
     @property
-    def local_db(self) -> Path:
+    def raw_is_motherduck(self) -> bool:
+        return self._raw_setting.startswith(MOTHERDUCK_PREFIX)
+
+    @property
+    def raw_target(self) -> str:
+        """What ``duckdb.connect`` opens for the raw database, resolved like ``warehouse_target``."""
+        if self.raw_is_motherduck:
+            return self._raw_setting
+        return str(self.root / self._raw_setting)
+
+    @property
+    def raw_db(self) -> Path:
+        """The raw database's local DuckDB file.
+
+        Ingestion and scaffolding only write local files so far, so an ``md:``
+        raw database exits with a clear error instead of becoming a local
+        file named after the connection string. Check ``raw_is_motherduck``
+        first to handle MotherDuck without exiting.
+        """
+        if self.raw_is_motherduck:
+            _error_console(
+                f"database.raw is MotherDuck ({display_target(self._raw_setting)}), and this command only "
+                "works with a local raw DuckDB file so far. Set database.raw to a local path such as "
+                f"{_DEFAULT_RAW_DB} in tycoon.yml."
+            )
+            raise SystemExit(1)
+        return self.root / self._raw_setting
+
+    @property
+    def _warehouse_setting(self) -> str:
         if self._project:
-            return self.root / self._project.database.warehouse
-        return self.root / _DEFAULT_LOCAL_DB
+            return self._project.database.warehouse
+        return _DEFAULT_LOCAL_DB
+
+    @property
+    def warehouse_is_motherduck(self) -> bool:
+        return self._warehouse_setting.startswith(MOTHERDUCK_PREFIX)
+
+    @property
+    def warehouse_target(self) -> str:
+        """What ``duckdb.connect`` opens for the warehouse.
+
+        A MotherDuck ``md:`` connection string passes through verbatim; a
+        local path resolves under the project root.
+        """
+        if self.warehouse_is_motherduck:
+            return self._warehouse_setting
+        return str(self.root / self._warehouse_setting)
+
+    @property
+    def local_db(self) -> Path | None:
+        """The warehouse's local DuckDB file, or None when it lives in MotherDuck."""
+        if self.warehouse_is_motherduck:
+            return None
+        return self.root / self._warehouse_setting
 
     @property
     def dbt_project_dir(self) -> Path:

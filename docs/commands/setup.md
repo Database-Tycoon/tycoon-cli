@@ -6,7 +6,7 @@ Build a project-local `.venv` on a **supported** Python interpreter, using [uv](
 
 tycoon runs dbt out of the *same* interpreter it lives in — it imports `dlt`/`duckdb` in-process and resolves dbt at `Path(sys.executable).parent / "dbt"`. So the single most common first-mile failure is a mismatched Python: dbt-core / dbt-duckdb ship no wheels for 3.14 yet, and an out-of-range interpreter fails far from its cause (at `tycoon data transform run`).
 
-`tycoon setup` removes the trap by owning the environment. It creates one `.venv` beside `tycoon.yml` on a supported interpreter, pins it with `.python-version`, and installs tycoon + its dbt/dlt/duckdb stack into it. uv downloads a [python-build-standalone](https://docs.astral.sh/uv/concepts/python-versions/) CPython if your machine only has an unsupported one — **zero manual interpreter installs**.
+`tycoon setup` removes the trap by owning the environment. It seeds a `pyproject.toml` beside `tycoon.yml` (if one doesn't already exist), creates one `.venv` on a supported interpreter via `uv sync`, pins it with `.python-version`, and installs tycoon + its dbt/dlt/duckdb stack into it, writing `uv.lock` so the exact same environment is reproducible later with just `uv sync`. uv downloads a [python-build-standalone](https://docs.astral.sh/uv/concepts/python-versions/) CPython if your machine only has an unsupported one, **zero manual interpreter installs**.
 
 ## Synopsis
 
@@ -17,9 +17,10 @@ Options:
   --python TEXT    Python version (major.minor) for the .venv. Must be in
                    tycoon's supported range (>=3.12,<3.14). Default: 3.13.
   --from TEXT      Package spec to install. Default: database-tycoon.
-                   Pass `-e .` (or a path) for a dev checkout.
+                   Pass `-e <absolute-path>` for an editable dev checkout.
   --no-install     Create and pin the .venv but skip installing tycoon.
-  --force          Recreate the .venv if one already exists.
+  --force          Rebuild the .venv if one already exists (re-resolves
+                   dependencies fresh, doesn't delete it outright).
   --no-prompt      Skip confirmation prompts (CI / scripted bootstrap).
   -h, --help       Show this message and exit.
 ```
@@ -49,8 +50,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Pin a specific supported interpreter
 tycoon setup --python 3.12
 
-# Dev checkout — install the working tree editable instead of the published wheel
-tycoon setup --from '-e .'
+# Dev checkout, install a working tree editable instead of the published wheel.
+# Needs an absolute path: `.` would self-reference the project `setup` just seeded.
+tycoon setup --from '-e /abs/path/to/tycoon-cli'
 
 # Recreate a broken/stale environment
 tycoon setup --force
