@@ -1337,6 +1337,65 @@ class TestPerSourceRequirements:
         assert (tmp_path / "requirements.txt").read_text() == "giturlparse\n"
         assert not (tmp_path / "requirements.txt.tycoon-parked").exists()
 
+    def test_killed_run_with_both_files_present_loses_no_lines(self, tmp_path):
+        """gh-364 review, blocking: a run killed AFTER dlt wrote the fresh
+        file but BEFORE the merge leaves both files behind. The old
+        recovery only handled the parked-file-alone shape, so parking for
+        the next install overwrote the parked file and its lines were
+        gone. Stephen's repro, verbatim."""
+        from unittest.mock import patch
+
+        from tycoon.ingestion import source_manager
+        from tycoon.ingestion.source_manager import install_source
+
+        (tmp_path / "requirements.txt").write_text("pandas>=2\n")
+        (tmp_path / "requirements.txt.tycoon-parked").write_text("dlt[duckdb]>=0.5.0\nrequests>=2\n")
+        reqs = {"google_sheets": "dlt[duckdb]>=1.5\nsqlalchemy>=1.4\n"}
+        stub = self._dlt_init_stub(reqs, tmp_path)
+        with patch.object(source_manager.subprocess, "run", stub):
+            assert install_source("google_sheets", tmp_path) is True
+
+        lines = (tmp_path / "requirements.txt").read_text().splitlines()
+        for line in ("pandas>=2", "dlt[duckdb]>=0.5.0", "requests>=2", "dlt[duckdb]>=1.5", "sqlalchemy>=1.4"):
+            assert line in lines
+        assert not (tmp_path / "requirements.txt.tycoon-parked").exists()
+
+    def test_carried_lines_come_before_the_new_sources_lines(self, tmp_path):
+        """gh-364 review: `uv add -r` lets the last specifier for a package
+        win, so the freshly downloaded source's own pin must sit after the
+        carried history, or an older source's looser dlt line overrides
+        it."""
+        from unittest.mock import patch
+
+        from tycoon.ingestion import source_manager
+        from tycoon.ingestion.source_manager import install_source
+
+        (tmp_path / "requirements.txt").write_text("dlt[duckdb]>=0.5.0\n")
+        reqs = {"google_sheets": "dlt[duckdb,sql_database]>=1.5\nsqlalchemy>=1.4\n"}
+        stub = self._dlt_init_stub(reqs, tmp_path)
+        with patch.object(source_manager.subprocess, "run", stub):
+            assert install_source("google_sheets", tmp_path) is True
+
+        lines = (tmp_path / "requirements.txt").read_text().splitlines()
+        assert lines.index("dlt[duckdb]>=0.5.0") < lines.index("dlt[duckdb,sql_database]>=1.5")
+
+    def test_whitespace_variants_dedupe_to_one_line(self, tmp_path):
+        """gh-364 review: `requests>=2`, `requests >= 2` and a repeated
+        parked line are one requirement, not three carried lines."""
+        from unittest.mock import patch
+
+        from tycoon.ingestion import source_manager
+        from tycoon.ingestion.source_manager import install_source
+
+        (tmp_path / "requirements.txt").write_text("requests >= 2\nrequests>=2\n")
+        reqs = {"google_sheets": "requests>=2\ngoogle-api-python-client\n"}
+        stub = self._dlt_init_stub(reqs, tmp_path)
+        with patch.object(source_manager.subprocess, "run", stub):
+            assert install_source("google_sheets", tmp_path) is True
+
+        lines = (tmp_path / "requirements.txt").read_text().splitlines()
+        assert sum(1 for line in lines if "requests" in line) == 1
+
     def test_stale_parked_file_from_a_killed_run_is_recovered(self, tmp_path):
         """A run killed between parking and merging leaves only the parked
         file behind; the next install treats it as the shared file, parks

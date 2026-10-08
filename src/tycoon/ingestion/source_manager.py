@@ -36,24 +36,37 @@ _DLT_INIT_TIMEOUT = 120
 _PARKED_REQUIREMENTS_NAME = "requirements.txt.tycoon-parked"
 
 
+def _requirement_key(line: str) -> str:
+    """Whitespace-insensitive identity for a requirements line, so
+    `requests>=2` and `requests >= 2` dedupe as one (gh-364 review)."""
+    return "".join(line.split())
+
+
 def _merge_parked_requirements(shared_reqs: Path, parked_reqs: Path) -> None:
     """Fold a parked shared requirements.txt back in after `dlt init`.
 
     dlt either wrote `shared_reqs` fresh for the source just downloaded, or
     wrote nothing (a failed run, or a source with no requirements of its
-    own). Either way the shared file must come back as the union: the new
-    source's lines first, then every previously recorded line not already
-    present (gh-364).
+    own). Either way the shared file must come back as the union. Carried
+    lines go first: `uv add -r` lets the last specifier for a package win,
+    so the freshly downloaded source's own pin has to come after the
+    carried history, not before it (gh-364 review).
     """
     if not parked_reqs.exists():
         return
     if not shared_reqs.exists():
         parked_reqs.replace(shared_reqs)
         return
-    have = {line.strip() for line in shared_reqs.read_text().splitlines()}
-    carried = [line for line in parked_reqs.read_text().splitlines() if line.strip() and line.strip() not in have]
+    fresh = shared_reqs.read_text()
+    seen = {_requirement_key(line) for line in fresh.splitlines() if line.strip()}
+    carried: list[str] = []
+    for line in parked_reqs.read_text().splitlines():
+        key = _requirement_key(line)
+        if line.strip() and key not in seen:
+            carried.append(line)
+            seen.add(key)
     if carried:
-        shared_reqs.write_text(shared_reqs.read_text().rstrip("\n") + "\n" + "\n".join(carried) + "\n")
+        shared_reqs.write_text("\n".join(carried) + "\n" + fresh.lstrip("\n"))
     parked_reqs.unlink()
 
 
@@ -317,10 +330,13 @@ def install_source(source_type: str, sources_dir: Path = SOURCES_DIR) -> bool:
         # the union of every source added so far.
         shared_reqs = sources_dir / "requirements.txt"
         parked_reqs = sources_dir / _PARKED_REQUIREMENTS_NAME
-        if parked_reqs.exists() and not shared_reqs.exists():
-            # A previous run died between parking and merging; the parked
-            # file IS the shared file. Put it back before parking again.
-            parked_reqs.replace(shared_reqs)
+        # A run killed anywhere between parking and merging leaves the
+        # parked file behind, possibly NEXT TO a fresh shared file (dlt
+        # writes it before the finally runs). The merge handles every
+        # shape: no parked file is a no-op, parked alone moves back, and
+        # both existing union, so no recorded line is ever lost
+        # (gh-364 review).
+        _merge_parked_requirements(shared_reqs, parked_reqs)
         if shared_reqs.exists():
             shared_reqs.replace(parked_reqs)
         try:
