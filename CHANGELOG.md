@@ -24,6 +24,10 @@ All notable changes to this project will be documented in this file. The format 
 [#273]: https://github.com/Database-Tycoon/tycoon-cli/pull/273
 ### Fixed
 
+- **A second catalog source's requirements are now recorded and installed** ([#364][], stacked on PR [#273][]). `dlt init` writes the sources dir's shared `requirements.txt` only when the dir has no dependency system yet, so the first source added wrote the file and every later source's `dlt init` left it alone: tycoon then re-installed the first source's requirements and the new source's own were never installed, failing its first run on a missing import. `install_source` now parks the shared file while `dlt init` runs, so dlt writes the new source's requirements fresh, then merges the parked lines back in; the shared file becomes the union of every source added so far, and the install that follows covers the new source. A run killed mid-install leaves a `requirements.txt.tycoon-parked` file that the next install recovers.
+
+[#364]: https://github.com/Database-Tycoon/tycoon-cli/issues/364
+
 - **Interactive `sources add` says where a dlt extra is going before installing it** ([#366][], stacked on PR [#273][]). With a hand-made `.venv` and no `pyproject.toml`, the interactive path passed a `.venv`-only check, so the "shared/ambient environment" warning never showed and a plain "Install it now?" installed into whatever environment was active. The gate now requires `pyproject.toml` and `.venv` together, the same pair as the requirements path (#268) and the `--no-prompt` skip (#272), and the confirm itself names the destination: "into this project's .venv" or "into the shared/ambient environment". `--no-prompt` behaviour is unchanged.
 
 [#366]: https://github.com/Database-Tycoon/tycoon-cli/issues/366
