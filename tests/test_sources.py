@@ -1583,14 +1583,18 @@ class TestWarnOnOldEnvironmentModel:
 
         captured = capsys.readouterr()
         combined = " ".join((captured.out + captured.err).split())
-        assert "doesn't have its own .venv yet" in combined
+        assert "doesn't have its own pyproject.toml and .venv yet" in combined
         assert "tycoon setup" in combined
 
-    def test_maybe_install_dlt_extra_no_warning_with_venv(self, tmp_path, monkeypatch, capsys):
+    def test_maybe_install_dlt_extra_no_warning_with_project_env(self, tmp_path, monkeypatch, capsys):
+        """A bare `.venv` no longer counts as "has its own environment";
+        the quiet path needs the full pyproject.toml + .venv pair (gh-366).
+        TestInteractiveAmbientInstallGate pins the bare-.venv warning."""
         from tycoon.commands.sources import _maybe_install_dlt_extra
         from tycoon.ingestion import source_installer
 
         (tmp_path / ".venv").mkdir()
+        (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
         monkeypatch.setattr("typer.confirm", lambda *a, **k: True)
         monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
         monkeypatch.setattr(source_installer, "install_dlt_extra", lambda *a, **k: True)
@@ -1598,7 +1602,7 @@ class TestWarnOnOldEnvironmentModel:
         _maybe_install_dlt_extra("google_sheets", tmp_path)
 
         captured = capsys.readouterr()
-        assert "doesn't have its own .venv yet" not in (captured.out + captured.err)
+        assert "pyproject.toml and .venv yet" not in (captured.out + captured.err)
 
 
 # ---------------------------------------------------------------------------
@@ -1961,6 +1965,58 @@ class TestNoPromptNoUnattendedAmbientInstall:
 
         assert result is True
         assert install_called == []
+
+
+class TestInteractiveAmbientInstallGate:
+    """gh-366: the interactive dlt-extra path used a `.venv`-only check where
+    every other install gate requires `pyproject.toml` and `.venv` together
+    (gh-264/gh-268), so a hand-made `.venv` with no `pyproject.toml` showed
+    no ambient-environment warning, and the confirm never said where the
+    install was going."""
+
+    def _run(self, tmp_path, monkeypatch, *, answer=True):
+        from tycoon.commands.sources import _maybe_install_dlt_extra
+        from tycoon.ingestion import source_installer
+
+        monkeypatch.setattr(source_installer, "is_dlt_extra_available", lambda *a, **k: False)
+        seen: dict[str, object] = {}
+
+        def _confirm(prompt, *a, **k):
+            seen["prompt"] = prompt
+            return answer
+
+        monkeypatch.setattr("typer.confirm", _confirm)
+        monkeypatch.setattr(
+            source_installer,
+            "install_dlt_extra",
+            lambda source_type, project_root=None: seen.__setitem__("project_root", project_root) or True,
+        )
+        result = _maybe_install_dlt_extra("google_sheets", tmp_path)
+        return result, seen
+
+    def test_hand_made_venv_warns_and_prompt_names_ambient_env(self, tmp_path, monkeypatch, capsys):
+        (tmp_path / ".venv").mkdir()
+
+        result, seen = self._run(tmp_path, monkeypatch)
+
+        assert result is True
+        out = capsys.readouterr().out
+        assert "shared/ambient" in out
+        assert "shared/ambient environment" in seen["prompt"]
+        # Destination logic is unchanged: no project env, ambient install.
+        assert seen["project_root"] is None
+
+    def test_full_project_env_prompt_names_the_project_venv(self, tmp_path, monkeypatch, capsys):
+        (tmp_path / ".venv").mkdir()
+        (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+
+        result, seen = self._run(tmp_path, monkeypatch)
+
+        assert result is True
+        out = capsys.readouterr().out
+        assert "shared/ambient" not in out
+        assert "this project's .venv" in seen["prompt"]
+        assert seen["project_root"] == tmp_path
 
 
 class TestDltExtraRichMarkupEscape:
