@@ -658,7 +658,7 @@ def _maybe_install_source_requirements(
     # requirements are installed some other way.
     if auto and not has_project:
         warn(
-            f"Skipping automatic dependency install for '{source_type}' under --no-prompt: "
+            f"Skipping automatic dependency install for '{source_type}': "
             "this project doesn't have its own pyproject.toml and .venv yet, and installing into "
             "the shared/ambient environment unattended isn't safe. Run `tycoon setup` first, or "
             f"install manually with: uv pip install -r {requirements_path}"

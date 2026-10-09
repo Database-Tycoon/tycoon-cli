@@ -1399,6 +1399,26 @@ class TestMigrateCarriesDepsAndScaffolding:
         assert source_manager.is_source_installed("rest_api", project_dir) is False
         assert source_manager.is_source_installed("rest_api", global_dir) is True
 
+    def test_migrate_cmd_hand_made_venv_skips_ambient_install(self, cli_runner, tmp_path, monkeypatch):
+        """A `.venv` with no pyproject.toml is enough for the project-local
+        sources dir, but not for a project install: migrate must not fall
+        through to installing into the shared/ambient environment."""
+        from tycoon.ingestion import source_installer
+
+        _, project_dir = self._project(tmp_path, monkeypatch)
+        (tmp_path / "pyproject.toml").unlink()
+        calls: list[object] = []
+        monkeypatch.setattr(source_installer, "install_requirements", lambda *a, **k: calls.append(a) or True)
+
+        result = cli_runner.invoke(app, ["data", "sources", "migrate", "rest_api"])
+
+        assert result.exit_code == 0, result.output
+        assert calls == []
+        output = " ".join(result.output.split())
+        assert "Skipping automatic dependency install" in output
+        assert "--no-prompt" not in output
+        assert (project_dir / "requirements.txt").read_text() == "six>=1.16\n"
+
     def test_migrate_cmd_refuses_partial_destination_and_keeps_it(self, cli_runner, tmp_path, monkeypatch):
         from tycoon.ingestion import source_installer
 
