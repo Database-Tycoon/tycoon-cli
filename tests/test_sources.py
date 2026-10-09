@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tycoon.cli import app
 from tycoon.project import SourceConfig, TycoonProject, load_project, save_project
 
@@ -2053,3 +2055,35 @@ class TestDltExtraRichMarkupEscape:
         out = capsys.readouterr().out
         assert result is True
         assert "dlt[sql_database]" in out
+
+
+class TestInstallHintNamesARealCommand:
+    """The retry and skip hints printed by the catalog download step must
+    name a command that exists (gh-359). They used to point at
+    `tycoon data sources catalog install <type>`, which was never a command,
+    so following the advice failed with a usage error."""
+
+    @pytest.mark.parametrize("outcome", ["failed", "skipped"])
+    def test_hint_command_exists(self, outcome, tmp_path, monkeypatch, capsys, cli_runner):
+        import re
+
+        import tycoon.ingestion.source_manager as source_manager
+        from tycoon.commands.sources import _maybe_install_catalog_source
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr("typer.confirm", lambda *a, **k: outcome == "failed")
+        monkeypatch.setattr(source_manager, "is_source_installed", lambda *a, **k: False)
+        monkeypatch.setattr(source_manager, "install_source", lambda *a, **k: False)
+
+        _maybe_install_catalog_source("github", tmp_path)
+
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        match = re.search(r"with: tycoon((?: [\w-]+)+)", combined)
+        assert match, f"no command hint in output: {combined}"
+        args = match.group(1).split()
+
+        result = cli_runner.invoke(app, [*args, "--help"])
+        assert result.exit_code == 0, (
+            f"hint names `tycoon {' '.join(args)}`, which is not a command (exit {result.exit_code}):\n{result.output}"
+        )
