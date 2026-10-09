@@ -20,6 +20,23 @@
         "./skills/users/building-models-and-dashboards",
         "./skills/users/operating-pipelines"
       ]
+    },
+    {
+      "name": "tycoon-contrib",
+      "source": "./",
+      "description": "Skills for contributing to tycoon-cli: the release-branch PR model and the test layers",
+      "skills": [
+        "./skills/contributors/contributing-changes",
+        "./skills/contributors/testing-cli-changes"
+      ]
+    },
+    {
+      "name": "tycoon-maintainers",
+      "source": "./",
+      "description": "Skills for tycoon-cli maintainers: cutting and publishing releases",
+      "skills": [
+        "./skills/maintainers/cutting-a-release"
+      ]
     }
   ]
 }
