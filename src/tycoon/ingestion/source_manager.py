@@ -386,6 +386,41 @@ def install_source(source_type: str, sources_dir: Path = SOURCES_DIR) -> bool:
     return True
 
 
+def source_package_dir(source_type: str, sources_dir: Path) -> Path:
+    """The directory a source's package and _run.py shim live in."""
+    if source_type in _BUILTIN_SOURCES:
+        return sources_dir / source_type
+    return sources_dir / _DLT_INIT_NAME.get(source_type, source_type)
+
+
+def _carry_sources_dir_files(old_dir: Path, new_dir: Path) -> None:
+    """Carry what `dlt init` writes at a sources dir's root, not inside a package.
+
+    The `.gitignore` and `.dlt/config.toml` are copied only when `new_dir`
+    has none, so nothing the user already has there is overwritten.
+    `.dlt/secrets.toml` is never copied: it can hold credentials for every
+    source in the shared dir, and tycoon passes credentials from tycoon.yml
+    anyway. requirements.txt lines missing from `new_dir`'s copy are
+    appended, since `dlt init` only writes that file once per dir and other
+    sources may already rely on the project's copy (gh-358).
+    """
+    for rel in (Path(".gitignore"), Path(".dlt") / "config.toml"):
+        src, dst = old_dir / rel, new_dir / rel
+        if src.is_file() and not dst.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+
+    old_reqs = old_dir / "requirements.txt"
+    if not old_reqs.is_file():
+        return
+    new_reqs = new_dir / "requirements.txt"
+    existing = new_reqs.read_text().splitlines() if new_reqs.exists() else []
+    have = {line.strip() for line in existing}
+    missing = [line for line in old_reqs.read_text().splitlines() if line.strip() and line.strip() not in have]
+    if missing:
+        new_reqs.write_text("\n".join([*existing, *missing]) + "\n")
+
+
 def migrate_source(source_type: str, old_dir: Path, new_dir: Path) -> bool:
     """Copy an already-installed source package + shim from old_dir to new_dir.
 
@@ -393,22 +428,28 @@ def migrate_source(source_type: str, old_dir: Path, new_dir: Path) -> bool:
     shared global directory; once the project gains a `.venv`,
     `resolve_sources_dir` starts pointing at a project-local directory that
     doesn't have it, and the "not installed" check in `_run_catalog` has no
-    way to recover without a real copy of what's already on disk. Returns
-    False if the source isn't present in old_dir to copy from.
-    """
-    if source_type in _BUILTIN_SOURCES:
-        pkg_name = source_type
-    else:
-        pkg_name = _DLT_INIT_NAME.get(source_type, source_type)
+    way to recover without a real copy of what's already on disk. The
+    sources dir's requirements.txt, `.gitignore` and `.dlt/config.toml` come
+    along too (gh-358). Installing those requirements is the caller's job.
 
-    src = old_dir / pkg_name
+    Returns False if the source isn't present in old_dir to copy from, and
+    True without copying anything if new_dir already has its `_run.py`.
+    Raises FileExistsError, deleting nothing, if new_dir already has the
+    package directory without a `_run.py`, since that may hold the user's
+    own files.
+    """
+    src = source_package_dir(source_type, old_dir)
     if not (src.is_dir() and (src / "_run.py").exists()):
         return False
 
-    new_dir.mkdir(parents=True, exist_ok=True)
-    dst = new_dir / pkg_name
+    dst = source_package_dir(source_type, new_dir)
+    if (dst / "_run.py").exists():
+        return True
     if dst.exists():
-        shutil.rmtree(dst)
+        raise FileExistsError(str(dst))
+
+    new_dir.mkdir(parents=True, exist_ok=True)
+    _carry_sources_dir_files(old_dir, new_dir)
     shutil.copytree(src, dst)
     return True
 

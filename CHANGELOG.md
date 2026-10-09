@@ -56,6 +56,9 @@ All notable changes to this project will be documented in this file. The format 
 - **A quoted `motherduck_token` value is masked in printed errors** ([#345][]). tycoon masks `motherduck_token=` values in DuckDB error text before printing it, but a quoted value such as `motherduck_token='...'`, `motherduck_token="..."` or `SET motherduck_token = '...'` passed through with the token intact. The value is now masked inside its quotes, with the key and the quotes kept, for any key case and with spaces around `=`. Other keys are not touched.
 
 [#345]: https://github.com/Database-Tycoon/tycoon-cli/issues/345
+- **`tycoon data sources migrate` carries a source's dependencies and leaves your files alone** ([#358][]). `migrate` copied only the source's package directory, so its `requirements.txt` never reached the project and nothing installed those packages into the project's `.venv`, and a migrated source that needed them failed on import. It now carries `requirements.txt` (adding any lines missing from the project's copy) and installs it the same way `sources add` does. If that install fails, `migrate` exits 1 with uv's error and removes the package it just copied, so a rerun starts over. It also carries the sources dir's `.gitignore` and `.dlt/config.toml` when the project has none, never overwriting existing ones and never copying `.dlt/secrets.toml`. A destination directory that exists without a `_run.py` used to be deleted before the copy; `migrate` now refuses, names the directory, and leaves it untouched.
+
+[#358]: https://github.com/Database-Tycoon/tycoon-cli/issues/358
 
 ## [0.2.1] - 2026-09-16
 
