@@ -100,7 +100,7 @@ Flag reference:
 | `--config key=value` | Extra config pairs. Repeatable. Overrides type-specific flags |
 | `--force` | Overwrite an existing source with the same name without confirming |
 
-Catalog credentials default to `${ENV_VAR}` references in both modes — set the env var separately. Catalog-source files (`dlt init`-style downloads) are not auto-installed under `--no-prompt`; run `tycoon data sources catalog install <type>` separately if you need them.
+Catalog credentials default to `${ENV_VAR}` references in both modes — set the env var separately. Catalog-source files (`dlt init`-style downloads) and dlt extras are now installed automatically under `--no-prompt`, matching every other default in this command; a failed install fails the command and removes the source from `tycoon.yml` (or restores whatever `--force` was about to overwrite) rather than leaving it registered but unusable. The one exception: if the project has no `.venv`/`pyproject.toml` of its own yet, installing a source's own dependencies or a dlt extra is skipped rather than silently mutating the shared/ambient environment. Run `tycoon setup` first, or install the dependency manually.
 
 ### Google Sheets
 
