@@ -31,7 +31,7 @@ All notable changes to this project will be documented in this file. The format 
 - **Source install hints name a command that exists** ([#359][], fixed in PR [#273][]). When a catalog source's download failed or was skipped, `tycoon data sources add` told you to run `tycoon data sources catalog install <type>`, which isn't a command, so following the advice failed with a usage error. The hints now point at `tycoon data sources add <type> --force --no-prompt`, and a test runs each printed hint through `--help` so a stale command name fails CI.
 - **A failed source download says why** ([#365][], fixed in PR [#273][]). When `dlt init` failed or timed out during `tycoon data sources add`, tycoon printed only "Failed to download '<type>'.", so an offline run and a mistyped source name looked identical. It now prints dlt's own last error line, such as a connection failure, and a timeout names the limit it hit.
 - **`tycoon data sources migrate` carries a source's dependencies and leaves your files alone** ([#358][], PR [#361][]). `migrate` copied only the source's package directory, so its `requirements.txt` never reached the project and nothing installed those packages into the project's `.venv`, and a migrated source that needed them failed on import. It now carries `requirements.txt` (adding any lines missing from the project's copy) and installs it the same way `sources add` does. If that install fails, `migrate` exits 1 with uv's error and removes the package it just copied, so a rerun starts over. It also carries the sources dir's `.gitignore` and `.dlt/config.toml` when the project has none, never overwriting existing ones and never copying `.dlt/secrets.toml`. A destination directory that exists without a `_run.py` used to be deleted before the copy; `migrate` now refuses, names the directory, and leaves it untouched.
-- **`tycoon register` keeps your comments in `tycoon.yml` too** ([#297][]). `register dbt`, `register warehouse` and `register rill` rewrote the file with a plain YAML dump, dropping every comment and blank line. They now update it in place the same way as `sources add` and `sources remove`.
+- **`tycoon register` keeps your comments in `tycoon.yml` too** ([#297][], PR [#369][]). `register dbt`, `register warehouse` and `register rill` rewrote the file with a plain YAML dump, dropping every comment and blank line. They now update it in place the same way as `sources add` and `sources remove`.
 
 [#70]: https://github.com/Database-Tycoon/tycoon-cli/issues/70
 [#177]: https://github.com/Database-Tycoon/tycoon-cli/issues/177
@@ -75,6 +75,7 @@ All notable changes to this project will be documented in this file. The format 
 [#361]: https://github.com/Database-Tycoon/tycoon-cli/pull/361
 [#367]: https://github.com/Database-Tycoon/tycoon-cli/pull/367
 [#368]: https://github.com/Database-Tycoon/tycoon-cli/pull/368
+[#369]: https://github.com/Database-Tycoon/tycoon-cli/pull/369
 
 ## [0.2.1] - 2026-09-16
 
