@@ -725,14 +725,19 @@ def _maybe_install_dlt_extra(source_type: str, project_root: Path, *, auto: bool
         )
         return True
 
-    if not venv_path(project_root).exists():
+    # The interactive path uses the same gate as the --no-prompt skip above:
+    # the old `.venv`-only check meant a hand-made `.venv` with no
+    # `pyproject.toml` showed no warning, and the plain confirm never said
+    # the install was going into the ambient environment (gh-366).
+    if not has_project:
         warn(
-            "This project doesn't have its own .venv yet, "
+            "This project doesn't have its own pyproject.toml and .venv yet, "
             f"{dlt_label} will be installed into the shared/ambient environment. "
             "Run `tycoon setup` to give this project its own isolated environment."
         )
 
-    install = auto or typer.confirm(f"{dlt_label} is not installed. Install it now?", default=True)
+    destination = "this project's .venv" if has_project else "the shared/ambient environment"
+    install = auto or typer.confirm(f"{dlt_label} is not installed. Install it now into {destination}?", default=True)
     if not install:
         info(f"Skipped. Install later with: uv pip install '{dlt_label}'")
         return True
