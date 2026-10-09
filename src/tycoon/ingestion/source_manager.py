@@ -30,6 +30,45 @@ SOURCES_DIR = Path.home() / ".tycoon" / "sources"
 # connections but never answers fails instead of hanging the command.
 _DLT_INIT_TIMEOUT = 120
 
+# install_source parks the shared requirements.txt under this name while
+# `dlt init` runs (gh-364); a file with this suffix only outlives a run that
+# was killed mid-install, and the next run recovers it.
+_PARKED_REQUIREMENTS_NAME = "requirements.txt.tycoon-parked"
+
+
+def _requirement_key(line: str) -> str:
+    """Whitespace-insensitive identity for a requirements line, so
+    `requests>=2` and `requests >= 2` dedupe as one (gh-364 review)."""
+    return "".join(line.split())
+
+
+def _merge_parked_requirements(shared_reqs: Path, parked_reqs: Path) -> None:
+    """Fold a parked shared requirements.txt back in after `dlt init`.
+
+    dlt either wrote `shared_reqs` fresh for the source just downloaded, or
+    wrote nothing (a failed run, or a source with no requirements of its
+    own). Either way the shared file must come back as the union. Carried
+    lines go first: `uv add -r` lets the last specifier for a package win,
+    so the freshly downloaded source's own pin has to come after the
+    carried history, not before it (gh-364 review).
+    """
+    if not parked_reqs.exists():
+        return
+    if not shared_reqs.exists():
+        parked_reqs.replace(shared_reqs)
+        return
+    fresh = shared_reqs.read_text()
+    seen = {_requirement_key(line) for line in fresh.splitlines() if line.strip()}
+    carried: list[str] = []
+    for line in parked_reqs.read_text().splitlines():
+        key = _requirement_key(line)
+        if line.strip() and key not in seen:
+            carried.append(line)
+            seen.add(key)
+    if carried:
+        shared_reqs.write_text("\n".join(carried) + "\n" + fresh.lstrip("\n"))
+    parked_reqs.unlink()
+
 
 def resolve_sources_dir(project_root: Path) -> Path:
     """Where downloaded source code and _run.py shims live for this project.
@@ -280,34 +319,63 @@ def install_source(source_type: str, sources_dir: Path = SOURCES_DIR) -> bool:
             f"Downloading verified source '{dlt_name}' from dlt-hub/verified-sources "
             f"(github.com) into {sources_dir}. This code runs during ingestion."
         )
+        # dlt init writes <sources_dir>/requirements.txt only when the dir
+        # has no dependency system at all (neither pyproject.toml nor
+        # requirements.txt), so the first source's file used to make every
+        # later `dlt init` skip writing requirements entirely: tycoon then
+        # re-installed the first source's deps and the new source's own
+        # were never recorded or installed (gh-364). Park the shared file
+        # while dlt init runs, so dlt writes THIS source's requirements
+        # fresh, then merge the parked lines back: the shared file ends up
+        # the union of every source added so far.
+        shared_reqs = sources_dir / "requirements.txt"
+        parked_reqs = sources_dir / _PARKED_REQUIREMENTS_NAME
+        # A run killed anywhere between parking and merging leaves the
+        # parked file behind, possibly NEXT TO a fresh shared file (dlt
+        # writes it before the finally runs). The merge handles every
+        # shape: no parked file is a no-op, parked alone moves back, and
+        # both existing union, so no recorded line is ever lost
+        # (gh-364 review).
+        _merge_parked_requirements(shared_reqs, parked_reqs)
+        if shared_reqs.exists():
+            shared_reqs.replace(parked_reqs)
         try:
-            result = subprocess.run(
-                [sys.executable, "-m", "dlt", "init", dlt_name, "duckdb"],
-                cwd=sources_dir,
-                capture_output=True,
-                text=True,
-                timeout=_DLT_INIT_TIMEOUT,
-            )
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            # A network that accepts connections but never answers (a
-            # captive portal, a dead proxy) hits the timeout instead of
-            # exiting; unhandled, this crashed with a raw traceback instead
-            # of returning False like every other failure here (gh-272
-            # re-review).
-            reason = f"timed out after {_DLT_INIT_TIMEOUT}s" if isinstance(exc, subprocess.TimeoutExpired) else str(exc)
-            warn(f"`dlt init {dlt_name}` {reason}.")
-            return False
-        # A network failure or other partial run can exit 0 without ever
-        # writing the package: the exit code alone isn't proof the package
-        # is actually there to write the shim into (gh-272 review).
-        if result.returncode != 0 or not (source_pkg.is_dir() and (source_pkg / "__init__.py").exists()):
-            # Surface dlt's own reason ("Failed to connect...") rather than
-            # swallowing it: the caller only knows the download failed, not
-            # why (gh-272 re-review).
-            detail = (result.stderr or result.stdout or "").strip()
-            if detail:
-                warn(f"`dlt init {dlt_name}` failed: {detail.splitlines()[-1]}")
-            return False
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "dlt", "init", dlt_name, "duckdb"],
+                    cwd=sources_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=_DLT_INIT_TIMEOUT,
+                )
+            except (subprocess.TimeoutExpired, OSError) as exc:
+                # A network that accepts connections but never answers (a
+                # captive portal, a dead proxy) hits the timeout instead of
+                # exiting; unhandled, this crashed with a raw traceback
+                # instead of returning False like every other failure here
+                # (gh-272 re-review).
+                reason = (
+                    f"timed out after {_DLT_INIT_TIMEOUT}s" if isinstance(exc, subprocess.TimeoutExpired) else str(exc)
+                )
+                warn(f"`dlt init {dlt_name}` {reason}.")
+                return False
+            # A network failure or other partial run can exit 0 without ever
+            # writing the package: the exit code alone isn't proof the
+            # package is actually there to write the shim into (gh-272
+            # review).
+            if result.returncode != 0 or not (source_pkg.is_dir() and (source_pkg / "__init__.py").exists()):
+                # Surface dlt's own reason ("Failed to connect...") rather
+                # than swallowing it: the caller only knows the download
+                # failed, not why (gh-272 re-review).
+                detail = (result.stderr or result.stdout or "").strip()
+                if detail:
+                    warn(f"`dlt init {dlt_name}` failed: {detail.splitlines()[-1]}")
+                return False
+        finally:
+            # Runs on success, failure and timeout alike: whatever dlt did,
+            # the shared file must come back containing every previously
+            # recorded line (gh-364).
+            _merge_parked_requirements(shared_reqs, parked_reqs)
 
     # Always (re)write the shim — idempotent.
     shim = _SHIMS.get(dlt_name)

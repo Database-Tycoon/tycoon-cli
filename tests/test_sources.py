@@ -1252,6 +1252,171 @@ class TestProjectLocalSourcesDir:
         assert result is False
 
 
+class TestPerSourceRequirements:
+    """gh-364: `dlt init` writes `<sources_dir>/requirements.txt` only when
+    the dir has no dependency system yet, so the first source's file made
+    every later init skip writing requirements entirely, and the second
+    source's deps were never recorded. `install_source` now parks the
+    shared file around the `dlt init` call and merges it back as a union.
+
+    The stub reproduces dlt's real write-once gate (it refuses to write
+    when a requirements.txt is already present), so these tests fail
+    without the parking, not just without the merge."""
+
+    def _dlt_init_stub(self, requirements_by_source, sources_dir, rc=0, raise_timeout=False):
+        import subprocess as sp
+
+        def _run(cmd, cwd=None, **kwargs):
+            if raise_timeout:
+                raise sp.TimeoutExpired(cmd=cmd, timeout=1)
+            name = cmd[4]
+            if rc == 0:
+                pkg = sources_dir / name
+                pkg.mkdir(parents=True, exist_ok=True)
+                (pkg / "__init__.py").touch()
+                # dlt's _get_dependency_system: an existing requirements.txt
+                # means "the user has a dependency system", so nothing is
+                # written. The parking is what makes this branch dead.
+                if not (sources_dir / "requirements.txt").exists():
+                    (sources_dir / "requirements.txt").write_text(requirements_by_source[name])
+            result = type("R", (), {})()
+            result.returncode = rc
+            result.stdout = ""
+            result.stderr = "boom" if rc else ""
+            return result
+
+        return _run
+
+    def test_second_source_requirements_are_recorded(self, tmp_path):
+        from unittest.mock import patch
+
+        from tycoon.ingestion import source_manager
+        from tycoon.ingestion.source_manager import install_source
+
+        reqs = {
+            "github": "giturlparse\ndlt[duckdb]>=0.5.1\n",
+            "google_sheets": "google-api-python-client\ndlt[duckdb]>=0.5.1\n",
+        }
+        stub = self._dlt_init_stub(reqs, tmp_path)
+        with patch.object(source_manager.subprocess, "run", stub):
+            assert install_source("github", tmp_path) is True
+            assert install_source("google_sheets", tmp_path) is True
+
+        lines = (tmp_path / "requirements.txt").read_text().splitlines()
+        assert "giturlparse" in lines
+        assert "google-api-python-client" in lines
+        # The shared dlt extra line is deduplicated, not repeated.
+        assert lines.count("dlt[duckdb]>=0.5.1") == 1
+        assert not (tmp_path / "requirements.txt.tycoon-parked").exists()
+
+    def test_failed_init_restores_the_shared_file(self, tmp_path):
+        from unittest.mock import patch
+
+        from tycoon.ingestion import source_manager
+        from tycoon.ingestion.source_manager import install_source
+
+        (tmp_path / "requirements.txt").write_text("giturlparse\n")
+        stub = self._dlt_init_stub({}, tmp_path, rc=1)
+        with patch.object(source_manager.subprocess, "run", stub):
+            assert install_source("google_sheets", tmp_path) is False
+
+        assert (tmp_path / "requirements.txt").read_text() == "giturlparse\n"
+        assert not (tmp_path / "requirements.txt.tycoon-parked").exists()
+
+    def test_timeout_restores_the_shared_file(self, tmp_path):
+        from unittest.mock import patch
+
+        from tycoon.ingestion import source_manager
+        from tycoon.ingestion.source_manager import install_source
+
+        (tmp_path / "requirements.txt").write_text("giturlparse\n")
+        stub = self._dlt_init_stub({}, tmp_path, raise_timeout=True)
+        with patch.object(source_manager.subprocess, "run", stub):
+            assert install_source("google_sheets", tmp_path) is False
+
+        assert (tmp_path / "requirements.txt").read_text() == "giturlparse\n"
+        assert not (tmp_path / "requirements.txt.tycoon-parked").exists()
+
+    def test_killed_run_with_both_files_present_loses_no_lines(self, tmp_path):
+        """gh-364 review, blocking: a run killed AFTER dlt wrote the fresh
+        file but BEFORE the merge leaves both files behind. The old
+        recovery only handled the parked-file-alone shape, so parking for
+        the next install overwrote the parked file and its lines were
+        gone. Stephen's repro, verbatim."""
+        from unittest.mock import patch
+
+        from tycoon.ingestion import source_manager
+        from tycoon.ingestion.source_manager import install_source
+
+        (tmp_path / "requirements.txt").write_text("pandas>=2\n")
+        (tmp_path / "requirements.txt.tycoon-parked").write_text("dlt[duckdb]>=0.5.0\nrequests>=2\n")
+        reqs = {"google_sheets": "dlt[duckdb]>=1.5\nsqlalchemy>=1.4\n"}
+        stub = self._dlt_init_stub(reqs, tmp_path)
+        with patch.object(source_manager.subprocess, "run", stub):
+            assert install_source("google_sheets", tmp_path) is True
+
+        lines = (tmp_path / "requirements.txt").read_text().splitlines()
+        for line in ("pandas>=2", "dlt[duckdb]>=0.5.0", "requests>=2", "dlt[duckdb]>=1.5", "sqlalchemy>=1.4"):
+            assert line in lines
+        assert not (tmp_path / "requirements.txt.tycoon-parked").exists()
+
+    def test_carried_lines_come_before_the_new_sources_lines(self, tmp_path):
+        """gh-364 review: `uv add -r` lets the last specifier for a package
+        win, so the freshly downloaded source's own pin must sit after the
+        carried history, or an older source's looser dlt line overrides
+        it."""
+        from unittest.mock import patch
+
+        from tycoon.ingestion import source_manager
+        from tycoon.ingestion.source_manager import install_source
+
+        (tmp_path / "requirements.txt").write_text("dlt[duckdb]>=0.5.0\n")
+        reqs = {"google_sheets": "dlt[duckdb,sql_database]>=1.5\nsqlalchemy>=1.4\n"}
+        stub = self._dlt_init_stub(reqs, tmp_path)
+        with patch.object(source_manager.subprocess, "run", stub):
+            assert install_source("google_sheets", tmp_path) is True
+
+        lines = (tmp_path / "requirements.txt").read_text().splitlines()
+        assert lines.index("dlt[duckdb]>=0.5.0") < lines.index("dlt[duckdb,sql_database]>=1.5")
+
+    def test_whitespace_variants_dedupe_to_one_line(self, tmp_path):
+        """gh-364 review: `requests>=2`, `requests >= 2` and a repeated
+        parked line are one requirement, not three carried lines."""
+        from unittest.mock import patch
+
+        from tycoon.ingestion import source_manager
+        from tycoon.ingestion.source_manager import install_source
+
+        (tmp_path / "requirements.txt").write_text("requests >= 2\nrequests>=2\n")
+        reqs = {"google_sheets": "requests>=2\ngoogle-api-python-client\n"}
+        stub = self._dlt_init_stub(reqs, tmp_path)
+        with patch.object(source_manager.subprocess, "run", stub):
+            assert install_source("google_sheets", tmp_path) is True
+
+        lines = (tmp_path / "requirements.txt").read_text().splitlines()
+        assert sum(1 for line in lines if "requests" in line) == 1
+
+    def test_stale_parked_file_from_a_killed_run_is_recovered(self, tmp_path):
+        """A run killed between parking and merging leaves only the parked
+        file behind; the next install treats it as the shared file, parks
+        it again, and the final union carries both sources' lines."""
+        from unittest.mock import patch
+
+        from tycoon.ingestion import source_manager
+        from tycoon.ingestion.source_manager import install_source
+
+        (tmp_path / "requirements.txt.tycoon-parked").write_text("giturlparse\n")
+        reqs = {"google_sheets": "google-api-python-client\n"}
+        stub = self._dlt_init_stub(reqs, tmp_path)
+        with patch.object(source_manager.subprocess, "run", stub):
+            assert install_source("google_sheets", tmp_path) is True
+
+        lines = (tmp_path / "requirements.txt").read_text().splitlines()
+        assert "giturlparse" in lines
+        assert "google-api-python-client" in lines
+        assert not (tmp_path / "requirements.txt.tycoon-parked").exists()
+
+
 class TestMigrateSource:
     """A source downloaded into the shared global dir before a project
     picked up its own `.venv` doesn't move on its own once
