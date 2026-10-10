@@ -82,3 +82,45 @@ test("long model and test names wrap at underscores, never mid-word or off the e
     for (const line of name.slice(0, -1)) expect(line).toMatch(/_$/);
   }
 });
+
+test("a trackpad pinch over a HUD panel does not zoom the page off the window (gh-384)", async ({
+  page,
+}) => {
+  // On macOS a trackpad pinch reaches the page as ctrl+wheel. The canvas
+  // consumes it for the camera, but over a panel it zoomed the whole page,
+  // pushing the panels and the header chips past both window edges.
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await open(page, "?settle=1");
+  await page.keyboard.press("p");
+  const panel = (await page.locator("#problems").boundingBox())!;
+
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.synthesizePinchGesture", {
+    x: panel.x + panel.width / 2,
+    y: panel.y + panel.height / 2,
+    scaleFactor: 1.6,
+    gestureSourceType: "mouse",
+  });
+  await page.waitForTimeout(300);
+
+  const viewport = await page.evaluate(() => ({
+    scale: window.visualViewport!.scale,
+    left: window.visualViewport!.offsetLeft,
+  }));
+  expect(viewport).toEqual({ scale: 1, left: 0 });
+});
+
+test("HUD panels stay inside a narrow window (gh-384)", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  await open(page, "?settle=1");
+  await page.keyboard.press("p");
+  await page.click("#replay-button");
+  await page.evaluate(() => window.__tycoonCity!.select("staging.stg_customers"));
+  await expect(page.locator("#run-panel")).toBeVisible();
+
+  for (const id of ["#problems", "#run-panel", "#inspector"]) {
+    const box = (await page.locator(id).boundingBox())!;
+    expect(box.x, id).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width, id).toBeLessThanOrEqual(360);
+  }
+});
