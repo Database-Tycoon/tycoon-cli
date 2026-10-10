@@ -1,5 +1,13 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`tycoon doctor` no longer calls a working `.venv` without tycoon "empty or broken"** ([#392][]). A project whose `.venv` was healthy, but with tycoon installed as a separate uv tool, got told to run `tycoon setup --force`, which re-resolves every dependency and in one project downgraded duckdb and dbt-core. Doctor now checks whether the `.venv` can run Python. If it can, doctor says the project is on the shared/tool model, which still works, and suggests `uv add database-tycoon` (or `uv pip install --python .venv database-tycoon` without a `pyproject.toml`), noting that tycoon's exact pins will apply. The rebuild advice is kept for a `.venv` that is empty, a plain file, or missing its interpreter.
+
+[#392]: https://github.com/Database-Tycoon/tycoon-cli/issues/392
+
 ## [0.2.2] - 2026-10-09
 
 _Headline: **project-local environments**. Every tycoon project now gets its own uv-managed `.venv`, and a catalog source's code and dependencies live inside the project, so deleting `.venv` and running `uv sync` rebuilds the same environment. `--no-prompt` installs what it registers instead of skipping it, and `tycoon data sources migrate` moves an existing project over. Also here: a filesystem load that finds nothing no longer empties a table that already held rows, and a zero-row run is flagged instead of reading as a healthy sync._
