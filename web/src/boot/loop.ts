@@ -8,6 +8,7 @@
  */
 
 import * as THREE from "three";
+import { declutterLabels } from "../scene/label_layout";
 import { TICK_SECONDS } from "../sim/traffic";
 import type { SetupResult } from "./setup";
 import type { HUDResult } from "./hud";
@@ -68,6 +69,7 @@ export function setupLoop(
     // from 2968461 (the main.ts -> boot/ split) until now. Must run before the
     // ready flag, so the first-frame wait implies the labels are placed.
     labels.render(scene, camera.camera);
+    declutterLabels(labels.domElement);
     document.body.dataset.ready = "1";
   });
 }
