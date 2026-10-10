@@ -7,11 +7,11 @@ from typing import Annotated
 
 import duckdb
 import typer
-from rich.table import Table
 
 from tycoon.config import config, display_target, redact_secrets
 from tycoon.utils.console import console, error, header, info, status_table, success, warn
 from tycoon.utils.duckdb_utils import db_file_size_mb, get_row_count, get_tables, quote_identifier
+from tycoon.utils.query_output import OutputFormat, emit_rows, print_table
 
 
 def _resolve_source_db(source_name: str) -> Path | None:
@@ -173,11 +173,20 @@ def query(
         Path | None,
         typer.Option("--db", help="Path to a DuckDB file to query directly."),
     ] = None,
+    output_format: Annotated[
+        OutputFormat,
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format. csv, json and markdown print only the rows, for scripts and notebooks.",
+        ),
+    ] = OutputFormat.table,
 ) -> None:
     """Run a SQL query against the warehouse, raw, or a source database.
 
     Local DuckDB files open read-only. A MotherDuck database runs with the
-    permissions of your MotherDuck token.
+    permissions of your MotherDuck token. In table format, a result too wide
+    for the terminal prints one block per record instead of squashing columns.
     """
     is_warehouse = False
     db_path: Path | None
@@ -240,15 +249,16 @@ def query(
         error(f"Query failed: {redact_secrets(str(exc))}")
         raise typer.Exit(1) from exc
 
-    # Build Rich table
-    table = Table(title=f"Query Results ({label} db)", show_lines=True)
-    for col in columns:
-        table.add_column(col, style="cyan")
-    for row in rows:
-        table.add_row(*(str(v) for v in row))
+    if output_format is not OutputFormat.table:
+        emit_rows(output_format, columns, rows)
+        return
 
-    console.print(table)
+    by_record = print_table(console, f"Query Results ({label} db)", columns, rows)
     info(f"{len(rows)} row(s) returned")
+    if by_record:
+        info(
+            "[dim]Too wide for the terminal, so each row is its own block. --format csv or json gives flat rows.[/dim]"
+        )
 
 
 # ---------------------------------------------------------------------------

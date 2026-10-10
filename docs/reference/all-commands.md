@@ -230,6 +230,7 @@ Arguments:
 Options:
   --db PATH                Override which DuckDB to query (default: warehouse)
   --source NAME            Query a source's raw schema
+  -f, --format FORMAT      table (default), csv, json or markdown
 ```
 
 ### [`tycoon data schema`](../commands/data/query.md#schema-dump-tables-row-counts-sizes)
