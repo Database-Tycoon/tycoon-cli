@@ -21,7 +21,7 @@ OAuth is also recognized — run `motherduck connect` once to cache a session to
 Tycoon does not consume DLT's environment variables directly, but they're respected by dlt itself when `tycoon data sources run` invokes it. The most common:
 
 - `DLT_HOME_DIR` — override `~/.dlt`
-- `DLT_DATA_DIR` — override the dlt working dir per pipeline
+- `DLT_DATA_DIR`: where dlt keeps pipeline working directories, as `$DLT_DATA_DIR/pipelines/<pipeline>`. Tycoon sets it to `<project>/.tycoon/dlt` for the length of a `tycoon data sources run`, so each project keeps its own incremental state (see [where dlt keeps pipeline state](../commands/data/sources.md#where-dlt-keeps-pipeline-state)). If you set it yourself, tycoon uses your value instead, and every project that shares it shares state for same-named sources.
 
 If you set these, they should be in scope for both interactive shells and any cron / CI environment that runs `tycoon data sources run`.
 

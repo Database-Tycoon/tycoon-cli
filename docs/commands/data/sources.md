@@ -171,6 +171,24 @@ For each source:
 
 `--fail-on-empty` makes an empty run an error, for cron jobs and orchestrators where the exit code is the only signal anyone sees. If any local filesystem glob in the source matches no files, the run stops before loading anything, so no table changes. If a run completes but a resource loaded with `replace` got zero rows, it fails afterwards, even when other resources in the same run loaded rows; the error names the empty table. An append, merge, or incremental run that finds no new records is a normal sync and passes. Both cases exit 1 and are recorded as failed runs in `tycoon data history`. Without the flag, an empty glob match leaves the table as it was, exits 0 with "nothing to load", and shows as a zero-row run in `tycoon data status` and `tycoon data history`. `tycoon data sources run-all` accepts the same flag.
 
+### Where dlt keeps pipeline state
+
+dlt keeps a working directory per pipeline: its incremental state (the cursors that decide where the next run picks up), its schemas, and the load packages it hasn't loaded yet. Tycoon runs every pipeline in this project's own `.tycoon/dlt/pipelines/`, next to `.tycoon/sources/`. Pipelines are named after the source, so before this, two projects on one machine with a source of the same name shared one directory under dlt's default `~/.dlt/pipelines/`, and with it one set of cursors. One project could then pick up the other's cursor and load duplicate rows without any error.
+
+The directory holds raw extracted rows, so it must not be committed. A new project's `.gitignore` excludes `.tycoon/dlt/`, and tycoon also writes a `.gitignore` inside the directory, so a project scaffolded before this change is covered too.
+
+The first time a pipeline runs in the project's own directory, tycoon decides what state it starts from. The shared `~/.dlt/pipelines/<pipeline>` is only ever read, never moved or deleted, since other projects may still use it:
+
+| Situation | What happens |
+|---|---|
+| The shared state matches the state dlt last stored in this project's raw database | It's copied in. The run continues exactly where it left off. |
+| It doesn't match, typically because another project ran a pipeline of the same name since | It's left out. dlt restores this project's own state from `_dlt_pipeline_state` in its raw database, which it does by default (`restore_from_destination`). |
+| This project's raw database has never loaded that dataset | It's left out, and the pipeline starts fresh. There is nothing here yet to duplicate. |
+| The raw database holds data but no stored state to compare against, or `restore_from_destination` is off | It's copied in with a warning, since that is what the run would have used before. Check the row counts if another project uses the same pipeline name. |
+| The raw database can't be read | The run stops with an error and nothing changes. |
+
+`tycoon doctor` reports what the next run of each source will do. If you set `DLT_DATA_DIR` yourself, tycoon leaves it alone and uses that directory instead.
+
 `run` warns loudly if any config field still contains an unexpanded `${VAR}`:
 
 ```
