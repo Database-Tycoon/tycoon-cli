@@ -1,5 +1,13 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`tycoon data status` shows when each dbt layer was last built** ([#390][]). The staging, intermediate and marts panels always said "last build never", even when `tycoon data history` listed successful builds of those models. Status looked models up by bare name, but the run ledger stores each node under its dbt `unique_id` (`model.<project>.<name>`), so nothing ever matched. It now matches on `unique_id`. The ledger also stores build start times as local wall-clock time and status read them as UTC, which would have made a build two hours old in New York show as "6h ago"; status now reads them in local time. Ledgers written by earlier versions need no migration: their builds show up on the next `data status`.
+
+[#390]: https://github.com/Database-Tycoon/tycoon-cli/issues/390
+
 ## [0.2.2] - 2026-10-09
 
 _Headline: **project-local environments**. Every tycoon project now gets its own uv-managed `.venv`, and a catalog source's code and dependencies live inside the project, so deleting `.venv` and running `uv sync` rebuilds the same environment. `--no-prompt` installs what it registers instead of skipping it, and `tycoon data sources migrate` moves an existing project over. Also here: a filesystem load that finds nothing no longer empties a table that already held rows, and a zero-row run is flagged instead of reading as a healthy sync._
