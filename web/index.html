@@ -289,6 +289,10 @@
         background: rgba(40, 30, 90, 0.88); color: var(--text);
         padding: 8px 12px; border-radius: 4px; font-size: 11px;
       }
+      /* The detail panel and the legend are both translucent and share the
+         right edge, so a tall detail panel shows the legend's text through
+         its own. The legend steps aside until the panel closes. */
+      #inspector:not([hidden]) ~ #legend { display: none; }
       .legend-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
       .swatch { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
     </style>

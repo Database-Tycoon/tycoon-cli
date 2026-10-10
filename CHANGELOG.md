@@ -23,6 +23,12 @@ All notable changes to this project will be documented in this file. The format 
 [#269]: https://github.com/Database-Tycoon/tycoon-cli/pull/269
 [#273]: https://github.com/Database-Tycoon/tycoon-cli/pull/273
 
+### Fixed
+
+- **`tycoon city`: the legend no longer shows through the detail panel** ([#382][]). Both panels are translucent and sit on the right edge, so a tall detail panel stacked its text over the legend's. The legend now hides while a building is selected and comes back when the panel closes.
+
+[#382]: https://github.com/Database-Tycoon/tycoon-cli/issues/382
+
 ## [0.2.1] - 2026-09-16
 
 _Headline: **multi-resource filesystem sources + validated config**. A filesystem source can now declare several named resources and load them all in a single run, `sources add` walks you through them interactively, and JSONL joins CSV and Parquet. Config that used to be quietly defaulted is validated instead — the one change here that can break an existing project. Also here: `tycoon city` lays the city out by pipeline depth, so the city looks different from 0.2.0 while the `city.json` contract stays the same._
