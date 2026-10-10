@@ -29,11 +29,13 @@ All notable changes to this project will be documented in this file. The format 
 - **`tycoon city`: long model and test names wrap instead of being clipped** ([#383][]). The detail panel split model names mid-word (`station_informa` / `tion`) and cut long dbt test names off at its right edge. Identifiers now wrap after an underscore or dot, and anything still too long wraps inside the panel rather than running past it.
 - **`tycoon city`: HUD panels no longer run off the window edges** ([#384][]). A trackpad pinch over a HUD panel zoomed the whole page instead of the city, which cuts the panels and the header chips off at both edges; that is the likeliest cause of the report and reproduces in headless Chrome. A pinch now only zooms the camera over the canvas and does nothing elsewhere; keyboard zoom still works. The panels also cap their width at the window width.
 - **`tycoon city`: views no longer show `rows 0`** ([#388][]). A view stores no rows, so the catalog reports 0 for it as a placeholder, and the detail panel, the hover tooltip and the Stats table printed that 0 as if the view were empty. They now say the rows are not counted.
+- **`tycoon city`: the HUD labels its two object counts** ([#389][]). The footer said `90 objects` and the run replay header said `109 nodes off this map`, with nothing to say they count different things. The footer now reads `90 tables and views`, and the run header reads `109 dbt nodes with no building (tests, seeds, models outside this catalog)`.
 
 [#382]: https://github.com/Database-Tycoon/tycoon-cli/issues/382
 [#383]: https://github.com/Database-Tycoon/tycoon-cli/issues/383
 [#384]: https://github.com/Database-Tycoon/tycoon-cli/issues/384
 [#388]: https://github.com/Database-Tycoon/tycoon-cli/issues/388
+[#389]: https://github.com/Database-Tycoon/tycoon-cli/issues/389
 
 ## [0.2.1] - 2026-09-16
 

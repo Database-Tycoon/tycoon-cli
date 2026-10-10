@@ -113,7 +113,7 @@ test("a refresh repaints the chrome for the new document", async ({ page }) => {
   // Footer: the status line answers for the CURRENT city, not the boot one.
   const statusText = await page.locator("#status").innerText();
   expect(statusText).toContain("renamed_after_refresh");
-  expect(statusText).toContain("99 objects");
+  expect(statusText).toContain("99 tables and views");
 
   // Notes: hidden at boot (demo has none), present after the refresh.
   const notesButton = page.locator("#notes-button");
