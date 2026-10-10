@@ -8,6 +8,7 @@
  */
 
 import * as THREE from "three";
+import { declutterLabels } from "../scene/label_layout";
 import { TICK_SECONDS } from "../sim/traffic";
 import type { SetupResult } from "./setup";
 import type { HUDResult } from "./hud";
@@ -18,7 +19,7 @@ export function setupLoop(
   settle: boolean,
   showGuests: boolean,
 ): void {
-  const { renderer, labels, scene, camera, guests } = setup;
+  const { renderer, labels, scene, camera, guests, vehicleLayer, guestLayer } = setup;
   const { city, flow, weather, usage, run, status, statusLine } = hud;
 
   const clock = new THREE.Clock();
@@ -44,12 +45,21 @@ export function setupLoop(
           const factors = city().replay.tick();
           city().buildings.setReplayProgress(factors);
           if (factors === null) {
-            status.textContent = statusLine;
-            status.title = statusLine;
+            status.textContent = statusLine();
+            status.title = statusLine();
           }
         }
         accumulator -= TICK_SECONDS;
       }
+      // The draw halves of the 10 Hz sims, fed the accumulator's progress
+      // toward the next tick so positions interpolate between tiles. These
+      // are the ONLY writers of the instance matrices: ticking the sims
+      // without calling these renders an empty street; the sim arrays keep
+      // counting, the screen shows nothing, and only a mesh-count assertion
+      // can tell the difference (which is what the hooks now count).
+      const fraction = accumulator / TICK_SECONDS;
+      vehicleLayer.update(city().traffic, fraction);
+      if (showGuests) guestLayer.update(guests, fraction);
     }
     renderer.render(scene, camera.camera);
     // CSS2DRenderer is the ONLY thing that attaches a label's div to the DOM —
@@ -59,6 +69,7 @@ export function setupLoop(
     // from 2968461 (the main.ts -> boot/ split) until now. Must run before the
     // ready flag, so the first-frame wait implies the labels are placed.
     labels.render(scene, camera.camera);
+    declutterLabels(labels.domElement);
     document.body.dataset.ready = "1";
   });
 }
