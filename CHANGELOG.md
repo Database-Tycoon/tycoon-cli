@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Security
 
-- **Local secret files can no longer be committed by accident.** The repository's `.gitignore` now covers `.env`, `.env.*` and any `.dlt/secrets.toml`, so credentials a contributor keeps for local runs stay out of commits in this public repo. `.env.example` stays committable, and a test fails if these rules are ever dropped. This changes nothing in the published package.
+- **Local secret files can no longer be committed by accident** ([#410][]). The repository's `.gitignore` now covers `.env`, `.env.*` and any `.dlt/secrets.toml`, so credentials a contributor keeps for local runs stay out of commits in this public repo. `.env.example` stays committable, and a test fails if these rules are ever dropped. This changes nothing in the published package.
+
+[#410]: https://github.com/Database-Tycoon/tycoon-cli/issues/410
 
 ## [0.2.2] - 2026-10-09
 
