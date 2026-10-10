@@ -107,6 +107,9 @@ dbt_project/logs/
 # Tycoon observability — dlt + dbt run-history metadata DB (disposable)
 .tycoon/metadata.duckdb*
 
+# Tycoon per-project dlt state: incremental cursors and load packages
+.tycoon/dlt/
+
 # OS
 .DS_Store
 """

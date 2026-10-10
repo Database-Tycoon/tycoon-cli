@@ -66,7 +66,20 @@ Reports `OK token (env)`, `OK OAuth (cached session)`, or `ERROR not configured`
 
 For Snowflake / BigQuery / Redshift: warehouse auth lives in dbt's `profiles.yml` and isn't tycoon's concern. `doctor` skips these.
 
-### 7. Layer coverage (v0.1.7)
+### 7. dlt state
+
+For a project that ingests with dlt, reports where each source's dlt state lives and what its next run will do about the state in dlt's shared `~/.dlt/pipelines/` (see [where dlt keeps pipeline state](data/sources.md#where-dlt-keeps-pipeline-state)):
+
+- `OK dlt state: kept per project in <project>/.tycoon/dlt/pipelines.` Every source either already has its own state there or has nothing in the shared directory to carry over.
+- `dlt state for '<source>': the next run will copy its state from <shared dir>, because <reason>.` The shared state is this project's own.
+- `dlt state for '<source>': the next run will restore its state from the raw database instead of copying <shared dir>, because <reason>.` The shared state was moved on by another project.
+- `dlt state for '<source>': the next run will start fresh instead of copying <shared dir>, because <reason>.` This project has never loaded that dataset.
+- `WARN dlt state for '<source>': the next run will copy its state, unverified, from <shared dir>, because <reason>.` Nothing to check it against. Check the row counts after that run if another project uses the same source name.
+- `WARN dlt state: DLT_DATA_DIR is set to <dir>, ...` You chose the directory, so tycoon leaves it alone. Projects that share it share incremental state.
+
+Purely informational: doesn't affect doctor's overall pass/fail.
+
+### 8. Layer coverage (v0.1.7)
 
 When `stack.transformation = dbt` and a compiled dbt manifest exists, doctor verifies that every registered source in `tycoon.yml` has at least one staging model:
 
@@ -77,7 +90,7 @@ Silently skipped when `transformation: none` or when the manifest hasn't been co
 
 See [layered architecture](../recipes/layered-architecture.md) for the underlying classification rules.
 
-### 8. Observability
+### 9. Observability
 
 Reports the state of `.tycoon/metadata.duckdb`:
 
