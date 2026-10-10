@@ -114,8 +114,9 @@
         max-height: calc(100% - 24px); overflow-y: auto;
         background: rgba(40, 30, 90, 0.94); color: var(--text);
         padding: 14px 16px; border-radius: 4px; font-size: 13px;
+        overflow-wrap: anywhere;
       }
-      #inspector h2 { margin: 0 0 10px; font-size: 15px; word-break: break-all; }
+      #inspector h2 { margin: 0 0 10px; padding-right: 16px; font-size: 15px; }
       #inspector h3 { margin: 12px 0 4px; font-size: 12px; opacity: 0.75; text-transform: uppercase; }
       #inspector dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
       #inspector dt { opacity: 0.65; }
@@ -289,10 +290,14 @@
         background: rgba(40, 30, 90, 0.88); color: var(--text);
         padding: 8px 12px; border-radius: 4px; font-size: 11px;
       }
+      /* The detail panel and the legend are both translucent and share the
+         right edge, so a tall detail panel shows the legend's text through
+         its own. The legend steps aside until the panel closes. */
+      #inspector:not([hidden]) ~ #legend { display: none; }
       .legend-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
       .swatch { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
     </style>
-    <script type="module" crossorigin src="./assets/index-CosJ8RPj.js"></script>
+    <script type="module" crossorigin src="./assets/index-S6qjVthN.js"></script>
   </head>
   <body>
     <header>
