@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file. The format 
 - **A project on the old environment model gets a warning, not silence** ([#265][], PR [#269][]). `tycoon doctor` reports plainly whether a project has its own `.venv`, and the same warning fires right before a pipeline run or a source install falls back to the old shared/ambient behavior, pointing at `tycoon setup`. Nothing forces a migration.
 - **`--no-prompt` installs a source's dependencies instead of silently skipping them** ([#272][], PR [#273][]). `tycoon data sources add <type> --no-prompt` used to register the source in `tycoon.yml` without ever downloading or installing anything, since the whole install step was skipped along with the confirmation prompt, the same CI flag that's supposed to make this unattended. It now installs automatically, matching every other `--no-prompt` default in this command.
 
+### Changed
+
+- **The city opens framed on the whole city** ([#386][]). The opening camera used to size itself from the flat footprint of the catalog, so a real catalog could open as a thin strip of buildings in a frame of grass with its tallest towers cut off at the top. The opening view is now fitted to the city in three dimensions, rooftop spires and usage beacons included, with a small margin. It refits when the window is resized until you move the camera, and `H` or `Home` returns to it.
+
 ### Fixed
 
 - **City labels no longer draw on top of each other** ([#385][]). District and civic chips were placed independently, so on a real catalog `main_semantic` and `main_intermediate` merged into one unreadable line and the library and firehouse chips stacked on one spot. A colliding chip now moves up or down by a chip height or two; larger districts keep their spot, and a civic chip that still has no room is hidden until the view changes.
@@ -27,6 +31,7 @@ All notable changes to this project will be documented in this file. The format 
 [#269]: https://github.com/Database-Tycoon/tycoon-cli/pull/269
 [#273]: https://github.com/Database-Tycoon/tycoon-cli/pull/273
 [#385]: https://github.com/Database-Tycoon/tycoon-cli/issues/385
+[#386]: https://github.com/Database-Tycoon/tycoon-cli/issues/386
 
 ## [0.2.1] - 2026-09-16
 

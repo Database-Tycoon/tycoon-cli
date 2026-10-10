@@ -3,7 +3,7 @@ title: city.json v1
 description: The normative wire format between Database Tycoon's Python side and any renderer, and why each decision was taken
 tags: [contract, format, export, renderer]
 related: [handover, superpowers/specs/2026-08-03-city-foundation-design]
-updated: '2026-08-06'
+updated: '2026-10-10'
 ---
 
 # `city.json` v1
@@ -292,10 +292,14 @@ yet.
 
 The inclusive bbox of every lot plus the plant: exactly the coordinate set the 2D
 camera frames on (`app._built_tiles`), asserted equal in
-`tests/export/test_build.py`. A 3D client should solve its camera distance from
-this box's diagonal so the opening frame contains it, rather than inventing a
-framing policy. Roads are deliberately outside it — they add at most one tile and
-would make the frame describe pavement.
+`tests/export/test_build.py`. Roads are deliberately outside it: they add at
+most one tile and would make the frame describe pavement.
+
+A flat box is not enough for a 3D client: on a real catalog the tallest towers
+rise well above it and a diagonal-sized frame cut them off at the top (#386).
+The web client (`web/src/cameras.ts`) therefore fits every named pose to the
+same lots and plant in three dimensions, each lot up to its rooftop, plus the
+district plates and the civic buildings. It does not read `focus`.
 
 ## `replay` — the last run as a schedule (Phase F, additive)
 

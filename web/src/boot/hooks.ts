@@ -71,6 +71,12 @@ export interface TycoonCityHooks {
   districtScreenRect: (
     schema: string,
   ) => { left: number; top: number; right: number; bottom: number } | null;
+  /** The screen box of a lot's building as drawn: its footprint from the
+   * ground to the height the building mesh uses. Null for an unknown key or
+   * a building with any corner behind the camera. */
+  lotScreenRect: (
+    key: string,
+  ) => { left: number; top: number; right: number; bottom: number } | null;
   /** Open the run panel and begin a run — the named one, or the picker's
    * first (worst, then newest) when unnamed. */
   runReplay: (id?: string) => Promise<void>;
@@ -214,6 +220,28 @@ export function installHooks(deps: HookDeps): TycoonCityHooks {
       return {
         x: rect.left + ((at.x + 1) / 2) * rect.width,
         y: rect.top + ((1 - at.y) / 2) * rect.height,
+      };
+    },
+    lotScreenRect: (key: string) => {
+      const lot = deps.doc().lots.find((l) => l.object_key === key);
+      if (!lot) return null;
+      const height = deps.city().buildings.heightOf(lot);
+      const corners: THREE.Vector3[] = [];
+      for (const x of [lot.x, lot.x + lot.w]) {
+        for (const z of [lot.y, lot.y + lot.h]) {
+          for (const y of [0, height]) corners.push(new THREE.Vector3(x, y, z));
+        }
+      }
+      const rect = renderer.domElement.getBoundingClientRect();
+      const points = corners.map((c) => c.project(cameras.camera));
+      if (points.some((p) => p.z > 1)) return null;
+      const xs = points.map((p) => rect.left + ((p.x + 1) / 2) * rect.width);
+      const ys = points.map((p) => rect.top + ((1 - p.y) / 2) * rect.height);
+      return {
+        left: Math.min(...xs),
+        top: Math.min(...ys),
+        right: Math.max(...xs),
+        bottom: Math.max(...ys),
       };
     },
     districtScreenRect: (schema: string) => {
