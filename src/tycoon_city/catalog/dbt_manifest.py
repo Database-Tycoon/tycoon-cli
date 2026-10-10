@@ -11,7 +11,8 @@ carries both shapes so the tests cannot pass on the lucky path.
 Everything else degrades, never fails: a missing manifest returns None, a
 mismatched target (dogfood's manifest says `dogfood_dev` while prod lives in
 MotherDuck) is *measured* via `join_rate` and surfaced as a note, and sources
-outside the catalog are dropped and counted.
+outside the catalog get no edge (there is no building to draw a street to) but
+are counted, and named on each model that reads them.
 """
 
 import dataclasses
@@ -88,6 +89,22 @@ class NodeContext:
 
 
 @dataclass(frozen=True)
+class ExternalSource:
+    """A dbt source a model reads that has no object in the rendered warehouse.
+
+    The common shape is a raw layer in another attached database or a lake,
+    so it cannot be measured here; it is still a declared input, and naming it
+    keeps "no upstream on this map" from reading as "no inputs at all".
+    `name` is dbt's `source_name.table`; `relation` is where dbt says it lives.
+    """
+
+    unique_id: str
+    name: str
+    relation: str
+    freshness_status: str | None = None
+
+
+@dataclass(frozen=True)
 class ManifestIndex:
     """The manifest reduced to what the city needs, keyed for joining.
 
@@ -106,6 +123,7 @@ class ManifestIndex:
     # models whose jinja could not be resolved are counted, not guessed at.
     sql_of: dict[str, str] = dataclasses.field(default_factory=dict)
     models_without_sql: int = 0
+    sources: dict[str, ExternalSource] = dataclasses.field(default_factory=dict)  # source unique_id -> source
 
 
 def read_manifest(path: Path) -> ManifestIndex | None:
@@ -165,6 +183,7 @@ def read_manifest(path: Path) -> ManifestIndex | None:
 
     source_ids: set[str] = set()
     source_relation: dict[tuple[str, str], str] = {}  # (source_name, name) -> relation
+    sources: dict[str, ExternalSource] = {}
     for unique_id, source in (data.get("sources") or {}).items():
         schema = source.get("schema")
         name = source.get("identifier") or source.get("name")
@@ -175,6 +194,12 @@ def read_manifest(path: Path) -> ManifestIndex | None:
         context_of[unique_id] = _node_context(source)
         if source.get("source_name") and source.get("name"):
             source_relation[(source["source_name"], source["name"])] = f"{schema}.{name}"
+        database = source.get("database")
+        sources[unique_id] = ExternalSource(
+            unique_id=unique_id,
+            name=f"{source.get('source_name') or schema}.{source.get('name') or name}",
+            relation=f"{database}.{schema}.{name}" if database else f"{schema}.{name}",
+        )
 
     sql_of: dict[str, str] = {}
     models_without_sql = 0
@@ -199,6 +224,7 @@ def read_manifest(path: Path) -> ManifestIndex | None:
         context_of=context_of,
         sql_of=sql_of,
         models_without_sql=models_without_sql,
+        sources=sources,
     )
 
 
@@ -234,6 +260,8 @@ class ManifestJoin:
     # Catalog key -> parseable model SQL, for column-level lineage.
     sql_by_key: dict[str, str] = dataclasses.field(default_factory=dict)
     models_without_sql: int = 0
+    # Catalog key -> the dbt sources that model reads which are not on this map.
+    external_upstream_by_key: dict[str, tuple[ExternalSource, ...]] = dataclasses.field(default_factory=dict)
 
 
 def join_manifest(index: ManifestIndex, catalog_keys: set[str]) -> ManifestJoin:
@@ -251,14 +279,20 @@ def join_manifest(index: ManifestIndex, catalog_keys: set[str]) -> ManifestJoin:
     rate = (len(matched) / total) if total else 0.0
 
     edges: list[Edge] = []
+    external_upstream_by_key: dict[str, tuple[ExternalSource, ...]] = {}
     for model_id, deps in index.model_dependencies.items():
         dst = canonical.get(index.key_of.get(model_id, ""))
         if dst is None:
             continue
+        external: list[ExternalSource] = []
         for dep_id in deps:
             src = canonical.get(index.key_of.get(dep_id, ""))
             if src is not None and src != dst:
                 edges.append(Edge(src=src, dst=dst, provenance="manifest"))
+            elif src is None and dep_id in index.sources:
+                external.append(index.sources[dep_id])
+        if external:
+            external_upstream_by_key[dst] = tuple(sorted(external, key=lambda s: s.name))
 
     sources_outside = sum(1 for sid in index.source_ids if index.key_of.get(sid, "") not in canonical)
 
@@ -297,6 +331,7 @@ def join_manifest(index: ManifestIndex, catalog_keys: set[str]) -> ManifestJoin:
         context_by_key=context_by_key,
         sql_by_key=sql_by_key,
         models_without_sql=index.models_without_sql,
+        external_upstream_by_key=external_upstream_by_key,
     )
 
 

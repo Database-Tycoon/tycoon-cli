@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from .column_lineage import ColumnEdge
-    from .dbt_manifest import NodeContext, SourceFreshness, TestRef
+    from .dbt_manifest import ExternalSource, NodeContext, SourceFreshness, TestRef
     from .osi import SemanticDataset, SemanticRelationship
     from .run_history import RunHistory
 
@@ -73,6 +73,10 @@ class PipelineContext:
     # duckdb_columns(). The schema-as-architecture features build on this.
     columns_by_key: dict[str, tuple[tuple[str, str], ...]] = dataclasses.field(default_factory=dict)
     source_freshness_by_key: dict[str, SourceFreshness] = dataclasses.field(default_factory=dict)
+    # Declared dbt sources a model reads that have no object here (a raw layer
+    # in another database or a lake), with dbt's freshness verdict when known.
+    # No edge can reach them, so this is the only place they are named.
+    external_upstream_by_key: dict[str, tuple[ExternalSource, ...]] = dataclasses.field(default_factory=dict)
     # Column-level lineage (skybridges), traced by sqlglot from view SQL and
     # dbt model code. A subset of `edges` at the column grain.
     column_edges: tuple[ColumnEdge, ...] = ()
