@@ -27,6 +27,9 @@ class RunCompleted(BaseEvent):
     rows_loaded: dict[str, int] = Field(default_factory=dict)
     tables_created: list[str] = Field(default_factory=list)
     tables_updated: list[str] = Field(default_factory=list)
+    # Defaults keep ledger rows written before these fields existed readable.
+    zero_rows: bool = False
+    warnings: list[str] = Field(default_factory=list)
 
 
 class RunFailed(BaseEvent):
