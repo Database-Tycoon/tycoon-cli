@@ -8,7 +8,7 @@ Three lightweight commands for inspecting and tearing down the warehouse without
 tycoon data query "SELECT * FROM stg_widgets LIMIT 10"
 ```
 
-Runs a SQL query against the warehouse and prints the result as a Rich table.
+Runs a SQL query against the warehouse and prints the result as a Rich table, or as CSV, JSON or Markdown with `--format`.
 
 ### Synopsis
 
@@ -22,6 +22,7 @@ Options:
   --db PATH         Override which DuckDB to query. Default: warehouse
   --source NAME     Query a source's raw schema (resolves to data/raw_<name>.duckdb
                     or main raw.duckdb's raw_<name> schema)
+  -f, --format      table (default), csv, json or markdown
   -h, --help        Show this message and exit
 ```
 
@@ -40,7 +41,26 @@ tycoon data query --db .tycoon/metadata.duckdb \
 
 # Query a synced snapshot
 tycoon data query --db ./snap.duckdb "SHOW ALL TABLES"
+
+# Rows only, for a script or notebook
+tycoon data query --format csv "SELECT * FROM mart.fct_orders" > orders.csv
+tycoon data query --format json "SELECT * FROM mart.fct_orders LIMIT 5" | jq '.[0]'
 ```
+
+### Output formats
+
+`--format` (or `-f`) picks how the rows come back:
+
+| Format | Output |
+|---|---|
+| `table` | The default. A Rich table with a title and a `N row(s) returned` line. |
+| `csv` | A header line, then one line per row. NULL is an empty field. |
+| `json` | A JSON array with one object per row, keyed by column name. NULL is `null`, `DECIMAL` values are numbers, and dates, timestamps and other types are strings. |
+| `markdown` | A GitHub-flavored Markdown table, ready to paste into an issue or a doc. |
+
+`csv`, `json` and `markdown` print the rows and nothing else, so the output can go straight into a file or another tool. Errors still go to stderr.
+
+In `table` format, a result too wide for the terminal (one where some column couldn't show its full name) prints one block per row instead, with each column name beside its value, like `psql`'s expanded display. A result that fits keeps the usual column layout.
 
 ### Live warehouse via Quack (v0.1.9)
 

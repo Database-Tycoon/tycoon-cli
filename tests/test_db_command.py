@@ -265,3 +265,78 @@ class TestMotherDuckWarehouse:
         assert result.exit_code == 0, result.stdout
         assert [c[0] for c in calls] == ["md:x_raw"]
         assert "read_only" not in calls[0][1]
+
+
+WIDE_COLUMNS = [f"metric_column_number_{i}" for i in range(12)]
+
+
+def _wide_db(tmp_path: Path) -> Path:
+    db_path = tmp_path / "wide.duckdb"
+    con = duckdb.connect(str(db_path))
+    select = ", ".join(f"'value {i}' AS {name}" for i, name in enumerate(WIDE_COLUMNS))
+    con.execute(f"CREATE TABLE wide AS SELECT 'M15' AS route_id, 1.50::DECIMAL(4,2) AS fare, NULL AS notes, {select}")
+    con.close()
+    return db_path
+
+
+class TestQueryFormats:
+    """gh-391: machine-readable output, and no squashed headers on wide results."""
+
+    def _query(self, cli_runner, db_path: Path, *args: str):
+        return cli_runner.invoke(app, ["data", "query", "SELECT * FROM wide", "--db", str(db_path), *args])
+
+    def test_csv_prints_only_rows(self, cli_runner, tmp_path):
+        result = self._query(cli_runner, _wide_db(tmp_path), "--format", "csv")
+        assert result.exit_code == 0
+        lines = result.stdout.splitlines()
+        assert lines[0] == ",".join(["route_id", "fare", "notes", *WIDE_COLUMNS])
+        assert lines[1].startswith("M15,1.50,,value 0,")
+        assert len(lines) == 2
+
+    def test_json_prints_only_parseable_rows(self, cli_runner, tmp_path):
+        import json
+
+        result = self._query(cli_runner, _wide_db(tmp_path), "--format", "json")
+        assert result.exit_code == 0
+        records = json.loads(result.stdout)
+        assert records[0]["route_id"] == "M15"
+        assert records[0]["fare"] == 1.5
+        assert records[0]["notes"] is None
+        assert records[0]["metric_column_number_11"] == "value 11"
+
+    def test_markdown_escapes_pipes(self, cli_runner, tmp_path):
+        db_path = tmp_path / "pipes.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute("CREATE TABLE wide AS SELECT 'a|b' AS label, NULL AS notes")
+        con.close()
+
+        result = self._query(cli_runner, db_path, "-f", "markdown")
+        assert result.exit_code == 0
+        assert result.stdout.splitlines() == [
+            "| label | notes |",
+            "| --- | --- |",
+            r"| a\|b |  |",
+        ]
+
+    def test_unknown_format_is_a_usage_error(self, cli_runner, tmp_path):
+        result = self._query(cli_runner, _wide_db(tmp_path), "--format", "xml")
+        assert result.exit_code == 2
+
+    def test_wide_table_prints_one_block_per_record(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.setenv("COLUMNS", "100")
+        result = self._query(cli_runner, _wide_db(tmp_path))
+        assert result.exit_code == 0
+        assert "metric_column_number_11" in result.stdout
+        assert "record 1" in result.stdout
+        assert "…" not in result.stdout
+        assert "1 row(s) returned" in result.stdout
+
+    def test_narrow_table_keeps_the_column_layout(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.setenv("COLUMNS", "100")
+        result = cli_runner.invoke(
+            app, ["data", "query", "SELECT route_id, fare FROM wide", "--db", str(_wide_db(tmp_path))]
+        )
+        assert result.exit_code == 0
+        assert "record 1" not in result.stdout
+        header = next(line for line in result.stdout.splitlines() if "route_id" in line)
+        assert "fare" in header
