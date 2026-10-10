@@ -7,6 +7,7 @@ from typing import Any
 
 import click
 import typer
+from rich.markup import escape
 from rich.table import Table
 
 from tycoon.config import TycoonConfig, load_config
@@ -400,7 +401,9 @@ def add_source(
         False,
         "--no-prompt",
         help=(
-            "Skip every prompt. Required flags must be passed up front. "
+            "Skip every prompt. Required flags must be passed up front. Also downloads "
+            "source code and installs dependencies automatically; a failed install fails "
+            "the command instead of leaving the source registered but unusable. "
             "Designed for CI / scripted bootstrap / online recipe doctests."
         ),
     ),
@@ -514,19 +517,44 @@ def add_source(
                 info("Cancelled.")
                 raise typer.Exit(0)
 
+    previous_source = project.sources.get(source_name)
     project.sources[source_name] = new_source
     save_project(project, cfg.root)
 
     success(f"Source [bold]{source_name}[/bold] added to tycoon.yml")
 
-    if not no_prompt:
-        if catalog_entry and source_type != "filesystem":
-            # filesystem ships with dlt core and never needs a dlt-init
-            # download; it always runs through the native builder in
-            # runner.py, never the catalog/shim path.
-            _maybe_install_catalog_source(source_type)
-        elif not catalog_entry:
-            _maybe_install_dlt_extra(source_type)
+    installed = True
+    if catalog_entry and source_type != "filesystem":
+        # filesystem ships with dlt core and never needs a dlt-init
+        # download; it always runs through the native builder in
+        # runner.py, never the catalog/shim path.
+        installed = _maybe_install_catalog_source(source_type, cfg.root, auto=no_prompt)
+    elif not catalog_entry:
+        installed = _maybe_install_dlt_extra(source_type, cfg.root, auto=no_prompt)
+
+    if no_prompt and not installed:
+        # A source registered but not installed is exactly the state gh-272
+        # set out to remove. Under --no-prompt (the CI path) a failed
+        # install fails the command and rolls back the entry just written,
+        # instead of exiting 0 with tycoon.yml carrying a source that can't
+        # actually run yet.
+        # --force over an existing source must restore it, not delete it:
+        # a failed install on the new source shouldn't cost the user their
+        # working one (gh-272 review).
+        if previous_source is not None:
+            project.sources[source_name] = previous_source
+            save_project(project, cfg.root)
+            error(
+                f"Install failed under --no-prompt: restored '{source_name}' to what it was before "
+                "--force. Fix the issue and retry."
+            )
+        else:
+            del project.sources[source_name]
+            save_project(project, cfg.root)
+            error(
+                f"Removed '{source_name}' from tycoon.yml: install failed under --no-prompt. Fix the issue and retry."
+            )
+        raise typer.Exit(1)
 
     next_steps(
         (f"tycoon data sources run {source_name}", "load data into DuckDB"),
@@ -534,52 +562,195 @@ def add_source(
     )
 
 
-def _maybe_install_catalog_source(source_type: str) -> None:
-    """Offer to download the dlt verified source if not already installed."""
-    from tycoon.ingestion.source_manager import install_source, is_source_installed
+def _maybe_install_catalog_source(source_type: str, project_root: Path, *, auto: bool = False) -> bool:
+    """Offer to download the dlt verified source if not already installed.
 
-    if is_source_installed(source_type):
-        return
+    ``auto`` (set for ``--no-prompt``) skips the confirmation and installs
+    directly instead of skipping the download entirely, matching every
+    other ``--no-prompt`` behavior in this command: don't ask, just do the
+    sensible default.
 
-    install = typer.confirm(
+    Returns False only when ``auto`` is set and the download (or its
+    dependency install) fails. This is the signal ``add_source`` uses to
+    fail the command and roll back the tycoon.yml entry it just wrote, rather than
+    leaving a source registered but not installed under ``--no-prompt``
+    (gh-272). Returns True in every other case: already installed, skipped,
+    or installed successfully.
+    """
+    from tycoon.ingestion.source_manager import install_source, is_source_installed, resolve_sources_dir
+    from tycoon.venv import venv_path
+
+    sources_dir = resolve_sources_dir(project_root)
+
+    if is_source_installed(source_type, sources_dir):
+        # The code is there, but a retry after an earlier failed attempt
+        # (or a source whose deps were never installed to begin with) must
+        # still try its requirements.txt, not exit 0 having installed
+        # nothing (gh-272 review).
+        return _maybe_install_source_requirements(source_type, sources_dir, project_root, auto=auto)
+
+    if not venv_path(project_root).exists():
+        warn(
+            "This project doesn't have its own .venv yet, "
+            f"'{source_type}' will be downloaded into the shared {sources_dir}. "
+            "Run `tycoon setup` to give this project its own isolated environment."
+        )
+
+    install = auto or typer.confirm(
         f"Source '{source_type}' hasn't been downloaded yet. Download it now via dlt init?",
         default=True,
     )
-    if install:
-        info(f"Running dlt init {source_type} ...")
-        if install_source(source_type):
-            success(f"Source '{source_type}' installed to ~/.tycoon/sources/")
-        else:
-            warn(
-                f"Failed to install '{source_type}'. "
-                f"You can retry with: tycoon data sources catalog install {source_type}"
-            )
-    else:
-        info(f"Skipped. Install later with: tycoon data sources catalog install {source_type}")
+    if not install:
+        info(
+            f"Skipped. Install later with: tycoon data sources add {source_type} --force --no-prompt "
+            "(plus your original --config flags)"
+        )
+        return True
+
+    info(f"Running dlt init {source_type} ...")
+    if not install_source(source_type, sources_dir):
+        if auto:
+            error(f"Failed to download '{source_type}'.")
+            return False
+        warn(
+            f"Failed to install '{source_type}'. "
+            f"You can retry with: tycoon data sources add {source_type} --force --no-prompt "
+            "(plus your original --config flags)"
+        )
+        return True
+
+    success(f"Source '{source_type}' installed to {sources_dir}")
+    return _maybe_install_source_requirements(source_type, sources_dir, project_root, auto=auto)
 
 
-def _maybe_install_dlt_extra(source_type: str) -> None:
-    """Check if the dlt extra is available and offer to install if not."""
+def _maybe_install_source_requirements(
+    source_type: str, sources_dir: Path, project_root: Path, *, auto: bool = False
+) -> bool:
+    """Install exactly what the just-downloaded source's requirements.txt lists.
+
+    `dlt init` writes this file alongside the source package. Installing it
+    is what makes a freshly-added source actually runnable on the first try,
+    rather than failing on the first missing import (gh-264).
+
+    Returns False only when ``auto`` is set and the install fails, same
+    contract as ``_maybe_install_catalog_source``.
+    """
+    from tycoon.ingestion.source_installer import install_requirements
+    from tycoon.venv import venv_path
+
+    requirements_path = sources_dir / "requirements.txt"
+    if not requirements_path.exists():
+        return True
+
+    # Both a pyproject.toml and a .venv are required: create_venv (gh-262)
+    # writes them together, and gh-262 also made init skip building a
+    # .venv when a pyproject.toml already exists, so the two can now
+    # diverge. Either alone isn't enough: a bare .venv has no pyproject.toml
+    # for `uv add` to add into, and a bare pyproject.toml with no .venv
+    # would have `uv add` create one and write into it unprompted
+    # (gh-264 review).
+    has_project = (project_root / "pyproject.toml").exists() and venv_path(project_root).exists()
+
+    # Under --no-prompt with no project environment, installing would mean
+    # silently mutating the shared/ambient environment with no one asking,
+    # fine behind a confirm, not fine unattended (gh-272 review). Skip
+    # rather than install; the source itself is still usable once its
+    # requirements are installed some other way.
+    if auto and not has_project:
+        warn(
+            f"Skipping automatic dependency install for '{source_type}': "
+            "this project doesn't have its own pyproject.toml and .venv yet, and installing into "
+            "the shared/ambient environment unattended isn't safe. Run `tycoon setup` first, or "
+            f"install manually with: uv pip install -r {requirements_path}"
+        )
+        return True
+
+    info(f"Installing '{source_type}' dependencies ({requirements_path.name})...")
+    if install_requirements(requirements_path, project_root if has_project else None):
+        success(f"Dependencies for '{source_type}' installed.")
+        return True
+
+    retry = (
+        f"uv --project {project_root} add -r {requirements_path}"
+        if has_project
+        else f"uv pip install -r {requirements_path}"
+    )
+    if auto:
+        error(f"Failed to install dependencies for '{source_type}'.")
+        return False
+    warn(f"Failed to install dependencies for '{source_type}'. You can retry with: {retry}")
+    return True
+
+
+def _maybe_install_dlt_extra(source_type: str, project_root: Path, *, auto: bool = False) -> bool:
+    """Check if the dlt extra is available and offer to install if not.
+
+    ``auto`` (set for ``--no-prompt``) skips the confirmation and installs
+    directly instead of skipping the install entirely, matching every
+    other ``--no-prompt`` behavior in this command: don't ask, just do the
+    sensible default, except when the project has no `pyproject.toml`/`.venv`
+    of its own, where auto-installing would mutate the shared/ambient
+    environment with no one asking; that case skips instead (gh-272 review).
+
+    Returns False only when ``auto`` is set and the install fails, same
+    contract as ``_maybe_install_catalog_source``.
+    """
     from tycoon.ingestion.source_installer import (
         DLT_EXTRAS,
         install_dlt_extra,
         is_dlt_extra_available,
     )
+    from tycoon.venv import venv_path
 
     if source_type not in DLT_EXTRAS:
-        return
+        return True
 
     if is_dlt_extra_available(source_type):
-        return
+        return True
 
-    install = typer.confirm(f"dlt[{source_type}] is not installed. Install it now?", default=True)
-    if install:
-        if install_dlt_extra(source_type):
-            success(f"dlt[{source_type}] installed successfully.")
-        else:
-            warn(f"Failed to install dlt[{source_type}]. You can install it manually.")
-    else:
-        info(f"Skipped. Install later with: uv pip install 'dlt[{source_type}]'")
+    dlt_label = escape(f"dlt[{source_type}]")
+    # See _maybe_install_source_requirements: both pyproject.toml and
+    # .venv are required, not either alone. A hand-made .venv with no
+    # pyproject.toml used to pass this gate under --no-prompt (it only
+    # checked .venv), installing into whatever environment happened to be
+    # ambient instead of skipping (gh-272 re-review).
+    has_project = (project_root / "pyproject.toml").exists() and venv_path(project_root).exists()
+
+    if auto and not has_project:
+        warn(
+            f"Skipping automatic install of {dlt_label} under --no-prompt: this project doesn't "
+            "have its own pyproject.toml and .venv yet, and installing into the shared/ambient "
+            f"environment unattended isn't safe. Run `tycoon setup` first, or install manually "
+            f"with: uv pip install '{dlt_label}'"
+        )
+        return True
+
+    # The interactive path uses the same gate as the --no-prompt skip above:
+    # the old `.venv`-only check meant a hand-made `.venv` with no
+    # `pyproject.toml` showed no warning, and the plain confirm never said
+    # the install was going into the ambient environment (gh-366).
+    if not has_project:
+        warn(
+            "This project doesn't have its own pyproject.toml and .venv yet, "
+            f"{dlt_label} will be installed into the shared/ambient environment. "
+            "Run `tycoon setup` to give this project its own isolated environment."
+        )
+
+    destination = "this project's .venv" if has_project else "the shared/ambient environment"
+    install = auto or typer.confirm(f"{dlt_label} is not installed. Install it now into {destination}?", default=True)
+    if not install:
+        info(f"Skipped. Install later with: uv pip install '{dlt_label}'")
+        return True
+
+    if install_dlt_extra(source_type, project_root if has_project else None):
+        success(f"{dlt_label} installed successfully.")
+        return True
+
+    if auto:
+        error(f"Failed to install {dlt_label}.")
+        return False
+    warn(f"Failed to install {dlt_label}. You can install it manually.")
+    return True
 
 
 @app.command("remove")
@@ -605,6 +776,75 @@ def remove_source(
     success(f"Source [bold]{name}[/bold] removed from tycoon.yml")
 
 
+@app.command("migrate")
+def migrate_source_cmd(
+    source_type: str = typer.Argument(help="Source type to migrate, e.g. github."),
+) -> None:
+    """Copy a globally-installed catalog source into this project's own sources dir.
+
+    Once a project has its own `.venv` (gh-262), downloaded source code
+    resolves to `<project>/.tycoon/sources/` instead of the shared
+    `~/.tycoon/sources/`. A source installed before that switch doesn't move
+    on its own; this copies it across, with its requirements.txt and the
+    dir's `.gitignore`, then installs those requirements the same way
+    `sources add` does, so `tycoon data sources run` can find and import it
+    without re-downloading from scratch (gh-358).
+    """
+    import shutil
+
+    from tycoon.ingestion.source_manager import (
+        SOURCES_DIR,
+        is_source_installed,
+        migrate_source,
+        resolve_sources_dir,
+        source_package_dir,
+    )
+
+    cfg = _require_project()
+    sources_dir = resolve_sources_dir(cfg.root)
+
+    if sources_dir == SOURCES_DIR:
+        error("This project doesn't have its own `.venv` yet, so there's no project-local dir to migrate into.")
+        info("Run `tycoon setup` first, then retry.")
+        raise typer.Exit(1)
+
+    if is_source_installed(source_type, sources_dir):
+        info(f"Source '{source_type}' is already installed in {sources_dir}.")
+        return
+
+    if not is_source_installed(source_type, SOURCES_DIR):
+        error(f"Source '{source_type}' isn't installed anywhere. Run: tycoon data sources add {source_type}")
+        raise typer.Exit(1)
+
+    package_dir = source_package_dir(source_type, sources_dir)
+    copied_package = not package_dir.exists()
+    try:
+        migrated = migrate_source(source_type, SOURCES_DIR, sources_dir)
+    except FileExistsError as exc:
+        error(
+            f"{exc} already exists but has no _run.py, so it isn't a migrated copy of '{source_type}'. "
+            "Nothing was changed. Move or delete that directory yourself, then retry."
+        )
+        raise typer.Exit(1) from None
+    if not migrated:
+        warn(f"Failed to migrate '{source_type}'.")
+        raise typer.Exit(1)
+
+    if not _maybe_install_source_requirements(source_type, sources_dir, cfg.root, auto=True):
+        # Only a package dir this run created is removed, so nothing the
+        # user had is deleted. The carried requirements.txt and .gitignore
+        # stay, and a rerun retries cleanly.
+        if copied_package:
+            shutil.rmtree(package_dir)
+        error(
+            f"'{source_type}' was not migrated: its dependencies failed to install. "
+            f"Fix the error above, then rerun: tycoon data sources migrate {source_type}"
+        )
+        raise typer.Exit(1)
+
+    success(f"Migrated '{source_type}' from {SOURCES_DIR} to {sources_dir}")
+
+
 # ---------------------------------------------------------------------------
 # Ingestion commands
 # ---------------------------------------------------------------------------
@@ -613,8 +853,20 @@ _MaxRecordsOption = typer.Option(
     None,
     "--max-records",
     "-n",
+    min=0,
     help="Cap the total number of records fetched per resource (useful for testing).",
     show_default=False,
+)
+
+
+_FailOnEmptyOption = typer.Option(
+    False,
+    "--fail-on-empty",
+    help=(
+        "Exit non-zero, and record the run as failed, when a local glob "
+        "matches no files or a replace load brings in zero rows. For orchestrated runs "
+        "where the exit code is the only signal anyone sees."
+    ),
 )
 
 
@@ -692,6 +944,7 @@ def run_source(
             "set `transform.auto_scaffold: false` in tycoon.yml."
         ),
     ),
+    fail_on_empty: bool = _FailOnEmptyOption,
 ) -> None:
     """Ingest data from a registered source by name."""
     from tycoon.ingestion.runner import run_source as _run_source
@@ -727,7 +980,11 @@ def run_source(
             source_config=source_config,
             raw_db_path=cfg.raw_db,
             max_records=max_records,
+            fail_on_empty=fail_on_empty,
         )
+        if load_info is None:
+            info(f"{source_name}: nothing to load. No tables were changed.")
+            return
         success(f"{source_name} load complete. {load_info}")
         _maybe_auto_scaffold(source_name, source_config, cfg=cfg, scaffold=not no_scaffold)
         next_steps(
@@ -752,6 +1009,7 @@ def run_all(
             "for every source. See `tycoon data sources run --help`."
         ),
     ),
+    fail_on_empty: bool = _FailOnEmptyOption,
 ) -> None:
     """Run all registered source pipelines sequentially."""
     from tycoon.ingestion.runner import run_source as _run_source
@@ -778,7 +1036,11 @@ def run_all(
                 source_config=source_config,
                 raw_db_path=cfg.raw_db,
                 max_records=max_records,
+                fail_on_empty=fail_on_empty,
             )
+            if load_info is None:
+                info(f"{name}: nothing to load. No tables were changed.")
+                continue
             success(f"{name} complete. {load_info}")
             _maybe_auto_scaffold(name, source_config, cfg=cfg, scaffold=not no_scaffold)
         except Exception as exc:
