@@ -130,24 +130,34 @@ def _freshness_label(last_sync: datetime.datetime | None) -> tuple[str, str]:
 # -- Layer-build freshness ------------------------------------------------------
 
 
-def _query_layer_last_build(metadata_db: Path, model_names: list[str]) -> datetime.datetime | None:
-    """Latest successful build start time across ``model_names``."""
+def _query_layer_last_build(metadata_db: Path, unique_ids: list[str]) -> datetime.datetime | None:
+    """Latest successful build start time across the dbt nodes in ``unique_ids``.
+
+    ``dbt_nodes.node_name`` holds the dbt ``unique_id``
+    (``model.<project>.<name>``), not the bare model name.
+
+    ``capture_dbt`` writes a UTC-aware datetime into the naive
+    ``started_at`` TIMESTAMP column, which DuckDB stores as wall-clock time
+    in its session time zone. Casting back to TIMESTAMPTZ in the same
+    session time zone recovers the real instant; reading the naive value
+    as UTC would skew the age by the local UTC offset.
+    """
     import duckdb
 
-    if not model_names or not metadata_db.exists():
+    if not unique_ids or not metadata_db.exists():
         return None
     try:
         with duckdb.connect(str(metadata_db), read_only=True) as con:
             row = con.execute(
-                "SELECT MAX(r.started_at) "
+                "SELECT MAX(r.started_at)::TIMESTAMPTZ "
                 "FROM dbt_runs r "
                 "JOIN dbt_nodes n ON n.invocation_id = r.invocation_id "
                 "WHERE n.status = 'success' AND list_contains(?, n.node_name)",
-                [model_names],
+                [unique_ids],
             ).fetchone()
-        return row[0] if row and row[0] else None
     except Exception:
         return None
+    return row[0] if row else None
 
 
 # -- Panel renderers -----------------------------------------------------------
@@ -331,7 +341,7 @@ def _render_layer_panel(
         info(empty_hint)
         return
 
-    last_build = _query_layer_last_build(metadata_db, [m.name for m in listed])
+    last_build = _query_layer_last_build(metadata_db, [m.identifier.removeprefix("dbt:") for m in listed])
     fresh_label, fresh_style = _freshness_label(last_build)
 
     table = Table(show_header=True, header_style="bold cyan")
