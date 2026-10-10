@@ -9,9 +9,9 @@ import duckdb
 import typer
 from rich.table import Table
 
-from tycoon.config import config
+from tycoon.config import config, display_target, redact_secrets
 from tycoon.utils.console import console, error, header, info, status_table, success, warn
-from tycoon.utils.duckdb_utils import db_file_size_mb, get_row_count, get_tables
+from tycoon.utils.duckdb_utils import db_file_size_mb, get_row_count, get_tables, quote_identifier
 
 
 def _resolve_source_db(source_name: str) -> Path | None:
@@ -27,15 +27,19 @@ def _resolve_source_db(source_name: str) -> Path | None:
     normalized = source_name.replace("-", "_")
     source_schema = f"raw_{normalized}"
 
-    if config.raw_db.exists() and _has_schema(config.raw_db, source_schema):
-        return config.raw_db
+    # A MotherDuck raw database is not a file, so only local candidates apply.
+    raw_db = None if config.raw_is_motherduck else config.raw_db
+    if raw_db is not None and raw_db.exists() and _has_schema(raw_db, source_schema):
+        return raw_db
 
     per_source = config.data_dir / f"raw_{normalized}.duckdb"
     if per_source.exists():
         return per_source
 
     if config.data_dir.exists():
-        skip = {config.raw_db.resolve(), per_source.resolve()}
+        skip = {per_source.resolve()}
+        if raw_db is not None:
+            skip.add(raw_db.resolve())
         for candidate in sorted(config.data_dir.glob("*.duckdb")):
             if candidate.resolve() in skip:
                 continue
@@ -70,8 +74,16 @@ def schema() -> None:
     header("Database Schema")
 
     rows: list[tuple[str, str, str]] = []
+    raw_db = None if config.raw_is_motherduck else config.raw_db
+    local_db = config.local_db
 
-    for db_path, label in [(config.raw_db, "Raw"), (config.local_db, "Warehouse")]:
+    for db_path, label, target in [
+        (raw_db, "Raw", config.raw_target),
+        (local_db, "Warehouse", config.warehouse_target),
+    ]:
+        if db_path is None:
+            rows.extend(_motherduck_schema_rows(target, label))
+            continue
         size = db_file_size_mb(db_path)
         if size is not None:
             rows.append((f"{label} database", "OK", f"{size:.1f} MB"))
@@ -91,7 +103,7 @@ def schema() -> None:
 
     # Also scan for any other .duckdb files in the data directory
     data_dir = config.data_dir
-    seen = {config.raw_db.resolve(), config.local_db.resolve()}
+    seen = {p.resolve() for p in (raw_db, local_db) if p is not None}
     if data_dir.exists():
         for db_file in sorted(data_dir.glob("*.duckdb")):
             if db_file.resolve() in seen:
@@ -115,6 +127,33 @@ def schema() -> None:
     console.print(status_table(rows, title="Database Schema"))
 
 
+def _motherduck_schema_rows(target: str, label: str) -> list[tuple[str, str, str]]:
+    """Schema rows for a MotherDuck database, read over one connection."""
+    try:
+        con = duckdb.connect(target)
+        try:
+            # An md: connection attaches every database on the account, so
+            # scope the listing to the one the target names.
+            tables = con.execute(
+                "SELECT table_schema, table_name FROM information_schema.tables "
+                "WHERE table_catalog = current_database() "
+                "AND table_schema NOT IN ('information_schema', 'pg_catalog') "
+                "ORDER BY table_schema, table_name"
+            ).fetchall()
+            rows = [
+                (f"{label} database", "OK", f"MotherDuck {display_target(target)}"),
+                ("  Tables", "", f"{len(tables)}"),
+            ]
+            for s, table in tables:
+                count = con.execute(f"SELECT count(*) FROM {quote_identifier(s)}.{quote_identifier(table)}").fetchone()
+                rows.append((f"  {s}.{table}", "", f"{count[0]:,} rows" if count else "empty"))
+        finally:
+            con.close()
+    except duckdb.Error as exc:
+        return [(f"{label} database", "WARN", f"MotherDuck {display_target(target)}: {redact_secrets(str(exc))}")]
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # query
 # ---------------------------------------------------------------------------
@@ -135,8 +174,13 @@ def query(
         typer.Option("--db", help="Path to a DuckDB file to query directly."),
     ] = None,
 ) -> None:
-    """Run a read-only SQL query against the warehouse, raw, or a source database."""
+    """Run a SQL query against the warehouse, raw, or a source database.
+
+    Local DuckDB files open read-only. A MotherDuck database runs with the
+    permissions of your MotherDuck token.
+    """
     is_warehouse = False
+    db_path: Path | None
     if db:
         db_path = db
         label = db_path.name
@@ -149,12 +193,16 @@ def query(
         db_path = resolved
         label = f"raw ({source})"
     elif raw:
-        db_path = config.raw_db
+        db_path = None if config.raw_is_motherduck else config.raw_db
         label = "raw"
     else:
         db_path = config.local_db
         label = "warehouse"
         is_warehouse = True
+    if db_path is not None:
+        target = str(db_path)
+    else:
+        target = config.raw_target if raw else config.warehouse_target
 
     # When a Quack server is holding the warehouse (e.g. `tycoon start` is
     # running), the file is exclusively locked — opening it in-process would
@@ -162,24 +210,34 @@ def query(
     # warehouse is served; --raw / --source / --db stay file-based.
     from tycoon import quack
 
-    quack_token = quack.load_token(config.root) if is_warehouse else None
+    quack_token = quack.load_token(config.root) if is_warehouse and db_path is not None else None
     via_quack = bool(quack_token) and quack.is_server_running()
 
-    if not via_quack and not db_path.exists():
+    if db_path is not None and not via_quack and not db_path.exists():
         error(f"Database not found at {db_path}")
         raise typer.Exit(1)
 
     if via_quack:
         label = f"{label} (Quack)"
+    elif db_path is None:
+        label = f"{label} (MotherDuck)"
 
     try:
-        con = quack.connect(quack_token) if via_quack else duckdb.connect(str(db_path), read_only=True)
+        if via_quack:
+            con = quack.connect(quack_token)
+        elif db_path is None:
+            # read_only=True is a local-file flag: an md: URL opens an
+            # in-memory local database, which DuckDB refuses to start
+            # read-only. Write protection comes from the token's scope.
+            con = duckdb.connect(target)
+        else:
+            con = duckdb.connect(target, read_only=True)
         result = con.execute(sql)
         columns = [desc[0] for desc in result.description]
         rows = result.fetchall()
         con.close()
     except duckdb.Error as exc:
-        error(f"Query failed: {exc}")
+        error(f"Query failed: {redact_secrets(str(exc))}")
         raise typer.Exit(1) from exc
 
     # Build Rich table
@@ -241,15 +299,30 @@ def clean(
 
     targets: list[tuple[Path, str]] = []
 
-    if raw or all_:
+    raw_remote = (raw or all_) and config.raw_is_motherduck
+    if (raw or all_) and not raw_remote:
         targets.append((config.raw_db, "raw database"))
-    if local or all_:
-        targets.append((config.local_db, "local database"))
+    local_db = config.local_db
+    if (local or all_) and local_db is not None:
+        targets.append((local_db, "local database"))
     if metadata:
         targets.append((metadata_db_path(config.root), "observability metadata DB"))
 
     # Show what will be deleted
     header("Database Cleanup")
+    if raw_remote:
+        warn(
+            f"Raw database is MotherDuck ({display_target(config.raw_target)}): skipped, "
+            "tycoon never deletes a remote database."
+        )
+    if (local or all_) and local_db is None:
+        warn(
+            f"Warehouse is MotherDuck ({display_target(config.warehouse_target)}): skipped, "
+            "tycoon never deletes a remote warehouse."
+        )
+    if not targets:
+        success("Nothing to remove")
+        raise typer.Exit(0)
     for path, label in targets:
         wal_path = path.with_suffix(".duckdb.wal")
         exists = path.exists()
