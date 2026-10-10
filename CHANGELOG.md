@@ -9,12 +9,17 @@ All notable changes to this project will be documented in this file. The format 
 - **A project on the old environment model gets a warning, not silence** ([#265][], PR [#269][]). `tycoon doctor` reports plainly whether a project has its own `.venv`, and the same warning fires right before a pipeline run or a source install falls back to the old shared/ambient behavior, pointing at `tycoon setup`. Nothing forces a migration.
 - **`--no-prompt` installs a source's dependencies instead of silently skipping them** ([#272][], PR [#273][]). `tycoon data sources add <type> --no-prompt` used to register the source in `tycoon.yml` without ever downloading or installing anything, since the whole install step was skipped along with the confirmation prompt, the same CI flag that's supposed to make this unattended. It now installs automatically, matching every other `--no-prompt` default in this command.
 
+### Fixed
+
+- **`tycoon city` names the dbt sources a staging model reads, even when they live outside the warehouse** ([#387][]). When a project's sources point at a separate database (for example `database: raw`, an attached DuckDB file or a DuckLake), none of them is an object in the warehouse the city reads, so lineage stopped at staging and every staging model listed its upstream as "none". The export now lists those sources on each model under `objects[].dbt.external_upstream`, with dbt's freshness verdict when `sources.json` has one. The city still draws no building for them, because nothing about them can be measured from the warehouse.
+
 [#261]: https://github.com/Database-Tycoon/tycoon-cli/issues/261
 [#262]: https://github.com/Database-Tycoon/tycoon-cli/issues/262
 [#263]: https://github.com/Database-Tycoon/tycoon-cli/issues/263
 [#264]: https://github.com/Database-Tycoon/tycoon-cli/issues/264
 [#265]: https://github.com/Database-Tycoon/tycoon-cli/issues/265
 [#272]: https://github.com/Database-Tycoon/tycoon-cli/issues/272
+[#387]: https://github.com/Database-Tycoon/tycoon-cli/issues/387
 [#270]: https://github.com/Database-Tycoon/tycoon-cli/pull/270
 [#266]: https://github.com/Database-Tycoon/tycoon-cli/pull/266
 [#271]: https://github.com/Database-Tycoon/tycoon-cli/pull/271
