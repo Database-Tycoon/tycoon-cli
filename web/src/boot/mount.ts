@@ -62,8 +62,9 @@ export interface MountedCity {
   /** Civic buildings the picker adds to its raycast set. */
   civicTargets: THREE.Object3D[];
   replay: Replay;
-  /** object key → row count, for the hover tooltip. */
-  rows: Map<string, number>;
+  /** object key → its row count as the hover tooltip words it. A view's
+   * row_count is the producer's 0 placeholder, not a count. */
+  rows: Map<string, string>;
 }
 
 /** Build `d` into `scene` and hand back the handles that outlive the call. */
@@ -119,7 +120,12 @@ export async function mountCity(
     streetscape,
     civicTargets,
     replay: new Replay(d),
-    rows: new Map(d.objects.map((o) => [o.key, o.row_count])),
+    rows: new Map(
+      d.objects.map((o) => [
+        o.key,
+        o.kind === "view" ? "view, rows not counted" : `${o.row_count.toLocaleString()} rows`,
+      ]),
+    ),
   };
 }
 

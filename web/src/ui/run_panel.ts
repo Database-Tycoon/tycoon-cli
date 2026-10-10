@@ -203,7 +203,8 @@ export class RunPanel {
       `<h3>run replay · ${replay.phase === "done" ? "finished" : `step ${replay.at + 1} / ${replay.total}`}</h3>` +
       `<p class="run-head"><b>${escapeHtml(run.command)} · ${escapeHtml(stamp(run.started_at))}</b>` +
       `<span class="prov">${escapeHtml(run.target)} · ${run.models_error} model errors, ` +
-      `${run.tests_failed} tests failed · ${run.unmapped_count} nodes off this map</span></p>`;
+      `${run.tests_failed} tests failed · ${run.unmapped_count} dbt nodes with no building ` +
+      `(tests, seeds, models outside this catalog)</span></p>`;
     const keys =
       `<p class="keys">space / → next · ← back · 0 restart · esc exit</p>` +
       `<p class="note">${escapeHtml(doc.note)} (order ${escapeHtml(doc.order_source)}).</p>`;
