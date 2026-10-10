@@ -5,7 +5,7 @@
  */
 
 import type { CityDocument, JoinRecord, LineageEntry, SemanticRecord } from "../contract";
-import { hasSemanticModel, joinsOf, lineageOf, PROVENANCE_LABEL } from "../contract";
+import { hasSemanticModel, joinsOf, lineageOf, milestoneOf, PROVENANCE_LABEL } from "../contract";
 import { graphSvg } from "./graph";
 import { PLANT_KEY } from "../scene/plant";
 import { FIREHOUSE_KEY, LIBRARY_KEY } from "../scene/civic";
@@ -61,18 +61,27 @@ export class Inspector {
     const owned = objects.filter((o) => o.dbt?.owner != null).length;
     const tested = objects.filter((o) => (o.dbt?.tests.length ?? 0) > 0).length;
     const pct = (n: number, d: number) => (d ? `${Math.round((100 * n) / d)}%` : "—");
+    // Every shelf above is a dbt-manifest count. When the producer says the
+    // manifest was never read (milestone state "unknown"), 0-of-N would show
+    // empty shelves for a library nobody has looked inside: unknown, not
+    // bare. The milestone's own note names the missing artifact.
+    const manifest = milestoneOf(this.doc, "documented_buildings");
+    const manifestUnknown = manifest !== null && manifest.state === "unknown";
+    const shelf = (n: number, d: number, withPct: boolean): string =>
+      manifestUnknown ? "unknown" : `${n} / ${d}${withPct ? ` (${pct(n, d)})` : ""}`;
     return `
       <button class="close" title="close">×</button>
       <h2>public library</h2>
       <p class="note">The city's context lives here. Every shelf is a count
       of real documentation — filling these in builds the city.</p>
       <dl>
-        <dt>objects described</dt><dd>${described} / ${objects.length} (${pct(described, objects.length)})</dd>
-        <dt>columns documented</dt><dd>${colsDocumented} / ${cols.length} (${pct(colsDocumented, cols.length)})</dd>
-        <dt>objects tagged</dt><dd>${tagged} / ${objects.length}</dd>
-        <dt>owners assigned</dt><dd>${owned} / ${objects.length}</dd>
-        <dt>objects tested</dt><dd>${tested} / ${objects.length}</dd>
+        <dt>objects described</dt><dd>${shelf(described, objects.length, true)}</dd>
+        <dt>columns documented</dt><dd>${shelf(colsDocumented, cols.length, true)}</dd>
+        <dt>objects tagged</dt><dd>${shelf(tagged, objects.length, false)}</dd>
+        <dt>owners assigned</dt><dd>${shelf(owned, objects.length, false)}</dd>
+        <dt>objects tested</dt><dd>${shelf(tested, objects.length, false)}</dd>
       </dl>
+      ${manifestUnknown ? `<p class="note">${escapeHtml(manifest.note)}</p>` : ""}
       <p class="note">Descriptions come from the dbt manifest. A semantic
       model (Apache Ossie / OSI) is not connected yet — when it is, its
       relationships and ai_context shelve here too.</p>`;
@@ -138,7 +147,7 @@ export class Inspector {
     ].join("");
     return `
       <button class="close" title="close">×</button>
-      <h2>${escapeHtml(obj.name)}</h2>
+      <h2>${breakable(obj.name)}</h2>
       <dl>
         <dt>${escapeHtml(labels.schema ?? "schema")}</dt><dd>${escapeHtml(obj.schema)}</dd>
         <dt>kind</dt><dd>${obj.kind}</dd>
@@ -297,7 +306,7 @@ export class Inspector {
         const doc = c.description
           ? `<div class="col-doc">${escapeHtml(c.description)}</div>`
           : "";
-        return `<li>${verdict}<b>${escapeHtml(c.name)}</b> <span class="prov">${escapeHtml(c.type.toLowerCase())}</span>${doc}</li>`;
+        return `<li>${verdict}<b>${breakable(c.name)}</b> <span class="prov">${escapeHtml(c.type.toLowerCase())}</span>${doc}</li>`;
       })
       .join("");
     return `<h3>columns (${columns.length})</h3><ul class="cols">${rows}</ul>`;
@@ -318,7 +327,7 @@ export class Inspector {
     const items = tests
       .map(
         (t) =>
-          `<li>${dot(t.status)} ${escapeHtml(t.name)}` +
+          `<li>${dot(t.status)} <span class="ident">${breakable(t.name)}</span>` +
           `${t.column ? `<span class="prov">on ${escapeHtml(t.column)}</span>` : ""}` +
           `${t.status === null ? `<span class="prov">never run</span>` : ""}</li>`,
       )
@@ -331,7 +340,7 @@ export class Inspector {
       ? entries
           .map(
             (e) =>
-              `<li data-key="${escapeHtml(e.key)}">${escapeHtml(e.key)}` +
+              `<li data-key="${escapeHtml(e.key)}">${breakable(e.key)}` +
               `<span class="prov">${PROVENANCE_LABEL[e.provenance]}</span></li>`,
           )
           .join("")
@@ -359,6 +368,13 @@ export class Inspector {
 
 function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/** dbt identifiers are one long word to the browser, which either clips them
+ * or splits them mid-word. A break opportunity after each run of underscores
+ * or dot lets `stg_x__station_information` wrap between its parts instead. */
+function breakable(text: string): string {
+  return escapeHtml(text).replace(/(_+|\.)/g, "$1<wbr>");
 }
 
 /** 5400 -> "1h", 259200 -> "3d". Coarse on purpose; exact ages are noise. */

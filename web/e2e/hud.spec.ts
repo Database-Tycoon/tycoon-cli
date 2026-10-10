@@ -94,6 +94,36 @@ test("the problems panel carries the coverage gauges", async ({ page }) => {
   await expect(page.locator("#problems .coverage")).toContainText("objects tested");
 });
 
+test("the client parses the achievements block instead of stripping it", async ({ page }) => {
+  // The producer has emitted `achievements` unconditionally since 2026-08-06;
+  // a zod schema without the key silently deletes it from every document.
+  await open(page, "?settle=1");
+  const milestones = await page.evaluate(
+    () => window.__tycoonCity!.doc.achievements.milestones.length,
+  );
+  expect(milestones).toBe(6);
+});
+
+test("coverage renders unknown, not zero, when the evidence was never read", async ({ page }) => {
+  // demo.duckdb has no dbt manifest: the producer emits every milestone as
+  // state "unknown" (met/have/need all null). city-json-v1.md's honesty rule:
+  // a 0% here would invent a failure out of an absence and put a red gauge
+  // in front of someone with nothing to fix.
+  await open(page, "?settle=1");
+  await page.keyboard.press("p");
+  const coverage = await page.locator("#problems .coverage").innerText();
+  expect(coverage).not.toContain("0%");
+  expect(coverage).toContain("unknown");
+
+  // The library inventory derives the same coverage and must tell the same
+  // truth: shelves that were never read are unknown, not empty.
+  await page.evaluate(() => window.__tycoonCity!.select("__library__"));
+  const library = await page.locator("#inspector").innerText();
+  expect(library).toContain("columns documented");
+  expect(library).not.toContain("(0%)");
+  expect(library.toLowerCase()).toContain("unknown");
+});
+
 test("the civic strip: library inventory and firehouse dispatch panels", async ({ page }) => {
   await open(page, "?settle=1");
 

@@ -1,5 +1,17 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`tycoon city`: the legend no longer shows through the detail panel** ([#382][]). Both panels are translucent and sit on the right edge, so a tall detail panel stacked its text over the legend's. The legend now hides while a building is selected and comes back when the panel closes.
+- **`tycoon city`: long model and test names wrap instead of being clipped** ([#383][]). The detail panel split model names mid-word (`station_informa` / `tion`) and cut long dbt test names off at its right edge. Identifiers now wrap after an underscore or dot, and anything still too long wraps inside the panel rather than running past it.
+- **`tycoon city`: HUD panels no longer run off the window edges** ([#384][]). A trackpad pinch over a HUD panel zoomed the whole page instead of the city, which cuts the panels and the header chips off at both edges; that is the likeliest cause of the report and reproduces in headless Chrome. A pinch now only zooms the camera over the canvas and does nothing elsewhere; keyboard zoom still works. The panels also cap their width at the window width.
+
+[#382]: https://github.com/Database-Tycoon/tycoon-cli/issues/382
+[#383]: https://github.com/Database-Tycoon/tycoon-cli/issues/383
+[#384]: https://github.com/Database-Tycoon/tycoon-cli/issues/384
+
 ## [0.2.2] - 2026-10-09
 
 _Headline: **project-local environments**. Every tycoon project now gets its own uv-managed `.venv`, and a catalog source's code and dependencies live inside the project, so deleting `.venv` and running `uv sync` rebuilds the same environment. `--no-prompt` installs what it registers instead of skipping it, and `tycoon data sources migrate` moves an existing project over. Also here: a filesystem load that finds nothing no longer empties a table that already held rows, and a zero-row run is flagged instead of reading as a healthy sync._
