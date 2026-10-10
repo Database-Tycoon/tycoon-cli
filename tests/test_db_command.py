@@ -137,3 +137,131 @@ class TestCleanMetadataPreservation:
         result = cli_runner.invoke(app, ["data", "clean", "--help"])
         assert result.exit_code == 0
         assert "--metadata" in result.stdout
+
+
+class TestMotherDuckWarehouse:
+    """An ``md:`` warehouse is a DuckDB connection string, never a local file (#70)."""
+
+    def _setup(
+        self, tmp_path: Path, monkeypatch, warehouse: str = "md:x", raw: str = "data/raw.duckdb"
+    ) -> list[tuple[str, dict]]:
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        (tmp_path / "tycoon.yml").write_text(
+            f"name: test\nsources: {{}}\ndatabase:\n  warehouse: '{warehouse}'\n  raw: '{raw}'\n"
+        )
+        cfg = TycoonConfig(project_root=tmp_path)
+        monkeypatch.setattr("tycoon.commands.db.config", cfg)
+
+        calls: list[tuple[str, dict]] = []
+        real_connect = duckdb.connect
+
+        def fake_connect(database: str = ":memory:", **kwargs):
+            calls.append((database, kwargs))
+            if str(database).startswith("md:"):
+                return real_connect(":memory:")
+            return real_connect(database, **kwargs)
+
+        monkeypatch.setattr(duckdb, "connect", fake_connect)
+        return calls
+
+    def test_query_connects_to_motherduck_url(self, tmp_path, monkeypatch, cli_runner):
+        calls = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "query", "SELECT 1"])
+        assert result.exit_code == 0, result.stdout
+        assert [c[0] for c in calls] == ["md:x"]
+        assert "read_only" not in calls[0][1]
+
+    def test_schema_connects_to_motherduck_url(self, tmp_path, monkeypatch, cli_runner):
+        calls = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema"])
+        assert result.exit_code == 0, result.stdout
+        assert "md:x" in [c[0] for c in calls]
+        assert not any("md:" in str(c[0]) and c[0] != "md:x" for c in calls)
+
+    def test_clean_all_skips_motherduck_warehouse(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        raw = data_dir / "raw.duckdb"
+        raw.write_bytes(b"")
+        bogus = tmp_path / "md:x"
+        bogus.write_bytes(b"")
+
+        unlinked: list[Path] = []
+        real_unlink = Path.unlink
+
+        def tracking_unlink(self: Path, missing_ok: bool = False) -> None:
+            unlinked.append(self)
+            real_unlink(self, missing_ok=missing_ok)
+
+        monkeypatch.setattr(Path, "unlink", tracking_unlink)
+
+        result = cli_runner.invoke(app, ["data", "clean", "--all"], input="y\n")
+        assert result.exit_code == 0, result.stdout
+        assert not raw.exists()
+        assert bogus.exists()
+        assert not any("md:" in str(p) for p in unlinked)
+        assert "MotherDuck" in result.stdout
+
+    def test_clean_local_only_deletes_nothing(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        bogus = tmp_path / "md:x"
+        bogus.write_bytes(b"")
+        result = cli_runner.invoke(app, ["data", "clean", "--local"], input="y\n")
+        assert result.exit_code == 0, result.stdout
+        assert bogus.exists()
+        assert "MotherDuck" in result.stdout
+
+    def test_schema_hides_motherduck_token(self, tmp_path, monkeypatch, cli_runner):
+        calls = self._setup(tmp_path, monkeypatch, warehouse="md:x?motherduck_token=SECRET123")
+        result = cli_runner.invoke(app, ["data", "schema"])
+        assert result.exit_code == 0, result.stdout
+        assert "md:x?motherduck_token=SECRET123" in [c[0] for c in calls]
+        assert "SECRET123" not in result.stdout
+        assert "motherduck_token" not in result.stdout
+
+    def test_schema_error_hides_motherduck_token(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch, warehouse="md:x?motherduck_token=SECRET123")
+
+        def failing_connect(database: str = ":memory:", **kwargs):
+            raise duckdb.IOException(f"can't open '{database}'")
+
+        monkeypatch.setattr(duckdb, "connect", failing_connect)
+        result = cli_runner.invoke(app, ["data", "schema"])
+        assert result.exit_code == 0, result.stdout
+        assert "WARN" in result.stdout
+        assert "SECRET123" not in result.stdout
+
+    def test_clean_warning_hides_motherduck_token(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch, warehouse="md:x?motherduck_token=SECRET123")
+        result = cli_runner.invoke(app, ["data", "clean", "--local"], input="y\n")
+        assert result.exit_code == 0, result.stdout
+        assert "MotherDuck (md:x)" in result.stdout
+        assert "SECRET123" not in result.stdout
+
+    def test_clean_all_never_deletes_motherduck_raw(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch, raw="md:x_raw")
+        bogus = tmp_path / "md:x_raw"
+        bogus.write_bytes(b"")
+        result = cli_runner.invoke(app, ["data", "clean", "--all"], input="y\n")
+        assert result.exit_code == 0, result.stdout
+        assert bogus.exists()
+        assert "Raw database is MotherDuck (md:x_raw)" in result.stdout
+
+    def test_schema_labels_motherduck_raw(self, tmp_path, monkeypatch, cli_runner):
+        calls = self._setup(tmp_path, monkeypatch, raw="md:x_raw?motherduck_token=SECRET123")
+        (tmp_path / "md:x_raw").write_bytes(b"")
+        result = cli_runner.invoke(app, ["data", "schema"])
+        assert result.exit_code == 0, result.stdout
+        assert "md:x_raw?motherduck_token=SECRET123" in [c[0] for c in calls]
+        assert "MotherDuck md:x_raw" in result.stdout
+        assert "SECRET123" not in result.stdout
+
+    def test_query_raw_connects_to_motherduck_url(self, tmp_path, monkeypatch, cli_runner):
+        calls = self._setup(tmp_path, monkeypatch, raw="md:x_raw")
+        result = cli_runner.invoke(app, ["data", "query", "--raw", "SELECT 1"])
+        assert result.exit_code == 0, result.stdout
+        assert [c[0] for c in calls] == ["md:x_raw"]
+        assert "read_only" not in calls[0][1]
