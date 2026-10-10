@@ -1,5 +1,15 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`tycoon data query --format`** ([#391][]). `--format csv`, `json` or `markdown` prints the result rows and nothing else, so a script or notebook can read them without parsing a terminal table. The default `table` format no longer squashes a wide result until every header reads `ro…`: when the columns don't fit the terminal, each row prints as its own block of column names and values, like `psql`'s expanded display.
+- **`tycoon data schema` can show one database or one schema** ([#393][]). `--raw` and `--warehouse` pick one database, and `--schema` takes a schema name or a glob such as `'raw_*'`. dlt's `_dlt_*` bookkeeping tables are now left out by default, with a count of how many were hidden; `--include-dlt` lists them. On a MotherDuck database, tables left out aren't counted, so a narrow listing runs fewer `count(*)` queries.
+
+[#391]: https://github.com/Database-Tycoon/tycoon-cli/issues/391
+[#393]: https://github.com/Database-Tycoon/tycoon-cli/issues/393
+
 ## [0.2.2] - 2026-10-09
 
 _Headline: **project-local environments**. Every tycoon project now gets its own uv-managed `.venv`, and a catalog source's code and dependencies live inside the project, so deleting `.venv` and running `uv sync` rebuilds the same environment. `--no-prompt` installs what it registers instead of skipping it, and `tycoon data sources migrate` moves an existing project over. Also here: a filesystem load that finds nothing no longer empties a table that already held rows, and a zero-row run is flagged instead of reading as a healthy sync._
