@@ -35,6 +35,8 @@ export function buildDistricts(doc: CityDocument): THREE.Group {
     const el = document.createElement("div");
     el.className = "district-label";
     el.textContent = district.schema;
+    // Bigger districts keep their spot when chips collide (label_layout.ts).
+    el.dataset.labelPriority = String(district.w * district.h);
     const label = new CSS2DObject(el);
     // Over the district's near corner rather than its centre, so a tall
     // building in the middle does not sit on top of the text — and just
