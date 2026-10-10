@@ -4,8 +4,14 @@
  * so lineage can be walked without leaving the panel.
  */
 
-import type { CityDocument, JoinRecord, LineageEntry, SemanticRecord } from "../contract";
-import { hasSemanticModel, joinsOf, lineageOf, PROVENANCE_LABEL } from "../contract";
+import type {
+  CityDocument,
+  ExternalSourceRecord,
+  JoinRecord,
+  LineageEntry,
+  SemanticRecord,
+} from "../contract";
+import { hasSemanticModel, joinsOf, lineageOf, milestoneOf, PROVENANCE_LABEL } from "../contract";
 import { graphSvg } from "./graph";
 import { PLANT_KEY } from "../scene/plant";
 import { FIREHOUSE_KEY, LIBRARY_KEY } from "../scene/civic";
@@ -61,18 +67,27 @@ export class Inspector {
     const owned = objects.filter((o) => o.dbt?.owner != null).length;
     const tested = objects.filter((o) => (o.dbt?.tests.length ?? 0) > 0).length;
     const pct = (n: number, d: number) => (d ? `${Math.round((100 * n) / d)}%` : "—");
+    // Every shelf above is a dbt-manifest count. When the producer says the
+    // manifest was never read (milestone state "unknown"), 0-of-N would show
+    // empty shelves for a library nobody has looked inside: unknown, not
+    // bare. The milestone's own note names the missing artifact.
+    const manifest = milestoneOf(this.doc, "documented_buildings");
+    const manifestUnknown = manifest !== null && manifest.state === "unknown";
+    const shelf = (n: number, d: number, withPct: boolean): string =>
+      manifestUnknown ? "unknown" : `${n} / ${d}${withPct ? ` (${pct(n, d)})` : ""}`;
     return `
       <button class="close" title="close">×</button>
       <h2>public library</h2>
       <p class="note">The city's context lives here. Every shelf is a count
       of real documentation — filling these in builds the city.</p>
       <dl>
-        <dt>objects described</dt><dd>${described} / ${objects.length} (${pct(described, objects.length)})</dd>
-        <dt>columns documented</dt><dd>${colsDocumented} / ${cols.length} (${pct(colsDocumented, cols.length)})</dd>
-        <dt>objects tagged</dt><dd>${tagged} / ${objects.length}</dd>
-        <dt>owners assigned</dt><dd>${owned} / ${objects.length}</dd>
-        <dt>objects tested</dt><dd>${tested} / ${objects.length}</dd>
+        <dt>objects described</dt><dd>${shelf(described, objects.length, true)}</dd>
+        <dt>columns documented</dt><dd>${shelf(colsDocumented, cols.length, true)}</dd>
+        <dt>objects tagged</dt><dd>${shelf(tagged, objects.length, false)}</dd>
+        <dt>owners assigned</dt><dd>${shelf(owned, objects.length, false)}</dd>
+        <dt>objects tested</dt><dd>${shelf(tested, objects.length, false)}</dd>
       </dl>
+      ${manifestUnknown ? `<p class="note">${escapeHtml(manifest.note)}</p>` : ""}
       <p class="note">Descriptions come from the dbt manifest. A semantic
       model (Apache Ossie / OSI) is not connected yet — when it is, its
       relationships and ai_context shelve here too.</p>`;
@@ -156,7 +171,7 @@ export class Inspector {
       ${graphSvg(this.doc, key)}
       ${this.columnsHtml(obj.columns)}
       ${this.testsHtml(dbt?.tests ?? [])}
-      ${this.lineageHtml("upstream", upstream)}
+      ${this.lineageHtml("upstream", upstream, dbt?.external_upstream ?? [])}
       ${this.lineageHtml("downstream", downstream)}
       ${this.joinsHtml(key)}
     `;
@@ -326,17 +341,29 @@ export class Inspector {
     return `<h3>dbt tests</h3><ul class="tests">${items}</ul>`;
   }
 
-  private lineageHtml(title: string, entries: LineageEntry[]): string {
-    const items = entries.length
-      ? entries
-          .map(
-            (e) =>
-              `<li data-key="${escapeHtml(e.key)}">${escapeHtml(e.key)}` +
-              `<span class="prov">${PROVENANCE_LABEL[e.provenance]}</span></li>`,
-          )
-          .join("")
-      : "<li class='none'>none</li>";
-    return `<h3>${title}</h3><ul>${items}</ul>`;
+  /**
+   * Edges first, then the dbt sources this model reads that are not on the
+   * map. Those have no building to fly to, so they carry no `data-key`, and
+   * they say they are unmeasured: "none" must only ever mean no inputs.
+   */
+  private lineageHtml(
+    title: string,
+    entries: LineageEntry[],
+    external: readonly ExternalSourceRecord[] = [],
+  ): string {
+    const onMap = entries.map(
+      (e) =>
+        `<li data-key="${escapeHtml(e.key)}">${escapeHtml(e.key)}` +
+        `<span class="prov">${PROVENANCE_LABEL[e.provenance]}</span></li>`,
+    );
+    const offMap = external.map(
+      (s) =>
+        `<li class="external" title="${escapeHtml(s.relation)}">${escapeHtml(s.name)}` +
+        `<span class="prov">dbt source · outside this warehouse, not measured` +
+        `${s.freshness_status !== null ? ` · freshness ${escapeHtml(s.freshness_status)}` : ""}</span></li>`,
+    );
+    const items = [...onMap, ...offMap];
+    return `<h3>${title}</h3><ul>${items.length ? items.join("") : "<li class='none'>none</li>"}</ul>`;
   }
 
   private plantHtml(): string {

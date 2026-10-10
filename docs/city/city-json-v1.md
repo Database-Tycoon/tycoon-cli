@@ -3,7 +3,7 @@ title: city.json v1
 description: The normative wire format between Database Tycoon's Python side and any renderer, and why each decision was taken
 tags: [contract, format, export, renderer]
 related: [handover, superpowers/specs/2026-08-03-city-foundation-design]
-updated: '2026-08-06'
+updated: '2026-10-10'
 ---
 
 # `city.json` v1
@@ -53,7 +53,7 @@ the document says nothing about the machine that produced it.
 | `districts` | array | One per schema: `schema`, `x`, `y`, `w`, `h` — the bounding rect around its CONNECTED lots (suburb orphans excluded unless the schema is all-orphan; streets v2, 2026-08-05: replaced the ring-era `ring`/`size`; rects are ground tint, may overlap) |
 | `street_features` | array | How each road is allowed to END (streets v4, 2026-08-05; additive): `kind` (`apron`/`dock`/`plaza`), `x`, `y`, `facing` (`n`/`s`/`e`/`w`, or null if a future kind faces nothing), `w`, `h` — see below |
 | `lots` | array | One per placed object: `object_key`, `x`, `y`, `w`, `h` (ground plan in tiles, NW-anchored — big tables, the top decile of the catalog's row counts, are 2×2; added 2026-08-05), `zone_style`, `target_density`, `powered`, `last_build_age_s`, `build_status`, `test_status`, `freshness_status` (dbt's sources.json SLA verdict), `schema_drift_age_s` |
-| `objects` | array | Catalog facts plus `dbt` (nullable: `description`, `materialized`, `tags`, `owner`, `tests[]` with per-test `status`, null = never run), plus `usage` (measured run appearances, nullable) and `semantic` (the declared OSI model, nullable) — see below |
+| `objects` | array | Catalog facts plus `dbt` (nullable: `description`, `materialized`, `tags`, `owner`, `tests[]` with per-test `status`, null = never run, `external_upstream[]`), plus `usage` (measured run appearances, nullable) and `semantic` (the declared OSI model, nullable); see below |
 | `edges` | array | Known lineage: `src`, `dst`, `rate`, `provenance`, `route` (the street's tile path), `columns` (column-level lineage pairs), `daily_load_s` (expected compute, nullable) |
 | `joins` | array | DECLARED joins from an OSI semantic model (2026-08-06; additive): `name`, `many`, `one`, `cardinality`, `keys`, `composite`, `provenance`, `lineage_edge` — see below. Empty on any catalog with no semantic model |
 | `replay` | object \| null | The last run as a playable schedule: `span_ticks`, `note`, `steps[]` (`object_key`, `start`, `duration`) |
@@ -287,6 +287,23 @@ Null means **no dataset declares this object at all**. A block whose
 someone named without annotating — and clients render the two differently: the
 first is an undocumented building, the second a documented one with no signage
 yet.
+
+## `objects[].dbt.external_upstream`: sources not on the map
+
+Added for gh-387; additive, version unchanged. The dbt sources this model
+reads (`depends_on.nodes`) that have **no object in this catalog**, so no edge
+can reach them. The usual cause is a raw layer in another attached database or
+a lake: the manifest declares the source, but the warehouse the city reads does
+not contain it. Each entry carries `name` (dbt's `source_name.table`),
+`relation` (`database.schema.identifier` as the manifest records it) and
+`freshness_status` (dbt's `sources.json` verdict, null when none was recorded).
+Sorted by `name`; `[]` when the model reads nothing outside the catalog.
+
+These entries are declared, never measured: the city has no row count, columns
+or build history for them. A client listing a model's upstream must show them
+beside its edges, and must say they are outside this warehouse. Otherwise a
+staging model whose inputs all live elsewhere reads as having no inputs at all.
+Sources that are in the catalog stay ordinary edges and never appear here.
 
 ## `focus` — the opening frame
 

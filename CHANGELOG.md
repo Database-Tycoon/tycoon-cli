@@ -1,5 +1,14 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`tycoon city` names the dbt sources a staging model reads, even when they live outside the warehouse** ([#387][]). When a project's sources point at a separate database (for example `database: raw`, an attached DuckDB file or a DuckLake), none of them is an object in the warehouse the city reads, so lineage stopped at staging and every staging model listed its upstream as "none". The export now lists those sources on each model under `objects[].dbt.external_upstream`, with dbt's freshness verdict when `sources.json` has one. The city still draws no building for them, because nothing about them can be measured from the warehouse.
+- **`tycoon city` names the dbt sources a staging model reads, even when they live outside the warehouse** ([#387][]). When a project's sources point at a separate database (for example `database: raw`, an attached DuckDB file or a DuckLake), none of them is an object in the warehouse the city reads, so lineage stopped at staging and every staging model listed its upstream as "none". The export now lists those sources on each model under `objects[].dbt.external_upstream`, with dbt's freshness verdict when `sources.json` has one. The city still draws no building for them, because nothing about them can be measured from the warehouse. The inspector lists them under UPSTREAM after the model's edges, marked as outside this warehouse and not measured, with the freshness verdict when there is one. "none" now means the model has no inputs at all.
+
+[#387]: https://github.com/Database-Tycoon/tycoon-cli/issues/387
+
 ## [0.2.2] - 2026-10-09
 
 _Headline: **project-local environments**. Every tycoon project now gets its own uv-managed `.venv`, and a catalog source's code and dependencies live inside the project, so deleting `.venv` and running `uv sync` rebuilds the same environment. `--no-prompt` installs what it registers instead of skipping it, and `tycoon data sources migrate` moves an existing project over. Also here: a filesystem load that finds nothing no longer empties a table that already held rows, and a zero-row run is flagged instead of reading as a healthy sync._
