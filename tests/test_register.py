@@ -940,3 +940,62 @@ class TestRegisterRill:
         _reload_config(monkeypatch, project)
         result = cli_runner.invoke(app, ["register", "rill", str(empty)])
         assert result.exit_code != 0
+
+
+_COMMENTED_YML = """\
+# Top-of-file comment.
+name: proj
+version: 0.1.0
+
+# Database section comment.
+database:
+  raw: data/raw.duckdb  # trailing comment
+  warehouse: data/warehouse.duckdb
+sources: {}
+"""
+
+
+class TestRegisterKeepsComments:
+    """gh-297: register writes tycoon.yml without dropping the user's comments."""
+
+    def _commented_project(self, tmp_path: Path, monkeypatch) -> Path:
+        project = tmp_path / "proj"
+        yml = _scaffold_tycoon_project(project, "proj")
+        yml.write_text(_COMMENTED_YML)
+        monkeypatch.chdir(project)
+        _reload_config(monkeypatch, project)
+        return yml
+
+    def _assert_comments_kept(self, text: str) -> None:
+        assert text.startswith("# Top-of-file comment.\nname: proj\n")
+        assert "\n\n# Database section comment.\ndatabase:\n" in text
+        assert "raw: data/raw.duckdb  # trailing comment\n" in text
+
+    def test_register_rill_keeps_comments(self, cli_runner, tmp_path, monkeypatch):
+        yml = self._commented_project(tmp_path, monkeypatch)
+        rill_dir = tmp_path / "proj-rill"
+        rill_dir.mkdir()
+        (rill_dir / "rill.yaml").write_text("compiler: rillv1\n")
+
+        result = cli_runner.invoke(app, ["register", "rill", str(rill_dir)])
+        assert result.exit_code == 0, result.stdout
+
+        text = yml.read_text()
+        self._assert_comments_kept(text)
+        data = yaml.safe_load(text)
+        assert data["stack"]["bi"] == "rill"
+        assert "rill_dir" in data
+
+    def test_register_dbt_keeps_comments(self, cli_runner, tmp_path, monkeypatch):
+        yml = self._commented_project(tmp_path, monkeypatch)
+        dbt_dir = tmp_path / "proj-dbt"
+        _make_dbt_project(dbt_dir, "proj", str(tmp_path / "proj" / "data" / "warehouse.duckdb"))
+
+        result = cli_runner.invoke(app, ["register", "dbt", str(dbt_dir)], input="\n")
+        assert result.exit_code == 0, result.stdout
+
+        text = yml.read_text()
+        self._assert_comments_kept(text)
+        data = yaml.safe_load(text)
+        assert data["stack"]["transformation"] == "dbt"
+        assert "dbt_project_dir" in data
