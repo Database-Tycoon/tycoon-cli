@@ -314,6 +314,23 @@ test("the step inspector names the failure and its cascade, and the names are do
   expect(await page.evaluate(() => window.__tycoonCity!.selectedKey())).toBe("mart.mart__broken");
 });
 
+test("the footer and the run header each say what their count counts (gh-389)", async ({
+  page,
+}) => {
+  // The two numbers count different things: buildings in the catalog, and
+  // dbt nodes in the run that have no building. Bare, side by side, they
+  // read as two answers to one question.
+  await serve(page);
+  await open(page, "?settle=1");
+  await expect(page.locator("#status")).toContainText("10 tables and views");
+
+  await page.locator("#replay-button").click();
+  await page.locator(`#run-panel li[data-run="${FAIL_ID}"]`).click();
+  await expect(page.locator("#run-panel .run-head")).toContainText(
+    "2 dbt nodes with no building (tests, seeds, models outside this catalog)",
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Determinism and traffic
 // ---------------------------------------------------------------------------
