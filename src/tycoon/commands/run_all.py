@@ -18,6 +18,7 @@ def run_all_cmd(
         typer.Option(
             "--max-records",
             "-n",
+            min=0,
             help="Cap records fetched per resource (useful for testing).",
             show_default=False,
         ),
@@ -41,6 +42,16 @@ def run_all_cmd(
             help=(
                 "Send a webhook notification on completion (success/failure). "
                 "Requires $TYCOON_NOTIFY_WEBHOOK_URL; see `tycoon notify`."
+            ),
+        ),
+    ] = False,
+    fail_on_empty: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-empty",
+            help=(
+                "Exit non-zero, and record the run as failed, when a local glob "
+                "matches no files or a replace load brings in zero rows."
             ),
         ),
     ] = False,
@@ -95,8 +106,12 @@ def run_all_cmd(
                     source_config=source_config,
                     raw_db_path=cfg.raw_db,
                     max_records=max_records,
+                    fail_on_empty=fail_on_empty,
                 )
-                success(f"{name}: {load_info}")
+                if load_info is None:
+                    info(f"{name}: nothing to load. No tables were changed.")
+                else:
+                    success(f"{name}: {load_info}")
             except Exception as exc:
                 error(f"{name} failed: {exc}")
                 _emit("error", f"run-all failed during ingest of '{name}'", stage="ingest", error=str(exc)[:300])
