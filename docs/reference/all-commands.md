@@ -146,6 +146,15 @@ Options:
   --max-records INTEGER    Cap rows per resource (cheap test runs)
 ```
 
+### [`tycoon data sources migrate`](../commands/data/sources.md#add-register-a-new-source)
+
+```
+tycoon data sources migrate SOURCE_TYPE
+
+Arguments:
+  SOURCE_TYPE              Source type to migrate, e.g. github
+```
+
 ### [`tycoon data sources remove`](../commands/data/sources.md#remove-unregister-a-source)
 
 ```
