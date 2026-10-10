@@ -54,7 +54,7 @@ For `write_disposition: append`, this is exact. For `replace` / `merge`, only th
 
 ### `dlt_trace_runs` (v0.1.3+)
 
-One row per dlt invocation, populated from `~/.dlt/pipelines/<name>/trace.pickle`.
+One row per dlt invocation, populated from the pipeline's `trace.pickle` in dlt's working directory, `<pipelines_dir>/<name>/trace.pickle`. Capture reads it from the directory the pipeline actually ran in, so a `DLT_DATA_DIR` override is followed too. Without one, that's `~/.dlt/pipelines`.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -237,7 +237,7 @@ If captures stop showing up, check:
 
 1. `.tycoon/metadata.duckdb` exists and is writable
 2. The tycoon command actually completed (look at its own exit code)
-3. For dlt traces: `~/.dlt/pipelines/<pipeline>/trace.pickle` exists
+3. For dlt traces: `<pipelines_dir>/<pipeline>/trace.pickle` exists, where `<pipelines_dir>` is `$DLT_DATA_DIR/pipelines` when that variable is set and `~/.dlt/pipelines` otherwise
 4. For dbt manifests: `<dbt_project_dir>/target/manifest.json` exists after the run
 
 ## Related

@@ -193,9 +193,20 @@ def capture_dlt(metadata_db: Path, raw_db: Path) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _default_pipelines_dir() -> Path:
+    """The directory dlt itself uses when a pipeline sets no ``pipelines_dir``.
+
+    Asking dlt rather than assuming ``~/.dlt/pipelines`` keeps capture in step
+    with ``DLT_DATA_DIR`` and dlt's other fallbacks (gh-394).
+    """
+    from dlt.common.pipeline import get_dlt_pipelines_dir
+
+    return Path(get_dlt_pipelines_dir())
+
+
 def _trace_pickle_path(pipeline_name: str, pipelines_dir: Path | None = None) -> Path:
-    """Return the canonical trace.pickle path for a dlt pipeline."""
-    base = pipelines_dir if pipelines_dir is not None else Path.home() / ".dlt" / "pipelines"
+    """Return the trace.pickle path for a dlt pipeline."""
+    base = pipelines_dir if pipelines_dir is not None else _default_pipelines_dir()
     return base / pipeline_name / "trace.pickle"
 
 
@@ -372,7 +383,10 @@ def capture_dlt_trace(
     pipeline_name: str,
     pipelines_dir: Path | None = None,
 ) -> str | None:
-    """Load ``~/.dlt/pipelines/<name>/trace.pickle`` and capture it.
+    """Load ``<pipelines_dir>/<name>/trace.pickle`` and capture it.
+
+    Without ``pipelines_dir``, reads from wherever dlt keeps pipelines by
+    default (``DLT_DATA_DIR``, else ``~/.dlt/pipelines``).
 
     Returns the transaction_id on capture, None if the trace is missing or
     already present in the metadata DB.
