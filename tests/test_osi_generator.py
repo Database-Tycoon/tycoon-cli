@@ -373,3 +373,17 @@ class TestLayerAwareDiscovery:
         )
         # Empty datasets — fct_legacy is staging per the manifest.
         assert result.datasets_emitted == []
+
+
+def test_scaffold_command_rejects_motherduck_warehouse(tmp_path: Path, monkeypatch, cli_runner) -> None:
+    """A md: warehouse is not a local file, so the scaffold must not probe it as one (#70)."""
+    from tycoon.cli import app
+    from tycoon.config import TycoonConfig
+
+    (tmp_path / "tycoon.yml").write_text("name: test\nsources: {}\ndatabase:\n  warehouse: 'md:x'\n")
+    monkeypatch.setattr("tycoon.commands.semantics.config", TycoonConfig(project_root=tmp_path))
+
+    result = cli_runner.invoke(app, ["semantics", "scaffold", "--out", str(tmp_path / "osi.yaml")])
+    assert result.exit_code == 1
+    assert "MotherDuck (md:x)" in result.output
+    assert not (tmp_path / "osi.yaml").exists()

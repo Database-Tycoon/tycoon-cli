@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import yaml
+
 from tycoon.project import (
     DatabaseConfig,
+    ResourceConfig,
     SCHEMA_VERSION,
     SourceConfig,
     TycoonProject,
@@ -227,6 +230,234 @@ class TestSchemaVersionEnforcement:
         reloaded = load_project(tmp_path)
         assert reloaded is not None
         assert reloaded.schema_version is None
+
+
+_COMMENTED_YML = """\
+# Project notes: keep this header.
+name: commented
+version: "0.1.0"
+
+sources:
+  api:
+    type: rest_api
+    schema: raw_api  # inline note on the schema
+    config:
+      base_url: https://example.com
+  files:
+    type: filesystem
+    schema: raw_files
+    resources:
+    - table_name: orders  # orders feed
+      path: data/orders
+      file_glob: "*.csv"
+    - table_name: users
+      path: data/users
+      file_glob: "*.csv"
+
+# Database section comment.
+database:
+  raw: data/raw.duckdb
+  warehouse: data/warehouse.duckdb
+"""
+
+
+class TestSavePreservesFormatting:
+    """gh-177: save_project keeps the user's comments, blank lines, and quoting."""
+
+    def test_add_source_keeps_comments_and_blank_lines(self, tmp_path):
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(_COMMENTED_YML)
+        project = load_project(tmp_path)
+        assert project is not None
+        project.sources["api2"] = SourceConfig(type="rest_api", schema="raw_api2", config={"base_url": "https://x"})
+
+        save_project(project, tmp_path)
+
+        on_disk = yml.read_text()
+        assert on_disk.startswith("# Project notes: keep this header.\n")
+        assert "schema: raw_api  # inline note on the schema" in on_disk
+        assert "- table_name: orders  # orders feed" in on_disk
+        assert "# Database section comment." in on_disk
+        assert "\n\n" in on_disk
+        assert 'version: "0.1.0"' in on_disk
+        reloaded = load_project(tmp_path)
+        assert reloaded is not None
+        assert reloaded.sources["api2"].schema_name == "raw_api2"
+
+    def test_remove_source_keeps_unrelated_comments(self, tmp_path):
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(_COMMENTED_YML)
+        project = load_project(tmp_path)
+        assert project is not None
+        del project.sources["api"]
+
+        save_project(project, tmp_path)
+
+        on_disk = yml.read_text()
+        assert "raw_api" not in on_disk
+        assert "inline note on the schema" not in on_disk
+        assert on_disk.startswith("# Project notes: keep this header.\n")
+        assert "- table_name: orders  # orders feed" in on_disk
+        assert "# Database section comment." in on_disk
+
+    def test_editing_a_resource_keeps_its_siblings(self, tmp_path):
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(_COMMENTED_YML)
+        project = load_project(tmp_path)
+        assert project is not None
+        resources = project.sources["files"].resources
+        assert resources is not None
+        resources[1] = ResourceConfig(table_name="users", path="data/people", file_glob="*.csv")
+
+        save_project(project, tmp_path)
+
+        on_disk = yml.read_text()
+        assert "path: data/people" in on_disk
+        assert "- table_name: orders  # orders feed" in on_disk
+        assert 'file_glob: "*.csv"' in on_disk
+
+    def test_unchanged_save_is_a_byte_for_byte_noop(self, tmp_path):
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(_COMMENTED_YML)
+        save_project(TycoonProject.model_validate(yaml.safe_load(_COMMENTED_YML)), tmp_path)
+        first = yml.read_text()
+        project = load_project(tmp_path)
+        assert project is not None
+
+        save_project(project, tmp_path)
+
+        assert yml.read_text() == first
+
+    def test_env_ref_survives_a_save(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("API_TOKEN", "tok-123")
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(
+            "name: env\nsources:\n  api:\n    type: rest_api\n    schema: raw_api\n"
+            "    config:\n      token: ${API_TOKEN}\n"
+        )
+        project = load_project(tmp_path)
+        assert project is not None
+        project.name = "env-renamed"
+
+        save_project(project, tmp_path)
+
+        on_disk = yml.read_text()
+        assert "token: ${API_TOKEN}" in on_disk
+        assert "tok-123" not in on_disk
+
+    def test_saved_key_set_matches_a_fresh_file(self, tmp_path):
+        project = TycoonProject(
+            name="keys",
+            sources={"api": SourceConfig(type="rest_api", schema="raw_api", config={"base_url": "https://x"})},
+        )
+        fresh_dir = tmp_path / "fresh"
+        fresh_dir.mkdir()
+        save_project(project, fresh_dir)
+        (tmp_path / "tycoon.yml").write_text("# minimal hand-written file\nname: keys\n")
+
+        save_project(project, tmp_path)
+
+        fresh = yaml.safe_load((fresh_dir / "tycoon.yml").read_text())
+        assert fresh == project.model_dump(by_alias=True, exclude_none=True, mode="json")
+        assert yaml.safe_load((tmp_path / "tycoon.yml").read_text()) == fresh
+
+    def test_removing_the_last_source_keeps_the_next_section_comment(self, tmp_path):
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(_COMMENTED_YML)
+        project = load_project(tmp_path)
+        assert project is not None
+        del project.sources["files"]
+
+        save_project(project, tmp_path)
+
+        on_disk = yml.read_text()
+        assert "raw_files" not in on_disk
+        assert "      base_url: https://example.com\n\n# Database section comment.\ndatabase:\n" in on_disk
+
+    def test_removing_every_source_keeps_the_next_section_comment(self, tmp_path):
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(_COMMENTED_YML)
+        project = load_project(tmp_path)
+        assert project is not None
+        project.sources.clear()
+
+        save_project(project, tmp_path)
+
+        assert "sources: {}\n\n# Database section comment.\ndatabase:\n" in yml.read_text()
+
+    def test_adding_a_source_keeps_the_next_section_comment_in_place(self, tmp_path):
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(_COMMENTED_YML)
+        project = load_project(tmp_path)
+        assert project is not None
+        project.sources["api2"] = SourceConfig(type="rest_api", schema="raw_api2", config={"base_url": "https://x"})
+
+        save_project(project, tmp_path)
+
+        on_disk = yml.read_text()
+        assert "  api2:\n" in on_disk
+        assert "    schema: raw_api2\n\n# Database section comment.\ndatabase:\n" in on_disk
+        before, after = on_disk.split("# Database section comment.")
+        assert "api2" in before
+        assert after.startswith("\ndatabase:\n  raw: data/raw.duckdb\n")
+
+    def test_edit_changes_only_the_edited_line(self, tmp_path):
+        long_url = "https://example.com/" + "a" * 90 + "?page=1"
+        original = _COMMENTED_YML.replace("https://example.com", long_url).replace("    - ", "      - ")
+        original = original.replace("      path: data", "        path: data").replace(
+            '      file_glob: "*.csv"', '        file_glob: "*.csv"'
+        )
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(original)
+        # The first save fills in the model's defaults; start from that.
+        save_project(TycoonProject.model_validate(yaml.safe_load(original)), tmp_path)
+        before = yml.read_text()
+        project = load_project(tmp_path)
+        assert project is not None
+        project.version = "0.2.0"
+
+        save_project(project, tmp_path)
+
+        on_disk = yml.read_text()
+        assert f"      base_url: {long_url}\n" in on_disk
+        assert "      - table_name: orders  # orders feed\n" in on_disk
+        assert on_disk == before.replace('version: "0.1.0"', 'version: "0.2.0"')
+
+    def test_unchanged_file_round_trips_byte_for_byte(self, tmp_path):
+        from tycoon.yaml_merge import roundtrip_yaml
+
+        ryaml = roundtrip_yaml(_COMMENTED_YML)
+        doc = ryaml.load(_COMMENTED_YML)
+        out = tmp_path / "out.yml"
+        with out.open("w") as f:
+            ryaml.dump(doc, f)
+
+        assert out.read_text() == _COMMENTED_YML
+
+    def test_env_refs_survive_add_and_remove(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("FAKE_TOKEN", "fake-tok")
+        monkeypatch.setenv("FAKE_URL", "https://fake.invalid")
+        yml = tmp_path / "tycoon.yml"
+        yml.write_text(
+            "name: env\nsources:\n  api:\n    type: rest_api\n    schema: raw_api\n"
+            "    config:\n      base_url: ${FAKE_URL}\n      token: ${FAKE_TOKEN}\n"
+        )
+        project = load_project(tmp_path)
+        assert project is not None
+        project.sources["extra"] = SourceConfig(type="rest_api", schema="raw_extra", config={"base_url": "https://x"})
+        save_project(project, tmp_path)
+        project = load_project(tmp_path)
+        assert project is not None
+        del project.sources["extra"]
+
+        save_project(project, tmp_path)
+
+        on_disk = yml.read_text()
+        assert "base_url: ${FAKE_URL}" in on_disk
+        assert "token: ${FAKE_TOKEN}" in on_disk
+        assert "fake-tok" not in on_disk
+        assert "fake.invalid" not in on_disk
+        assert "extra" not in on_disk
 
 
 class TestMigrateProject:
