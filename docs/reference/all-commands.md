@@ -236,13 +236,13 @@ Options:
 ### [`tycoon data schema`](../commands/data/query.md#schema-dump-tables-row-counts-sizes)
 
 ```
-tycoon data schema [SCHEMA] [OPTIONS]
-
-Arguments:
-  [SCHEMA]                 Optional schema filter
+tycoon data schema [OPTIONS]
 
 Options:
-  --db PATH                Override which DuckDB to inspect
+  --schema TEXT            Only show schemas matching this name or glob
+  --raw                    Only show the raw database
+  --warehouse              Only show the warehouse
+  --include-dlt            Also show dlt's _dlt_* bookkeeping tables
 ```
 
 ### [`tycoon data clean`](../commands/data/query.md#clean-remove-warehouse-files)

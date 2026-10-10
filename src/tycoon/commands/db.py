@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Annotated
 
@@ -69,89 +71,147 @@ def _has_schema(db_path: Path, schema_name: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def schema() -> None:
-    """Show database tables, row counts, and file sizes."""
+SchemaRow = tuple[str, str, str]
+
+DLT_TABLE_PREFIX = "_dlt_"
+
+
+def _select_tables(
+    tables: list[tuple[str, str]], schema_pattern: str | None, include_dlt: bool
+) -> tuple[list[tuple[str, str]], int]:
+    """Tables in the schemas matching ``schema_pattern``, and how many dlt tables were left out."""
+    if schema_pattern is not None:
+        pattern = schema_pattern.lower()
+        tables = [(s, t) for s, t in tables if fnmatchcase(s.lower(), pattern)]
+    if include_dlt:
+        return tables, 0
+    kept = [(s, t) for s, t in tables if not t.startswith(DLT_TABLE_PREFIX)]
+    return kept, len(tables) - len(kept)
+
+
+def _table_rows(
+    tables: list[tuple[str, str]], hidden_dlt: int, count_rows: Callable[[str, str], int | None]
+) -> list[SchemaRow]:
+    detail = f"{len(tables)}"
+    if hidden_dlt:
+        detail += f" ({hidden_dlt} {DLT_TABLE_PREFIX}* hidden, --include-dlt shows them)"
+    rows: list[SchemaRow] = [("  Tables", "", detail)]
+    for s, table in tables:
+        count = count_rows(s, table)
+        rows.append((f"  {s}.{table}", "", f"{count:,} rows" if count is not None else "empty"))
+    return rows
+
+
+def _local_schema_rows(
+    db_path: Path, label: str, schema_pattern: str | None, include_dlt: bool
+) -> tuple[list[SchemaRow], int]:
+    size = db_file_size_mb(db_path)
+    if size is None:
+        return [(label, "WARN", "not found")], 0
+    tables, hidden_dlt = _select_tables(get_tables(db_path), schema_pattern, include_dlt)
+    rows = [(label, "OK", f"{size:.1f} MB")]
+    rows.extend(_table_rows(tables, hidden_dlt, lambda s, t: get_row_count(db_path, s, t)))
+    return rows, len(tables)
+
+
+def schema(
+    schema_pattern: Annotated[
+        str | None,
+        typer.Option(
+            "--schema",
+            help="Only show schemas matching this name or glob (e.g. main_marts or 'raw_*').",
+        ),
+    ] = None,
+    raw: Annotated[
+        bool,
+        typer.Option("--raw", help="Only show the raw database."),
+    ] = False,
+    warehouse: Annotated[
+        bool,
+        typer.Option("--warehouse", help="Only show the warehouse."),
+    ] = False,
+    include_dlt: Annotated[
+        bool,
+        typer.Option("--include-dlt", help="Also show dlt's _dlt_* bookkeeping tables."),
+    ] = False,
+) -> None:
+    """Show database tables, row counts, and file sizes.
+
+    With neither --raw nor --warehouse, shows both plus any other
+    data/*.duckdb file.
+    """
     header("Database Schema")
 
-    rows: list[tuple[str, str, str]] = []
+    rows: list[SchemaRow] = []
+    shown = 0
     raw_db = None if config.raw_is_motherduck else config.raw_db
     local_db = config.local_db
+    every_database = not (raw or warehouse)
 
-    for db_path, label, target in [
-        (raw_db, "Raw", config.raw_target),
-        (local_db, "Warehouse", config.warehouse_target),
-    ]:
+    databases = []
+    if raw or every_database:
+        databases.append((raw_db, "Raw", config.raw_target))
+    if warehouse or every_database:
+        databases.append((local_db, "Warehouse", config.warehouse_target))
+
+    for db_path, label, target in databases:
         if db_path is None:
-            rows.extend(_motherduck_schema_rows(target, label))
-            continue
-        size = db_file_size_mb(db_path)
-        if size is not None:
-            rows.append((f"{label} database", "OK", f"{size:.1f} MB"))
-            tables = get_tables(db_path)
-            rows.append(("  Tables", "", f"{len(tables)}"))
-            for s, table in tables:
-                count = get_row_count(db_path, s, table)
-                rows.append(
-                    (
-                        f"  {s}.{table}",
-                        "",
-                        f"{count:,} rows" if count is not None else "empty",
-                    )
-                )
+            md_rows, count = _motherduck_schema_rows(target, label, schema_pattern, include_dlt)
         else:
-            rows.append((f"{label} database", "WARN", "not found"))
+            md_rows, count = _local_schema_rows(db_path, f"{label} database", schema_pattern, include_dlt)
+        rows.extend(md_rows)
+        shown += count
 
-    # Also scan for any other .duckdb files in the data directory
     data_dir = config.data_dir
     seen = {p.resolve() for p in (raw_db, local_db) if p is not None}
-    if data_dir.exists():
+    if every_database and data_dir.exists():
         for db_file in sorted(data_dir.glob("*.duckdb")):
             if db_file.resolve() in seen:
                 continue
             seen.add(db_file.resolve())
-            size = db_file_size_mb(db_file)
-            if size is not None:
-                rows.append((db_file.name, "OK", f"{size:.1f} MB"))
-                tables = get_tables(db_file)
-                rows.append(("  Tables", "", f"{len(tables)}"))
-                for s, table in tables:
-                    count = get_row_count(db_file, s, table)
-                    rows.append(
-                        (
-                            f"  {s}.{table}",
-                            "",
-                            f"{count:,} rows" if count is not None else "empty",
-                        )
-                    )
+            if db_file_size_mb(db_file) is None:
+                continue
+            file_rows, count = _local_schema_rows(db_file, db_file.name, schema_pattern, include_dlt)
+            rows.extend(file_rows)
+            shown += count
 
     console.print(status_table(rows, title="Database Schema"))
+    if schema_pattern is not None and shown == 0:
+        warn(f"No tables in a schema matching '{schema_pattern}'.")
 
 
-def _motherduck_schema_rows(target: str, label: str) -> list[tuple[str, str, str]]:
-    """Schema rows for a MotherDuck database, read over one connection."""
+def _motherduck_schema_rows(
+    target: str, label: str, schema_pattern: str | None = None, include_dlt: bool = False
+) -> tuple[list[SchemaRow], int]:
+    """Schema rows for a MotherDuck database, read over one connection.
+
+    Filtering happens before the per-table count(*), so a narrow
+    --schema also saves those queries.
+    """
     try:
         con = duckdb.connect(target)
         try:
             # An md: connection attaches every database on the account, so
             # scope the listing to the one the target names.
-            tables = con.execute(
+            listed = con.execute(
                 "SELECT table_schema, table_name FROM information_schema.tables "
                 "WHERE table_catalog = current_database() "
                 "AND table_schema NOT IN ('information_schema', 'pg_catalog') "
                 "ORDER BY table_schema, table_name"
             ).fetchall()
-            rows = [
-                (f"{label} database", "OK", f"MotherDuck {display_target(target)}"),
-                ("  Tables", "", f"{len(tables)}"),
-            ]
-            for s, table in tables:
-                count = con.execute(f"SELECT count(*) FROM {quote_identifier(s)}.{quote_identifier(table)}").fetchone()
-                rows.append((f"  {s}.{table}", "", f"{count[0]:,} rows" if count else "empty"))
+            tables, hidden_dlt = _select_tables(listed, schema_pattern, include_dlt)
+
+            def count_rows(s: str, table: str) -> int | None:
+                result = con.execute(f"SELECT count(*) FROM {quote_identifier(s)}.{quote_identifier(table)}").fetchone()
+                return result[0] if result else None
+
+            rows: list[SchemaRow] = [(f"{label} database", "OK", f"MotherDuck {display_target(target)}")]
+            rows.extend(_table_rows(tables, hidden_dlt, count_rows))
         finally:
             con.close()
     except duckdb.Error as exc:
-        return [(f"{label} database", "WARN", f"MotherDuck {display_target(target)}: {redact_secrets(str(exc))}")]
-    return rows
+        return [(f"{label} database", "WARN", f"MotherDuck {display_target(target)}: {redact_secrets(str(exc))}")], 0
+    return rows, len(tables)
 
 
 # ---------------------------------------------------------------------------

@@ -80,24 +80,35 @@ When a [Quack](../start.md#quack-the-live-multi-client-warehouse-v019) server is
 ## `schema` — dump tables, row counts, sizes
 
 ```bash
-tycoon data schema                  # all schemas
-tycoon data schema mart             # one schema
-tycoon data schema --db .tycoon/metadata.duckdb
+tycoon data schema                          # raw database, warehouse, other data/*.duckdb files
+tycoon data schema --warehouse              # the warehouse only
+tycoon data schema --schema main_marts      # one schema
+tycoon data schema --raw --schema 'raw_*'   # schemas matching a glob, in the raw database
+tycoon data schema --include-dlt            # also list dlt's _dlt_* tables
 ```
 
-Lists every table in the warehouse (or the `--db` you pointed at), with row counts and DuckDB file size. Useful for "what's in this DB?" / "which tables have rows?" without writing SQL.
+Lists the tables in the raw database and the warehouse, with row counts and each DuckDB file's size. Any other `.duckdb` file in `data/` is listed too. Useful for "what's in this DB?" and "which tables have rows?" without writing SQL.
 
 ### Synopsis
 
 ```
-tycoon data schema [SCHEMA] [OPTIONS]
-
-Arguments:
-  [SCHEMA]    Optional schema filter
+tycoon data schema [OPTIONS]
 
 Options:
-  --db PATH   Override which DuckDB to inspect (default: warehouse)
+  --schema TEXT    Only show schemas matching this name or glob
+  --raw            Only show the raw database
+  --warehouse      Only show the warehouse
+  --include-dlt    Also show dlt's _dlt_* bookkeeping tables
+  -h, --help       Show this message and exit
 ```
+
+### Narrowing the output
+
+- `--raw` and `--warehouse` each pick one database, the same split as `data query --raw`. Passing either one leaves out the other `data/*.duckdb` files. Pass both to see the raw database and the warehouse without those extra files.
+- `--schema` takes a schema name or a shell-style glob (`*`, `?`, `[...]`). Matching ignores case. Quote a glob so your shell doesn't expand it. If nothing matches, the command says so.
+- dlt keeps bookkeeping tables such as `_dlt_loads` and `_dlt_version` in every dataset it loads. They're left out by default, and the `Tables` line says how many were hidden. `--include-dlt` lists them.
+
+On a MotherDuck database, each listed table costs one `count(*)` query, and tables left out by these options aren't counted, so a narrow `--schema` is also cheaper.
 
 ## `clean` — remove warehouse files
 

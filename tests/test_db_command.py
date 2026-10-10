@@ -340,3 +340,117 @@ class TestQueryFormats:
         assert "record 1" not in result.stdout
         header = next(line for line in result.stdout.splitlines() if "route_id" in line)
         assert "fare" in header
+
+
+class TestSchemaFilters:
+    """gh-393: narrow `data schema` to one database, one schema, and no dlt bookkeeping."""
+
+    def _setup(self, tmp_path: Path, monkeypatch) -> None:
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        (tmp_path / "tycoon.yml").write_text("name: test\nsources: {}\n")
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+
+        raw = duckdb.connect(str(data_dir / "raw.duckdb"))
+        for schema_name in ("raw_bus", "raw_traffic"):
+            raw.execute(f"CREATE SCHEMA {schema_name}")
+            raw.execute(f"CREATE TABLE {schema_name}.events AS SELECT 1 AS id")
+            raw.execute(f"CREATE TABLE {schema_name}._dlt_loads AS SELECT 1 AS load_id")
+        raw.close()
+
+        warehouse = duckdb.connect(str(data_dir / "warehouse.duckdb"))
+        for schema_name in ("main_staging", "main_marts"):
+            warehouse.execute(f"CREATE SCHEMA {schema_name}")
+            warehouse.execute(f"CREATE TABLE {schema_name}.model_in_{schema_name} AS SELECT 1 AS id")
+        warehouse.close()
+
+        extra = duckdb.connect(str(data_dir / "snapshot.duckdb"))
+        extra.execute("CREATE TABLE snapshot_table AS SELECT 1 AS id")
+        extra.close()
+
+        monkeypatch.setattr("tycoon.commands.db.config", TycoonConfig(project_root=tmp_path))
+        monkeypatch.setenv("COLUMNS", "200")
+
+    def test_hides_dlt_tables_by_default(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema"])
+        assert result.exit_code == 0, result.stdout
+        assert "raw_bus.events" in result.stdout
+        assert "_dlt_loads" not in result.stdout
+        assert "2 _dlt_* hidden" in result.stdout
+        assert "snapshot_table" in result.stdout
+
+    def test_include_dlt_shows_them(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--include-dlt"])
+        assert result.exit_code == 0, result.stdout
+        assert "raw_bus._dlt_loads" in result.stdout
+        assert "hidden" not in result.stdout
+
+    def test_schema_name_matches_exactly(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--schema", "main_marts"])
+        assert result.exit_code == 0, result.stdout
+        assert "main_marts.model_in_main_marts" in result.stdout
+        assert "main_staging" not in result.stdout
+        assert "raw_bus" not in result.stdout
+
+    def test_schema_glob(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--schema", "RAW_*"])
+        assert result.exit_code == 0, result.stdout
+        assert "raw_bus.events" in result.stdout
+        assert "raw_traffic.events" in result.stdout
+        assert "main_marts" not in result.stdout
+
+    def test_schema_with_no_match_warns(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--schema", "nope"])
+        assert result.exit_code == 0, result.stdout
+        assert "No tables in a schema matching 'nope'" in result.stdout
+
+    def test_raw_shows_only_the_raw_database(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--raw"])
+        assert result.exit_code == 0, result.stdout
+        assert "Raw database" in result.stdout
+        assert "Warehouse database" not in result.stdout
+        assert "snapshot" not in result.stdout
+
+    def test_warehouse_shows_only_the_warehouse(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--warehouse"])
+        assert result.exit_code == 0, result.stdout
+        assert "Warehouse database" in result.stdout
+        assert "Raw database" not in result.stdout
+        assert "snapshot" not in result.stdout
+
+    def test_motherduck_counts_only_the_tables_it_shows(self, monkeypatch):
+        """#310: every count(*) on MotherDuck costs a query, so filtered-out tables aren't counted."""
+        from tycoon.commands import db
+
+        con = duckdb.connect(":memory:")
+        con.execute("CREATE SCHEMA main_marts")
+        con.execute("CREATE TABLE main_marts.kept AS SELECT 1 AS id")
+        con.execute("CREATE TABLE main_marts._dlt_loads AS SELECT 1 AS id")
+        con.execute("CREATE TABLE main.skipped AS SELECT 1 AS id")
+        executed: list[str] = []
+
+        class RecordingConnection:
+            def execute(self, sql: str):
+                executed.append(sql)
+                return con.execute(sql)
+
+            def close(self) -> None:
+                pass
+
+        monkeypatch.setattr(duckdb, "connect", lambda *args, **kwargs: RecordingConnection())
+
+        rows, shown = db._motherduck_schema_rows("md:x", "Warehouse", "main_marts", include_dlt=False)
+
+        assert shown == 1
+        assert ("  main_marts.kept", "", "1 rows") in rows
+        counts = [sql for sql in executed if sql.startswith("SELECT count(*)")]
+        assert counts == ['SELECT count(*) FROM "main_marts"."kept"']
