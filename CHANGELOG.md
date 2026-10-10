@@ -26,8 +26,10 @@ All notable changes to this project will be documented in this file. The format 
 ### Fixed
 
 - **`tycoon city`: the legend no longer shows through the detail panel** ([#382][]). Both panels are translucent and sit on the right edge, so a tall detail panel stacked its text over the legend's. The legend now hides while a building is selected and comes back when the panel closes.
+- **`tycoon city`: long model and test names wrap instead of being clipped** ([#383][]). The detail panel split model names mid-word (`station_informa` / `tion`) and cut long dbt test names off at its right edge. Identifiers now wrap after an underscore or dot, and anything still too long wraps inside the panel rather than running past it.
 
 [#382]: https://github.com/Database-Tycoon/tycoon-cli/issues/382
+[#383]: https://github.com/Database-Tycoon/tycoon-cli/issues/383
 
 ## [0.2.1] - 2026-09-16
 

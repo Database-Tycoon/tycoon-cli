@@ -147,7 +147,7 @@ export class Inspector {
     ].join("");
     return `
       <button class="close" title="close">×</button>
-      <h2>${escapeHtml(obj.name)}</h2>
+      <h2>${breakable(obj.name)}</h2>
       <dl>
         <dt>${escapeHtml(labels.schema ?? "schema")}</dt><dd>${escapeHtml(obj.schema)}</dd>
         <dt>kind</dt><dd>${obj.kind}</dd>
@@ -306,7 +306,7 @@ export class Inspector {
         const doc = c.description
           ? `<div class="col-doc">${escapeHtml(c.description)}</div>`
           : "";
-        return `<li>${verdict}<b>${escapeHtml(c.name)}</b> <span class="prov">${escapeHtml(c.type.toLowerCase())}</span>${doc}</li>`;
+        return `<li>${verdict}<b>${breakable(c.name)}</b> <span class="prov">${escapeHtml(c.type.toLowerCase())}</span>${doc}</li>`;
       })
       .join("");
     return `<h3>columns (${columns.length})</h3><ul class="cols">${rows}</ul>`;
@@ -327,7 +327,7 @@ export class Inspector {
     const items = tests
       .map(
         (t) =>
-          `<li>${dot(t.status)} ${escapeHtml(t.name)}` +
+          `<li>${dot(t.status)} <span class="ident">${breakable(t.name)}</span>` +
           `${t.column ? `<span class="prov">on ${escapeHtml(t.column)}</span>` : ""}` +
           `${t.status === null ? `<span class="prov">never run</span>` : ""}</li>`,
       )
@@ -340,7 +340,7 @@ export class Inspector {
       ? entries
           .map(
             (e) =>
-              `<li data-key="${escapeHtml(e.key)}">${escapeHtml(e.key)}` +
+              `<li data-key="${escapeHtml(e.key)}">${breakable(e.key)}` +
               `<span class="prov">${PROVENANCE_LABEL[e.provenance]}</span></li>`,
           )
           .join("")
@@ -368,6 +368,13 @@ export class Inspector {
 
 function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/** dbt identifiers are one long word to the browser, which either clips them
+ * or splits them mid-word. A break opportunity after each run of underscores
+ * or dot lets `stg_x__station_information` wrap between its parts instead. */
+function breakable(text: string): string {
+  return escapeHtml(text).replace(/(_+|\.)/g, "$1<wbr>");
 }
 
 /** 5400 -> "1h", 259200 -> "3d". Coarse on purpose; exact ages are noise. */
