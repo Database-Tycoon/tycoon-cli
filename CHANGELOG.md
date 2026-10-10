@@ -1,5 +1,13 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **dlt trace capture follows the pipeline's working directory** ([#394][]). Run-history capture read `trace.pickle` from a hard-coded `~/.dlt/pipelines`, so a pipeline that ran anywhere else, for example with `DLT_DATA_DIR` set, loaded fine but never showed up in `dlt_trace_runs` or the byte and timing detail of `tycoon data history`. Capture now reads from the directory the pipeline itself used, and falls back to dlt's own default (`DLT_DATA_DIR`, else `~/.dlt/pipelines`) when it doesn't know the pipeline.
+
+[#394]: https://github.com/Database-Tycoon/tycoon-cli/issues/394
+
 ## [0.2.2] - 2026-10-09
 
 _Headline: **project-local environments**. Every tycoon project now gets its own uv-managed `.venv`, and a catalog source's code and dependencies live inside the project, so deleting `.venv` and running `uv sync` rebuilds the same environment. `--no-prompt` installs what it registers instead of skipping it, and `tycoon data sources migrate` moves an existing project over. Also here: a filesystem load that finds nothing no longer empties a table that already held rows, and a zero-row run is flagged instead of reading as a healthy sync._
