@@ -5,7 +5,7 @@ from pathlib import Path
 import duckdb
 
 from .column_lineage import ColumnEdge, derive_column_lineage
-from .dbt_manifest import join_manifest, read_manifest, read_source_freshness
+from .dbt_manifest import ExternalSource, join_manifest, read_manifest, read_source_freshness
 from .errors import CatalogError
 from .models import CatalogObject, Edge, PipelineContext, canonical_keys
 from .osi import discover_osi_path, join_semantics, read_osi
@@ -332,7 +332,9 @@ def _load_tycoon_project(info: TycoonProjectInfo) -> PipelineContext:
         notes.append("no dbt manifest -- lineage from SQL scan only")
 
     # Phase A: manifest lineage + column lineage
-    (edges, column_edges, nodes_by_key, tests_by_key, context_by_key, phase_a_notes) = _enrich_manifest(ctx, index)
+    (edges, column_edges, nodes_by_key, tests_by_key, context_by_key, external, phase_a_notes) = _enrich_manifest(
+        ctx, index
+    )
     notes.extend(phase_a_notes)
 
     # Phase B: source freshness (always runs; skips silently when no artifacts)
@@ -358,6 +360,7 @@ def _load_tycoon_project(info: TycoonProjectInfo) -> PipelineContext:
         tests_by_key=tests_by_key,
         dbt_context_by_key=context_by_key,
         source_freshness_by_key=freshness_by_key,
+        external_upstream_by_key=_external_with_freshness(external, info.sources_json_path),
         semantic_relationships=semantic_relationships,
         ai_context_by_key=ai_context_by_key,
     )
@@ -366,10 +369,11 @@ def _load_tycoon_project(info: TycoonProjectInfo) -> PipelineContext:
 def _enrich_manifest(
     ctx: PipelineContext,
     index: dict | None,
-) -> tuple[tuple[Edge, ...], tuple[ColumnEdge, ...], dict, dict, dict, list[str]]:
+) -> tuple[tuple[Edge, ...], tuple[ColumnEdge, ...], dict, dict, dict, dict, list[str]]:
     """Manifest lineage + column lineage.
 
-    Returns (edges, column_edges, nodes_by_key, tests_by_key, context_by_key, notes).
+    Returns (edges, column_edges, nodes_by_key, tests_by_key, context_by_key,
+    external_upstream_by_key, notes).
     """
     notes: list[str] = []
     edges = ctx.edges
@@ -379,7 +383,7 @@ def _enrich_manifest(
     context_by_key: dict = {}
 
     if index is None:
-        return edges, column_edges, nodes_by_key, tests_by_key, context_by_key, notes
+        return edges, column_edges, nodes_by_key, tests_by_key, context_by_key, {}, notes
 
     join = join_manifest(index, {obj.key for obj in ctx.objects})
     model_lineage = derive_column_lineage(join.sql_by_key, ctx.columns_by_key)
@@ -399,7 +403,7 @@ def _enrich_manifest(
     tests_by_key = join.tests_by_key
     context_by_key = join.context_by_key
 
-    return edges, column_edges, nodes_by_key, tests_by_key, context_by_key, notes
+    return edges, column_edges, nodes_by_key, tests_by_key, context_by_key, join.external_upstream_by_key, notes
 
 
 def _enrich_freshness(
@@ -422,6 +426,27 @@ def _enrich_freshness(
         notes.append("no source freshness snapshot (run `dbt source freshness`)")
 
     return freshness_by_key, notes
+
+
+def _external_with_freshness(
+    external: dict[str, tuple[ExternalSource, ...]],
+    sources_json_path: Path | None,
+) -> dict[str, tuple[ExternalSource, ...]]:
+    """External sources with dbt's freshness verdict folded on.
+
+    They have no catalog key, so `_enrich_freshness` cannot place their
+    verdicts on a building; they ride on each model's upstream list instead.
+    """
+    verdicts = (read_source_freshness(sources_json_path) if external and sources_json_path else None) or {}
+    return {
+        key: tuple(
+            dataclasses.replace(source, freshness_status=verdicts[source.unique_id].status)
+            if source.unique_id in verdicts
+            else source
+            for source in sources
+        )
+        for key, sources in external.items()
+    }
 
 
 def _enrich_semantics(
