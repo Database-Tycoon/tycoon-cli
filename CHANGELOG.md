@@ -11,7 +11,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Fixed
 
-- **`tycoon city` names the dbt sources a staging model reads, even when they live outside the warehouse** ([#387][]). When a project's sources point at a separate database (for example `database: raw`, an attached DuckDB file or a DuckLake), none of them is an object in the warehouse the city reads, so lineage stopped at staging and every staging model listed its upstream as "none". The export now lists those sources on each model under `objects[].dbt.external_upstream`, with dbt's freshness verdict when `sources.json` has one. The city still draws no building for them, because nothing about them can be measured from the warehouse.
+- **`tycoon city` names the dbt sources a staging model reads, even when they live outside the warehouse** ([#387][]). When a project's sources point at a separate database (for example `database: raw`, an attached DuckDB file or a DuckLake), none of them is an object in the warehouse the city reads, so lineage stopped at staging and every staging model listed its upstream as "none". The export now lists those sources on each model under `objects[].dbt.external_upstream`, with dbt's freshness verdict when `sources.json` has one. The city still draws no building for them, because nothing about them can be measured from the warehouse. The inspector lists them under UPSTREAM after the model's edges, marked as outside this warehouse and not measured, with the freshness verdict when there is one. "none" now means the model has no inputs at all.
 
 [#261]: https://github.com/Database-Tycoon/tycoon-cli/issues/261
 [#262]: https://github.com/Database-Tycoon/tycoon-cli/issues/262
