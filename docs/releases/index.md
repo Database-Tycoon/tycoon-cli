@@ -4,7 +4,7 @@ One page per released version, written as a narrative: what shipped, what did
 not, and why. Together they are the canonical change history for tycoon.
 
 The current release is [v0.2.2](v0.2.2.md). Older versions are in the
-navigation, grouped by series, and every tagged release is also listed on
+navigation, and every tagged release is also listed on
 [GitHub](https://github.com/Database-Tycoon/tycoon-cli/releases).
 
 ## How these differ from the changelog
@@ -29,5 +29,5 @@ changelog.
 
 tycoon is pre-1.0. Behaviour can change in any release, including a patch:
 v0.2.2 changed what `--no-prompt` does to a CI job that was relying on it.
-Read the page for the version you are moving to before you upgrade. Most
-carry an `Upgrading from <previous>` section.
+Read the page for the version you are moving to before you upgrade. Pages
+from v0.1.10 onward carry an `Upgrading from <previous>` section.
