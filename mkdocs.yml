@@ -113,7 +113,7 @@ nav:
   - Recipes:
     - Full walkthroughs:
       - "CSV files to a live dashboard": recipes/csv-to-dashboard.md
-      - "MotherDuck cloud + local snapshot": recipes/motherduck-cloud-sync.md
+      - "MotherDuck + local snapshot": recipes/motherduck-cloud-sync.md
     - Bring your own stack:
       - "An existing dbt project": recipes/existing-dbt-project.md
       - "An existing dbt profile": recipes/existing-dbt-profile.md
