@@ -118,13 +118,16 @@ nav:
     - reference/dependencies.md
     - "All commands + options": reference/all-commands.md
   - Recipes:
-    - recipes/csv-to-dashboard.md
-    - recipes/motherduck-cloud-sync.md
-    - recipes/existing-dbt-project.md
-    - recipes/existing-dbt-profile.md
-    - recipes/osi-export.md
-    - recipes/fivetran-metadata.md
-    - recipes/layered-architecture.md
+    - Full walkthroughs:
+      - "CSV files to a live dashboard": recipes/csv-to-dashboard.md
+      - "MotherDuck cloud + local snapshot": recipes/motherduck-cloud-sync.md
+    - Bring your own stack:
+      - "An existing dbt project": recipes/existing-dbt-project.md
+      - "An existing dbt profile": recipes/existing-dbt-profile.md
+      - "Fivetran connector state": recipes/fivetran-metadata.md
+    - Modelling and export:
+      - "The layered architecture": recipes/layered-architecture.md
+      - "Marts as portable OSI YAML": recipes/osi-export.md
   - Releases:
     - releases/index.md
     - "v0.2.2": releases/v0.2.2.md
