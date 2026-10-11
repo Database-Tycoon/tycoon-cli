@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file. The format 
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
 [#348]: https://github.com/Database-Tycoon/tycoon-cli/issues/348
 [#421]: https://github.com/Database-Tycoon/tycoon-cli/pull/421
+[#417]: https://github.com/Database-Tycoon/tycoon-cli/pull/417
 [#416]: https://github.com/Database-Tycoon/tycoon-cli/pull/416
 [#415]: https://github.com/Database-Tycoon/tycoon-cli/pull/415
 
