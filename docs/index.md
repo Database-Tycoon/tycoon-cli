@@ -1,8 +1,3 @@
----
-hide:
-  - navigation
----
-
 # Database Tycoon
 
 A local-first analytics CLI that adapts to your existing data stack.
