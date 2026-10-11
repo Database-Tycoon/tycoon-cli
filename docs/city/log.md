@@ -3,10 +3,15 @@ title: Documentation log
 description: Chronological record of documentation changes
 tags: [log]
 related: []
-updated: '2026-09-30'
+updated: '2026-10-11'
 ---
 
 # Log
+
+- 2026-10-11: mental-model page taken out of the site nav. It is written for
+  reviewers of city PRs, like the rest of `docs/city/`, so it stays reachable
+  from this directory's index and `tycoon docs serve` instead of the public
+  site's sidebar (#415 leaves `docs/city/` out of the published build).
 
 - 2026-09-30: mental-model page corrected and cut down after fact-check.
   Reordered so the PR-layer table and checklist come first; the document diff
