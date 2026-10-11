@@ -64,7 +64,7 @@ tycoon run identically on a laptop and on a cloud VM.
     The `tycoon.yml` schema, built-in templates, observability tables,
     and environment variables.
 
--   :material-tag: **[Releases](releases/v0.2.2.md)**
+-   :material-tag: **[Releases](releases/index.md)**
 
     ---
 
