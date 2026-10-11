@@ -167,12 +167,16 @@ class TestProjectVenvCheck:
         # The running interpreter is NOT this project's `.venv`, a
         # different path entirely, same as the real ambient-interpreter case.
         monkeypatch.setattr(sys, "prefix", str((tmp_path / "somewhere-else").resolve()))
+        # Rich wraps at the detected width, and the wrap point moves with
+        # the tmp_path length, so even a short phrase like "running from"
+        # can straddle a line break (it did, once pytest's numbered tmp
+        # dir grew a digit). No post-hoc normalization survives both
+        # mid-word and word-boundary wraps, so make the console wide
+        # enough that nothing wraps: Rich re-reads COLUMNS per render.
+        monkeypatch.setenv("COLUMNS", "500")
 
         doctor._check_project_venv()
         captured = capsys.readouterr()
-        # Rich hard-wraps a long temp-dir path with no word boundary, so
-        # normalizing via split()/join() (used elsewhere for wrapped output)
-        # would corrupt the path itself here, check un-normalized instead.
         combined = captured.out + captured.err
         assert ".venv" in combined
         assert "running from" in combined

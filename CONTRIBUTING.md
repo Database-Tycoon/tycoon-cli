@@ -62,6 +62,62 @@ The `e2e` tests run only via the manual `.github/workflows/e2e.yml` workflow
 (click "Run workflow" in the Actions UI). They hit flaky upstream APIs and
 aren't suitable for per-PR gating.
 
+## Testing for upgrade safety
+
+Most of tycoon's users on any given day are not running `tycoon init` for
+the first time. They're running a newer tycoon against a project a previous
+version already created. Write and test every change from that person's
+seat, not a brand-new user's. A fresh `rm -rf demo && tycoon init` test
+proves the happy path works; it proves nothing about whether the change
+is safe to land on a directory, environment, or `tycoon.yml` that already
+has something in it, and that's exactly where regressions ship from.
+
+This was written up after a batch of PR review findings (the gh-262/#270
+venv stack and gh-259/#260) were almost entirely this shape: an existing
+`pyproject.toml`, an existing `.venv` (empty, wrong, a symlink, a plain
+file), a source already installed under the old location before a project
+picks up the new one, `uv`'s own environment-selection env vars
+(`UV_PROJECT_ENVIRONMENT`, `UV_PYTHON`) silently overriding what the code
+assumed it controlled. None of that is exotic, it's just not the state a
+freshly-created scratch directory is ever in.
+
+### Before calling an environment/install/scaffolding change done
+
+Run it against, at minimum:
+
+- A directory that already has its own unrelated `pyproject.toml` /
+  `.python-version` / `.venv` (with and without the dependency this change
+  expects to find there).
+- An existing `.venv` that's empty, a symlink, or a plain file instead of a
+  directory, not just a populated one.
+- The relevant tool's own override env vars set (for uv: `UV_PYTHON`,
+  `UV_PROJECT_ENVIRONMENT`, a `[tool.uv.workspace]` root above the project).
+- Partial prior state: something installed under the old behavior, then
+  upgraded into the new one mid-project, not just a project that started
+  on the new behavior from scratch.
+- The external tool missing, offline, or failing, and not just "does the
+  function return `ok=False`": is the error message the tool's own
+  explanation (don't swallow `stderr`), and does a failure leave
+  `tycoon.yml` / the filesystem in a state that's safe to leave, or does it
+  register something that never actually got installed?
+
+### Tests that prove it
+
+A test that mocks `subprocess.run` and asserts on the argv list proves you
+built the right command. It proves nothing about what the real tool does
+with it. For anything that shells out (uv, git, dbt), write at least one
+real, unmocked test per entry point, skipped when the tool is unavailable
+or offline, that asserts the actual on-disk result, alongside the mocked
+unit tests for the command-construction logic itself.
+
+### An extra pass before a large or risky stack goes out
+
+`/code-review ultra` runs an independent multi-agent review against a
+branch or PR and is a good extra layer before a stack this shaped goes out
+for human review, it won't replace a human reviewer but it catches some of
+this class of thing earlier. It's user-triggered and billed, ask for it
+when you want it run.
+
 ## pre-commit (optional)
 
 Contributors can opt into local pre-commit hooks so ruff runs before each
@@ -117,6 +173,10 @@ The following are excluded from the file-count limit:
 - Release promotion PRs that merge a version branch such as `v0.2.0` into `main`. These collect work that has already been reviewed in earlier PRs.
 
 New Python source files under `src/**/*.py` must also be no more than **500 lines** long. This applies only to newly added files; modifying an existing file that already exceeds the limit will not trigger the check.
+
+### Explain the mental model
+
+Fill in the template's *Mental model* section: what goes in, what the change does with it, and what comes out (or what renders). A reviewer reading a large diff, especially generated code, should be able to check each hunk against that picture. One-line fixes can skip it.
 
 ### Title your PR consistently
 
@@ -201,15 +261,18 @@ always reflects the latest published version.
    PRs for the cycle target it. If none is open yet, ask in an issue.
 2. Early in the cycle, the maintainer runs `uv tree --outdated` and opens a
    single dependency-review PR against the release branch, bumping the pins
-   and SHA-pinned actions that are worth taking. Runtime pins are exact and
-   propagate to downstream consumers, so each bump is a deliberate call —
-   check what a version change drags into the lockfile, not just its number.
+   and SHA-pinned actions that are worth taking. Include the build backend
+   pin in `[build-system] requires`, which `uv tree --outdated` doesn't list.
+   Runtime pins are exact and propagate to downstream consumers, so each
+   bump is a deliberate call — check what a version change drags into the
+   lockfile, not just its number.
 3. When the cycle is done, the maintainer finalizes `CHANGELOG.md` and the
    `docs/releases/v<ver>.md` long-form narrative on the branch.
 4. The release branch merges into `main` via PR, then the version tag is
    pushed (branch and tag share a name, so use fully-qualified refs — see
    `docs/publishing-to-pypi.md`). The tag triggers PyPI publish via
-   `.github/workflows/publish.yml` and the GitHub release.
+   `.github/workflows/publish.yml`. The maintainer then creates the GitHub
+   release by hand.
 
 Contributors don't cut releases — maintainers do. If you want to propose one,
 open an issue first.
