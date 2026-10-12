@@ -41,6 +41,12 @@ theme:
   icon:
     repo: fontawesome/brands/github
 
+# Declared explicitly because `search` is the default plugin set: naming any
+# plugin here replaces that default instead of extending it, so a plugin added
+# without re-listing search would ship a site with no search and no error.
+plugins:
+  - search
+
 markdown_extensions:
   - admonition
   - attr_list
@@ -136,13 +142,31 @@ nav:
     - "v0.1.2": releases/v0.1.2.md
     - "v0.1.1": releases/v0.1.1.md
 
-# Pages not in nav (not user-facing): design proposals (drafts in
-# `docs/proposals/`), publishing notes, install scripts. Suppress
-# mkdocs --strict warnings about them.
+# Contributor notes must stay out of the published site while staying readable
+# locally. `tycoon docs serve` is how contributors read these docs, and
+# `CLAUDE.md` routes every city-renderer task to `docs/city/conventions.md`
+# and `handover.md`.
+#
+# `draft_docs` is the key that draws that line: MkDocs drops a DRAFT file from
+# `mkdocs build` but still populates it under `mkdocs serve`, where
+# `exclude_docs` stops processing the file in both. Keeping them out of `nav`
+# was not enough on its own: MkDocs still built them, served them at guessable
+# URLs, and indexed them for search (gh-348).
+draft_docs: |
+  city/
+  proposals/
+
+# These three are not documentation in either mode, so they are excluded
+# outright rather than drafted: a PyPI publishing runbook, an OpenMetadata
+# note, and a shell script.
+exclude_docs: |
+  openmetadata.md
+  publishing-to-pypi.md
+  install_rill.sh
+
+# `ingestion-architecture.md` is published but deliberately out of nav: it
+# describes the ingestion architecture being built toward rather than shipped
+# behaviour, and two release notes link to it, three times in all. Whether it
+# earns a nav entry of its own is an open question on gh-348.
 not_in_nav: |
-  /openmetadata.md
-  /publishing-to-pypi.md
-  /install_rill.sh
-  /proposals/v0.1.6-and-v0.1.7-open-questions.md
-  /proposals/v0.1.8-scope.md
-  /proposals/v0.1.9-scope.md
+  /ingestion-architecture.md
