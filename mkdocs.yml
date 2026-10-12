@@ -152,16 +152,16 @@ nav:
 # was not enough on its own: MkDocs still built them, served them at guessable
 # URLs, and indexed them for search (gh-348).
 draft_docs: |
-  city/
-  proposals/
+  /city/
+  /proposals/
 
 # These three are not documentation in either mode, so they are excluded
 # outright rather than drafted: a PyPI publishing runbook, an OpenMetadata
 # note, and a shell script.
 exclude_docs: |
-  openmetadata.md
-  publishing-to-pypi.md
-  install_rill.sh
+  /openmetadata.md
+  /publishing-to-pypi.md
+  /install_rill.sh
 
 # `ingestion-architecture.md` is published but deliberately out of nav: it
 # describes the ingestion architecture being built toward rather than shipped
