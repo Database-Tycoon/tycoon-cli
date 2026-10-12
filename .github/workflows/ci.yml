@@ -230,6 +230,9 @@ jobs:
       - name: Build docs (strict)
         run: uv run mkdocs build --strict
 
+      - name: Assert no internal pages were published
+        run: uv run python scripts/check_docs_publishable.py
+
   template-smoke:
     # Initializes a fresh project from each built-in template and runs
     # `tycoon doctor` against it, asserting clean exit. Catches
