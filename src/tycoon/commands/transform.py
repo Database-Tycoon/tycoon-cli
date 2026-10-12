@@ -121,14 +121,15 @@ def _auto_osi_scaffold_safe() -> None:
     informational only.
     """
     project = config.project
-    if project is None or not project.transform.auto_osi_scaffold:
+    warehouse_db = config.local_db
+    if project is None or not project.transform.auto_osi_scaffold or warehouse_db is None:
         return
     try:
         from tycoon.scaffolding.osi_generator import scaffold_osi
 
         out_path = config.dbt_project_dir / "semantic" / "osi.yaml"
         scaffold_osi(
-            warehouse_db=config.local_db,
+            warehouse_db=warehouse_db,
             out_path=out_path,
             project_name=project.name,
             dbt_project_dir=config.dbt_project_dir,

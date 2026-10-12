@@ -77,6 +77,16 @@ def _short(id_value: str, n: int = 8) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _status_mark(s: RunSummary) -> str:
+    if s.status != "success":
+        return "[red]✗[/red]"
+    # A run that loaded nothing succeeded technically, but a green tick would
+    # hide a broken source (gh-240).
+    if s.zero_rows:
+        return "[yellow]![/yellow]"
+    return "[green]✓[/green]"
+
+
 def _render_history_table(runs: list[RunSummary]) -> Table:
     table = Table(show_lines=False)
     table.add_column("When", style="dim", no_wrap=True)
@@ -88,7 +98,7 @@ def _render_history_table(runs: list[RunSummary]) -> Table:
     for s in runs:
         is_dbt = s.runtime_id == "dbt"
         tool_style = "[bold magenta]dbt[/bold magenta]" if is_dbt else "[bold cyan]dlt[/bold cyan]"
-        status_str = "[green]✓[/green]" if s.status == "success" else "[red]✗[/red]"
+        status_str = _status_mark(s)
 
         if is_dbt:
             cmd = s.command or "run"
@@ -98,7 +108,12 @@ def _render_history_table(runs: list[RunSummary]) -> Table:
                 detail += f" · {s.rows_total} models"
         else:
             ref = f"{s.source_id}/{_short(s.run_id)}"
-            detail = f"{s.rows_total:,} rows"
+            if not s.zero_rows:
+                detail = f"{s.rows_total:,} rows"
+            elif s.rows_total:
+                detail = f"[yellow]{s.rows_total:,} rows, a table got 0[/yellow]"
+            else:
+                detail = "[yellow]0 rows, nothing loaded[/yellow]"
 
         table.add_row(_fmt_ts(s.started_at), tool_style, ref, status_str, detail)
 
@@ -233,7 +248,14 @@ def _show_run(id_prefix: str) -> None:
     else:
         header(f"dlt load: {escape(s.run_id)}")
 
-    status_str = "[green]success[/green]" if s.status == "success" else "[red]failed[/red]"
+    if s.status != "success":
+        status_str = "[red]failed[/red]"
+    elif s.zero_rows and s.rows_total:
+        status_str = "[yellow]success, but a table got zero rows[/yellow]"
+    elif s.zero_rows:
+        status_str = "[yellow]success, zero rows loaded[/yellow]"
+    else:
+        status_str = "[green]success[/green]"
     console.print(f"  [bold]Source:[/bold] {escape(s.source_id)}")
     console.print(f"  [bold]Status:[/bold] {status_str}")
     console.print(f"  [bold]Started:[/bold] {_fmt_ts(s.started_at)}")
@@ -241,6 +263,8 @@ def _show_run(id_prefix: str) -> None:
 
     if detail.error:
         console.print(f"  [bold]Error:[/bold] [red]{escape(detail.error)}[/red]")
+    for message in detail.warnings:
+        console.print(f"  [bold]Warning:[/bold] [yellow]{escape(message)}[/yellow]")
 
     if detail.rows_by_table:
         rows_table = Table(title="Tables", show_lines=False)
