@@ -4,11 +4,22 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Fixed
 
+- **The city's traffic actually drives** (PR [#250][]). The animation loop ticked the vehicle and guest simulations but never called the layers' `update()`, the only writers of the instance matrices, so both meshes sat at count 0 over a fully simulated street. Listed as a known limitation in 0.2.0 and 0.2.1. The verification hooks counted the simulation arrays and hid it; they now answer from the drawn mesh.
+- **`R` refresh repaints the document-derived chrome** (PR [#250][]). The footer status line, the degradation-notes popover and the legend were painted once at boot, so a refresh showed a fresh "exported N ago" over the previous city's name, counts, notes and legend.
+- **Coverage renders unknown, not zero, when the evidence was never read** (PR [#251][]). The renderer's schema was missing the `achievements` block the exporter has emitted since 2026-08-06, so it was silently stripped and the problems gauges, library panel and library tour recomputed coverage from raw fields, reporting "columns documented 0%" for a catalog with no dbt manifest. All three now honour the unknown state.
 - **`tycoon city`: the legend no longer shows through the detail panel** ([#382][]). Both panels are translucent and sit on the right edge, so a tall detail panel stacked its text over the legend's. The legend now hides while a building is selected and comes back when the panel closes.
 - **`tycoon city`: long model and test names wrap instead of being clipped** ([#383][]). The detail panel split model names mid-word (`station_informa` / `tion`) and cut long dbt test names off at its right edge. Identifiers now wrap after an underscore or dot, and anything still too long wraps inside the panel rather than running past it.
 - **`tycoon city`: HUD panels no longer run off the window edges** ([#384][]). A trackpad pinch over a HUD panel zoomed the whole page instead of the city, which cuts the panels and the header chips off at both edges; that is the likeliest cause of the report and reproduces in headless Chrome. A pinch now only zooms the camera over the canvas and does nothing elsewhere; keyboard zoom still works. The panels also cap their width at the window width.
 - **`tycoon city`: views no longer show `rows 0`** ([#388][]). A view stores no rows, so the catalog reports 0 for it as a placeholder, and the detail panel, the hover tooltip and the Stats table printed that 0 as if the view were empty. They now say the rows are not counted.
 
+### Changed
+
+- **The city renderer is CI-gated** (PRs [#256][], [#252][]). `tests/tycoon_city`, including the `city.json` contract golden, joins the default `pytest` run and `src/tycoon_city` counts toward coverage (floor re-baselined to 73). A new `web` job runs `tsc --noEmit`, the production build, a check that the shipped `web_dist/` is exactly the build of `web/`, and the Playwright suite. Through 0.2.1 the CLI was gated and the renderer was not.
+
+[#250]: https://github.com/Database-Tycoon/tycoon-cli/pull/250
+[#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
+[#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
+[#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
 [#382]: https://github.com/Database-Tycoon/tycoon-cli/issues/382
 [#383]: https://github.com/Database-Tycoon/tycoon-cli/issues/383
 [#384]: https://github.com/Database-Tycoon/tycoon-cli/issues/384
