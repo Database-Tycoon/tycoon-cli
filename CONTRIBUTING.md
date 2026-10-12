@@ -250,6 +250,41 @@ The size and title checks currently appear as **visible, non-blocking CI warning
 - **Commits**: one logical change per commit, imperative mood, body explaining
   *why* the change was made. Squash noisy fixup commits before merging.
 
+## Documentation
+
+`.github/workflows/docs.yml` builds `docs/` and publishes it to
+[database-tycoon.github.io/tycoon-cli](https://database-tycoon.github.io/tycoon-cli/)
+on every push to `main`. Since `main` only advances when a release branch
+merges, the published site tracks the released version rather than the active
+branch.
+
+`docs/` holds more than the public site. Three settings in `mkdocs.yml` decide
+what ships:
+
+| Setting | Effect | Use it for |
+|---|---|---|
+| `nav` | Listed in the sidebar. Does not control publication: anything not drafted or excluded publishes either way | User-facing pages |
+| `draft_docs` | Rendered by `tycoon docs serve`, absent from the published build | Contributor notes you still want to read locally |
+| `exclude_docs` | Not processed in either mode | Anything that should not be read from the docs tree at all |
+
+Two rules follow:
+
+- **New contributor-facing pages must be added to `draft_docs` or
+  `exclude_docs`.** Leaving a page out of `nav` is not enough: MkDocs still
+  builds it, serves it at a guessable URL and indexes it for search.
+- **A `nav` entry must not point at a drafted or excluded page.** MkDocs
+  reports that at INFO, so `mkdocs build --strict` still passes, and the page
+  ships a sidebar link that 404s on every page of the site.
+
+`scripts/check_docs_publishable.py` runs in the docs job of both workflows and
+enforces the second rule in full: every `nav` entry must resolve to a page that
+was actually built. It enforces the first only as far as it can. The script
+reads `draft_docs` and `exclude_docs` from `mkdocs.yml`, so it verifies that
+what the config withholds really is absent from the build, and it pins
+`docs/city/` and `docs/proposals/` so they cannot quietly stop being withheld.
+It cannot know that some new directory was meant to be internal. That judgment
+is yours, and the rule above is how you record it.
+
 ## Release process
 
 Each release cycle lives on its own version branch. Nothing PRs into `main`

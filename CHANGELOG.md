@@ -2,6 +2,10 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Added
+
+- **The documentation site is published** ([#348][], PR [#415][]). `mkdocs build --strict` already ran on every pull request, but the built site was discarded: GitHub Pages had never been enabled, `https://database-tycoon.github.io/tycoon-cli/` returned 404, and three places in the repository linked to that dead URL (`site_url` in `mkdocs.yml`, the `tycoon docs` module docstring, which calls it "the public docs", and `docs/reference/dependencies.md`, which calls it "the docs site you're reading right now"). A `docs.yml` workflow builds the site on every push to `main` and deploys it to Pages, so those three references resolve. Since `main` only advances when a release branch merges, the published site tracks the released version. Both the pull-request job and the deploy run `scripts/check_docs_publishable.py` after the build: it fails if a page `draft_docs` or `exclude_docs` withholds reached the build, or if a `nav` entry points at a page that was not built, which `mkdocs build --strict` reports only at INFO and would otherwise ship as a dead link on every page.
+
 ### Fixed
 
 - **The city's traffic actually drives** (PR [#250][]). The animation loop ticked the vehicle and guest simulations but never called the layers' `update()`, the only writers of the instance matrices, so both meshes sat at count 0 over a fully simulated street. Listed as a known limitation in 0.2.0 and 0.2.1. The verification hooks counted the simulation arrays and hid it; they now answer from the drawn mesh.
