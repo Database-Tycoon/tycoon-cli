@@ -308,7 +308,11 @@ always reflects the latest published version.
    bump is a deliberate call — check what a version change drags into the
    lockfile, not just its number.
 3. When the cycle is done, the maintainer finalizes `CHANGELOG.md` and the
-   `docs/releases/v<ver>.md` long-form narrative on the branch.
+   `docs/releases/v<ver>.md` long-form narrative on the branch, adds that page
+   to the Releases nav in `mkdocs.yml`, and points the "current release" line
+   in `docs/releases/index.md` at it. A page missing from `nav` fails the build,
+   since `validation.nav.omitted_files` is `warn`, but nothing catches a stale
+   "current release" line, so that one is on you.
 4. The release branch merges into `main` via PR, then the version tag is
    pushed (branch and tag share a name, so use fully-qualified refs — see
    `docs/publishing-to-pypi.md`). The tag triggers PyPI publish via
