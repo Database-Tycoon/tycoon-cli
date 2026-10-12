@@ -56,7 +56,7 @@ jobs:
           enable-cache: true
 
       - name: Sync docs extra
-        run: uv sync --extra docs
+        run: uv sync --extra docs --locked
 
       - name: Build docs (strict)
         run: uv run mkdocs build --strict

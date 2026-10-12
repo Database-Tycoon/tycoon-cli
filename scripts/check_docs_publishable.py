@@ -6,7 +6,7 @@
 
 * A page that `draft_docs` or `exclude_docs` should have withheld ships anyway
   if someone edits `mkdocs.yml`. Those pages build cleanly, so the build stays
-  green and 34 contributor pages go public.
+  green and the pages go public.
 * A `nav` entry pointing at a withheld page is reported at INFO. MkDocs caps
   that message at INFO regardless of `validation.nav.not_found`, so `--strict`
   exits 0, the page is not built, and every page in the site carries a sidebar
@@ -21,11 +21,14 @@ from "did not look" is worse than no guard.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from mkdocs.config import load_config
 from mkdocs.structure.files import File
+from mkdocs.utils import is_markdown_file
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,8 +57,9 @@ def nav_targets(nav) -> list[str]:
     """Every Markdown file referenced anywhere in the nav tree."""
     found: list[str] = []
     if isinstance(nav, str):
-        if nav.endswith(".md"):
-            found.append(nav)
+        target = nav.split("#", 1)[0].split("?", 1)[0]
+        if is_markdown_file(target):
+            found.append(target)
     elif isinstance(nav, list):
         for entry in nav:
             found.extend(nav_targets(entry))
@@ -79,13 +83,27 @@ def main() -> int:
 
     failures: list[str] = []
 
+    specs = [config[key] for key in ("exclude_docs", "draft_docs") if config[key] is not None]
+    if not specs:
+        print(
+            "::error::neither draft_docs nor exclude_docs is set in mkdocs.yml, "
+            "so every page under docs/ would publish",
+            file=sys.stderr,
+        )
+        return 1
+
     def withheld_by_config(rel: str) -> bool:
-        return bool(config["exclude_docs"].match_file(rel) or config["draft_docs"].match_file(rel))
+        return any(spec.match_file(rel) for spec in specs)
 
     # 1. The directories this check exists for must still be withheld.
     for name in MUST_STAY_WITHHELD:
         directory = docs_dir / name
         if not directory.is_dir():
+            failures.append(
+                f"MUST_STAY_WITHHELD names docs/{name}/, which no longer exists. Update that "
+                "list in the same change that moved or removed it, so the floor keeps meaning "
+                "something."
+            )
             continue
         exposed = [
             path.relative_to(docs_dir).as_posix()
@@ -106,14 +124,34 @@ def main() -> int:
         if not withheld_by_config(rel):
             continue
         withheld += 1
-        if rel.endswith(".md") and dest_of(rel, config).exists():
+        if is_markdown_file(rel) and dest_of(rel, config).exists():
             failures.append(f"{rel} is withheld by mkdocs.yml but was published")
 
-    # 3. Every nav entry must resolve to a page that was actually built.
-    targets = nav_targets(config["nav"])
-    for target in targets:
-        if not dest_of(target, config).exists():
-            failures.append(f"nav points at {target}, which was not built; it would ship as a dead link on every page")
+    # 3. Every relative link in the built site must resolve to something on
+    #    disk. This covers nav entries and in-page links alike: MkDocs caps
+    #    both at INFO (`nav.py` and `pages.py` use `min(logging.INFO, ...)`),
+    #    so no `validation:` setting can make `--strict` fail on either, and a
+    #    link to a withheld page 404s for every reader.
+    base_path = urlsplit(config["site_url"] or "/").path or "/"
+    checked = 0
+    for page in sorted(site_dir.rglob("*.html")):
+        for href in set(re.findall(r'href="([^"]+)"', page.read_text(encoding="utf-8"))):
+            if href.startswith(("http://", "https://", "//", "#", "mailto:", "tel:", "data:")):
+                continue
+            target = href.split("#", 1)[0].split("?", 1)[0]
+            if not target:
+                continue
+            if target.startswith("/"):
+                # Rooted at site_url's path (404.html uses absolute links).
+                rel = target[len(base_path) :] if target.startswith(base_path) else target[1:]
+                resolved = (site_dir / rel).resolve()
+            else:
+                resolved = (page.parent / target).resolve()
+            if resolved.is_dir():
+                resolved = resolved / "index.html"
+            checked += 1
+            if not resolved.exists():
+                failures.append(f"{page.relative_to(site_dir)} links to {href}, which was not built")
 
     if failures:
         for failure in failures:
@@ -125,7 +163,7 @@ def main() -> int:
         )
         return 1
 
-    print(f"OK: {withheld} withheld files absent from the build, all {len(targets)} nav entries resolve")
+    print(f"OK: {withheld} withheld files absent from the build, {checked} links all resolve")
     return 0
 
 
