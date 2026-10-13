@@ -1,6 +1,6 @@
 # `tycoon data sources`
 
-Manage data ingestion sources. Five subcommands.
+Manage data ingestion sources. Six subcommands.
 
 | Command | What it does |
 |---|---|
@@ -9,6 +9,7 @@ Manage data ingestion sources. Five subcommands.
 | `tycoon data sources list` | List sources registered in this project |
 | `tycoon data sources run [NAME]` | Ingest one source (or all) |
 | `tycoon data sources remove NAME` | Remove a registered source |
+| `tycoon data sources migrate TYPE` | Copy a source from the shared `~/.tycoon/sources/` into this project |
 
 ## `catalog` — browse available source types
 
@@ -60,7 +61,7 @@ Then type-specific config:
 - **filesystem** — directory path + glob pattern
 - **sql_database** — connection string + table list
 
-The new source is written to `tycoon.yml`'s `sources:` map. For non-native types, `add` also offers to install the dlt source files (one-time `dlt init <type>` to `~/.tycoon/sources/`).
+The new source is written to `tycoon.yml`'s `sources:` map. For non-native types, `add` also offers to install the dlt source files (one-time `dlt init <type>`). Where those files land depends on whether the project has its own `.venv`: a project with one gets its own `<project>/.tycoon/sources/`, a project without one still shares `~/.tycoon/sources/` across every tycoon project on the machine. A source installed into the shared location before a project picked up a `.venv` doesn't move on its own; `tycoon data sources migrate <type>` copies it into the project-local directory.
 
 ### Non-interactive mode (`--no-prompt`)
 
@@ -100,7 +101,7 @@ Flag reference:
 | `--config key=value` | Extra config pairs. Repeatable. Overrides type-specific flags |
 | `--force` | Overwrite an existing source with the same name without confirming |
 
-Catalog credentials default to `${ENV_VAR}` references in both modes — set the env var separately. Catalog-source files (`dlt init`-style downloads) are not auto-installed under `--no-prompt`; run `tycoon data sources catalog install <type>` separately if you need them.
+Catalog credentials default to `${ENV_VAR}` references in both modes — set the env var separately. Catalog-source files (`dlt init`-style downloads) and dlt extras are now installed automatically under `--no-prompt`, matching every other default in this command; a failed install fails the command and removes the source from `tycoon.yml` (or restores whatever `--force` was about to overwrite) rather than leaving it registered but unusable. The one exception: if the project has no `.venv`/`pyproject.toml` of its own yet, installing a source's own dependencies or a dlt extra is skipped rather than silently mutating the shared/ambient environment. Run `tycoon setup` first, or install the dependency manually.
 
 ### Google Sheets
 
@@ -128,7 +129,7 @@ tycoon data sources add google_sheets \
 - **`range_names`** — comma-separated tab names and/or A1 ranges. Leave blank to load **every** sheet in the spreadsheet.
 - **`credentials_path`** — defaults to `${GOOGLE_APPLICATION_CREDENTIALS}`. Leave it blank to fall back to dlt's own credential resolution (env / `secrets.toml`), which is where the **OAuth / Application Default Credentials** path lives if you'd rather not use a service account.
 
-**4. Ingest:** `tycoon data sources run marketing-sheet`. The first run downloads the dlt `google_sheets` verified source to `~/.tycoon/sources/` (or `tycoon data sources catalog install google_sheets` under `--no-prompt`), then loads into `raw_<name>` and auto-scaffolds a staging dbt model.
+**4. Ingest:** `tycoon data sources run marketing-sheet`. The first run downloads the dlt `google_sheets` verified source (to the project's own `.tycoon/sources/` if it has a `.venv`, otherwise the shared `~/.tycoon/sources/`), then loads into `raw_<name>` and auto-scaffolds a staging dbt model.
 
 ## `list` — list registered sources
 
@@ -168,6 +169,8 @@ For each source:
 
 `--max-records` caps row count per resource — useful for development.
 
+`--fail-on-empty` makes an empty run an error, for cron jobs and orchestrators where the exit code is the only signal anyone sees. If any local filesystem glob in the source matches no files, the run stops before loading anything, so no table changes. If a run completes but a resource loaded with `replace` got zero rows, it fails afterwards, even when other resources in the same run loaded rows; the error names the empty table. An append, merge, or incremental run that finds no new records is a normal sync and passes. Both cases exit 1 and are recorded as failed runs in `tycoon data history`. Without the flag, an empty glob match leaves the table as it was, exits 0 with "nothing to load", and shows as a zero-row run in `tycoon data status` and `tycoon data history`. `tycoon data sources run-all` accepts the same flag.
+
 `run` warns loudly if any config field still contains an unexpanded `${VAR}`:
 
 ```
@@ -183,16 +186,36 @@ tycoon data sources remove github
 
 Removes the named source from `tycoon.yml`. Does **not** drop the existing schema in `data/raw.duckdb` — use `tycoon data clean` to wipe data.
 
+## `migrate`: copy a shared source into the project
+
+```bash
+tycoon data sources migrate github
+```
+
+A source downloaded before the project had its own `.venv` sits in the shared `~/.tycoon/sources/`. Once the project has a `.venv`, tycoon looks for downloaded sources in `<project>/.tycoon/sources/` instead, and `migrate` copies the source across so `run` finds it again without a fresh download. It needs the project's `.venv` to exist already; run `tycoon setup` first if it doesn't.
+
+`migrate` copies:
+
+- the source's package directory, including its `_run.py` shim
+- the shared dir's `requirements.txt`, adding any lines the project's copy is missing
+- the shared dir's `.gitignore` and `.dlt/config.toml`, only if the project dir doesn't have its own. `.dlt/secrets.toml` is never copied.
+
+It then installs those requirements into the project the same way `add` does: `uv add` into the project's `pyproject.toml` when the project has both a `pyproject.toml` and a `.venv`, `uv pip install` otherwise. If the install fails, `migrate` prints uv's error, removes the package directory it just copied and exits 1, so the source still reads as not migrated and a rerun starts over. The carried `requirements.txt` and `.gitignore` stay.
+
+If the project dir already has the source with its `_run.py`, `migrate` reports it as already installed and changes nothing. If the source's directory exists there without a `_run.py`, `migrate` refuses, names the directory, and leaves it as it is.
+
 ## Pipeline dispatch model
 
 The runner picks how to ingest each source in this order:
 
 1. **Legacy pipeline modules** (keyed by source name) — currently `nyc-dot`, `mta-gtfs`, `mta-bus-speeds`. These have hand-tuned dlt code in `tycoon.ingestion.<name>_pipeline`.
 2. **Native dlt builders** — `rest_api`, `sql_database`, `filesystem` ship with dlt core.
-3. **Catalog sources** — `github`, `slack`, `stripe`, etc. require `~/.tycoon/sources/<type>/` to be populated (run `dlt init <type>` once via `tycoon data sources add`).
+3. **Catalog sources**: `github`, `slack`, `stripe`, etc. require `<type>/` to be populated under the resolved sources dir (`<project>/.tycoon/sources/` once the project has its own `.venv`, otherwise the shared `~/.tycoon/sources/`), via `dlt init <type>` once through `tycoon data sources add`.
 4. **Dynamic fallback** — `dlt.sources.<type>` import attempt.
 
-If none match, you get a clear error pointing you at `tycoon data sources add <type>`.
+If none match, you get a clear error pointing you at `tycoon data sources add <type>`. If the source is installed in the shared global directory but the project has since picked up its own `.venv`, the error points at `tycoon data sources migrate <type>` instead.
+
+Project-local `.tycoon/sources/` holds the downloaded dlt source code itself, not just config, and nothing in a scaffolded project excludes `.tycoon/` from version control. The first `dlt init` into a given sources dir writes a `.gitignore` there that keeps secrets, credentials, and local `.duckdb` files out, and `migrate` carries that file into a project dir that doesn't have one yet. That `.gitignore` doesn't exclude the downloaded source packages themselves, those are tracked and committed by default if the project is a git repo. Add `.tycoon/sources/` to the project's own `.gitignore` if you'd rather not commit that third-party code.
 
 ## Related
 

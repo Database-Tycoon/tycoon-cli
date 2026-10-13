@@ -133,7 +133,31 @@ def _load_raw_tycoon_yml(path: Path) -> dict:
 
 
 def _write_raw_tycoon_yml(path: Path, data: dict) -> None:
-    path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+    """Write ``data`` back to tycoon.yml, keeping the user's comments and layout.
+
+    ``data`` came from ``_load_raw_tycoon_yml``, so its values are the
+    on-disk text (``${ENV}`` references unexpanded). Merging it onto the
+    round-trip document only touches what changed, as ``save_project``
+    does (gh-177); a plain dump would drop every comment (gh-297).
+    """
+    from tycoon.yaml_merge import merge_into, roundtrip_yaml
+
+    text = path.read_text() if path.exists() else ""
+    ryaml = roundtrip_yaml(text)
+    existing = ryaml.load(text) if text else None
+    if not isinstance(existing, dict):
+        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        return
+
+    _, changed = merge_into(existing, data, _same_scalar)
+    if changed:
+        with path.open("w") as f:
+            ryaml.dump(existing, f)
+
+
+def _same_scalar(old: object, new: object) -> bool:
+    # bool is an int subclass, so `1 == True` would hide a real type change.
+    return isinstance(old, bool) == isinstance(new, bool) and old == new
 
 
 @app.command(name="dbt")

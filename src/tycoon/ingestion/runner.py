@@ -8,9 +8,11 @@ legacy pipelines, it delegates to the existing pipeline modules.
 
 from __future__ import annotations
 
+import glob
 import re
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +20,12 @@ import dlt
 
 from tycoon.core.events import RunCompleted, RunFailed, RunStarted
 from tycoon.ingestion.catalog import CATALOG
-from tycoon.ingestion.source_manager import SOURCES_DIR, get_run_module_path, is_source_installed
+from tycoon.ingestion.source_manager import (
+    SOURCES_DIR,
+    get_run_module_path,
+    is_source_installed,
+    resolve_sources_dir,
+)
 from tycoon.project import SourceConfig
 
 _UNEXPANDED_ENV_VAR = re.compile(r"\$\{[^}]+\}")
@@ -150,28 +157,101 @@ def _build_sql_database_source(source_config: SourceConfig) -> Any:
     return sql_database(connection_string)
 
 
-def _warn_if_local_glob_matches_nothing(bucket_url: str, file_glob: str, label: str) -> None:
-    """Warn when a local filesystem glob matches no files.
+def _local_glob_matches_nothing(bucket_url: str, file_glob: str) -> bool:
+    """Return True when a local filesystem glob matches no files.
 
-    Only checks local paths (``bucket_url`` without a URI scheme). Remote
+    Only checks local paths (a plain path or a ``file://`` URL). Remote
     buckets (``s3://``, ``gs://``, ``az://``) aren't supported yet and are
-    skipped rather than guessed at. Issue #223: a typo in the glob should
-    not look identical to a source with nothing new to load, since both
-    currently produce zero rows with no distinguishing signal.
+    never reported as empty rather than guessed at. Issue #223.
     """
-    if "://" in bucket_url:
-        return
+    local_dir = _local_fs_path(bucket_url)
+    if local_dir is None:
+        return False
 
     import glob as glob_module
 
-    pattern = str(Path(bucket_url).expanduser() / file_glob)
-    if not glob_module.glob(pattern, recursive=True):
-        from tycoon.utils.console import warn
-
-        warn(f"'{label}': no files matched glob {file_glob!r} under {bucket_url!r}.")
+    pattern = str(local_dir / file_glob)
+    return not glob_module.glob(pattern, recursive=True)
 
 
-def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str) -> Any:
+def _local_fs_path(url: str) -> Path | None:
+    """Return the local filesystem path ``url`` points at, or ``None`` if remote.
+
+    A plain path and a ``file://`` URL are both local; any other scheme
+    (``s3://``, ``gs://``, ``https://``) is remote.
+    """
+    if url.startswith("file://"):
+        from urllib.parse import urlparse
+        from urllib.request import url2pathname
+
+        return Path(url2pathname(urlparse(url).path))
+    if "://" in url:
+        return None
+    return Path(url).expanduser()
+
+
+def _split_single_file_path(path: str, file_glob: str) -> tuple[str, str]:
+    """Turn a ``path`` that names one local file into ``(parent_dir, file_name)``.
+
+    dlt's filesystem source treats ``bucket_url`` as a directory and
+    evaluates ``file_glob`` underneath it, so a file passed as the bucket
+    matches nothing and the run loads zero rows while reporting success.
+    `tycoon data sources add filesystem` writes exactly that shape when the
+    user answers the path prompt with a file. Issue #238.
+
+    A glob alongside a file path is ambiguous (it can never match anything
+    under a file), so it fails rather than guessing which one was meant.
+    A ``file://`` URL counts as local. The file name comes back
+    glob-escaped so a name like ``sales[1].csv`` matches only itself.
+    Remote URLs and anything that isn't an existing local file pass through
+    unchanged.
+    """
+    target = _local_fs_path(path)
+    if target is None or not target.is_file():
+        return path, file_glob
+    if file_glob:
+        raise IngestionError(
+            f"Filesystem path {path!r} is a file, but file_glob {file_glob!r} is also set. "
+            "path must be a directory when file_glob is set. Either point path at the "
+            f"directory ({str(target.parent)!r}) and keep the glob, or remove file_glob "
+            "to load just this file."
+        )
+    return str(target.parent), glob.escape(target.name)
+
+
+def _unmatched_glob_message(table_name: str, bucket_url: str, file_glob: str) -> str:
+    return f"'{table_name}': no files matched glob {file_glob!r} under {bucket_url!r}."
+
+
+def _unmatched_local_globs(name: str, source_config: SourceConfig) -> list[str]:
+    """Describe each local filesystem glob in ``source_config`` that matches no files.
+
+    Mirrors the targets ``_build_filesystem_source`` builds, so the ledger
+    can name what was skipped (gh-240). The flat shape is reported under
+    the source's own name, which is the table it lands in.
+    """
+    if source_config.type != "filesystem":
+        return []
+    if source_config.resources:
+        targets = [(r.table_name, r.path, r.file_glob, "") for r in source_config.resources]
+    else:
+        cfg = source_config.config
+        bucket_url = cfg.get("bucket_url") or cfg.get("path") or ""
+        targets = [(name, bucket_url, cfg.get("file_glob") or "", "**/*")]
+
+    messages: list[str] = []
+    for table_name, path, file_glob, default_glob in targets:
+        try:
+            bucket_url, file_glob = _split_single_file_path(path, file_glob)
+        except IngestionError:
+            continue
+        file_glob = file_glob or default_glob
+        if bucket_url and file_glob and _local_glob_matches_nothing(bucket_url, file_glob):
+            messages.append(_unmatched_glob_message(table_name, bucket_url, file_glob))
+    return messages
+
+
+def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str, default_glob: str = "") -> Any | None:
     """Build one named dlt resource for a single (bucket_url, file_glob) pair.
 
     For CSV, Parquet, and JSONL globs the raw file metadata stream is piped
@@ -192,16 +272,32 @@ def _build_filesystem_resource(bucket_url: str, file_glob: str, table_name: str)
     Matches the convention used by every other tycoon-shipped pipeline
     (nyc_dot, mta, mta_bus_speeds). Issue #22.
 
-    Raises ``IngestionError`` if ``bucket_url`` or ``file_glob`` is empty,
-    and warns (doesn't fail) if a local glob matches no files. Issue #223.
+    A ``bucket_url`` naming a single local file is split into its parent
+    directory plus the file name (issue #238). ``default_glob`` applies only
+    when no glob was given and the path is a directory.
+
+    Raises ``IngestionError`` if ``bucket_url`` or ``file_glob`` is empty.
+    Returns ``None``, with a warning, when a local glob matches no files:
+    running an empty resource under ``replace`` would truncate a table that
+    already holds rows, so the resource is left out of the run instead.
+    Issues #223 and #240.
     """
+    bucket_url, file_glob = _split_single_file_path(bucket_url, file_glob)
+    file_glob = file_glob or default_glob
     if not bucket_url or not file_glob:
         raise IngestionError(
             f"Resource '{table_name}' is missing a path or file_glob. "
             "Both are required, e.g. `path: data/input`, `file_glob: '*.csv'`."
         )
 
-    _warn_if_local_glob_matches_nothing(bucket_url, file_glob, table_name)
+    if _local_glob_matches_nothing(bucket_url, file_glob):
+        from tycoon.utils.console import warn
+
+        warn(
+            f"{_unmatched_glob_message(table_name, bucket_url, file_glob)} "
+            "Nothing was loaded for it, and its existing table was left as it was."
+        )
+        return None
 
     from dlt.sources.filesystem import filesystem, read_csv, read_jsonl, read_parquet
 
@@ -243,14 +339,19 @@ def _build_filesystem_source(source_config: SourceConfig) -> Any:
     per-resource table name to use instead. Reusing that helper here (rather
     than duplicating the CSV/Parquet dispatch) also gets this path the same
     validation and zero-match warning as the multi-resource shape (gh-223).
+
+    Resources whose local glob matches no files are dropped, so this returns
+    ``None`` (flat shape) or an empty list when nothing is left to load
+    (gh-240).
     """
     if source_config.resources:
-        return [_build_filesystem_resource(r.path, r.file_glob, r.table_name) for r in source_config.resources]
+        built = [_build_filesystem_resource(r.path, r.file_glob, r.table_name) for r in source_config.resources]
+        return [resource for resource in built if resource is not None]
 
     cfg = source_config.config
     bucket_url = cfg.get("bucket_url") or cfg.get("path") or ""
-    file_glob = cfg.get("file_glob", "**/*")
-    return _build_filesystem_resource(bucket_url, file_glob, "resource")
+    file_glob = cfg.get("file_glob") or ""
+    return _build_filesystem_resource(bucket_url, file_glob, "resource", default_glob="**/*")
 
 
 # Table names dlt's read_csv()/read_parquet() produced before this fix
@@ -308,14 +409,75 @@ def _emit_event_safe(metadata_db: Path | None, event: Any) -> None:
         pass
 
 
-def _build_run_completed(name: str, pipeline: Any, load_info: Any, elapsed: float) -> RunCompleted:
-    """Build a RunCompleted event from dlt pipeline trace + load_info."""
+def _last_run_replace_tables(pipeline: Any) -> tuple[bool, list[str]]:
+    """Find the resources in the pipeline's last extract that used ``replace``.
+
+    Reads the per-resource hints dlt records in the extract trace; a resource
+    that yielded nothing still has hints there. dlt stores
+    ``write_disposition`` either as a string or as a dict with a
+    ``disposition`` key. Returns whether any resource used ``replace``, plus
+    the table each such resource writes: its ``table_name`` hint, or the
+    resource name, through the schema's naming convention, which is how the
+    normalize row counts are keyed. A dynamic (callable) table name can't be
+    resolved, so it only counts toward the first value. An unreadable trace
+    counts as no ``replace``.
+    """
+    try:
+        step_metrics = pipeline.last_trace.last_extract_info.metrics
+    except Exception:
+        return False, []
+    try:
+        normalize = pipeline.default_schema.naming.normalize_table_identifier
+    except Exception:
+        normalize = None
+    used_replace = False
+    tables: list[str] = []
+    for metrics in step_metrics.values():
+        for m in metrics:
+            for resource_name, hints in (m.get("hints") or {}).items():
+                if resource_name.startswith("_dlt"):
+                    continue
+                disposition = hints.get("write_disposition")
+                if isinstance(disposition, dict):
+                    disposition = disposition.get("disposition")
+                if disposition != "replace":
+                    continue
+                used_replace = True
+                table = hints.get("table_name") or resource_name
+                if isinstance(table, str):
+                    tables.append(normalize(table) if normalize else table)
+    return used_replace, tables
+
+
+def _build_run_completed(
+    name: str, pipeline: Any, load_info: Any, elapsed: float, warnings: list[str] | None = None
+) -> RunCompleted:
+    """Build a RunCompleted event from dlt pipeline trace + load_info.
+
+    ``zero_rows`` is set when the run could have emptied a table: a
+    ``replace`` resource loaded zero rows, even if another resource in the
+    same run loaded some (its table is named in ``warnings``), or the whole
+    run loaded nothing and a resource used ``replace`` or a glob matched no
+    files (``warnings`` names each such glob). An append, merge, or
+    incremental run with no new records is a normal sync and stays
+    unflagged (gh-240).
+    """
     rows_by_table: dict[str, int] = {}
     try:
         ni = pipeline.last_trace.last_normalize_info
         rows_by_table = {t: c for t, c in (ni.row_counts or {}).items() if not t.startswith("_dlt")}
     except Exception:
+        # No normalize trace (the run extracted nothing, or the trace could
+        # not be read) leaves rows_by_table empty, which reads as zero rows.
         pass
+    loaded_nothing = not any(rows_by_table.values())
+    used_replace, replace_tables = _last_run_replace_tables(pipeline)
+    warnings = list(warnings or [])
+    zero_rows = loaded_nothing and (bool(warnings) or used_replace)
+    for table in dict.fromkeys(replace_tables):
+        if not rows_by_table.get(table):
+            zero_rows = True
+            warnings.append(f"'{table}' loaded 0 rows with write_disposition 'replace', so its table is now empty.")
     loads_ids = getattr(load_info, "loads_ids", []) or []
     return RunCompleted(
         source_id=name,
@@ -325,19 +487,37 @@ def _build_run_completed(name: str, pipeline: Any, load_info: Any, elapsed: floa
         rows_loaded=rows_by_table,
         tables_created=list(rows_by_table),
         tables_updated=[],
+        zero_rows=zero_rows,
+        warnings=warnings,
     )
 
 
-def _emit_run_completed_safe(
-    metadata_db: Path | None, name: str, pipeline: Any, load_info: Any, elapsed: float
+def _complete_run(
+    metadata_db: Path | None,
+    name: str,
+    pipeline: Any,
+    load_info: Any,
+    elapsed: float,
+    warnings: list[str] | None = None,
+    *,
+    fail_on_empty: bool = False,
 ) -> None:
-    """Build and emit a RunCompleted event; swallows all exceptions so observability
-    code never fails a successful pipeline run."""
+    """Record a finished run as RunCompleted, or fail it under ``fail_on_empty``.
+
+    Building and emitting the event is best-effort, so observability code
+    never fails a successful pipeline run. The one deliberate failure is a
+    zero-row run with ``fail_on_empty`` set: the ``IngestionError`` reaches
+    ``run_source``'s handler, which records ``RunFailed`` instead (gh-240).
+    """
     try:
-        event = _build_run_completed(name, pipeline, load_info, elapsed)
-        _emit_event_safe(metadata_db, event)
+        event = _build_run_completed(name, pipeline, load_info, elapsed, warnings)
     except Exception:
-        pass
+        return
+    if fail_on_empty and event.zero_rows:
+        what = "left a table with 0 rows" if any(event.rows_loaded.values()) else "loaded 0 rows"
+        detail = " ".join(event.warnings)
+        raise IngestionError(f"'{name}' {what}, and --fail-on-empty is set.{' ' + detail if detail else ''}")
+    _emit_event_safe(metadata_db, event)
 
 
 def _capture_and_refresh_safe(
@@ -370,6 +550,44 @@ def _capture_and_refresh_safe(
         pass
 
 
+def _keep_first_rows(max_rows: int) -> Callable[[Any], bool]:
+    seen = 0
+
+    def keep(_row: Any) -> bool:
+        nonlocal seen
+        seen += 1
+        return seen <= max_rows
+
+    return keep
+
+
+def _cap_records_per_resource(dlt_source: Any, max_records: int) -> None:
+    """Cap each resource of a built source at ``max_records`` rows. gh-239.
+
+    dlt's ``add_limit`` alone can't deliver that: by default it counts
+    yields (pages, file chunks, SQL batches), with ``count_rows=True`` it
+    still lets the final page through untrimmed, and on a transformer such
+    as a filesystem ``files | read_csv()`` pipe it is a logged no-op. So
+    ``add_limit(count_rows=True)`` stops paginated reads early (and becomes a
+    SQL ``LIMIT`` for ``sql_database``), and a row filter trims the last
+    page to the exact count. A filesystem transformer still parses its
+    whole input; only the filter caps what lands.
+    """
+    from dlt.extract import DltSource
+
+    if isinstance(dlt_source, DltSource):
+        resources = list(dlt_source.resources.selected.values())
+    elif isinstance(dlt_source, list):
+        resources = dlt_source
+    else:
+        resources = [dlt_source]
+
+    for resource in resources:
+        if not resource.is_transformer:
+            resource.add_limit(max_records, count_rows=True)
+        resource.add_filter(_keep_first_rows(max_records))
+
+
 _NATIVE_BUILDERS = {
     "rest_api": _build_rest_api_source,
     "sql_database": _build_sql_database_source,
@@ -382,6 +600,8 @@ def run_source(
     source_config: SourceConfig,
     raw_db_path: Path,
     max_records: int | None = None,
+    *,
+    fail_on_empty: bool = False,
     **kwargs: Any,
 ) -> tuple[dlt.Pipeline, Any]:
     """Run a dlt pipeline for a registered source.
@@ -399,10 +619,20 @@ def run_source(
        path would wrongly error with "not installed".
     3. **Catalog sources** (``github`` / ``stripe`` / ``slack`` etc.)
        require ``dlt init`` to have populated
-       ``~/.tycoon/sources/<type>/``; we run them from there.
+       ``~/.tycoon/sources/<type>/`` (or, once the project has its own
+       ``.venv``, ``<project>/.tycoon/sources/<type>/`` instead, see
+       ``resolve_sources_dir``); we run them from wherever that resolves to.
     4. **Dynamic fallback**: try ``dlt.sources.<type>`` directly.
 
-    Returns (pipeline, load_info).
+    Returns (pipeline, load_info). ``load_info`` is ``None`` when the
+    source had nothing to load (every local glob matched no files), in
+    which case the pipeline never ran and no table was touched.
+
+    With ``fail_on_empty``, a local glob that matches no files raises
+    ``IngestionError`` before anything loads, and a run that loads zero
+    rows in a way that can empty a table (see ``_build_run_completed``)
+    raises after it; both record ``RunFailed`` rather than
+    ``RunCompleted``. Orchestrated runs rely on the exit code (gh-240).
     """
     _started = time.monotonic()
 
@@ -423,7 +653,9 @@ def run_source(
             pipeline, load_info = _run_legacy(name, raw_db_path=raw_db_path, max_records=max_records, **kwargs)
             load_info.raise_on_failed_jobs()
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-            _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
+            _complete_run(
+                _metadata_db, name, pipeline, load_info, time.monotonic() - _started, fail_on_empty=fail_on_empty
+            )
             return pipeline, load_info
 
         # 2. Native builders win over the catalog path. These types ship with
@@ -433,7 +665,9 @@ def run_source(
             # 3. Catalog source dispatch — load from ~/.tycoon/sources/
             pipeline, load_info = _run_catalog(source_type, name, source_config, raw_db_path, max_records)
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-            _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
+            _complete_run(
+                _metadata_db, name, pipeline, load_info, time.monotonic() - _started, fail_on_empty=fail_on_empty
+            )
             return pipeline, load_info
 
         # Warn about unexpanded env vars before building the source. Native
@@ -457,6 +691,7 @@ def run_source(
         )
 
         legacy_rename = False
+        unmatched_globs: list[str] = []
         builder = _NATIVE_BUILDERS.get(source_type)
         if builder is None:
             # Try dynamic import: dlt.sources.<source_type>
@@ -473,7 +708,26 @@ def run_source(
                     f"Unknown source type '{source_type}'. Install with: tycoon sources add {source_type}"
                 ) from exc
         else:
+            unmatched_globs = _unmatched_local_globs(name, source_config)
+            if fail_on_empty and unmatched_globs:
+                raise IngestionError(
+                    " ".join(unmatched_globs) + " --fail-on-empty is set, so nothing was loaded and no table changed."
+                )
             dlt_source = builder(source_config)
+            if dlt_source is None or (isinstance(dlt_source, list) and not dlt_source):
+                # Running dlt with nothing extracted still applies "replace"
+                # to known tables and empties them, so skip the run (gh-240).
+                _emit_event_safe(
+                    _metadata_db,
+                    RunCompleted(
+                        source_id=name,
+                        runtime_id="dlt-managed",
+                        duration_seconds=round(time.monotonic() - _started, 2),
+                        zero_rows=True,
+                        warnings=unmatched_globs,
+                    ),
+                )
+                return pipeline, None
             legacy_rename = source_type == "filesystem" and not isinstance(dlt_source, list)
             if legacy_rename:
                 # dlt's read_csv()/read_parquet() transformers always name
@@ -487,12 +741,24 @@ def run_source(
                 # See _build_filesystem_source and _build_filesystem_resource.
                 dlt_source = dlt_source.with_name(name)
 
+        # 0 means no cap, matching the catalog shims' `if max_records:`.
+        if max_records:
+            _cap_records_per_resource(dlt_source, max_records)
+
         load_info = pipeline.run(dlt_source)
         load_info.raise_on_failed_jobs()
         if legacy_rename:
             _warn_if_legacy_filesystem_table_exists(raw_db_path, source_config.schema_name, name)
         _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
-        _emit_run_completed_safe(_metadata_db, name, pipeline, load_info, time.monotonic() - _started)
+        _complete_run(
+            _metadata_db,
+            name,
+            pipeline,
+            load_info,
+            time.monotonic() - _started,
+            unmatched_globs,
+            fail_on_empty=fail_on_empty,
+        )
         return pipeline, load_info
 
     except Exception as exc:
@@ -521,25 +787,47 @@ def _run_catalog(
     raw_db_path: Path,
     max_records: int | None = None,
 ) -> tuple[dlt.Pipeline, Any]:
-    """Load a catalog source from ~/.tycoon/sources/ and run its pipeline."""
+    """Load a catalog source from its resolved sources dir and run its pipeline."""
     import importlib
 
-    if not is_source_installed(source_type):
+    from tycoon.config import config as _cfg
+    from tycoon.utils.console import warn
+    from tycoon.venv import venv_path
+
+    sources_dir = resolve_sources_dir(_cfg.root)
+
+    if not venv_path(_cfg.root).exists():
+        warn(
+            "This project doesn't have its own .venv yet, source code is loaded "
+            f"from the shared {sources_dir}. Run `tycoon setup` to give this "
+            "project its own isolated environment."
+        )
+
+    if not is_source_installed(source_type, sources_dir):
+        # This project may have just picked up its own `.venv` (gh-262/263),
+        # which flips resolve_sources_dir() from the old shared global
+        # directory to this project-local one. A source downloaded before
+        # that doesn't move on its own, point at the real fix (migrate it)
+        # rather than "not installed" when it's sitting right there globally.
+        if sources_dir != SOURCES_DIR and is_source_installed(source_type, SOURCES_DIR):
+            raise IngestionError(
+                f"Source '{source_type}' is installed globally ({SOURCES_DIR}) but not in "
+                f"this project's own sources dir ({sources_dir}). "
+                f"Migrate it with: tycoon data sources migrate {source_type}"
+            )
         raise IngestionError(f"Source '{source_type}' is not installed. Run: tycoon data sources add {source_type}")
 
     # Warn about unexpanded env vars before hitting the API
     bad_pairs = _check_unexpanded_env_vars(source_config)
     if bad_pairs:
-        from tycoon.utils.console import warn
-
         for key, var in bad_pairs:
             warn(
                 f"Config key '{key}' contains an unexpanded env var: {var}\n"
                 f"  Set it with: export {var[2:-1]}=<your-value>"
             )
 
-    # Add ~/.tycoon/sources/ to sys.path so dlt-init'd packages are importable
-    sources_str = str(SOURCES_DIR)
+    # Add the resolved sources dir to sys.path so dlt-init'd packages are importable
+    sources_str = str(sources_dir)
     if sources_str not in sys.path:
         sys.path.insert(0, sources_str)
 
