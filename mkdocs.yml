@@ -141,6 +141,16 @@ nav:
     - "v0.1.2": releases/v0.1.2.md
     - "v0.1.1": releases/v0.1.1.md
 
+# A page in none of the three lists publishes silently: MkDocs reports an
+# omitted file at INFO, so `--strict` stays green. `omitted_files: warn` turns
+# that into a build failure, which is what makes the rule below enforceable
+# rather than a convention (gh-348).
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    anchors: warn
+
 # Contributor notes must stay out of the published site while staying readable
 # locally. `tycoon docs serve` is how contributors read these docs, and
 # `CLAUDE.md` routes every city-renderer task to `docs/city/conventions.md`
