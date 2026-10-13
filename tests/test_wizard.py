@@ -14,6 +14,10 @@ from tycoon.commands.init import (
     _extract_dbt_duckdb_path,
 )
 
+# `init` builds the project's own .venv as part of scaffolding (gh-262);
+# fake that out here so these tests don't shell out to real uv.
+pytestmark = pytest.mark.usefixtures("fake_venv")
+
 # ---------------------------------------------------------------------------
 # _detect_existing
 # ---------------------------------------------------------------------------

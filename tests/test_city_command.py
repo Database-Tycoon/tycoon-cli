@@ -39,13 +39,13 @@ class TestCityRegistration:
     def test_cli_imports_without_the_addon(self):
         """The CLI's startup must not depend on tycoon_city being importable.
 
-        Checked in a SUBPROCESS: the renderer's own suite imports
-        tycoon_city into this pytest process (rewired 2026-08-10), so
-        in-process sys.modules can no longer witness the CLI's startup
-        behaviour."""
-        code = "import sys, tycoon.cli; sys.exit(1 if 'tycoon_city' in sys.modules else 0)"
-        proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
-        assert proc.returncode == 0, f"tycoon.cli imported tycoon_city at startup\n{proc.stderr}"
+        Checked in a subprocess: in-process, pytest itself imports tycoon_city
+        while collecting the renderer's own suite, so `sys.modules` here says
+        nothing about what `import tycoon.cli` pulls in.
+        """
+        probe = "import sys, tycoon.cli; sys.exit(1 if 'tycoon_city' in sys.modules else 0)"
+        result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+        assert result.returncode == 0, "importing tycoon.cli pulled in tycoon_city"
 
     def test_city_module_does_not_import_tycoon_city_at_module_scope(self):
         source = Path(city.__file__).read_text()
