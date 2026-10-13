@@ -212,7 +212,10 @@ jobs:
   docs:
     # Builds the MkDocs site in --strict mode so broken internal links,
     # missing nav targets, and deprecated config keys block the merge
-    # rather than landing silently.
+    # rather than landing silently, then runs
+    # scripts/check_docs_publishable.py for the two failures --strict cannot
+    # see: an internal page reaching the build, and a link to a page the
+    # build withheld (MkDocs caps both at INFO).
     name: docs (mkdocs --strict)
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -229,6 +232,9 @@ jobs:
 
       - name: Build docs (strict)
         run: uv run mkdocs build --strict
+
+      - name: Assert no internal pages were published
+        run: uv run python scripts/check_docs_publishable.py
 
   template-smoke:
     # Initializes a fresh project from each built-in template and runs
