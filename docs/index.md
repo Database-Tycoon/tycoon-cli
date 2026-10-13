@@ -52,6 +52,14 @@ tycoon run identically on a laptop and on a cloud VM.
     Reference for every `tycoon ...` command. Each page documents the
     flags, behavior, and worked examples.
 
+-   :material-chef-hat: **[Recipes](recipes/csv-to-dashboard.md)**
+
+    ---
+
+    Worked end-to-end setups: a CSV to a live dashboard, MotherDuck with a
+    local snapshot, and adopting tycoon alongside a dbt project you
+    already have.
+
 -   :material-book-open-page-variant: **[Reference](reference/tycoon-yml.md)**
 
     ---
