@@ -28,10 +28,8 @@ theme:
   features:
     - navigation.sections
     - navigation.indexes
-    - navigation.expand
     - navigation.top
     - navigation.tracking
-    - toc.integrate
     - search.suggest
     - search.highlight
     - content.code.copy
