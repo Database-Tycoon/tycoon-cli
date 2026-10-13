@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file. The format 
 - **The city's traffic actually drives** (PR [#250][]). The animation loop ticked the vehicle and guest simulations but never called the layers' `update()`, the only writers of the instance matrices, so both meshes sat at count 0 over a fully simulated street. Listed as a known limitation in 0.2.0 and 0.2.1. The verification hooks counted the simulation arrays and hid it; they now answer from the drawn mesh.
 - **`R` refresh repaints the document-derived chrome** (PR [#250][]). The footer status line, the degradation-notes popover and the legend were painted once at boot, so a refresh showed a fresh "exported N ago" over the previous city's name, counts, notes and legend.
 - **Coverage renders unknown, not zero, when the evidence was never read** (PR [#251][]). The renderer's schema was missing the `achievements` block the exporter has emitted since 2026-08-06, so it was silently stripped and the problems gauges, library panel and library tour recomputed coverage from raw fields, reporting "columns documented 0%" for a catalog with no dbt manifest. All three now honour the unknown state.
+- **City labels no longer draw on top of each other** ([#385][]). District and civic chips were placed independently, so on a real catalog `main_semantic` and `main_intermediate` merged into one unreadable line and the library and firehouse chips stacked on one spot. A colliding chip now moves up or down by a chip height or two; larger districts keep their spot, and a civic chip that still has no room is hidden until the view changes.
 
 ### Changed
 
@@ -16,6 +17,7 @@ All notable changes to this project will be documented in this file. The format 
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
+[#385]: https://github.com/Database-Tycoon/tycoon-cli/issues/385
 
 ## [0.2.2] - 2026-10-09
 
