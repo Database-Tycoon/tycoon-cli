@@ -12,10 +12,15 @@ All notable changes to this project will be documented in this file. The format 
 
 - **The city renderer is CI-gated** (PRs [#256][], [#252][]). `tests/tycoon_city`, including the `city.json` contract golden, joins the default `pytest` run and `src/tycoon_city` counts toward coverage (floor re-baselined to 73). A new `web` job runs `tsc --noEmit`, the production build, a check that the shipped `web_dist/` is exactly the build of `web/`, and the Playwright suite. Through 0.2.1 the CLI was gated and the renderer was not.
 
+### Security
+
+- **Local secret files can no longer be committed by accident** ([#410][]). The repository's `.gitignore` now covers `.env`, `.env.*` and any `.dlt/secrets.toml`, so credentials a contributor keeps for local runs stay out of commits in this public repo. `.env.example` stays committable, and a test fails if these rules are ever dropped. This changes nothing in the published package.
+
 [#250]: https://github.com/Database-Tycoon/tycoon-cli/pull/250
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
+[#410]: https://github.com/Database-Tycoon/tycoon-cli/issues/410
 
 ## [0.2.2] - 2026-10-09
 
