@@ -11,11 +11,13 @@ All notable changes to this project will be documented in this file. The format 
 ### Changed
 
 - **The city renderer is CI-gated** (PRs [#256][], [#252][]). `tests/tycoon_city`, including the `city.json` contract golden, joins the default `pytest` run and `src/tycoon_city` counts toward coverage (floor re-baselined to 73). A new `web` job runs `tsc --noEmit`, the production build, a check that the shipped `web_dist/` is exactly the build of `web/`, and the Playwright suite. Through 0.2.1 the CLI was gated and the renderer was not.
+- **`tycoon-city` renders its help like every other tycoon command** ([#282][]). The renderer's own console script is now a Typer app with `serve` and `demo` subcommands, and `tycoon-city PATH` stays legal as shorthand for `serve`, so `tycoon-city demo --help` and `tycoon city --help` no longer look like two different tools. The argparse `python -m tycoon_city.webserve [demo]` path remains for Docker and CI; both surfaces share one implementation.
 
 [#250]: https://github.com/Database-Tycoon/tycoon-cli/pull/250
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
+[#282]: https://github.com/Database-Tycoon/tycoon-cli/issues/282
 
 ## [0.2.2] - 2026-10-09
 
