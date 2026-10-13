@@ -291,7 +291,7 @@ export function setupHUD(
         return;
       }
       tooltip.hidden = false;
-      tooltip.textContent = `${key} — ${(cityRef.current.rows.get(key) ?? 0).toLocaleString()} rows`;
+      tooltip.textContent = `${key} — ${cityRef.current.rows.get(key) ?? "0 rows"}`;
       app.style.cursor = "pointer";
     },
     select,
