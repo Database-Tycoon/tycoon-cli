@@ -24,7 +24,7 @@ from tycoon_city.catalog.osi import (
     read_osi,
 )
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 SHIPPED_DEMO_MODEL = REPO / "src" / "tycoon_city" / "demo" / "semantic.yml"
 
 # The factory warehouse holds staging.stg_orders, marts.fct_revenue (an ALIAS
