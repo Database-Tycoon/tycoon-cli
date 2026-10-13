@@ -53,22 +53,6 @@ def dest_of(src: str, config) -> Path:
     )
 
 
-def nav_targets(nav) -> list[str]:
-    """Every Markdown file referenced anywhere in the nav tree."""
-    found: list[str] = []
-    if isinstance(nav, str):
-        target = nav.split("#", 1)[0].split("?", 1)[0]
-        if is_markdown_file(target):
-            found.append(target)
-    elif isinstance(nav, list):
-        for entry in nav:
-            found.extend(nav_targets(entry))
-    elif isinstance(nav, dict):
-        for value in nav.values():
-            found.extend(nav_targets(value))
-    return found
-
-
 def main() -> int:
     config = load_config(str(REPO_ROOT / "mkdocs.yml"))
     docs_dir = Path(config["docs_dir"])
@@ -150,6 +134,9 @@ def main() -> int:
             if resolved.is_dir():
                 resolved = resolved / "index.html"
             checked += 1
+            if not resolved.is_relative_to(site_dir):
+                failures.append(f"{page.relative_to(site_dir)} links to {href}, which points outside the site")
+                continue
             if not resolved.exists():
                 failures.append(f"{page.relative_to(site_dir)} links to {href}, which was not built")
 
