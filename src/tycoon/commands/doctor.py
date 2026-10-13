@@ -98,12 +98,35 @@ def _check_project_venv() -> None:
             f"{running_prefix} instead. Activate it with `source {target}/bin/activate`, "
             f"or run it directly with `{target}/bin/tycoon`."
         )
+    elif _venv_runs_python(target):
+        if (config.root / "pyproject.toml").is_file():
+            next_step = "run `uv add database-tycoon` here"
+        else:
+            next_step = f"run `uv pip install --python {target} database-tycoon`"
+        warn(
+            f"Project environment: {target} works but has no tycoon in it, so tycoon runs "
+            f"from {running_prefix}. That's the shared/tool model, which still works. "
+            f"To run tycoon from this project's .venv instead, {next_step}. "
+            "tycoon's exact dbt, dlt and duckdb pins then apply to this project's packages."
+        )
     else:
         warn(
             f"Project environment: {target} exists, but tycoon is running from "
             f"{running_prefix} instead, and {target} has no tycoon installed in it "
             "(empty or broken). Run `tycoon setup --force` to rebuild it."
         )
+
+
+def _venv_runs_python(target: Path) -> bool:
+    """True if ``target`` is a venv whose interpreter is still there.
+
+    ``exists()`` follows the interpreter symlink, so a venv whose base
+    Python was removed (a uv-managed interpreter that got cleaned up, say)
+    counts as broken.
+    """
+    if not (target / "pyvenv.cfg").is_file():
+        return False
+    return (target / "bin" / "python").exists() or (target / "Scripts" / "python.exe").exists()
 
 
 def _fix_python_env() -> None:
