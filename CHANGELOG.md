@@ -2,6 +2,10 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Changed
+
+- **The city opens framed on the whole city** ([#386][]). The opening camera used to size itself from the flat footprint of the catalog, so a real catalog could open as a thin strip of buildings in a frame of grass with its tallest towers cut off at the top. The opening view is now fitted to the city in three dimensions, rooftop spires and usage beacons included, with a small margin. It refits when the window is resized until you move the camera, and `H` or `Home` returns to it.
+
 ### Fixed
 
 - **The city's traffic actually drives** (PR [#250][]). The animation loop ticked the vehicle and guest simulations but never called the layers' `update()`, the only writers of the instance matrices, so both meshes sat at count 0 over a fully simulated street. Listed as a known limitation in 0.2.0 and 0.2.1. The verification hooks counted the simulation arrays and hid it; they now answer from the drawn mesh.
@@ -18,6 +22,7 @@ All notable changes to this project will be documented in this file. The format 
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
 [#385]: https://github.com/Database-Tycoon/tycoon-cli/issues/385
+[#386]: https://github.com/Database-Tycoon/tycoon-cli/issues/386
 
 ## [0.2.2] - 2026-10-09
 
