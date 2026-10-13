@@ -2,6 +2,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Added
+
+- **`tycoon data query --format`** ([#391][]). `--format csv`, `json` or `markdown` prints the result rows and nothing else, so a script or notebook can read them without parsing a terminal table. The default `table` format no longer squashes a wide result until every header reads `ro…`: when the columns don't fit the terminal, each row prints as its own block of column names and values, like `psql`'s expanded display.
+- **`tycoon data schema` can show one database or one schema** ([#393][]). `--raw` and `--warehouse` pick one database, and `--schema` takes a schema name or a glob such as `'raw_*'`. dlt's `_dlt_*` bookkeeping tables are now left out by default, with a count of how many were hidden; `--include-dlt` lists them. On a MotherDuck database, tables left out aren't counted, so a narrow listing runs fewer `count(*)` queries.
+
 ### Fixed
 
 - **The city's traffic actually drives** (PR [#250][]). The animation loop ticked the vehicle and guest simulations but never called the layers' `update()`, the only writers of the instance matrices, so both meshes sat at count 0 over a fully simulated street. Listed as a known limitation in 0.2.0 and 0.2.1. The verification hooks counted the simulation arrays and hid it; they now answer from the drawn mesh.
@@ -16,6 +21,8 @@ All notable changes to this project will be documented in this file. The format 
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
+[#391]: https://github.com/Database-Tycoon/tycoon-cli/issues/391
+[#393]: https://github.com/Database-Tycoon/tycoon-cli/issues/393
 
 ## [0.2.2] - 2026-10-09
 
