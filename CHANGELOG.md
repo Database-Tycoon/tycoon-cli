@@ -11,11 +11,14 @@ All notable changes to this project will be documented in this file. The format 
 ### Changed
 
 - **The city renderer is CI-gated** (PRs [#256][], [#252][]). `tests/tycoon_city`, including the `city.json` contract golden, joins the default `pytest` run and `src/tycoon_city` counts toward coverage (floor re-baselined to 73). A new `web` job runs `tsc --noEmit`, the production build, a check that the shipped `web_dist/` is exactly the build of `web/`, and the Playwright suite. Through 0.2.1 the CLI was gated and the renderer was not.
+- **Internal pages are kept out of the docs build** ([#348][], PR [#421][]). `docs_dir` carries 29 city-renderer pages (handover notes, agent task contracts, design log) and 4 draft proposals alongside the PyPI publishing runbook, an OpenMetadata note and an install script. They were out of `nav`, but MkDocs still built them, served them at guessable URLs and indexed them for search, so hosting the site at any point would have published all of them. `draft_docs` keeps the 33 city and proposal pages out of the build while `tycoon docs serve` still renders them locally, and `exclude_docs` drops the other three in both modes. The build carries no internal entries in its search index. Four links that pointed into the withheld directories now point at the repository instead.
 
 [#250]: https://github.com/Database-Tycoon/tycoon-cli/pull/250
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
+[#348]: https://github.com/Database-Tycoon/tycoon-cli/issues/348
+[#421]: https://github.com/Database-Tycoon/tycoon-cli/pull/421
 
 ## [0.2.2] - 2026-10-09
 
