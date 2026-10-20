@@ -64,18 +64,18 @@ tycoon run identically on a laptop and on a cloud VM.
     The `tycoon.yml` schema, built-in templates, observability tables,
     and environment variables.
 
--   :material-tag: **[Releases](releases/v0.1.5.md)**
+-   :material-tag: **[Releases](releases/v0.2.2.md)**
 
     ---
 
     Per-release narrative notes — what shipped, what didn't, and why.
 
--   :material-city: **[City renderer](city/index.md)**
+-   :material-city: **[City renderer notes on GitHub](https://github.com/Database-Tycoon/tycoon-cli/tree/main/docs/city)**
 
     ---
 
-    Internals of the 3D catalog renderer behind `tycoon city` — the
-    `city.json` / `runs.json` contracts, road grammar, and its design log.
+    Contributor notes on the renderer behind `tycoon city`: the
+    `city.json` and `runs.json` contracts, and the road grammar.
 
 </div>
 
