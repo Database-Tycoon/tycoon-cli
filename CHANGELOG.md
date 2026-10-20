@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file. The format 
 - **`R` refresh repaints the document-derived chrome** (PR [#250][]). The footer status line, the degradation-notes popover and the legend were painted once at boot, so a refresh showed a fresh "exported N ago" over the previous city's name, counts, notes and legend.
 - **Coverage renders unknown, not zero, when the evidence was never read** (PR [#251][]). The renderer's schema was missing the `achievements` block the exporter has emitted since 2026-08-06, so it was silently stripped and the problems gauges, library panel and library tour recomputed coverage from raw fields, reporting "columns documented 0%" for a catalog with no dbt manifest. All three now honour the unknown state.
 - **`tycoon city`: the legend no longer shows through the detail panel** ([#382][]). Both panels are translucent and sit on the right edge, so a tall detail panel stacked its text over the legend's. The legend now hides while a building is selected and comes back when the panel closes.
+- **`tycoon city`: long model and test names wrap instead of being clipped** ([#383][]). The detail panel split model names mid-word (`station_informa` / `tion`) and cut long dbt test names off at its right edge. Identifiers now wrap after an underscore or dot, and anything still too long wraps inside the panel rather than running past it.
 
 ### Changed
 
@@ -24,6 +25,7 @@ All notable changes to this project will be documented in this file. The format 
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
 [#382]: https://github.com/Database-Tycoon/tycoon-cli/issues/382
+[#383]: https://github.com/Database-Tycoon/tycoon-cli/issues/383
 [#282]: https://github.com/Database-Tycoon/tycoon-cli/issues/282
 [#348]: https://github.com/Database-Tycoon/tycoon-cli/issues/348
 [#421]: https://github.com/Database-Tycoon/tycoon-cli/pull/421
