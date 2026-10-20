@@ -13,14 +13,13 @@ from pathlib import Path
 import duckdb
 
 from tycoon.observability import (
-    _diff_fingerprints,
-    _extract_manifest_fingerprint,
     capture_dbt_manifest,
     capture_dbt_manifest_safe,
     ensure_schema,
     export_to_parquet,
     metadata_db_path,
 )
+from tycoon.observability.dbt_capture import _diff_fingerprints, _extract_manifest_fingerprint
 
 
 def _manifest(
