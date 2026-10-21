@@ -37,10 +37,12 @@ DEMO_QUERY = "?tour=1"
 
 
 def main(argv: list[str]) -> int:
-    """`argv` is everything AFTER the `demo` word."""
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    """The argparse surface: `argv` is everything AFTER the `demo` word of
+    `python -m tycoon_city.webserve demo`. `tycoon-city demo` is the Typer
+    surface (`tycoon_city.cli`). Both land in `run`, so there is one demo and
+    two ways to type it. Env-var defaults live here for the Docker image."""
     parser = argparse.ArgumentParser(
-        prog="tycoon-city demo",
+        prog="python -m tycoon_city.webserve demo",
         description=(
             "Serve a generated demo catalog -- a whole tycoon project with runs, "
             "tests, a failure cascade, freshness verdicts and a semantic model. "
@@ -51,19 +53,25 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--host",
         default=os.environ.get(HOST_ENV, DEFAULT_HOST),
-        # Same env var as the ordinary server, so `docker run ... tycoon-city demo`
-        # inherits the image's 0.0.0.0 and needs no flag. The DEFAULT is still
-        # loopback -- but note this catalog is synthetic, so widening it
-        # exposes nothing of yours.
+        # Same env var as the ordinary server, so `docker run ... demo` inherits
+        # the image's 0.0.0.0 and needs no flag. The DEFAULT is still loopback
+        # -- but note this catalog is synthetic, so widening it exposes nothing
+        # of yours.
         help=f"Interface to bind (default: ${HOST_ENV}, else {DEFAULT_HOST})",
     )
     parser.add_argument("--theme", default="default")
     parser.add_argument("--dist", default=None, help=f"Built web bundle directory (default: ${DIST_ENV})")
     args = parser.parse_args(argv)
+    return run(port=args.port, host=args.host, theme=args.theme, dist=Path(args.dist) if args.dist else None)
 
-    dist_arg = args.dist or os.environ.get(DIST_ENV)
-    dist = Path(dist_arg) if dist_arg else _default_dist()
-    if dist is None or not dist.is_dir():
+
+def run(*, port: int, host: str, theme: str, dist: Path | None) -> int:
+    """Materialise the demo project and serve it. Returns the process exit code."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    dist_arg = dist or os.environ.get(DIST_ENV)
+    bundle = Path(dist_arg) if dist_arg else _default_dist()
+    if bundle is None or not bundle.is_dir():
         print(
             "no web bundle to serve the demo with. Get one by:\n"
             "  cd web && npm install && npm run build   (a checkout)\n"
@@ -91,9 +99,9 @@ def main(argv: list[str]) -> int:
     print("building the demo project (timestamps are generated fresh)...", file=sys.stderr)
     with materialise() as project:
         print(f"demo project at {project}", file=sys.stderr)
-        print(f"open http://{args.host}:{args.port}/{DEMO_QUERY}", file=sys.stderr)
+        print(f"open http://{host}:{port}/{DEMO_QUERY}", file=sys.stderr)
         try:
-            serve(str(project), dist, args.theme, args.port, args.host)
+            serve(str(project), bundle, theme, port, host)
         except KeyboardInterrupt:
             print("", file=sys.stderr)
     return 0

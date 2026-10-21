@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file. The format 
 ### Added
 
 - **A mental model of the city map** ([#323][]). `docs/city/mental-model.md` maps each data-stack concept (source, table, dbt model, test, run, freshness SLA, docs coverage) to what it becomes on the `tycoon city` map and the `city.json` field it comes from, walks one worked example from the `csv-import` template to the rendered city, and gives reviewers a table of which layer a PR touches plus a short checklist.
+- **The documentation site is published** ([#348][], PR [#415][]). `mkdocs build --strict` already ran on every pull request, but the built site was discarded: GitHub Pages had never been enabled, `https://database-tycoon.github.io/tycoon-cli/` returned 404, and three places in the repository linked to that dead URL (`site_url` in `mkdocs.yml`, the `tycoon docs` module docstring, which calls it "the public docs", and `docs/reference/dependencies.md`, which calls it "the docs site you're reading right now"). A `docs.yml` workflow builds the site on every push to `main` and deploys it to Pages, so those three references resolve. Since `main` only advances when a release branch merges, the published site tracks the released version. Both the pull-request job and the deploy run `scripts/check_docs_publishable.py` after the build: it fails if a page `draft_docs` or `exclude_docs` withholds reached the build, or if a `nav` entry points at a page that was not built, which `mkdocs build --strict` reports only at INFO and would otherwise ship as a dead link on every page. `CONTRIBUTING.md` gains a Documentation section recording where the line between published and internal pages is drawn, and which of its two rules the docs job can enforce.
 
 ### Fixed
 
@@ -15,12 +16,20 @@ All notable changes to this project will be documented in this file. The format 
 ### Changed
 
 - **The city renderer is CI-gated** (PRs [#256][], [#252][]). `tests/tycoon_city`, including the `city.json` contract golden, joins the default `pytest` run and `src/tycoon_city` counts toward coverage (floor re-baselined to 73). A new `web` job runs `tsc --noEmit`, the production build, a check that the shipped `web_dist/` is exactly the build of `web/`, and the Playwright suite. Through 0.2.1 the CLI was gated and the renderer was not.
+- **`tycoon-city` renders its help like every other tycoon command** ([#282][]). The renderer's own console script is now a Typer app with `serve` and `demo` subcommands, and `tycoon-city PATH` stays legal as shorthand for `serve`, so `tycoon-city demo --help` and `tycoon city --help` no longer look like two different tools. The argparse `python -m tycoon_city.webserve [demo]` path remains for Docker and CI; both surfaces share one implementation.
+- **Internal pages are kept out of the docs build** ([#348][], PR [#421][]). `docs_dir` carries 29 city-renderer pages (handover notes, agent task contracts, design log) and 4 draft proposals alongside the PyPI publishing runbook, an OpenMetadata note and an install script. They were out of `nav`, but MkDocs still built them, served them at guessable URLs and indexed them for search, so hosting the site at any point would have published all of them. `draft_docs` keeps the 33 city and proposal pages out of the build while `tycoon docs serve` still renders them locally, and `exclude_docs` drops the other three in both modes. The build carries no internal entries in its search index. Four links that pointed into the withheld directories now point at the repository instead.
 
 [#250]: https://github.com/Database-Tycoon/tycoon-cli/pull/250
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
 [#323]: https://github.com/Database-Tycoon/tycoon-cli/issues/323
+[#282]: https://github.com/Database-Tycoon/tycoon-cli/issues/282
+[#348]: https://github.com/Database-Tycoon/tycoon-cli/issues/348
+[#421]: https://github.com/Database-Tycoon/tycoon-cli/pull/421
+[#417]: https://github.com/Database-Tycoon/tycoon-cli/pull/417
+[#416]: https://github.com/Database-Tycoon/tycoon-cli/pull/416
+[#415]: https://github.com/Database-Tycoon/tycoon-cli/pull/415
 
 ## [0.2.2] - 2026-10-09
 
