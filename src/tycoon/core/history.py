@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from tycoon.core.events import DbtRunCompleted, RunCompleted, RunFailed
@@ -17,6 +17,7 @@ class RunSummary:
     duration_seconds: float
     rows_total: int
     command: str | None = None
+    zero_rows: bool = False
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,20 @@ class RunDetail:
     rows_by_table: dict[str, int]
     tables_created: list[str]
     error: str | None
+    warnings: list[str] = field(default_factory=list)
+
+
+def _summarize_completed(e: RunCompleted) -> RunSummary:
+    return RunSummary(
+        run_id=e.load_id or e.event_id,
+        source_id=e.source_id,
+        runtime_id=e.runtime_id,
+        status="success",
+        started_at=e.timestamp,
+        duration_seconds=e.duration_seconds,
+        rows_total=sum((e.rows_loaded or {}).values()),
+        zero_rows=e.zero_rows,
+    )
 
 
 class HistoryRepository:
@@ -36,17 +51,7 @@ class HistoryRepository:
         summaries: list[RunSummary] = []
         for e in events:
             if isinstance(e, RunCompleted):
-                summaries.append(
-                    RunSummary(
-                        run_id=e.load_id or e.event_id,
-                        source_id=e.source_id,
-                        runtime_id=e.runtime_id,
-                        status="success",
-                        started_at=e.timestamp,
-                        duration_seconds=e.duration_seconds,
-                        rows_total=sum((e.rows_loaded or {}).values()),
-                    )
-                )
+                summaries.append(_summarize_completed(e))
             elif isinstance(e, RunFailed):
                 summaries.append(
                     RunSummary(
@@ -85,22 +90,9 @@ class HistoryRepository:
 
         for e in events:
             if isinstance(e, RunCompleted):
-                eid = e.load_id or e.event_id
-                if eid.startswith(run_id_prefix):
-                    matches.append(
-                        (
-                            RunSummary(
-                                run_id=eid,
-                                source_id=e.source_id,
-                                runtime_id=e.runtime_id,
-                                status="success",
-                                started_at=e.timestamp,
-                                duration_seconds=e.duration_seconds,
-                                rows_total=sum((e.rows_loaded or {}).values()),
-                            ),
-                            e,
-                        )
-                    )
+                summary = _summarize_completed(e)
+                if summary.run_id.startswith(run_id_prefix):
+                    matches.append((summary, e))
             elif isinstance(e, RunFailed):
                 if e.event_id.startswith(run_id_prefix):
                     matches.append(
@@ -149,6 +141,7 @@ class HistoryRepository:
                 rows_by_table=event.rows_loaded or {},
                 tables_created=event.tables_created or [],
                 error=None,
+                warnings=list(event.warnings),
             )
         if isinstance(event, RunFailed):
             return RunDetail(

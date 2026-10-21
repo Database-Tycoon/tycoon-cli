@@ -63,6 +63,22 @@ Drill in with tycoon data history for per-run detail.
 
 **Staging / Intermediate / Marts** — dbt models classified via the manifest (see [`docs/recipes/layered-architecture.md`](../../recipes/layered-architecture.md) for the classification rules). Each panel lists the models in that layer and reports the last-build timestamp computed by joining `dbt_runs` against `dbt_nodes` in the metadata DB.
 
+## Runs that loaded nothing
+
+A dlt run that can have emptied a table is recorded with a `zero_rows` flag and any warnings the runner raised ([#240](https://github.com/Database-Tycoon/tycoon-cli/issues/240)). That means a resource loaded with `replace` got zero rows, even when another resource in the same run loaded some, or the whole run loaded nothing because a filesystem glob matched no files. Each `replace` table that got zero rows is named in a warning. Such a run still counts toward `Runs`, but it never becomes the source's Last Sync, so it can't turn Freshness green. When a source's most recent run loaded nothing, its Freshness cell adds "last run loaded 0 rows" and a warning under the table names what was skipped:
+
+```
+│ files  │ dlt    │ raw_files │ 2026-09-27 09:56 │ 0m ago                 │    2 │      1 │             10 │
+│        │        │           │                  │ last run loaded 0 rows │      │        │                │
+WARN files: last run loaded 0 rows. 'files': no files matched glob 'nomatch*.csv' under 'data/input'.
+```
+
+When other tables in that run did load rows, the cell reads "a table in the last run got 0 rows" instead, and `history` shows the run's row count with "a table got 0".
+
+An append, merge, or incremental run that finds no new records is not flagged. It is a normal sync, so it advances Last Sync like any other run.
+
+[`tycoon data history`](history.md) marks the same run with a yellow `!` instead of a green tick, and `tycoon data history show <id>` lists its warnings.
+
 ## Empty states
 
 | State | Panel behaviour |
