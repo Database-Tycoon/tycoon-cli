@@ -3,8 +3,8 @@
 A page per release from v0.1.1 onward, written as a narrative: what shipped,
 what did not, and why.
 
-The current release is [v0.2.2](v0.2.2.md), and the rest of the 0.2 series is
-[v0.2.1](v0.2.1.md) and [v0.2.0](v0.2.0.md). Earlier versions are in the
+The current release is [v0.2.3](v0.2.3.md), and the rest of the 0.2 series is
+[v0.2.2](v0.2.2.md), [v0.2.1](v0.2.1.md) and [v0.2.0](v0.2.0.md). Earlier versions are in the
 navigation under 0.1.x, and the tagged releases from v0.1.1 onward are also
 listed on [GitHub](https://github.com/Database-Tycoon/tycoon-cli/releases).
 
