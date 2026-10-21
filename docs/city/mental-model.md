@@ -3,7 +3,7 @@ title: The city map, a mental model
 description: How `tycoon city` turns a project into a map, which layer a city PR touches, a checklist for reviewing one, and what each thing on the map stands for with the city.json field it comes from
 tags: [city, mental-model, review, contract, renderer]
 related: [guide, city-json-v1, run-json-v1, conventions, hud-design]
-updated: '2026-09-30'
+updated: '2026-10-21'
 ---
 
 # The city map, a mental model
@@ -64,8 +64,8 @@ as stale or failed.
 | `export/` (the wire format) | A contract change, on one of two surfaces: `city-json-v1.md` + golden `contract/fixtures/demo.city.json` + `web/src/contract.ts`, or `run-json-v1.md` + `web/src/contract_runs.ts` (runs documents) | Whatever the renderer does with it, if anything yet |
 | `web/src/scene/` | Byte-identical | Pixels only. Only a render, looked at, shows whether it is right |
 | `web/src/ui/` (HUD) | Byte-identical | Chips, panels, gauges, tour. Counts come from the document; a lens may reorder, never recount |
-| `web/src/sim/`, `web/src/mechanics/` | Byte-identical | Motion only; must not feed back into derived state. `test_web_layering.py` checks `web/src/mechanics/` imports only (and on `v0.2.2` looks in the wrong directory, fixed by #249); `web/src/sim/` is unguarded ([#332](https://github.com/Database-Tycoon/tycoon-cli/issues/332)) |
-| `src/tycoon_city/web_dist/` | None | The shipped bundle. Should be exactly a build of `web/` (`scripts/sync_web_bundle.py`); a CI check arrives with #252 |
+| `web/src/sim/`, `web/src/mechanics/` | Byte-identical | Motion only; must not feed back into derived state. `test_web_layering.py` checks `web/src/mechanics/` imports only; `web/src/sim/` is unguarded ([#332](https://github.com/Database-Tycoon/tycoon-cli/issues/332)) |
+| `src/tycoon_city/web_dist/` | None | The shipped bundle. Must be exactly a build of `web/` (`scripts/sync_web_bundle.py`); the CI `web` job fails otherwise |
 | `src/tycoon/commands/city.py` | None | Flags and path handling of `tycoon city` only |
 
 ## Reading a city PR
@@ -118,10 +118,10 @@ Reference. Chip wording, glyphs and colours are in [`guide.md`](guide.md).
 | Object with no lineage | A dimmed building; nothing is dimmed if the catalog has no lineage at all | `lots[].powered`, `database.has_known_edges` | `sim/signals.py` |
 | dbt test | Fail: the building burns. Warn or pass: a roof marker. Declared but never run: no marker | `lots[].test_status`, `objects[].dbt.tests[].status` | `sim/signals.py` |
 | Build error | Colour shifts toward red | `lots[].build_status` | `sim/signals.py` |
-| Time since last build or load | Colour fades toward grey over about 30 days | `lots[].last_build_age_s` | `sim/signals.py`, `sim/channels.py` |
+| Time since last build or load | Colour fades toward grey over about 30 days | `lots[].last_build_age_s` | `sim/channels.py` (the age); the 30-day window is `DECAY_FULL_S` in `web/src/scene/buildings.ts` |
 | Freshness SLA | warn/error: cone, boarded windows | `lots[].freshness_status` | `sim/signals.py` |
 | Late source, downstream | Fog or overcast over the districts it feeds | `weather.cells[]` | `export/measured.py` |
-| Schema drift | A crane for 7 days | `lots[].schema_drift_age_s` | `sim/signals.py` |
+| Schema drift | A crane for 7 days | `lots[].schema_drift_age_s` | `sim/channels.py` (the age); the 7-day window is `DRIFT_RECENT_S` in `web/src/ui/health.ts` |
 | Build cadence x cost | Road-load overlay and compute gauge | `edges[].daily_load_s`, `budget` | `export/measured.py` |
 | Run appearances | Usage overlay; nothing for unmeasured | `objects[].usage` | `export/measured.py` |
 | One dbt invocation | Run replay: buildings grow in order, failures ignite | `replay`, `runs/<id>.json` | `sim/build_replay.py`, `export/run_json.py` |
@@ -142,11 +142,3 @@ The `csv-import` template, built with the real CLI plus one failing test.
   `dim_runs` views turn two models into twelve buildings.
 - **No upstream on the map means depth 0.** `stg_widgets` reads the off-map
   source, so its street starts at a dock.
-
-## Known gaps (v0.2.2, 2026-09-30)
-
-- Vehicles and guests do not draw yet: the loop ticks them but never updates
-  the meshes. Fixed by #250.
-- Coverage gauges show 0% where coverage is unknown. Fixed by #251.
-- `tests/tycoon_city` is not in the default `pytest` run; run it by hand until
-  #256 lands.
