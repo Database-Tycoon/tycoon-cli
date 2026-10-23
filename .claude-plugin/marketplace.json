@@ -11,14 +11,14 @@
   "plugins": [
     {
       "name": "tycoon",
-      "source": "./",
+      "source": "./plugins/users",
       "description": "Skills for using the tycoon CLI in an analytics project: adding data sources, diagnosing failures, reading pipeline state, building dbt models and Rill dashboards",
       "skills": [
-        "./skills/users/adding-data-sources",
-        "./skills/users/diagnosing-projects",
-        "./skills/users/reading-project-state",
-        "./skills/users/building-models-and-dashboards",
-        "./skills/users/operating-pipelines"
+        "./skills/adding-data-sources",
+        "./skills/diagnosing-projects",
+        "./skills/reading-project-state",
+        "./skills/building-models-and-dashboards",
+        "./skills/operating-pipelines"
       ]
     },
     {
