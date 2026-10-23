@@ -1,5 +1,11 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Agent skills for tycoon users** ([#307][]). Five task-shaped skills (adding data sources, diagnosing projects, reading pipeline state, building models and dashboards, operating pipelines) install as the `tycoon` Claude Code plugin from this repository's marketplace. Skills for working on the repository itself live in `repo-skills/` and are not shipped.
+
 ## [0.2.2] - 2026-10-09
 
 _Headline: **project-local environments**. Every tycoon project now gets its own uv-managed `.venv`, and a catalog source's code and dependencies live inside the project, so deleting `.venv` and running `uv sync` rebuilds the same environment. `--no-prompt` installs what it registers instead of skipping it, and `tycoon data sources migrate` moves an existing project over. Also here: a filesystem load that finds nothing no longer empties a table that already held rows, and a zero-row run is flagged instead of reading as a healthy sync._
@@ -35,6 +41,7 @@ _Headline: **project-local environments**. Every tycoon project now gets its own
 - **`tycoon data sources migrate` carries a source's dependencies and leaves your files alone** ([#358][], PR [#361][]). `migrate` copied only the source's package directory, so its `requirements.txt` never reached the project and nothing installed those packages into the project's `.venv`, and a migrated source that needed them failed on import. It now carries `requirements.txt` (adding any lines missing from the project's copy) and installs it the same way `sources add` does. If that install fails, `migrate` exits 1 with uv's error and removes the package it just copied, so a rerun starts over. It also carries the sources dir's `.gitignore` and `.dlt/config.toml` when the project has none, never overwriting existing ones and never copying `.dlt/secrets.toml`. A destination directory that exists without a `_run.py` used to be deleted before the copy; `migrate` now refuses, names the directory, and leaves it untouched.
 - **`tycoon register` keeps your comments in `tycoon.yml` too** ([#297][], PR [#369][]). `register dbt`, `register warehouse` and `register rill` rewrote the file with a plain YAML dump, dropping every comment and blank line. They now update it in place the same way as `sources add` and `sources remove`.
 
+[#307]: https://github.com/Database-Tycoon/tycoon-cli/issues/307
 [#70]: https://github.com/Database-Tycoon/tycoon-cli/issues/70
 [#177]: https://github.com/Database-Tycoon/tycoon-cli/issues/177
 [#238]: https://github.com/Database-Tycoon/tycoon-cli/issues/238

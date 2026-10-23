@@ -69,12 +69,18 @@ call, not an upfront error, so check env vars first when a run 401s.
 
 ## Catalog sources need a one-time install
 
-github/stripe/slack/notion/google_sheets/hubspot require dlt's source files in
-`~/.tycoon/sources/<type>/`. `tycoon data sources add <type>` offers the
-install interactively. **Trap:** some error messages suggest
-`tycoon data sources catalog install <type>`: that subcommand does not
-exist. The recovery path is re-running `tycoon data sources add <type>`
-without `--no-prompt` and accepting the install.
+github/stripe/slack/notion/google_sheets/hubspot need dlt's source files on
+disk before they run. Where those files go depends on the project. A project
+with its own `.venv` keeps them in `.tycoon/sources/<type>/` inside the
+project. A project without one uses the shared `~/.tycoon/sources/<type>/`.
+`tycoon data sources add <type>` installs them. `--no-prompt` installs them
+without asking, so it is the right flag for scripts.
+
+**Trap:** some error messages suggest `tycoon data sources catalog install
+<type>`. That subcommand does not exist; run `tycoon data sources add <type>`.
+
+If a source was installed globally before the project got its own `.venv`,
+run `tycoon data sources migrate` to move it into the project.
 
 ## After a successful run
 

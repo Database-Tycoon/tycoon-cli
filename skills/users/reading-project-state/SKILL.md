@@ -45,8 +45,11 @@ tycoon data query --raw "SELECT * FROM raw_pokeapi.pokemon LIMIT 5"
 tycoon data query -s pokeapi "SHOW TABLES"                # one source's schema
 ```
 
-Queries are read-only. Warehouse queries route through Quack automatically
-while `tycoon start` is running, so they work even when the file is locked.
+A local DuckDB file opens read-only. A MotherDuck connection does not: it is
+read-write, and the token's scope decides what it may change, so treat
+`tycoon data query` against `md:` as able to write. Warehouse queries route
+through Quack automatically while `tycoon start` is running, so they work even
+when the local file is locked.
 
 ## Modeling state inside dbt
 
