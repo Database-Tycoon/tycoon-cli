@@ -1,0 +1,9 @@
+{
+  "name": "tycoon",
+  "version": "0.1.0",
+  "description": "Skills for using the tycoon CLI in an analytics project: adding data sources, diagnosing failures, reading pipeline state, building dbt models and Rill dashboards",
+  "author": {
+    "name": "Database Tycoon",
+    "url": "https://github.com/Database-Tycoon"
+  }
+}
