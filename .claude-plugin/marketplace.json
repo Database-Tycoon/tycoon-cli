@@ -22,20 +22,20 @@
       ]
     },
     {
-      "name": "tycoon-contrib",
-      "source": "./",
+      "name": "tycoon-contributors",
+      "source": "./plugins/contributors",
       "description": "Skills for contributing to tycoon-cli: the release-branch PR model and the test layers",
       "skills": [
-        "./skills/contributors/contributing-changes",
-        "./skills/contributors/testing-cli-changes"
+        "./skills/contributing-changes",
+        "./skills/testing-cli-changes"
       ]
     },
     {
       "name": "tycoon-maintainers",
-      "source": "./",
+      "source": "./plugins/maintainers",
       "description": "Skills for tycoon-cli maintainers: cutting and publishing releases",
       "skills": [
-        "./skills/maintainers/cutting-a-release"
+        "./skills/cutting-a-release"
       ]
     }
   ]
