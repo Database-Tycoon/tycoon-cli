@@ -10,40 +10,47 @@ metadata:
 
 # Contributing changes
 
-## Branch model: never target main
+CONTRIBUTING.md is the authority for PR size, titles, issue links, the
+Mental model section and the release process. This skill covers what an agent
+most often gets wrong, and points at the section that settles each one.
 
-Each release cycle lives on its own version branch (e.g. `v0.1.12`). All
-feature and fix PRs target the **active release branch**, never `main`.
-`main` only advances when a finished release branch merges into it, so it
-always reflects the latest published version.
+## Which branch to target
+
+Target the **active release branch**, never `main`. `main` only advances when a
+finished release branch merges into it. CONTRIBUTING.md, "Release process"
+(line 253) and "Merging into the release branch" (line 280) say how a branch
+becomes active and how it merges.
+
+Do not guess from branch names. Old release branches are never deleted, so the
+set of open version branches includes abandoned ones. To find the active
+branch, read the base of the most recently merged PR, or ask in the issue.
 
 Consequences:
 
-- Branch from the active release branch, PR back into it. If you can't tell
-  which branch is active, it's the highest open `v0.1.*` branch; ask in an
-  issue if unsure.
 - CI workflow config and tool pins live on the release branch and may differ
-  from `main`; diagnose PR check failures against the release branch's
+  from `main`. Diagnose a PR's check failures against the release branch's
   `.github/workflows/`, not `main`'s.
 - A regression test should fail on the release branch and pass on yours.
 
 ## Change checklist
 
-1. Open an issue first for anything non-trivial; design discussion happens
-   before code.
+1. Open an issue first for anything non-trivial (CONTRIBUTING.md, "Break up
+   large issues").
 2. Branch from the active release branch.
-3. Tests: new behavior needs a test; bug fixes need a regression test. Use
-   `conftest.py` fixtures before hand-rolling new ones. CLI-surface bugs need
-   subprocess-layer tests (see the testing-cli-changes skill).
-4. Update `CHANGELOG.md` under `[Unreleased]` (Added / Changed / Fixed /
-   Removed / Deprecated / Security).
-5. User-visible change → update `README.md` too.
-6. Before pushing: `uv run pytest -q && uvx ruff check src tests`.
+3. Tests: new behaviour needs a test, and a bug fix needs a regression test. For
+   a CLI-surface bug, use the subprocess layer (testing-cli-changes skill).
+4. Update `CHANGELOG.md` under `[Unreleased]` in the section for the change's
+   type.
+5. A user-visible change also updates `README.md` and the relevant `docs/` page.
+6. Before pushing, run the gates CI runs, with `uv run`:
+   `uv run pytest -q`, `uv run ruff check src tests`,
+   `uv run ruff format --check src tests`. Do not use `uvx ruff`: it resolves
+   the latest release, not the version CI pins (CONTRIBUTING.md, line 46).
+7. Open the PR as a draft, with the template body and a Mental model section.
 
-## Code conventions that reviews enforce
+## Code conventions
 
-- No comments describing *what* code does, only non-obvious *why*.
-- No unused imports, half-finished implementations, or backwards-compat
-  shims (pre-1.0: delete aggressively).
-- Type hints everywhere; `ruff` + `ty` clean.
-- One logical change per commit, imperative mood, body explains why.
+CONTRIBUTING.md, "Code conventions" (line 240), is authoritative. The rules
+reviews repeat most: no comments that describe what code does (only a
+non-obvious why), no unused imports or half-finished implementations, no
+backwards-compatibility shims before 1.0, and one logical change per commit.

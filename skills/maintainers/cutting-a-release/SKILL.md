@@ -10,48 +10,58 @@ metadata:
 
 # Cutting a release
 
-The cycle, in order:
+CONTRIBUTING.md, "Release process" (line 253) and "Merging into the release
+branch" (line 280), is the authoritative procedure. This skill names the steps
+that have gone wrong and the checks that catch them. Read the CONTRIBUTING.md
+sections first.
 
-1. **Open the branch.** Cut `v<next>` off `main`. It becomes the active
-   release branch; announce it so PRs target it. Nothing PRs into `main`
-   directly.
-2. **Land the cycle's PRs** into the release branch.
-3. **Finalize the record** on the branch, in the same commit series:
-   - `CHANGELOG.md`: convert `[Unreleased]` into the versioned section.
-   - `docs/releases/v<ver>.md`: the long-form narrative. CHANGELOG and the
-     release doc must stay in sync: CI and readers both use them.
-   - Regenerate Rich-output snapshots if user-facing strings changed
-     (`uv run pytest --snapshot-update tests/test_snapshots.py`, review the
-     diff).
-4. **Merge to main** via PR (release branch → `main`).
-5. **Tag.** Branch and tag share a name, so use fully-qualified refs:
+## Before the merge to main
+
+1. Finish the record on the release branch, in the same commit series:
+   - `CHANGELOG.md`: convert `[Unreleased]` into `## [<ver>] - YYYY-MM-DD`.
+   - `docs/releases/v<ver>.md`: the long-form notes. The CHANGELOG and this page
+     must agree, since CI and readers both use them.
+   - Regenerate Rich-output snapshots if user-facing strings changed (see the
+     testing-cli-changes skill), and review the diff.
+2. Run the gates CI runs, with `uv run`, not `uvx`:
 
    ```bash
-   git tag v<ver> && git push origin refs/tags/v<ver>
+   uv run pytest -q
+   uv run ruff check src tests
+   uv run ruff format --check src tests
+   uv run --extra docs mkdocs build --strict
+   uv run tycoon --version    # reports the version being released
    ```
 
-   Pushing `v<ver>` unqualified is ambiguous between the branch and the tag:
-   this has bitten before; `docs/publishing-to-pypi.md` has the details.
-6. **Publish happens automatically.** The tag triggers
-   `.github/workflows/publish.yml`: build → TestPyPI (`testpypi`
-   environment) → PyPI (`pypi` environment, OIDC trusted publishing, no
-   tokens). Check the Actions run; a stuck publish is usually the GitHub
-   environment approval gate or a trusted-publisher config mismatch (repo,
-   workflow filename, and environment name must match PyPI's registration
-   exactly).
-7. **Close the loop.** GitHub release notes from the CHANGELOG section; close
-   the milestone's issues; verify `pip install database-tycoon==<ver>` pulls
-   the new version.
+3. Check that the version agrees in `pyproject.toml`, `src/tycoon/__init__.py`,
+   `CHANGELOG.md` and `docs/releases/v<ver>.md`. The tag is immutable once
+   publish fires.
 
-## Verification gates before tagging
+## Preflight
+
+`publish.yml`'s `preflight` job fails the release before anything publishes. It
+requires the tag, `pyproject.toml`, `__version__` and a dated CHANGELOG entry to
+agree, and it requires `docs/releases/v<ver>.md` without `_Released: TBD_`. A
+release that passes CI can still fail preflight, so run the same comparison
+before tagging.
+
+## Tag and publish
+
+Branch and tag share a name, so push the tag with its full ref:
 
 ```bash
-uv run pytest -q            # green on 3.12 and 3.13 in CI, not just locally
-uvx ruff check src tests
-uv run tycoon --version     # reports the version being released
-tycoon docs build --strict  # docs site builds clean
+git tag v<ver>
+git push <remote> refs/tags/v<ver>   # the upstream remote, not a guessed name
 ```
 
-Version coherence: `pyproject.toml`, `CHANGELOG.md`, and
-`docs/releases/v<ver>.md` must all agree before the tag exists: the tag is
-immutable once publish fires.
+Pushing an unqualified `v<ver>` is ambiguous between the branch and the tag.
+The tag triggers `publish.yml`: build, then TestPyPI, then PyPI, through
+OIDC trusted publishing with no tokens. A stalled publish is usually the
+GitHub environment approval gate, or a trusted-publisher registration that does
+not match the repository, workflow file and environment name exactly.
+
+## After publish
+
+Check that `pip install database-tycoon==<ver>` installs the new version. Create
+the GitHub release from the CHANGELOG section, close the milestone's issues,
+and close the milestone.

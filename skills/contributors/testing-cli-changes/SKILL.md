@@ -10,14 +10,21 @@ metadata:
 
 # Testing CLI changes
 
-Run everything the way CI does:
+CONTRIBUTING.md, "What CI gates on" (line 24), lists every gate. Run the ones
+that apply to your change before pushing:
 
 ```bash
-uv run pytest -q            # full default suite, must pass on 3.12 and 3.13
-uvx ruff check src tests    # lint gate
+uv run pytest -q                       # default suite, must pass on 3.12 and 3.13
+uv run ruff check src tests            # lint gate
+uv run ruff format --check src tests   # format gate; CI fails on this too
 ```
 
-Coverage floor is enforced (`fail_under` in `pyproject.toml`).
+Coverage is enforced by `[tool.coverage.report].fail_under` in
+`pyproject.toml`. Read the current value there rather than a number from memory.
+Changes to `web/` also need `npx tsc --noEmit` and the Playwright suite, and the
+committed bundle must match a rebuild (`scripts/sync_web_bundle.py`). Changes to
+`docs/` need `uv run mkdocs build --strict` and
+`scripts/check_docs_publishable.py`.
 
 ## Test tiers
 
@@ -25,19 +32,19 @@ Coverage floor is enforced (`fail_under` in `pyproject.toml`).
 |---|---|---|
 | _(none)_ | yes | Unit, no network, fast |
 | `offline_e2e` | yes | Full pipeline, local only (e.g. csv-import template) |
-| `e2e` | no | Live APIs/credentials; manual `e2e.yml` workflow only |
+| `e2e` | no | Live APIs or credentials; manual `e2e.yml` workflow only |
 
 ## The subprocess layer: when in-process tests lie
 
 In-process Typer tests cannot see PATH resolution, Rich rendering artifacts,
-stdout/stderr framing, or console-script wiring. **Any CLI-surface bug needs
-its regression test at the subprocess layer**, not in-process:
+stdout and stderr framing, or console-script wiring. Any CLI-surface bug needs
+its regression test at the subprocess layer:
 
-- `tests/test_recipe_doctests.py` executes fenced bash blocks from README and
-  `docs/recipes/*.md` marked `<!-- tycoon-test: mode=offline -->` via
-  `bash -e -o pipefail` in a fresh tmp dir with `HOME` rebound.
+- `tests/test_recipe_doctests.py` runs fenced bash blocks from README and
+  `docs/recipes/*.md` marked `<!-- tycoon-test: mode=offline -->`, with
+  `bash -e -o pipefail` in a fresh temporary directory and `HOME` rebound.
   `mode=online` blocks run only in `nightly-e2e.yml`. Commands run literally,
-  with no substitution. Adding that marker to a doc block turns it into a test.
+  with no substitution.
 - `tests/test_e2e_demo_arc.py` drives the installed console script end to end.
 - `tests/test_cli_surface.py` walks the registered command tree: every
   subcommand's `--help` must exit 0, and a stale-string registry rejects
@@ -47,12 +54,12 @@ its regression test at the subprocess layer**, not in-process:
 ## Snapshot tests for Rich output
 
 `tests/test_snapshots.py` (syrupy) pins exact rendered strings of install
-hints, doctor rows, and error paths. After intentionally changing a
-user-facing string:
+hints, doctor rows and error paths. After intentionally changing a user-facing
+string:
 
 ```bash
 uv run pytest --snapshot-update tests/test_snapshots.py
 git diff tests/__snapshots__/      # review before committing
 ```
 
-Never blind-commit a snapshot update: the diff is the review.
+Never commit a snapshot update without reading its diff: the diff is the review.

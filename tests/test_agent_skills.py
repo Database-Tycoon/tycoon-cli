@@ -46,8 +46,15 @@ def test_frontmatter_names_the_directory(path: Path) -> None:
 
 @pytest.mark.parametrize("path", _skill_files(), ids=lambda p: str(p.relative_to(SKILLS)))
 def test_no_stale_claims(path: Path) -> None:
-    text = path.read_text(encoding="utf-8")
-    hits = [f"{needle!r}: {advice}" for needle, advice in STALE.items() if needle in text]
+    # A line that warns against a stale command (e.g. "Do not use `uvx ruff`") is
+    # the point of a skill, so only lines that recommend the stale text are flagged.
+    lines = path.read_text(encoding="utf-8").splitlines()
+    hits = [
+        f"{needle!r}: {advice}"
+        for needle, advice in STALE.items()
+        for line in lines
+        if needle in line and not re.search(r"\bnot\b|\bnever\b|\bdon't\b", line, re.I)
+    ]
     assert not hits, f"{path.relative_to(ROOT)} has stale text:\n" + "\n".join(hits)
 
 
