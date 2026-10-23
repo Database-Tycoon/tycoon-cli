@@ -27,7 +27,7 @@ Two facts shape the order below.
 
 dlt 1.26.0, the pinned version, ships `dlt.destinations.motherduck`, and `dlt.destinations.motherduck("md:x")` builds a destination with those credentials (verified locally). Raw ingestion into MotherDuck is therefore a swap of dlt destination class and does not depend on the Destination Protocol from #110 or on the M4 runtime rewrite. That protocol serves tycoon's own introspection and query needs (`analyze`, the auto-scaffold, OSI) and can land after ingestion works.
 
-A `MotherDuckMetadataBackend` covers only the `events` and `snapshots` tables. The legacy capture path in `observability.py` opens the local metadata file directly for dlt traces, dbt runs and manifest diffs, and `data status` still reads `dlt_runs` and `dbt_nodes` from it. Until M4 retires that path (#116), a project with `metadata.backend: motherduck` would keep half its history in a local file. So the backend lands as an opt-in next to the M4 work, and scaffolds only default to it afterwards.
+A `MotherDuckMetadataBackend` covers only the `events` and `snapshots` tables. The legacy capture path, which #381 split out of `observability.py` into `src/tycoon/observability/` (`dlt_capture.py`, `dbt_capture.py` and `store.py`), opens the local metadata file directly for dlt traces, dbt runs and manifest diffs, and `data status` still reads `dlt_runs` and `dbt_nodes` from it through `duckdb.connect`. No open issue retires that path. #116 deletes `runner.py`, `source_manager.py` and `ducklake_config.py` only, and #129 leaves `_query_run_counts` and `_query_layer_last_build` in `status.py` alone on the stated assumption that #116 covers them, so the gap is currently unowned. Until it has an owner, a project with `metadata.backend: motherduck` would keep half its history in a local file. So the backend lands as an opt-in next to the M4 work, and scaffolds only default to it afterwards.
 
 ## Phases
 
@@ -45,7 +45,7 @@ Each phase is one two-week release cycle and each task is one pull request withi
 
 #308 goes first because the other three want the helper; without it, `build_destination()` in Phase 1 would hardcode `md:` one more time. The four Phase 0 PRs are stacked in that order with `gh stack`, branched from the v0.2.4 release branch once it opens.
 
-#430 is the first change a user notices, and it has a second gate the original plan missed. After a load, `commands/sources.py` calls `cfg.raw_db` to auto-scaffold staging models, `_warn_if_legacy_filesystem_table_exists` calls `get_tables(raw_db_path)`, and `capture_dlt` checks `raw_db.exists()`. Each needs to skip cleanly on an `md:` target, with a one-line note, until Phase 1 routes it through a destination. The three legacy pipeline modules call `raw_db_path.parent.mkdir(...)`; #116 deletes them, so they stay local-only behind the existing error. `ingestion/ducklake_config.py`, whose `get_destination()` was meant to do this routing and has no callers, is deleted in the same PR.
+#430 is the first change a user notices, and it has a second gate the original plan missed. After a load, `commands/sources.py` calls `cfg.raw_db` to auto-scaffold staging models, `_warn_if_legacy_filesystem_table_exists` calls `get_tables(raw_db_path)`, and `capture_dlt` checks `raw_db.exists()`. Each needs to skip cleanly on an `md:` target, with a one-line note, until Phase 1 routes it through a destination. The three legacy pipeline modules (`mta_pipeline.py`, `mta_bus_speeds_pipeline.py`, `nyc_dot_pipeline.py`) call `raw_db_path.parent.mkdir(...)`; #111 ports `_dispatch_legacy()` into `DltManagedRuntime` and keeps them, so they stay local-only behind the existing error. `ingestion/ducklake_config.py`, whose `get_destination()` was meant to do this routing and has no callers, is deleted in the same PR.
 
 ### Phase 1, v0.2.5: Destination Protocol
 
@@ -72,7 +72,7 @@ Where the catalog name lives for the metadata backend (`metadata.path` holding t
 | #128 | MotherDuck dbt profiles stop ATTACHing `tycoon_meta`; a fresh MotherDuck scaffold from `tycoon init` writes `metadata.backend: motherduck`. Projects retrofitted with `register warehouse` are untouched |
 | #431 | A recipe page for the local-to-MotherDuck path, and a manual job in `.github/workflows/e2e.yml` that runs the token-gated tests against a dedicated test database |
 
-Phase 3 depends on #116 having retired the legacy capture path. If M4 slips, #128's profile change can still ship and the `metadata.backend` default waits.
+Phase 3 depends on the legacy capture path having been retired, which no open issue currently covers (see the Phase 0 note above). If that work slips or stays unowned, #128's profile change can still ship and the `metadata.backend` default waits.
 
 ## Upgrade safety
 
