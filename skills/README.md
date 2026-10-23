@@ -28,6 +28,15 @@ tiers are distributed as **plugins** instead: the root
 /plugin install tycoon@tycoon-skills              # users tier
 ```
 
+On Claude Code 2.1.275 or later the same install is one step:
+
+```
+/plugin install tycoon --marketplace Database-Tycoon/tycoon-cli
+```
+
+Skills for working on this repository itself live in `repo-skills/`, outside
+the plugin scan, so installing a tier never ships them to a user.
+
 Open question (#307): additionally scaffolding the `users/` tier into new
 projects via `tycoon init`, so a user's agent picks the skills up with zero
 setup. Note for whoever implements it: `scaffold_from_template()` applies
@@ -45,13 +54,13 @@ owning skill, or explicitly to none.
 
 | Command | Owning skill |
 |---|---|
-| `data sources *` (catalog/add/list/run/run-all/remove) | adding-data-sources |
+| `data sources *` (catalog/add/list/run/remove/migrate) | adding-data-sources |
 | `register dbt` / `register warehouse` / `register rill` | building-models-and-dashboards |
 | `data analyze`, `data transform *`, `start` / `stop` | building-models-and-dashboards |
 | `data status` / `history` / `schema` / `query`, `data observability scaffold` | reading-project-state |
 | `doctor`, `profiles *`, `setup`, `init --upgrade` | diagnosing-projects |
 | `data run-all`, `schedule *`, `notify`, `data sync`, `data clean` | operating-pipelines |
-| `init` (new projects), `run <tool>`, `docs *` | none: `--help` and the docs site suffice |
+| `init` (new projects), `run <tool>`, `docs *`, `city` | none: `--help` and the docs site suffice |
 | `semantics *` (OSI), `data fivetran *` | none yet; add a skill when these grow traps worth teaching |
 
 When adding or renaming a command, update this table in the same PR: an
