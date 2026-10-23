@@ -35,11 +35,9 @@ def _plugin_roots() -> list[Path]:
 
 
 @pytest.mark.parametrize("root", _plugin_roots(), ids=lambda p: p.name)
-def test_plugin_root_has_a_manifest_and_only_its_own_skills(root: Path) -> None:
+def test_plugin_root_has_a_manifest_and_a_skills_directory(root: Path) -> None:
     manifest = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     assert manifest["name"] and manifest["version"] and manifest["description"]
-    # Default discovery scans skills/*/SKILL.md under the plugin root. Nothing
-    # else may sit at that depth, or installing the plugin ships it too.
     assert (root / "skills").is_dir(), f"{root.name} has no skills/ directory"
 
 
