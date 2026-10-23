@@ -6,12 +6,11 @@ ever-growing agents file. Each skill is one directory holding a `SKILL.md`.
 
 ## Three tiers, three audiences
 
-This PR ships the users tier; the contributors and maintainers tiers follow
-in a stacked PR.
-
 | Tier | For | Example concerns |
 |---|---|---|
 | `plugins/users/` | People who `pip install database-tycoon` and work *in a tycoon project* | adding sources, diagnosing failures, reading state, building models |
+| `plugins/contributors/` | People with this repo cloned, changing the CLI | branch model, test layers, snapshot tests |
+| `plugins/maintainers/` | Release-cutting maintainers | the release/publish cycle |
 
 Org-internal maintainer tooling that leans on private systems (Jira, meeting
 notes) is deliberately **not** committed here; it lives in maintainers'
@@ -26,6 +25,8 @@ tiers are distributed as **plugins** instead: the root
 ```
 /plugin marketplace add Database-Tycoon/tycoon-cli
 /plugin install tycoon@tycoon-skills              # users tier
+/plugin install tycoon-contributors@tycoon-skills      # contributors tier
+/plugin install tycoon-maintainers@tycoon-skills  # maintainers tier
 ```
 
 On Claude Code 2.1.275 or later the same install is one step:
