@@ -25,7 +25,7 @@ tiers are distributed as **plugins** instead: the root
 ```
 /plugin marketplace add Database-Tycoon/tycoon-cli
 /plugin install tycoon@tycoon-skills              # users tier
-/plugin install tycoon-contrib@tycoon-skills      # contributors tier
+/plugin install tycoon-contributors@tycoon-skills      # contributors tier
 /plugin install tycoon-maintainers@tycoon-skills  # maintainers tier
 ```
 

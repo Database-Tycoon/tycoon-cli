@@ -10,8 +10,8 @@ metadata:
 
 # Cutting a release
 
-CONTRIBUTING.md, "Release process" (line 253) and "Merging into the release
-branch" (line 280), is the authoritative procedure. This skill names the steps
+CONTRIBUTING.md, "Release process" and "Merging into the release branch", is the
+authoritative procedure. This skill names the steps
 that have gone wrong and the checks that catch them. Read the CONTRIBUTING.md
 sections first.
 

@@ -10,7 +10,7 @@ metadata:
 
 # Testing CLI changes
 
-CONTRIBUTING.md, "What CI gates on" (line 24), lists every gate. Run the ones
+CONTRIBUTING.md, "What CI gates on", lists every gate. Run the ones
 that apply to your change before pushing:
 
 ```bash
