@@ -29,8 +29,11 @@ observability database at `.tycoon/metadata.duckdb`, queried through tycoon
 
 ```bash
 tycoon data query --db .tycoon/metadata.duckdb \
-  "SELECT source, status, started_at, rows_loaded
-   FROM dlt_runs ORDER BY started_at DESC LIMIT 20"
+  "SELECT r.source_schema, r.load_id, r.status, r.inserted_at,
+          sum(t.rows_loaded) AS rows_loaded
+   FROM dlt_runs r LEFT JOIN dlt_rows_by_table t USING (source_schema, load_id)
+   GROUP BY r.source_schema, r.load_id, r.status, r.inserted_at
+   ORDER BY r.inserted_at DESC LIMIT 20"
 ```
 
 Tables: `dlt_runs`, `dlt_rows_by_table`, `dbt_runs`, `dbt_nodes`,
