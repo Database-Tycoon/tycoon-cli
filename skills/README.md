@@ -11,7 +11,7 @@ in a stacked PR.
 
 | Tier | For | Example concerns |
 |---|---|---|
-| `users/` | People who `pip install database-tycoon` and work *in a tycoon project* | adding sources, diagnosing failures, reading state, building models |
+| `plugins/users/` | People who `pip install database-tycoon` and work *in a tycoon project* | adding sources, diagnosing failures, reading state, building models |
 
 Org-internal maintainer tooling that leans on private systems (Jira, meeting
 notes) is deliberately **not** committed here; it lives in maintainers'
@@ -34,8 +34,10 @@ On Claude Code 2.1.275 or later the same install is one step:
 /plugin install tycoon --marketplace Database-Tycoon/tycoon-cli
 ```
 
-Skills for working on this repository itself live in `repo-skills/`, outside
-the plugin scan, so installing a tier never ships them to a user.
+Each tier is its own plugin root (`plugins/<tier>/`) with its own `skills/`
+directory, so installing one tier never loads another's skills. The four skills
+directly under `skills/` are for working on this repository. They belong to no
+plugin, so no install ships them.
 
 Open question (#307): additionally scaffolding the `users/` tier into new
 projects via `tycoon init`, so a user's agent picks the skills up with zero
@@ -68,7 +70,7 @@ unmapped command is an undocumented one.
 
 ## Authoring conventions
 
-- One directory per skill: `skills/<tier>/<skill-name>/SKILL.md`; the
+- One directory per skill: `plugins/<tier>/skills/<skill-name>/SKILL.md`; the
   frontmatter `name` must equal the directory name (lowercase, hyphens).
 - `description` states **trigger conditions**, meaning when an agent should load the
   skill (symptoms, error strings, task shapes), not a summary of its

@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Added
 
-- **Agent skills for tycoon users** ([#307][]). Five task-shaped skills (adding data sources, diagnosing projects, reading pipeline state, building models and dashboards, operating pipelines) install as the `tycoon` Claude Code plugin from this repository's marketplace. Skills for working on the repository itself live in `repo-skills/` and are not shipped.
+- **Agent skills for tycoon users** ([#307][]). Five task-shaped skills (adding data sources, diagnosing projects, reading pipeline state, building models and dashboards, operating pipelines) install as the `tycoon` Claude Code plugin from this repository's marketplace. Skills for working on the repository itself stay in `skills/` and belong to no plugin.
 
 ## [0.2.2] - 2026-10-09
 

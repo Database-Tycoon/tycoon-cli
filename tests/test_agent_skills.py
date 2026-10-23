@@ -1,7 +1,9 @@
-"""Guards on the agent skills shipped in skills/.
+"""Guards on the agent skills shipped in this repository.
 
 A skill's claims are about this repository's CLI and conventions, so a stale
-one is worse than none. These checks catch the drift a review found by hand.
+one is worse than none. Each tier is a plugin root under plugins/, and the
+skills directly under skills/ are for working on this repository. These checks
+catch the drift a review found by hand.
 """
 
 from __future__ import annotations
@@ -13,7 +15,6 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-SKILLS = ROOT / "skills"
 MARKETPLACE = ROOT / ".claude-plugin" / "marketplace.json"
 
 # Commands and paths that were wrong in a published skill. Each entry names the
@@ -25,16 +26,34 @@ STALE = {
 }
 
 
-def _skill_files() -> list[Path]:
-    return sorted(SKILLS.glob("*/*/SKILL.md"))
+def _all_skill_files() -> list[Path]:
+    return sorted([*ROOT.glob("skills/*/SKILL.md"), *ROOT.glob("plugins/*/skills/*/SKILL.md")])
 
 
-def test_every_skill_is_inside_a_tier() -> None:
-    stray = sorted(p.relative_to(ROOT) for p in SKILLS.glob("*/SKILL.md"))
-    assert not stray, f"skills must sit under a tier directory, found: {stray}"
+def _plugin_roots() -> list[Path]:
+    return sorted(p for p in (ROOT / "plugins").iterdir() if p.is_dir())
 
 
-@pytest.mark.parametrize("path", _skill_files(), ids=lambda p: str(p.relative_to(SKILLS)))
+@pytest.mark.parametrize("root", _plugin_roots(), ids=lambda p: p.name)
+def test_plugin_root_has_a_manifest_and_only_its_own_skills(root: Path) -> None:
+    manifest = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    assert manifest["name"] and manifest["version"] and manifest["description"]
+    # Default discovery scans skills/*/SKILL.md under the plugin root. Nothing
+    # else may sit at that depth, or installing the plugin ships it too.
+    assert (root / "skills").is_dir(), f"{root.name} has no skills/ directory"
+
+
+def test_marketplace_paths_resolve_from_each_plugin_source() -> None:
+    manifest = json.loads(MARKETPLACE.read_text(encoding="utf-8"))
+    for plugin in manifest["plugins"]:
+        base = ROOT / plugin["source"]
+        for rel in plugin.get("skills", []):
+            assert (base / rel / "SKILL.md").is_file(), (
+                f"{plugin['name']} lists {rel}, which is not a skill under {plugin['source']}"
+            )
+
+
+@pytest.mark.parametrize("path", _all_skill_files(), ids=lambda p: str(p.relative_to(ROOT)))
 def test_frontmatter_names_the_directory(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
@@ -44,15 +63,15 @@ def test_frontmatter_names_the_directory(path: Path) -> None:
     assert fields["description"].strip(), "description must state when to load the skill"
 
 
-@pytest.mark.parametrize("path", _skill_files(), ids=lambda p: str(p.relative_to(SKILLS)))
+@pytest.mark.parametrize("path", _all_skill_files(), ids=lambda p: str(p.relative_to(ROOT)))
 def test_no_stale_claims(path: Path) -> None:
-    text = path.read_text(encoding="utf-8")
-    hits = [f"{needle!r}: {advice}" for needle, advice in STALE.items() if needle in text]
+    # A line that warns against a stale command (e.g. "Do not use `uvx ruff`") is
+    # the point of a skill, so only lines that recommend the stale text are flagged.
+    lines = path.read_text(encoding="utf-8").splitlines()
+    hits = [
+        f"{needle!r}: {advice}"
+        for needle, advice in STALE.items()
+        for line in lines
+        if needle in line and not re.search(r"\bnot\b|\bnever\b|\bdon't\b", line, re.I)
+    ]
     assert not hits, f"{path.relative_to(ROOT)} has stale text:\n" + "\n".join(hits)
-
-
-def test_marketplace_points_at_real_skills() -> None:
-    manifest = json.loads(MARKETPLACE.read_text(encoding="utf-8"))
-    for plugin in manifest["plugins"]:
-        for rel in plugin.get("skills", []):
-            assert (ROOT / rel / "SKILL.md").is_file(), f"{plugin['name']} lists missing {rel}"
