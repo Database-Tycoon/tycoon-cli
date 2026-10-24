@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file. The format 
 ### Added
 
 - **The documentation site is published** ([#348][], PR [#415][]). `mkdocs build --strict` already ran on every pull request, but the built site was discarded: GitHub Pages had never been enabled, `https://database-tycoon.github.io/tycoon-cli/` returned 404, and three places in the repository linked to that dead URL (`site_url` in `mkdocs.yml`, the `tycoon docs` module docstring, which calls it "the public docs", and `docs/reference/dependencies.md`, which calls it "the docs site you're reading right now"). A `docs.yml` workflow builds the site on every push to `main` and deploys it to Pages, so those three references resolve. Since `main` only advances when a release branch merges, the published site tracks the released version. Both the pull-request job and the deploy run `scripts/check_docs_publishable.py` after the build: it fails if a page `draft_docs` or `exclude_docs` withholds reached the build, or if a `nav` entry points at a page that was not built, which `mkdocs build --strict` reports only at INFO and would otherwise ship as a dead link on every page. `CONTRIBUTING.md` gains a Documentation section recording where the line between published and internal pages is drawn, and which of its two rules the docs job can enforce.
+- **The docs site has a releases index and a regrouped navigation** (PRs [#416][], [#417][]). A releases page links the current release and the 0.2 series, the home page's Releases card points at it instead of the 0.1.5 notes, a Recipes card is added, the sidebar groups releases into 0.2.x and 0.1.x sections that fold away, and every page gets its own table of contents.
+- **Agent skills install as Claude Code plugins** ([#307][], PRs [#374][], [#375][]). Three plugins ship from this repository's marketplace, each in its own plugin root under `plugins/`: `tycoon`, five skills for working in a tycoon project (adding data sources, diagnosing projects, reading pipeline state, building models and dashboards, operating pipelines), and `tycoon-contributors` and `tycoon-maintainers`, for working on tycoon itself. Install with `/plugin marketplace add Database-Tycoon/tycoon-cli`, then `/plugin install tycoon@tycoon-skills`. The skills are not part of the Python package. `tests/test_agent_skills.py` checks each plugin's manifest and skill list, frontmatter, install names and `CONTRIBUTING.md` citations, and fails on stale text such as `uvx ruff`.
+- **A MotherDuck roadmap for contributors** ([#429][], PR [#432][]). `docs/proposals/motherduck-support.md` orders the local-to-MotherDuck work into four phases across 0.2.4 to 0.3.1. It is a contributor page and is not published.
 
 ### Fixed
 
@@ -14,10 +17,15 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Changed
 
-- **The city renderer is CI-gated** (PRs [#256][], [#252][]). `tests/tycoon_city`, including the `city.json` contract golden, joins the default `pytest` run and `src/tycoon_city` counts toward coverage (floor re-baselined to 73). A new `web` job runs `tsc --noEmit`, the production build, a check that the shipped `web_dist/` is exactly the build of `web/`, and the Playwright suite. Through 0.2.1 the CLI was gated and the renderer was not.
-- **`tycoon-city` renders its help like every other tycoon command** ([#282][]). The renderer's own console script is now a Typer app with `serve` and `demo` subcommands, and `tycoon-city PATH` stays legal as shorthand for `serve`, so `tycoon-city demo --help` and `tycoon city --help` no longer look like two different tools. The argparse `python -m tycoon_city.webserve [demo]` path remains for Docker and CI; both surfaces share one implementation.
+- **The city renderer is CI-gated** (PRs [#248][], [#249][], [#256][], [#252][]). `tests/tycoon_city`, including the `city.json` contract golden, joins the default `pytest` run and `src/tycoon_city` counts toward coverage (floor re-baselined to 73). A new `web` job runs `tsc --noEmit`, the production build, a check that the shipped `web_dist/` is exactly the build of `web/`, and the Playwright suite. Through 0.2.1 the CLI was gated and the renderer was not.
+- **`tycoon-city` renders its help like every other tycoon command** ([#282][], PR [#287][]). The renderer's own console script is now a Typer app with `serve` and `demo` subcommands, and `tycoon-city PATH` stays legal as shorthand for `serve`, so `tycoon-city demo --help` and `tycoon city --help` no longer look like two different tools. The argparse `python -m tycoon_city.webserve [demo]` path remains for Docker and CI; both surfaces share one implementation.
 - **Internal pages are kept out of the docs build** ([#348][], PR [#421][]). `docs_dir` carries 29 city-renderer pages (handover notes, agent task contracts, design log) and 4 draft proposals alongside the PyPI publishing runbook, an OpenMetadata note and an install script. They were out of `nav`, but MkDocs still built them, served them at guessable URLs and indexed them for search, so hosting the site at any point would have published all of them. `draft_docs` keeps the 33 city and proposal pages out of the build while `tycoon docs serve` still renders them locally, and `exclude_docs` drops the other three in both modes. The build carries no internal entries in its search index. Four links that pointed into the withheld directories now point at the repository instead.
+- **The observability module is a package** ([#380][], PR [#381][]). `src/tycoon/observability.py`, at 1,092 lines, is split into `src/tycoon/observability/` (`store.py`, `dlt_capture.py`, `dbt_capture.py`) with the public names re-exported, so imports and behaviour are unchanged. For contributors.
 
+
+### Removed
+
+- **The retired v5 city planner and its tests** ([#281][], PR [#256][]). The ring planner replaced it in 0.2.1, and the city contract doc and design log now describe the ring planner instead (PR [#254][]). For contributors; nothing user-facing used it.
 [#250]: https://github.com/Database-Tycoon/tycoon-cli/pull/250
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
@@ -28,6 +36,18 @@ All notable changes to this project will be documented in this file. The format 
 [#417]: https://github.com/Database-Tycoon/tycoon-cli/pull/417
 [#416]: https://github.com/Database-Tycoon/tycoon-cli/pull/416
 [#415]: https://github.com/Database-Tycoon/tycoon-cli/pull/415
+[#248]: https://github.com/Database-Tycoon/tycoon-cli/pull/248
+[#249]: https://github.com/Database-Tycoon/tycoon-cli/pull/249
+[#254]: https://github.com/Database-Tycoon/tycoon-cli/pull/254
+[#281]: https://github.com/Database-Tycoon/tycoon-cli/issues/281
+[#287]: https://github.com/Database-Tycoon/tycoon-cli/pull/287
+[#307]: https://github.com/Database-Tycoon/tycoon-cli/issues/307
+[#374]: https://github.com/Database-Tycoon/tycoon-cli/pull/374
+[#375]: https://github.com/Database-Tycoon/tycoon-cli/pull/375
+[#380]: https://github.com/Database-Tycoon/tycoon-cli/issues/380
+[#381]: https://github.com/Database-Tycoon/tycoon-cli/pull/381
+[#429]: https://github.com/Database-Tycoon/tycoon-cli/issues/429
+[#432]: https://github.com/Database-Tycoon/tycoon-cli/pull/432
 
 ## [0.2.2] - 2026-10-09
 
