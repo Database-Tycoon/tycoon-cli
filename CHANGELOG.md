@@ -18,10 +18,15 @@ All notable changes to this project will be documented in this file. The format 
 - **`tycoon-city` renders its help like every other tycoon command** ([#282][]). The renderer's own console script is now a Typer app with `serve` and `demo` subcommands, and `tycoon-city PATH` stays legal as shorthand for `serve`, so `tycoon-city demo --help` and `tycoon city --help` no longer look like two different tools. The argparse `python -m tycoon_city.webserve [demo]` path remains for Docker and CI; both surfaces share one implementation.
 - **Internal pages are kept out of the docs build** ([#348][], PR [#421][]). `docs_dir` carries 29 city-renderer pages (handover notes, agent task contracts, design log) and 4 draft proposals alongside the PyPI publishing runbook, an OpenMetadata note and an install script. They were out of `nav`, but MkDocs still built them, served them at guessable URLs and indexed them for search, so hosting the site at any point would have published all of them. `draft_docs` keeps the 33 city and proposal pages out of the build while `tycoon docs serve` still renders them locally, and `exclude_docs` drops the other three in both modes. The build carries no internal entries in its search index. Four links that pointed into the withheld directories now point at the repository instead.
 
+### Security
+
+- **Local secret files can no longer be committed by accident** ([#410][]). The repository's `.gitignore` now covers `.env`, `.env.*` and any `.dlt/secrets.toml`, so credentials a contributor keeps for local runs stay out of commits in this public repo. `.env.example` stays committable, and a test fails if these rules are ever dropped. This changes nothing in the published package.
+
 [#250]: https://github.com/Database-Tycoon/tycoon-cli/pull/250
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
+[#410]: https://github.com/Database-Tycoon/tycoon-cli/issues/410
 [#282]: https://github.com/Database-Tycoon/tycoon-cli/issues/282
 [#348]: https://github.com/Database-Tycoon/tycoon-cli/issues/348
 [#421]: https://github.com/Database-Tycoon/tycoon-cli/pull/421
