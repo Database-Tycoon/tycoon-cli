@@ -37,7 +37,10 @@ import { mountCity, type MountedCity, type MountOptions, unmountCity } from "./m
 
 export interface HUDResult {
   status: HTMLElement;
-  statusLine: string;
+  /** A getter for the same reason `doc` is: an R refresh recomputes the line
+   * for the new document, and a consumer that captured the string at boot
+   * would restore the previous city's name and counts into the footer. */
+  statusLine: () => string;
   asof: HTMLElement;
   /** The document currently on the screen. An R refresh replaces it wholesale,
    * so this is a getter: whoever reads the value instead of the function is
@@ -78,23 +81,27 @@ export function setupHUD(
   const { doc, city, app } = setup;
 
   const status = document.getElementById("status")!;
-  const statusLine =
-    `database: ${doc.database.name}   ·   ${doc.database.object_count} objects   ·   ` +
-    `${doc.database.total_rows.toLocaleString()} rows`;
+  const statusLineFor = (d: CityDocument): string =>
+    `database: ${d.database.name}   ·   ${d.database.object_count} objects   ·   ` +
+    `${d.database.total_rows.toLocaleString()} rows`;
+  let statusLine = statusLineFor(doc);
   status.textContent = statusLine;
   status.title = statusLine;
 
-  const notes = [
-    ...(doc.database.has_known_edges ? [] : ["no lineage detected"]),
-    ...doc.database.notes,
-  ];
   const notesButton = document.getElementById("notes-button") as HTMLButtonElement;
   const notesPop = document.getElementById("notes-pop")!;
-  notesButton.hidden = notes.length === 0;
-  notesButton.textContent = `ⓘ notes (${notes.length})`;
-  notesPop.innerHTML = `<b>degradation notes</b><ul>${notes
-    .map((n) => `<li>${n}</li>`)
-    .join("")}</ul>`;
+  function buildNotes(d: CityDocument): void {
+    const notes = [
+      ...(d.database.has_known_edges ? [] : ["no lineage detected"]),
+      ...d.database.notes,
+    ];
+    notesButton.hidden = notes.length === 0;
+    notesButton.textContent = `ⓘ notes (${notes.length})`;
+    notesPop.innerHTML = `<b>degradation notes</b><ul>${notes
+      .map((n) => `<li>${n}</li>`)
+      .join("")}</ul>`;
+  }
+  buildNotes(doc);
 
   document.getElementById("notes-button")!.addEventListener("click", () => {
     const pop = document.getElementById("notes-pop")!;
@@ -345,17 +352,23 @@ export function setupHUD(
     refreshing = false;
   }
 
+  // Everything document-derived outside the canvas repaints here, or it is
+  // stale the moment a refresh lands: the boot-time footer over a fresh #asof
+  // was exactly that bug, three times over (status line, notes, legend).
   function applyChrome(d: CityDocument): void {
     (document.getElementById("logo")! as HTMLElement).textContent = d.theme.logo_text;
+    statusLine = statusLineFor(d);
     status.textContent = statusLine;
     status.title = statusLine;
+    buildNotes(d);
+    buildLegend(d);
   }
 
   (window as any).__tycoonCityRefresh = () => void refresh();
 
   return {
     status,
-    statusLine,
+    statusLine: () => statusLine,
     asof,
     doc: () => currentDoc,
     city: () => cityRef.current,

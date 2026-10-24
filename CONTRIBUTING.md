@@ -250,6 +250,47 @@ The size and title checks currently appear as **visible, non-blocking CI warning
 - **Commits**: one logical change per commit, imperative mood, body explaining
   *why* the change was made. Squash noisy fixup commits before merging.
 
+## Documentation
+
+`.github/workflows/docs.yml` builds `docs/` and publishes it to
+[database-tycoon.github.io/tycoon-cli](https://database-tycoon.github.io/tycoon-cli/)
+on every push to `main`. Since `main` only advances when a release branch
+merges, the published site tracks the released version rather than the active
+branch.
+
+`docs/` holds more than the public site. Four settings in `mkdocs.yml` decide
+what ships, and a page must be covered by one of them:
+
+| Setting | Effect | Use it for |
+|---|---|---|
+| `nav` | Published and listed in the sidebar | User-facing pages |
+| `not_in_nav` | Published but deliberately absent from the sidebar | A page linked from elsewhere rather than browsed to |
+| `draft_docs` | Rendered by `tycoon docs serve`, absent from the published build | Contributor notes you still want to read locally |
+| `exclude_docs` | Not processed in either mode | Anything that should not be read from the docs tree at all |
+
+Two rules follow:
+
+- **Every new page must appear in one of the four.** A page in none of them
+  fails the build: `validation.nav.omitted_files` is set to `warn`, which
+  `--strict` turns into an error. Before that setting, such a page published
+  silently, which is the failure this rule exists to prevent.
+- **Contributor-facing pages belong in `draft_docs` or `exclude_docs`, not
+  `not_in_nav`.** `not_in_nav` only suppresses the omitted-file report: MkDocs
+  still builds the page, serves it at a guessable URL and indexes it for
+  search.
+- **A `nav` entry must not point at a drafted or excluded page.** MkDocs
+  reports that at INFO, so `mkdocs build --strict` still passes, and the page
+  ships a sidebar link that 404s on every page of the site.
+
+`scripts/check_docs_publishable.py` runs in the docs job of both workflows and
+enforces the last rule in full: every `nav` entry must resolve to a page that
+was actually built. The build itself now enforces the first. The script
+reads `draft_docs` and `exclude_docs` from `mkdocs.yml`, so it verifies that
+what the config withholds really is absent from the build, and it pins
+`docs/city/` and `docs/proposals/` so they cannot quietly stop being withheld.
+It cannot know that some new directory was meant to be internal. That judgment
+is yours, and the rule above is how you record it.
+
 ## Release process
 
 Each release cycle lives on its own version branch. Nothing PRs into `main`
@@ -267,7 +308,12 @@ always reflects the latest published version.
    bump is a deliberate call — check what a version change drags into the
    lockfile, not just its number.
 3. When the cycle is done, the maintainer finalizes `CHANGELOG.md` and the
-   `docs/releases/v<ver>.md` long-form narrative on the branch.
+   `docs/releases/v<ver>.md` long-form narrative on the branch, adds that page
+   to the Releases nav in `mkdocs.yml`, and points the "current release" line
+   in `docs/releases/index.md` at it, adding it to the series list on that page.
+   A page missing from `nav` fails the build, since
+   `validation.nav.omitted_files` is `warn`, but nothing catches a stale
+   "current release" line, so that one is on you.
 4. The release branch merges into `main` via PR, then the version tag is
    pushed (branch and tag share a name, so use fully-qualified refs — see
    `docs/publishing-to-pypi.md`). The tag triggers PyPI publish via

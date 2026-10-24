@@ -28,10 +28,8 @@ theme:
   features:
     - navigation.sections
     - navigation.indexes
-    - navigation.expand
     - navigation.top
     - navigation.tracking
-    - toc.integrate
     - search.suggest
     - search.highlight
     - content.code.copy
@@ -40,6 +38,12 @@ theme:
     - toc.follow
   icon:
     repo: fontawesome/brands/github
+
+# Declared explicitly because `search` is the default plugin set: naming any
+# plugin here replaces that default instead of extending it, so a plugin added
+# without re-listing search would ship a site with no search and no error.
+plugins:
+  - search
 
 markdown_extensions:
   - admonition
@@ -59,7 +63,6 @@ markdown_extensions:
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
@@ -105,6 +108,17 @@ nav:
       - "tycoon run": commands/run.md
       - "tycoon notify": commands/notify.md
       - "tycoon schedule": commands/schedule.md
+  - Recipes:
+    - Full walkthroughs:
+      - "CSV files to a live dashboard": recipes/csv-to-dashboard.md
+      - "MotherDuck + local snapshot": recipes/motherduck-cloud-sync.md
+    - Bring your own stack:
+      - "An existing dbt project": recipes/existing-dbt-project.md
+      - "An existing dbt profile": recipes/existing-dbt-profile.md
+      - "Fivetran connector state": recipes/fivetran-metadata.md
+    - Modelling and export:
+      - "The layered architecture": recipes/layered-architecture.md
+      - "Marts as portable OSI YAML": recipes/osi-export.md
   - Reference:
     - reference/tycoon-yml.md
     - reference/templates.md
@@ -112,37 +126,61 @@ nav:
     - reference/environment.md
     - reference/dependencies.md
     - "All commands + options": reference/all-commands.md
-  - Recipes:
-    - recipes/csv-to-dashboard.md
-    - recipes/motherduck-cloud-sync.md
-    - recipes/existing-dbt-project.md
-    - recipes/existing-dbt-profile.md
-    - recipes/osi-export.md
-    - recipes/fivetran-metadata.md
-    - recipes/layered-architecture.md
   - Releases:
-    - "v0.2.2": releases/v0.2.2.md
-    - "v0.2.1": releases/v0.2.1.md
-    - "v0.2.0": releases/v0.2.0.md
-    - "v0.1.11": releases/v0.1.11.md
-    - "v0.1.10": releases/v0.1.10.md
-    - "v0.1.9": releases/v0.1.9.md
-    - "v0.1.8": releases/v0.1.8.md
-    - "v0.1.7": releases/v0.1.7.md
-    - "v0.1.6": releases/v0.1.6.md
-    - "v0.1.5": releases/v0.1.5.md
-    - "v0.1.4": releases/v0.1.4.md
-    - "v0.1.3": releases/v0.1.3.md
-    - "v0.1.2": releases/v0.1.2.md
-    - "v0.1.1": releases/v0.1.1.md
+    - releases/index.md
+    - 0.2.x:
+      - "v0.2.3": releases/v0.2.3.md
+      - "v0.2.2": releases/v0.2.2.md
+      - "v0.2.1": releases/v0.2.1.md
+      - "v0.2.0": releases/v0.2.0.md
+    - 0.1.x:
+      - "v0.1.11": releases/v0.1.11.md
+      - "v0.1.10": releases/v0.1.10.md
+      - "v0.1.9": releases/v0.1.9.md
+      - "v0.1.8": releases/v0.1.8.md
+      - "v0.1.7": releases/v0.1.7.md
+      - "v0.1.6": releases/v0.1.6.md
+      - "v0.1.5": releases/v0.1.5.md
+      - "v0.1.4": releases/v0.1.4.md
+      - "v0.1.3": releases/v0.1.3.md
+      - "v0.1.2": releases/v0.1.2.md
+      - "v0.1.1": releases/v0.1.1.md
 
-# Pages not in nav (not user-facing): design proposals (drafts in
-# `docs/proposals/`), publishing notes, install scripts. Suppress
-# mkdocs --strict warnings about them.
-not_in_nav: |
+# A page in none of the three lists publishes silently: MkDocs reports an
+# omitted file at INFO, so `--strict` stays green. `omitted_files: warn` turns
+# that into a build failure, which is what makes the rule below enforceable
+# rather than a convention (gh-348).
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    anchors: warn
+
+# Contributor notes must stay out of the published site while staying readable
+# locally. `tycoon docs serve` is how contributors read these docs, and
+# `CLAUDE.md` routes every city-renderer task to `docs/city/conventions.md`
+# and `handover.md`.
+#
+# `draft_docs` is the key that draws that line: MkDocs drops a DRAFT file from
+# `mkdocs build` but still populates it under `mkdocs serve`, where
+# `exclude_docs` stops processing the file in both. Keeping them out of `nav`
+# was not enough on its own: MkDocs still built them, served them at guessable
+# URLs, and indexed them for search (gh-348).
+draft_docs: |
+  /city/
+  /proposals/
+
+# These three are not documentation in either mode, so they are excluded
+# outright rather than drafted: a PyPI publishing runbook, an OpenMetadata
+# note, and a shell script.
+exclude_docs: |
   /openmetadata.md
   /publishing-to-pypi.md
   /install_rill.sh
-  /proposals/v0.1.6-and-v0.1.7-open-questions.md
-  /proposals/v0.1.8-scope.md
-  /proposals/v0.1.9-scope.md
+
+# `ingestion-architecture.md` is published but deliberately out of nav: it
+# describes the ingestion architecture being built toward rather than shipped
+# behaviour, and two release notes link to it, three times in all. Whether it
+# earns a nav entry of its own is an open question on gh-348.
+not_in_nav: |
+  /ingestion-architecture.md
