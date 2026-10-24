@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file. The format 
 - **The city's traffic actually drives** (PR [#250][]). The animation loop ticked the vehicle and guest simulations but never called the layers' `update()`, the only writers of the instance matrices, so both meshes sat at count 0 over a fully simulated street. Listed as a known limitation in 0.2.0 and 0.2.1. The verification hooks counted the simulation arrays and hid it; they now answer from the drawn mesh.
 - **`R` refresh repaints the document-derived chrome** (PR [#250][]). The footer status line, the degradation-notes popover and the legend were painted once at boot, so a refresh showed a fresh "exported N ago" over the previous city's name, counts, notes and legend.
 - **Coverage renders unknown, not zero, when the evidence was never read** (PR [#251][]). The renderer's schema was missing the `achievements` block the exporter has emitted since 2026-08-06, so it was silently stripped and the problems gauges, library panel and library tour recomputed coverage from raw fields, reporting "columns documented 0%" for a catalog with no dbt manifest. All three now honour the unknown state.
+- **`tycoon data status` shows when each dbt layer was last built** ([#390][]). The staging, intermediate and marts panels always said "last build never", even when `tycoon data history` listed successful builds of those models. Status looked models up by bare name, but the run ledger stores each node under its dbt `unique_id` (`model.<project>.<name>`), so nothing ever matched. It now matches on `unique_id`. The ledger also stores build start times as local wall-clock time and status read them as UTC, which would have made a build two hours old in New York show as "6h ago"; status now reads them in local time. Ledgers written by earlier versions need no migration: their builds show up on the next `data status`.
 
 ### Changed
 
@@ -22,6 +23,7 @@ All notable changes to this project will be documented in this file. The format 
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
+[#390]: https://github.com/Database-Tycoon/tycoon-cli/issues/390
 [#282]: https://github.com/Database-Tycoon/tycoon-cli/issues/282
 [#348]: https://github.com/Database-Tycoon/tycoon-cli/issues/348
 [#421]: https://github.com/Database-Tycoon/tycoon-cli/pull/421
