@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Added
 
+- **A mental model of the city map** ([#323][]). `docs/city/mental-model.md` maps each data-stack concept (source, table, dbt model, test, run, freshness SLA, docs coverage) to what it becomes on the `tycoon city` map and the `city.json` field it comes from, walks one worked example from the `csv-import` template to the rendered city, and gives reviewers a table of which layer a PR touches plus a short checklist.
 - **The documentation site is published** ([#348][], PR [#415][]). `mkdocs build --strict` already ran on every pull request, but the built site was discarded: GitHub Pages had never been enabled, `https://database-tycoon.github.io/tycoon-cli/` returned 404, and three places in the repository linked to that dead URL (`site_url` in `mkdocs.yml`, the `tycoon docs` module docstring, which calls it "the public docs", and `docs/reference/dependencies.md`, which calls it "the docs site you're reading right now"). A `docs.yml` workflow builds the site on every push to `main` and deploys it to Pages, so those three references resolve. Since `main` only advances when a release branch merges, the published site tracks the released version. Both the pull-request job and the deploy run `scripts/check_docs_publishable.py` after the build: it fails if a page `draft_docs` or `exclude_docs` withholds reached the build, or if a `nav` entry points at a page that was not built, which `mkdocs build --strict` reports only at INFO and would otherwise ship as a dead link on every page. `CONTRIBUTING.md` gains a Documentation section recording where the line between published and internal pages is drawn, and which of its two rules the docs job can enforce.
 
 ### Fixed
@@ -22,6 +23,7 @@ All notable changes to this project will be documented in this file. The format 
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
+[#323]: https://github.com/Database-Tycoon/tycoon-cli/issues/323
 [#282]: https://github.com/Database-Tycoon/tycoon-cli/issues/282
 [#348]: https://github.com/Database-Tycoon/tycoon-cli/issues/348
 [#421]: https://github.com/Database-Tycoon/tycoon-cli/pull/421

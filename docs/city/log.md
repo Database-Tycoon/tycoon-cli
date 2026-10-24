@@ -3,10 +3,33 @@ title: Documentation log
 description: Chronological record of documentation changes
 tags: [log]
 related: []
-updated: '2026-09-22'
+updated: '2026-10-11'
 ---
 
 # Log
+
+- 2026-10-11: mental-model page taken out of the site nav. It is written for
+  reviewers of city PRs, like the rest of `docs/city/`, so it stays reachable
+  from this directory's index and `tycoon docs serve` instead of the public
+  site's sidebar (#415 leaves `docs/city/` out of the published build).
+
+- 2026-09-30: mental-model page corrected and cut down after fact-check.
+  Reordered so the PR-layer table and checklist come first; the document diff
+  step now drops wall-clock ages with a jq filter; fixed the power plant
+  position, the list of what the city reads, street-ending precedence and the
+  height source; the layering-test reference now says what it guards (#332);
+  v0.2.2 caveats moved to a dated Known gaps note.
+
+- 2026-09-29: **A mental model of the city map (gh-323).** Asked for in the
+  2026-09-29 weekly sync so reviewers can map large city PRs onto the
+  picture. New `mental-model.md`: the concept to map element to `city.json`
+  field table, a worked example generated from the `csv-import` template with
+  the real CLI, a "which part a PR touches" table and a reviewer checklist.
+  Listed in `index.md` and the mkdocs nav. PRs #250/#251 are flagged where
+  the page describes behaviour not yet on `v0.2.2`. Noted, not fixed here:
+  `guide.md` says height is one level per decade of rows, but the 3D
+  renderer draws height from the real row count (cube root) and keeps
+  `target_density` for the contract and guest attraction.
 
 - 2026-09-22: **The retired v5 planner is deleted.** `sim/town_v5_plan.py`,
   `tests/tycoon_city/sim/test_town_v5_plan.py` and
