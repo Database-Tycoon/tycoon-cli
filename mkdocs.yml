@@ -169,6 +169,7 @@ validation:
 draft_docs: |
   /city/
   /proposals/
+  /process/
 
 # These three are not documentation in either mode, so they are excluded
 # outright rather than drafted: a PyPI publishing runbook, an OpenMetadata
