@@ -18,7 +18,7 @@ package goes to the reviewer and the maintainer decides.
 | Copy rules | Templates live in `db-tycoon-content-repo/templates/linkedin-post.md` and `BRAND_VOICE.md`. 150 to 400 words, opening line stands alone, links in the first comment, 3 to 5 hashtags, ends on a real question, no em dashes, no "not X but Y" |
 | Reviewer | The designated reviewer (check with the maintainer who assigned it). The template checklist may still say a previous name; that line is stale. |
 | Slack channel | A private channel for release coordination. The connector cannot add members; check `slack_list_channel_members` and, if someone is missing, say so and the maintainer adds them. |
-| Discussions | Enabled; category **Announcements**. Write it to `skills/repository-writing-style/references/release-notes.md` |
+| Discussions | Enabled; category **Announcements**. Write it following `skills/repository-writing-style/references/release-notes.md`; that file is the style guide, so never write the post into it |
 | Install line | `pip install --upgrade database-tycoon` |
 
 ## Order
