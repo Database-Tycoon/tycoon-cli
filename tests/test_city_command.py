@@ -190,6 +190,16 @@ class TestServeInvocation:
         assert result.exit_code == 0
         assert fake_serve[0][0] == "md:my_db"
 
+    def test_motherduck_long_prefix_is_passed_through_unresolved(self, cli_runner, fake_serve, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cli_runner.invoke(app, ["city", "--path", "motherduck:my_db"])
+        assert fake_serve[0][0] == "motherduck:my_db"
+
+    def test_path_containing_md_later_is_still_resolved(self, cli_runner, fake_serve, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cli_runner.invoke(app, ["city", "--path", "sub/md:backup"])
+        assert fake_serve[0][0] == str((tmp_path / "sub" / "md:backup").resolve())
+
     def test_md_share_url_is_passed_through_unresolved(self, cli_runner, fake_serve, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         cli_runner.invoke(app, ["city", "--path", "md:_share/sales/abc-123"])
@@ -212,3 +222,24 @@ class TestServeInvocation:
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(app, ["city"])
         assert result.exit_code == 1
+
+
+class TestSyncMotherduckPrefix:
+    @pytest.mark.parametrize(
+        ("url", "alias"),
+        [
+            ("md:dogfood_dbt_prod", "dogfood_dbt_prod"),
+            ("motherduck:dogfood_dbt_prod", "dogfood_dbt_prod"),
+            ("/abs/backup-md:/foo.duckdb", "foo"),
+            ("./other.duckdb", "other"),
+        ],
+    )
+    def test_alias_for_both_prefixes_and_paths(self, url, alias):
+        from tycoon.sync import _alias_for
+
+        assert _alias_for(url) == alias
+
+    def test_attach_keeps_the_url_as_written(self):
+        from tycoon.sync import _attach_sql
+
+        assert _attach_sql("motherduck:x", "x") == "ATTACH 'motherduck:x' AS x (READ_ONLY)"

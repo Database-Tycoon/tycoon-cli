@@ -25,7 +25,7 @@ from pathlib import Path
 
 import typer
 
-from tycoon.project import PROJECT_FILENAME
+from tycoon.project import PROJECT_FILENAME, is_motherduck
 from tycoon.utils.console import error, info
 
 # The renderer ships in this wheel, so this line is for a broken install, not
@@ -34,10 +34,6 @@ from tycoon.utils.console import error, info
 _UNAVAILABLE = (
     "city renderer unavailable ({error}) — this usually means a damaged install; try reinstalling database-tycoon"
 )
-
-# A MotherDuck catalog ("md:my_db", "md:_share/name/uuid") is a URI, not a
-# filesystem path, and must reach the renderer untouched.
-_MD_PREFIX = "md:"
 
 
 def _project_root() -> Path:
@@ -61,7 +57,8 @@ def _serve_target(path: str | None) -> str:
     """
     if path is None:
         return str(_project_root())
-    if path.startswith(_MD_PREFIX):
+    # A MotherDuck catalog is a URI, not a filesystem path, and must reach the renderer untouched.
+    if is_motherduck(path):
         return path
     return str(Path(path).resolve())
 

@@ -4,7 +4,7 @@ import pytest
 from tycoon_city.catalog.errors import CatalogError
 from tycoon_city.catalog.loader import (
     _database_name_for,
-    _is_motherduck,
+    is_motherduck,
     _scan_catalog,
     load_catalog,
 )
@@ -81,25 +81,43 @@ def test_scan_catalog_ignores_attached_databases(tmp_path):
         con.close()
 
 
-def test_motherduck_source_is_not_treated_as_a_file_path():
-    """`md:` catalogs are not filesystem paths.
+@pytest.mark.parametrize("prefix", ["md:", "motherduck:"])
+def test_motherduck_source_is_not_treated_as_a_file_path(prefix, monkeypatch):
+    """`md:` and `motherduck:` catalogs are not filesystem paths.
 
     The existence check must be skipped for them, and the displayed name must be
-    the catalog rather than a path stem. Verified without a MotherDuck token by
-    exercising the two pure helpers; the connection itself is untested locally.
+    the catalog rather than a path stem. The connection is mocked: with no token
+    a real `md:` connect opens a browser sign-in.
     """
-    assert _is_motherduck("md:my_db")
-    assert not _is_motherduck("/tmp/my_db.duckdb")
+    assert is_motherduck(f"{prefix}my_db")
+    assert not is_motherduck("/tmp/my_db.duckdb")
+    assert not is_motherduck("/tmp/backup-md:/my_db.duckdb")
 
-    assert _database_name_for("md:my_db") == "my_db"
+    assert _database_name_for(f"{prefix}my_db") == "my_db"
     # Share URLs: neither "_share" nor a UUID names the database usefully.
-    assert _database_name_for("md:_share/dogfood_dbt_prod/b0614b23-ed92") == "dogfood_dbt_prod"
+    assert _database_name_for(f"{prefix}_share/dogfood_dbt_prod/b0614b23-ed92") == "dogfood_dbt_prod"
     assert _database_name_for("/tmp/demo.duckdb") == "demo"
 
-    # A missing md: catalog must not raise "Database file not found" -- that
+    # A missing catalog must not raise "Database file not found" -- that
     # message would send the user looking for a file that was never meant to
-    # exist. It fails at connect instead (no token here, which is itself proof
-    # the existence check was skipped).
+    # exist. It fails at connect instead.
+    attempted = []
+
+    def refuse(database, *args, **kwargs):
+        attempted.append(database)
+        raise duckdb.IOException("mocked: no connection")
+
+    monkeypatch.setattr("tycoon_city.catalog.loader.duckdb.connect", refuse)
     with pytest.raises(CatalogError) as exc:
-        load_catalog("md:definitely_not_a_real_catalog_xyz")
+        load_catalog(f"{prefix}definitely_not_a_real_catalog_xyz")
+    assert attempted == [f"{prefix}definitely_not_a_real_catalog_xyz"]
     assert "not found" not in str(exc.value).lower()
+
+
+def test_a_motherduck_prefix_is_not_a_directory_or_file_to_look_for(tmp_path):
+    from tycoon_city.pricing import DEFAULT_PRICE_BOOK, resolve_price_book
+    from tycoon_city.webserve import _fingerprint
+
+    assert resolve_price_book("motherduck:some_db") == DEFAULT_PRICE_BOOK
+    assert _fingerprint("motherduck:some_catalog") is None
+    assert _fingerprint(str(tmp_path / "not_a_project_dir")) is not None

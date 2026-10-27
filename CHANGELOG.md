@@ -12,10 +12,11 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Fixed
 
-- **A `motherduck:` warehouse or raw target is no longer treated as a local file** ([#308][]). DuckDB and dbt-duckdb accept `motherduck:<name>` as well as `md:<name>`, but tycoon only recognised `md:`, so `database.warehouse: motherduck:x` resolved to `<root>/motherduck:x` and failed with "Database not found". One `is_motherduck()` helper in `tycoon.project` now decides, and `tycoon register`, `tycoon init`, dbt profile detection and secret redaction use it. Projects on `md:` or a local file behave as before; only strings that start with `motherduck:` change meaning. The city renderer and `tycoon data sync` follow in a later PR.
+- **A `motherduck:` warehouse or raw target is no longer treated as a local file** ([#308][]). DuckDB and dbt-duckdb accept `motherduck:<name>` as well as `md:<name>`, but tycoon only recognised `md:`, so `database.warehouse: motherduck:x` resolved to `<root>/motherduck:x` and failed with "Database not found". One `is_motherduck()` helper in `tycoon.project` now decides, and `tycoon register`, `tycoon init`, dbt profile detection and secret redaction use it. Projects on `md:` or a local file behave as before; only strings that start with `motherduck:` change meaning. The city renderer (`tycoon city`, `tycoon-city`) and `tycoon data sync` accept it too ([#446][]): the catalog name shown in the city's status strip drops the `motherduck:` prefix like `md:`, and a `motherduck:` catalog is not looked up as a file for `pricing.toml` or for the load cache. `tycoon_city` does not import `tycoon`, so it carries its own copy of the prefix rule.
 
 [#308]: https://github.com/Database-Tycoon/tycoon-cli/issues/308
 [#430]: https://github.com/Database-Tycoon/tycoon-cli/issues/430
+[#446]: https://github.com/Database-Tycoon/tycoon-cli/issues/446
 [#447]: https://github.com/Database-Tycoon/tycoon-cli/issues/447
 [#448]: https://github.com/Database-Tycoon/tycoon-cli/issues/448
 
