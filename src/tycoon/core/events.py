@@ -43,6 +43,13 @@ class SchemaSnapshot(BaseEvent):
     tables: dict[str, list[str]] = Field(default_factory=dict)
 
 
+# The run_results.json statuses that mean a node failed. Listing failures
+# rather than the benign statuses keeps a status dbt adds later (``no-op``
+# arrived in 1.10, gh-341) from reading as an error. ``skipped`` is left out
+# because dbt only skips a node downstream of a failure, which is counted.
+DBT_ERROR_STATUSES = frozenset({"error", "fail", "runtime error", "partial success"})
+
+
 class DbtRunCompleted(BaseEvent):
     event_type: Literal["dbt_run_completed"] = "dbt_run_completed"
     command: str

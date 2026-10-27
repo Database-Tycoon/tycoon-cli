@@ -1,5 +1,13 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`data history` no longer marks a successful dbt build as failed** ([#341][]). dbt 1.10 and later report exposures and saved queries as `no-op`, and tycoon counted every status outside a fixed list of good ones as an error, so a clean build that touched an exposure showed `✗`. tycoon now counts only dbt's failure statuses (`error`, `fail`, `runtime error`, `partial success`), so a status dbt adds later doesn't turn into a false failure. `dbt_runs.success` in `.tycoon/metadata.duckdb` was NULL on every row, because tycoon read a top-level `success` key that `run_results.json` doesn't have. It now comes from dbt's exit code, or from the node statuses when the exit code isn't known.
+
+[#341]: https://github.com/Database-Tycoon/tycoon-cli/issues/341
+
 ## [0.2.3] - 2026-10-24
 
 _Headline: **documentation site and a tested city**. The documentation site now publishes to GitHub Pages whenever a release reaches `main`, with internal pages withheld by a check that fails the build rather than leaking them. The city renderer is tested and gated in CI like the CLI, and its vehicles, guests and refresh now work. Also here: `tycoon-city` help that matches every other command, and tycoon's agent skills as three Claude Code plugins._
