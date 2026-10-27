@@ -52,8 +52,18 @@ def _dbt_executable() -> str:
     return dbt
 
 
-def _capture_dbt_and_refresh_safe(dbt_cmd: str, *, started_at: float) -> None:
-    """Best-effort dbt observability capture + Rill dashboard refresh."""
+def _capture_dbt_and_refresh_safe(dbt_cmd: str, *, started_at: float, exit_code: int | None = None) -> None:
+    """Best-effort dbt observability capture + Rill dashboard refresh.
+
+    ``exit_code`` is dbt's own; ``None`` means the caller doesn't know it, and
+    the run's outcome is then read from the node statuses alone.
+    """
+    run_results_path = config.dbt_project_dir / "target" / "run_results.json"
+    try:
+        fresh = run_results_path.stat().st_mtime >= started_at
+    except Exception:
+        fresh = False
+
     try:
         from tycoon.observability import (
             capture_dbt_manifest_safe,
@@ -67,6 +77,9 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str, *, started_at: float) -> None:
             meta,
             config.dbt_project_dir,
             command=dbt_cmd,
+            # A stale run_results.json belongs to an earlier invocation, so
+            # this run's exit code says nothing about it.
+            exit_code=exit_code if fresh else None,
         )
         capture_dbt_manifest_safe(meta, config.dbt_project_dir)
         refresh_usage_dashboards(project_root=config.root, rill_dir=config.rill_dir)
@@ -76,14 +89,11 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str, *, started_at: float) -> None:
     try:
         import json
 
-        from tycoon.core.events import DbtRunCompleted
+        from tycoon.core.events import DBT_ERROR_STATUSES, DbtRunCompleted
         from tycoon.metadata_backends.duckdb_file import DuckDBFileBackend
         from tycoon.observability import metadata_db_path
 
-        run_results_path = config.dbt_project_dir / "target" / "run_results.json"
-        if not run_results_path.exists():
-            return
-        if run_results_path.stat().st_mtime < started_at:
+        if not fresh:
             return
 
         with open(run_results_path, encoding="utf-8") as f:
@@ -94,7 +104,7 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str, *, started_at: float) -> None:
         target = args.get("target", "dev") or "dev"
         results = run_results.get("results") or []
         models_run = len(results)
-        models_errored = sum(1 for r in results if r.get("status") not in ("success", "pass", "warn", "skipped"))
+        models_errored = sum(1 for r in results if (r.get("status") or "").lower() in DBT_ERROR_STATUSES)
         models_passed = models_run - models_errored
 
         event = DbtRunCompleted(
@@ -211,7 +221,7 @@ def _run_dbt(
 
     started_at = time.time()
     result = subprocess.run(cmd, cwd=project_dir)
-    _capture_dbt_and_refresh_safe(dbt_cmd, started_at=started_at)
+    _capture_dbt_and_refresh_safe(dbt_cmd, started_at=started_at, exit_code=result.returncode)
     if result.returncode == 0 and dbt_cmd in {"run", "build"}:
         _auto_osi_scaffold_safe()
     return result.returncode

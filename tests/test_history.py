@@ -621,3 +621,95 @@ class TestHistoryLayerFilter:
         )
         assert result.exit_code == 1
         assert "either --source or --layer" in (result.stderr or result.output)
+
+
+# ---------------------------------------------------------------------------
+# dbt runs recorded by `tycoon data transform` (gh-341, gh-377)
+# ---------------------------------------------------------------------------
+
+
+def _result(unique_id: str, status: str, message: str | None = None) -> dict:
+    return {"unique_id": unique_id, "status": status, "timing": [], "adapter_response": {}, "message": message}
+
+
+def _install_fake_dbt(
+    monkeypatch,
+    root: Path,
+    *,
+    exit_code: int,
+    output: str = "",
+    results: list[dict] | None = None,
+) -> None:
+    """Stand in for the dbt binary: print ``output``, optionally write run_results.json, exit."""
+    import json
+    import sys
+
+    from tycoon.commands import transform as transform_mod
+
+    payload = root / "fake_dbt_payload.json"
+    run_results = None
+    if results is not None:
+        run_results = {
+            "metadata": {"dbt_version": "1.12.0", "invocation_id": f"inv-{len(results)}-{exit_code}"},
+            "args": {"which": "build", "target": "dev"},
+            "results": results,
+            "elapsed_time": 1.5,
+        }
+    payload.write_text(json.dumps({"output": output, "run_results": run_results, "exit_code": exit_code}))
+    script = root / "fake_dbt"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import json, pathlib, sys\n"
+        f"p = json.loads(pathlib.Path({str(payload)!r}).read_text())\n"
+        "sys.stdout.write(p['output'])\n"
+        "if p['run_results'] is not None:\n"
+        "    target = pathlib.Path('target')\n"
+        "    target.mkdir(exist_ok=True)\n"
+        "    (target / 'run_results.json').write_text(json.dumps(p['run_results']))\n"
+        "sys.exit(p['exit_code'])\n"
+    )
+    script.chmod(0o755)
+    monkeypatch.setattr(transform_mod, "_dbt_executable", lambda: str(script))
+
+
+@pytest.fixture
+def transform_project(history_project, monkeypatch):
+    """history_project plus a dbt project dir, with transform's config rebound to it."""
+    import tycoon.config as cfg_mod
+    from tycoon.commands import transform as transform_mod
+    from tycoon.config import TycoonConfig
+
+    (history_project / "dbt_project").mkdir()
+    cfg = TycoonConfig(project_root=history_project)
+    monkeypatch.setattr(transform_mod, "config", cfg)
+    monkeypatch.setattr(cfg_mod, "config", cfg)
+    return history_project
+
+
+def _only_dbt_row(cli_runner) -> str:
+    result = cli_runner.invoke(app, ["data", "history", "--tool", "dbt"])
+    assert result.exit_code == 0, result.output
+    rows = [line for line in result.stdout.splitlines() if "build (" in line or "run (" in line]
+    assert len(rows) == 1, result.stdout
+    return rows[0]
+
+
+class TestTransformRecordsDbtRuns:
+    def test_build_with_no_op_results_is_success(self, transform_project, cli_runner, monkeypatch):
+        """dbt >= 1.10 reports exposures as ``no-op``; the run still succeeded (gh-341)."""
+        _install_fake_dbt(
+            monkeypatch,
+            transform_project,
+            exit_code=0,
+            results=[
+                _result("model.demo.m", "success"),
+                _result("test.demo.t", "pass"),
+                _result("exposure.demo.e", "no-op"),
+            ],
+        )
+        result = cli_runner.invoke(app, ["data", "transform", "build"])
+        assert result.exit_code == 0, result.output
+
+        row = _only_dbt_row(cli_runner)
+        assert "✓" in row
+        assert "✗" not in row
