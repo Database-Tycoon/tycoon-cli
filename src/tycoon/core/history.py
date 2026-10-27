@@ -52,6 +52,9 @@ def _summarize_dbt(e: DbtRunCompleted) -> RunSummary:
         duration_seconds=e.duration_seconds,
         rows_total=e.models_run,
         command=e.command,
+        # For dbt, "zero rows" means zero nodes: a selector that matched
+        # nothing exits 0, which shouldn't read as a healthy run (gh-377).
+        zero_rows=not e.failed and e.models_run == 0,
     )
 
 
