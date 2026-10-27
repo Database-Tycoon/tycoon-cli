@@ -1,5 +1,13 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- **Jira PTC keys are no longer accepted in PR titles, and the Jira sync workflow is gone** ([#351][]). The project moved its tracking from the Jira PTC board to GitHub issues and the Tycoon CLI project on 2026-10-09, so the PR title check now accepts `gh-<N>` scopes only, and `CONTRIBUTING.md` and the contributor skills no longer describe `PTC-<N>` as an option. `.github/workflows/jira-sync.yml` is deleted: its `JIRA_EMAIL` and `JIRA_API_TOKEN` secrets were never set, so every run exited without syncing anything. Existing commits, changelog entries and release notes that cite `PTC-<N>` keys are unchanged. For contributors.
+
+[#351]: https://github.com/Database-Tycoon/tycoon-cli/issues/351
+
 ## [0.2.3] - 2026-10-24
 
 _Headline: **documentation site and a tested city**. The documentation site now publishes to GitHub Pages whenever a release reaches `main`, with internal pages withheld by a check that fails the build rather than leaking them. The city renderer is tested and gated in CI like the CLI, and its vehicles, guests and refresh now work. Also here: `tycoon-city` help that matches every other command, and tycoon's agent skills as three Claude Code plugins._
