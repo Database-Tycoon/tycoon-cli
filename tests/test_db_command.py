@@ -413,3 +413,143 @@ def test_schema_estimates_against_real_motherduck(tmp_path, monkeypatch, cli_run
         assert name.startswith("tycoon_e2e_scratch_")
         admin.execute(f"DROP DATABASE IF EXISTS {name}")
         admin.close()
+
+
+class TestMotherDuckQueryWriteGuard:
+    """``data query`` refuses writes on an md: database unless ``--allow-writes`` (#309)."""
+
+    def _setup(self, tmp_path: Path, monkeypatch, **kwargs) -> list[tuple[str, dict]]:
+        return TestMotherDuckWarehouse._setup(self, tmp_path, monkeypatch, **kwargs)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "DROP TABLE t",
+            "INSERT INTO t VALUES (1)",
+            "-- harmless\nDELETE FROM t",
+            "SELECT 1; DROP TABLE t",
+            "COPY t TO 'x.csv'",
+            "ATTACH 'x.db'",
+            "CALL pragma_version()",
+            "SELEC 1 FROM",
+        ],
+    )
+    def test_refused_statement_never_connects(self, tmp_path, monkeypatch, cli_runner, sql):
+        calls = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "query", "--", sql], input="")
+        assert result.exit_code == 1
+        assert calls == []
+        output = " ".join(result.output.split())
+        assert "Refusing to run" in output
+        assert "against MotherDuck (md:x)" in output
+        assert "--allow-writes" in output
+
+    def test_refusal_names_the_statement_and_the_flag(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "query", "DROP TABLE t"])
+        assert (
+            "Refusing to run DROP against MotherDuck (md:x). "
+            "On MotherDuck, 'data query' only runs SELECT, WITH, FROM, TABLE, VALUES, DESCRIBE, SHOW, "
+            "SUMMARIZE, PIVOT, UNPIVOT and EXPLAIN. Pass --allow-writes to run other statements."
+        ) in " ".join(result.output.split())
+
+    def test_deeply_nested_sql_is_refused_cleanly(self, tmp_path, monkeypatch, cli_runner):
+        calls = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "query", "SELECT " + "(" * 500 + "1" + ")" * 500])
+        assert result.exit_code == 1
+        assert calls == []
+        assert "Refusing to run a statement tycoon could not parse" in " ".join(result.output.split())
+        assert "Traceback" not in result.output
+        assert not isinstance(result.exception, RecursionError)
+
+    def test_refusal_hides_motherduck_token(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch, warehouse="md:x?motherduck_token=SECRET123")
+        result = cli_runner.invoke(app, ["data", "query", "DROP TABLE t"])
+        assert result.exit_code == 1
+        assert "SECRET123" not in result.output
+
+    @pytest.mark.parametrize(
+        "sql",
+        ["SELECT 1", "-- note\nSELECT 1;", "SELECT 1; SELECT 2", "FROM range(2)", "DESCRIBE SELECT 1", "SHOW TABLES"],
+    )
+    def test_read_only_statements_run(self, tmp_path, monkeypatch, cli_runner, sql):
+        calls = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "query", "--", sql])
+        assert result.exit_code == 0, result.output
+        assert [c[0] for c in calls] == ["md:x"]
+
+    def test_allow_writes_runs_the_statement(self, tmp_path, monkeypatch, cli_runner):
+        calls = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "query", "--allow-writes", "CREATE TABLE t AS SELECT 1"])
+        assert result.exit_code == 0, result.output
+        assert [c[0] for c in calls] == ["md:x"]
+
+    def test_raw_motherduck_database_is_guarded_too(self, tmp_path, monkeypatch, cli_runner):
+        calls = self._setup(tmp_path, monkeypatch, raw="md:x_raw")
+        result = cli_runner.invoke(app, ["data", "query", "--raw", "DROP TABLE t"])
+        assert result.exit_code == 1
+        assert calls == []
+        assert "md:x_raw" in result.output
+
+    def test_local_project_is_not_guarded(self, tmp_path, monkeypatch, cli_runner):
+        db_path = tmp_path / "test.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute("CREATE TABLE t (i INTEGER)")
+        con.close()
+        result = cli_runner.invoke(app, ["data", "query", "DROP TABLE t", "--db", str(db_path)])
+        assert result.exit_code == 1
+        assert "Refusing to run" not in result.output
+        assert "read-only" in result.output.lower()
+        assert duckdb.connect(str(db_path), read_only=True).execute("SELECT count(*) FROM t").fetchone() == (0,)
+
+
+@pytest.mark.e2e
+@pytest.mark.skipif(not os.environ.get("MOTHERDUCK_TOKEN"), reason="MOTHERDUCK_TOKEN not set")
+def test_query_write_guard_against_real_motherduck(tmp_path, monkeypatch, cli_runner):
+    """Unmocked: a refused statement changes nothing, and --allow-writes does write."""
+    from tycoon.config import TycoonConfig
+
+    name = f"tycoon_e2e_scratch_b{secrets.token_hex(3)}"
+    assert name.startswith("tycoon_e2e_scratch_")
+    admin = duckdb.connect("md:")
+    try:
+        admin.execute(f"CREATE DATABASE {name}")
+        admin.execute(f"CREATE TABLE {name}.main.t AS SELECT range AS i FROM range(3)")
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        (tmp_path / "tycoon.yml").write_text(
+            f"name: test\nsources: {{}}\ndatabase:\n  warehouse: 'md:{name}'\n  raw: 'data/raw.duckdb'\n"
+        )
+        monkeypatch.setattr("tycoon.commands.db.config", TycoonConfig(project_root=tmp_path))
+
+        def row_count() -> int:
+            return admin.execute(f"SELECT count(*) FROM {name}.main.t").fetchone()[0]
+
+        read = cli_runner.invoke(app, ["data", "query", "--", "-- peek\nSELECT count(*) AS n FROM t;"])
+        assert read.exit_code == 0, read.output
+        assert "3" in read.output
+
+        for sql in (
+            "EXPLAIN SELECT * FROM t",
+            "SUMMARIZE t",
+            "PIVOT t ON i USING count(*)",
+            "DESCRIBE t",
+            "SHOW TABLES",
+        ):
+            ran = cli_runner.invoke(app, ["data", "query", sql])
+            assert ran.exit_code == 0, (sql, ran.output)
+            assert row_count() == 3, sql
+
+        for sql in ("DROP TABLE t", "INSERT INTO t VALUES (9)", "SELECT 1; DELETE FROM t", "COPY t TO 'x.csv'"):
+            refused = cli_runner.invoke(app, ["data", "query", sql])
+            assert refused.exit_code == 1, sql
+            assert "Refusing to run" in refused.output
+            assert row_count() == 3, sql
+
+        allowed = cli_runner.invoke(app, ["data", "query", "--allow-writes", "INSERT INTO t VALUES (9)"])
+        assert allowed.exit_code == 0, allowed.output
+        assert row_count() == 4
+    finally:
+        assert name.startswith("tycoon_e2e_scratch_")
+        admin.execute(f"DROP DATABASE IF EXISTS {name}")
+        admin.close()

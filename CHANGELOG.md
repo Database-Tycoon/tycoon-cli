@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Changed
 
+- **`tycoon data query` refuses writes on a MotherDuck database unless you pass `--allow-writes`** ([#309][]). DuckDB cannot open an `md:` database read-only, so `data query` ran whatever it was given with the permissions of your token: `tycoon data query "DROP TABLE ..."` ran against production. tycoon now classifies each statement with sqlglot and, on an `md:` warehouse or `--raw` database, runs only SELECT, WITH, `FROM tbl`-first queries, `TABLE tbl`, VALUES, set operations, DESCRIBE, SHOW, SUMMARIZE, PIVOT, UNPIVOT and EXPLAIN of those. Anything else exits 1 before connecting, with `Refusing to run DROP against MotherDuck (md:x). On MotherDuck, 'data query' only runs SELECT, WITH, FROM, TABLE, VALUES, DESCRIBE, SHOW, SUMMARIZE, PIVOT, UNPIVOT and EXPLAIN. Pass --allow-writes to run other statements.` Every statement in a multi-statement input is checked, and a statement sqlglot cannot parse, or a query nested too deeply to parse, is refused too. **This changes behaviour for MotherDuck users who wrote through `data query`: add `--allow-writes` to those commands and scripts.** The check reads statement types only. Function calls inside a SELECT are not inspected, so `SELECT nextval('s')`, `read_csv` on a path or URL, or `FROM checkpoint()` still run without the flag. It guards against accidents and is not a permission boundary; scope your token if that matters. Local DuckDB files already open read-only and are unaffected.
 - **`tycoon data schema` estimates row counts on a MotherDuck database** ([#310][]). It ran an exact `count(*)` on every table, which is slow and spends compute on a large account. It now reads `estimated_size` from `duckdb_tables()` and prints each figure as `~1,000 rows (estimate)`. The estimate does not drop after deletes (100,000 rows less half of them still shows `~100,000`), so treat it as an upper bound on a table that has lost rows. A view has no catalog estimate and prints `view (use --exact to count)`; a table whose catalog reports none prints `no estimate (use --exact to count)`. Pass `--exact` to count every table and view as before. Local DuckDB files are unchanged and still show exact counts, with or without `--exact`.
 
 ## [0.2.3] - 2026-10-24
@@ -34,6 +35,7 @@ _Headline: **documentation site and a tested city**. The documentation site now 
 ### Removed
 
 - **The retired v5 city planner and its tests** ([#281][], PR [#256][]). The ring planner replaced it in 0.2.1, and the city contract doc and design log now describe the ring planner instead (PR [#254][]). For contributors; nothing user-facing used it.
+[#309]: https://github.com/Database-Tycoon/tycoon-cli/issues/309
 [#310]: https://github.com/Database-Tycoon/tycoon-cli/issues/310
 [#250]: https://github.com/Database-Tycoon/tycoon-cli/pull/250
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
