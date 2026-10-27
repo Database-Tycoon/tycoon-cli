@@ -90,6 +90,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import dlt
+from tycoon.ingestion.destination import raw_destination
 from github import github_reactions
 
 def run_pipeline(name, source_config, raw_db_path, max_records=None):
@@ -103,7 +104,7 @@ def run_pipeline(name, source_config, raw_db_path, max_records=None):
         source = source.add_limit(max_records)
     pipeline = dlt.pipeline(
         pipeline_name=name,
-        destination=dlt.destinations.duckdb(str(raw_db_path)),
+        destination=raw_destination(raw_db_path),
         dataset_name=source_config.schema_name,
     )
     return pipeline, pipeline.run(source)
@@ -113,6 +114,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import dlt
+from tycoon.ingestion.destination import raw_destination
 from slack_source import slack_source
 
 def run_pipeline(name, source_config, raw_db_path, max_records=None):
@@ -127,7 +129,7 @@ def run_pipeline(name, source_config, raw_db_path, max_records=None):
         source = source.add_limit(max_records)
     pipeline = dlt.pipeline(
         pipeline_name=name,
-        destination=dlt.destinations.duckdb(str(raw_db_path)),
+        destination=raw_destination(raw_db_path),
         dataset_name=source_config.schema_name,
     )
     return pipeline, pipeline.run(source)
@@ -137,6 +139,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import dlt
+from tycoon.ingestion.destination import raw_destination
 from stripe_analytics import stripe_source
 
 def run_pipeline(name, source_config, raw_db_path, max_records=None):
@@ -148,7 +151,7 @@ def run_pipeline(name, source_config, raw_db_path, max_records=None):
         source = source.add_limit(max_records)
     pipeline = dlt.pipeline(
         pipeline_name=name,
-        destination=dlt.destinations.duckdb(str(raw_db_path)),
+        destination=raw_destination(raw_db_path),
         dataset_name=source_config.schema_name,
     )
     return pipeline, pipeline.run(source)
@@ -158,6 +161,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import dlt
+from tycoon.ingestion.destination import raw_destination
 from hubspot import hubspot
 
 def run_pipeline(name, source_config, raw_db_path, max_records=None):
@@ -167,7 +171,7 @@ def run_pipeline(name, source_config, raw_db_path, max_records=None):
         source = source.add_limit(max_records)
     pipeline = dlt.pipeline(
         pipeline_name=name,
-        destination=dlt.destinations.duckdb(str(raw_db_path)),
+        destination=raw_destination(raw_db_path),
         dataset_name=source_config.schema_name,
     )
     return pipeline, pipeline.run(source)
@@ -177,6 +181,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import dlt
+from tycoon.ingestion.destination import raw_destination
 from notion import notion_databases
 
 def run_pipeline(name, source_config, raw_db_path, max_records=None):
@@ -191,7 +196,7 @@ def run_pipeline(name, source_config, raw_db_path, max_records=None):
         source = source.add_limit(max_records)
     pipeline = dlt.pipeline(
         pipeline_name=name,
-        destination=dlt.destinations.duckdb(str(raw_db_path)),
+        destination=raw_destination(raw_db_path),
         dataset_name=source_config.schema_name,
     )
     return pipeline, pipeline.run(source)
@@ -202,6 +207,7 @@ import json
 from pathlib import Path
 from typing import Any
 import dlt
+from tycoon.ingestion.destination import raw_destination
 from google_sheets import google_spreadsheet
 
 def run_pipeline(name, source_config, raw_db_path, max_records=None):
@@ -227,7 +233,7 @@ def run_pipeline(name, source_config, raw_db_path, max_records=None):
         source = source.add_limit(max_records)
     pipeline = dlt.pipeline(
         pipeline_name=name,
-        destination=dlt.destinations.duckdb(str(raw_db_path)),
+        destination=raw_destination(raw_db_path),
         dataset_name=source_config.schema_name,
     )
     return pipeline, pipeline.run(source)
@@ -236,6 +242,7 @@ def run_pipeline(name, source_config, raw_db_path, max_records=None):
 from __future__ import annotations
 from typing import Any
 import dlt
+from tycoon.ingestion.destination import raw_destination
 from dlt.sources.rest_api import rest_api_source
 
 def run_pipeline(name, source_config, raw_db_path, max_records=None):
@@ -251,7 +258,7 @@ def run_pipeline(name, source_config, raw_db_path, max_records=None):
         source = source.add_limit(max_records)
     pipeline = dlt.pipeline(
         pipeline_name=name,
-        destination=dlt.destinations.duckdb(str(raw_db_path)),
+        destination=raw_destination(raw_db_path),
         dataset_name=source_config.schema_name,
     )
     return pipeline, pipeline.run(source)
