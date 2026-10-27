@@ -814,6 +814,24 @@ class TestTransformRecordsDbtRuns:
         assert "dbt exited with code 2" in shown
         assert "does not have a target named 'nonexistent'" in shown
 
+    def test_run_that_selected_nothing_is_flagged(self, transform_project, cli_runner, monkeypatch):
+        """A selector that matches no nodes exits 0 with no results; it shouldn't read as healthy (gh-377)."""
+        _install_fake_dbt(
+            monkeypatch,
+            transform_project,
+            exit_code=0,
+            output="WARNING: Nothing to do. Try checking your model configs and model specification args\n",
+            results=[],
+        )
+        result = cli_runner.invoke(app, ["data", "transform", "run", "-s", "does_not_exist"])
+        assert result.exit_code == 0, result.output
+
+        row = _only_dbt_row(cli_runner)
+        assert "!" in row
+        assert "✓" not in row
+        assert "nothing ran" in row
+        assert "success, but nothing ran" in _show_dbt_run(cli_runner, row)
+
 
 def _show_dbt_run(cli_runner, row: str) -> str:
     """Run `data history show` for a history row and return its output, whitespace-collapsed."""
