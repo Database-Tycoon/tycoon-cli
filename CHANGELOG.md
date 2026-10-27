@@ -12,7 +12,12 @@ All notable changes to this project will be documented in this file. The format 
 - **Failed dbt runs show up in `data history`** ([#377][]). A run that failed before dbt wrote `run_results.json`, such as an unknown target or a DuckDB file locked by another run, was never recorded, so the history only listed successes. `tycoon data transform` now records it as failed, and `data history show` gives dbt's exit code and a one-line error summary: the first failed node's message, or dbt's own error text when no node ran. dbt's output still prints as it runs; tycoon keeps its last lines for the summary. A run whose selector matched nothing, which dbt treats as a success, is now flagged with `!` and "nothing ran" instead of a green tick.
 - **A `motherduck:` warehouse or raw target is no longer treated as a local file** ([#308][]). DuckDB and dbt-duckdb accept `motherduck:<name>` as well as `md:<name>`, but tycoon only recognised `md:`, so `database.warehouse: motherduck:x` resolved to `<root>/motherduck:x` and failed with "Database not found". One `is_motherduck()` helper in `tycoon.project` now decides, and `tycoon register`, `tycoon init`, dbt profile detection and secret redaction use it. Projects on `md:` or a local file behave as before; only strings that start with `motherduck:` change meaning. The city renderer and `tycoon data sync` follow in a later PR.
 
+### Changed
+
+- **`tycoon data schema` estimates row counts on a MotherDuck database** ([#310][]). It ran an exact `count(*)` on every table, which is slow and spends compute on a large account. It now reads `estimated_size` from `duckdb_tables()` and prints each figure as `~1,000 rows (estimate)`. The estimate does not drop after deletes (100,000 rows less half of them still shows `~100,000`), so treat it as an upper bound on a table that has lost rows. A view has no catalog estimate and prints `view (use --exact to count)`; a table whose catalog reports none prints `no estimate (use --exact to count)`. Pass `--exact` to count every table and view as before. Local DuckDB files are unchanged and still show exact counts, with or without `--exact`.
+
 [#308]: https://github.com/Database-Tycoon/tycoon-cli/issues/308
+[#310]: https://github.com/Database-Tycoon/tycoon-cli/issues/310
 [#341]: https://github.com/Database-Tycoon/tycoon-cli/issues/341
 [#377]: https://github.com/Database-Tycoon/tycoon-cli/issues/377
 [#385]: https://github.com/Database-Tycoon/tycoon-cli/issues/385
