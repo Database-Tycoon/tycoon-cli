@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import secrets
 from pathlib import Path
 
 import duckdb
@@ -375,15 +377,151 @@ class TestLayerAwareDiscovery:
         assert result.datasets_emitted == []
 
 
-def test_scaffold_command_rejects_motherduck_warehouse(tmp_path: Path, monkeypatch, cli_runner) -> None:
-    """A md: warehouse is not a local file, so the scaffold must not probe it as one (#70)."""
+def test_scaffold_command_motherduck_open_failure_exits_cleanly(tmp_path: Path, monkeypatch, cli_runner) -> None:
+    """A md: warehouse that cannot be opened is an error, not a "not found" path or a placeholder file."""
     from tycoon.cli import app
     from tycoon.config import TycoonConfig
 
     (tmp_path / "tycoon.yml").write_text("name: test\nsources: {}\ndatabase:\n  warehouse: 'md:x'\n")
     monkeypatch.setattr("tycoon.commands.semantics.config", TycoonConfig(project_root=tmp_path))
 
+    def no_token(*_a, **_k):
+        raise duckdb.Error("motherduck_token not set")
+
+    monkeypatch.setattr(duckdb, "connect", no_token)
+
     result = cli_runner.invoke(app, ["semantics", "scaffold", "--out", str(tmp_path / "osi.yaml")])
     assert result.exit_code == 1
-    assert "MotherDuck (md:x)" in result.output
+    assert "Could not open warehouse" in result.output
     assert not (tmp_path / "osi.yaml").exists()
+
+
+class TestMotherDuckTarget:
+    def test_open_failure_sets_error_and_writes_nothing(self, tmp_path, monkeypatch):
+        def boom(*_a, **_k):
+            raise duckdb.Error("bad md:db?motherduck_token=sekrit")
+
+        monkeypatch.setattr(duckdb, "connect", boom)
+        out = tmp_path / "osi.yaml"
+        result = scaffold_osi(warehouse_db="md:db", out_path=out, project_name="demo")
+        assert result.error and "Could not open warehouse" in result.error
+        assert "sekrit" not in result.error
+        assert not out.exists()
+
+    def test_introspection_is_scoped_to_current_catalog(self, warehouse, tmp_path, monkeypatch):
+        """Every connection also sees a second catalog, as an md: connection sees the whole account."""
+        decoy = tmp_path / "decoy.duckdb"
+        con = duckdb.connect(str(decoy))
+        con.execute("CREATE TABLE mart_decoy (id INTEGER)")
+        con.execute("CREATE TABLE mart_orders (id INTEGER, leaked_col VARCHAR)")
+        con.close()
+
+        real_connect = duckdb.connect
+
+        def connect_with_decoy(*args, **kwargs):
+            c = real_connect(*args, **kwargs)
+            c.execute(f"ATTACH '{decoy}' AS decoy (READ_ONLY)")
+            return c
+
+        monkeypatch.setattr(duckdb, "connect", connect_with_decoy)
+        out = tmp_path / "osi.yaml"
+        result = scaffold_osi(warehouse_db=warehouse, out_path=out, project_name="demo")
+        assert sorted(result.datasets_emitted) == ["dim_customer", "mart_orders"]
+        assert "leaked_col" not in out.read_text()
+        assert "decoy" not in out.read_text()
+
+    def test_no_marts_warning_does_not_print_the_token(self, tmp_path, monkeypatch):
+        real_connect = duckdb.connect
+        monkeypatch.setattr(duckdb, "connect", lambda *_a, **_k: real_connect(":memory:"))
+        out = tmp_path / "osi.yaml"
+        result = scaffold_osi(warehouse_db="md:db?motherduck_token=sekrit", out_path=out, project_name="demo")
+        assert any("No marts found" in w for w in result.warnings)
+        assert "sekrit" not in "\n".join(result.warnings)
+        assert "sekrit" not in out.read_text()
+
+    def test_existing_unsentineled_file_is_kept_for_md(self, tmp_path):
+        out = tmp_path / "osi.yaml"
+        out.write_text("hand: edited\n")
+        result = scaffold_osi(warehouse_db="md:db", out_path=out, project_name="demo")
+        assert result.skipped_due_to_sentinel
+        assert out.read_text() == "hand: edited\n"
+
+
+@pytest.mark.e2e
+@pytest.mark.skipif(not os.environ.get("MOTHERDUCK_TOKEN"), reason="MOTHERDUCK_TOKEN not set")
+def test_scaffold_reads_only_the_named_motherduck_catalog(tmp_path: Path) -> None:
+    suffix = secrets.token_hex(3)
+    main_db = f"tycoon_e2e_scratch_c_{suffix}"
+    decoy_db = f"tycoon_e2e_scratch_c_decoy_{suffix}"
+    admin = duckdb.connect("md:")
+    try:
+        for name in (main_db, decoy_db):
+            assert name.startswith("tycoon_e2e_scratch_")
+            admin.execute(f"CREATE DATABASE {name}")
+        admin.execute(f"CREATE SCHEMA {main_db}.marts")
+        admin.execute(f"CREATE TABLE {main_db}.main.mart_orders (id INTEGER, placed DATE, amount DECIMAL(18,2))")
+        admin.execute(f"CREATE TABLE {main_db}.marts.dim_customer (id INTEGER, name VARCHAR)")
+        admin.execute(f"CREATE TABLE {decoy_db}.main.mart_decoy (id INTEGER)")
+        out = tmp_path / "osi.yaml"
+        result = scaffold_osi(warehouse_db=f"md:{main_db}", out_path=out, project_name="demo")
+        assert result.error is None
+        assert sorted(result.datasets_emitted) == ["dim_customer", "mart_orders"]
+        sources = {d["source"] for d in yaml.safe_load(out.read_text())["semantic_model"][0]["datasets"]}
+        assert sources == {f"{main_db}.main.mart_orders", f"{main_db}.marts.dim_customer"}
+        assert validate_osi_yaml(out) == []
+    finally:
+        for name in (main_db, decoy_db):
+            if name.startswith("tycoon_e2e_scratch_"):
+                admin.execute(f"DROP DATABASE IF EXISTS {name}")
+        admin.close()
+
+
+class TestAutoScaffoldMotherDuck:
+    def _project(self, tmp_path, monkeypatch, warehouse):
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "tycoon.yml").write_text(
+            f"name: test\nsources: {{}}\ndatabase:\n  warehouse: '{warehouse}'\ntransform:\n  auto_osi_scaffold: true\n"
+        )
+        monkeypatch.setattr("tycoon.commands.transform.config", TycoonConfig(project_root=tmp_path))
+
+    def test_md_without_token_skips_without_connecting(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.transform import _auto_osi_scaffold_safe
+
+        monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
+        monkeypatch.delenv("motherduck_token", raising=False)
+        self._project(tmp_path, monkeypatch, "md:x")
+        calls: list[object] = []
+        monkeypatch.setattr(duckdb, "connect", lambda *a, **k: calls.append(a))
+        _auto_osi_scaffold_safe()
+        assert calls == []
+        assert "MOTHERDUCK_TOKEN" in capsys.readouterr().out
+
+    def test_md_with_token_attempts_the_scaffold(self, tmp_path, monkeypatch):
+        from tycoon.commands.transform import _auto_osi_scaffold_safe
+
+        monkeypatch.setenv("MOTHERDUCK_TOKEN", "invalid-token-for-test")
+        self._project(tmp_path, monkeypatch, "md:x")
+        calls: list[object] = []
+
+        def fake_connect(*a, **k):
+            calls.append(a)
+            raise duckdb.Error("rejected")
+
+        monkeypatch.setattr(duckdb, "connect", fake_connect)
+        _auto_osi_scaffold_safe()
+        assert calls
+        assert not (tmp_path / "dbt_project" / "semantic" / "osi.yaml").exists()
+
+    def test_local_warehouse_is_unaffected_by_the_token_check(self, tmp_path, monkeypatch):
+        from tycoon.commands.transform import _auto_osi_scaffold_safe
+
+        monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
+        monkeypatch.delenv("motherduck_token", raising=False)
+        self._project(tmp_path, monkeypatch, "data/wh.duckdb")
+        (tmp_path / "data").mkdir()
+        con = duckdb.connect(str(tmp_path / "data" / "wh.duckdb"))
+        con.execute("CREATE TABLE mart_a (id INTEGER)")
+        con.close()
+        _auto_osi_scaffold_safe()
+        assert (tmp_path / "dbt_project" / "semantic" / "osi.yaml").exists()

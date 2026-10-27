@@ -39,9 +39,11 @@ flagged in ``warnings`` so the CLI can nudge the user to compile dbt.
 
 OSI ``source`` follows ``database.schema.table``. For DuckDB this is
 ``warehouse.<schema>.<table>``; for MotherDuck warehouses (``md:cat``)
-it's ``cat.<schema>.<table>``. Other adapters (Snowflake/BigQuery)
-need adapter-specific introspection that v0.1.6 doesn't ship — those
-projects get a warning and an empty result.
+it's ``cat.<schema>.<table>``. Introspection is scoped to the connected
+catalog, so the other databases on a MotherDuck account are never read.
+Other adapters (Snowflake/BigQuery) need adapter-specific introspection
+that v0.1.6 doesn't ship, so those projects get a warning and an empty
+result.
 """
 
 from __future__ import annotations
@@ -53,6 +55,7 @@ from typing import Any
 import duckdb
 import yaml
 
+from tycoon.config import MOTHERDUCK_PREFIX, display_target, redact_secrets
 from tycoon.layers import (
     Layer,
     classify_dbt_models,
@@ -81,10 +84,19 @@ class ScaffoldResult:
     datasets_emitted: list[str] = field(default_factory=list)
     skipped_due_to_sentinel: bool = False
     warnings: list[str] = field(default_factory=list)
+    error: str | None = None
+
+
+class WarehouseOpenError(Exception):
+    """A MotherDuck warehouse could not be opened; the message is safe to print."""
+
+
+def _is_motherduck(target: Path | str) -> bool:
+    return isinstance(target, str) and target.startswith(MOTHERDUCK_PREFIX)
 
 
 def scaffold_osi(
-    warehouse_db: Path,
+    warehouse_db: Path | str,
     out_path: Path,
     project_name: str,
     *,
@@ -92,6 +104,10 @@ def scaffold_osi(
     dbt_project_dir: Path | None = None,
 ) -> ScaffoldResult:
     """Read marts from ``warehouse_db`` and write an OSI YAML to ``out_path``.
+
+    ``warehouse_db`` is a local DuckDB file path or an ``md:`` connection
+    string. When a MotherDuck warehouse cannot be opened, ``error`` is set
+    and ``out_path`` is left untouched.
 
     If ``out_path`` exists and the user removed the sentinel line, the
     file is preserved (return ``skipped_due_to_sentinel=True``) unless
@@ -111,14 +127,17 @@ def scaffold_osi(
             skipped_due_to_sentinel=True,
         )
 
-    if not warehouse_db.exists():
+    if not _is_motherduck(warehouse_db) and not Path(warehouse_db).exists():
         return ScaffoldResult(
             out_path=out_path,
             warnings=[f"Warehouse not found at {warehouse_db}. Run `tycoon data transform run` first."],
         )
 
     mart_set, discovery_warnings = _resolve_marts_from_manifest(dbt_project_dir)
-    datasets, ds_warnings = _build_datasets(warehouse_db, mart_set=mart_set)
+    try:
+        datasets, ds_warnings = _build_datasets(warehouse_db, mart_set=mart_set)
+    except WarehouseOpenError as exc:
+        return ScaffoldResult(out_path=out_path, error=str(exc))
     warnings = list(discovery_warnings) + list(ds_warnings)
 
     if not datasets:
@@ -131,7 +150,9 @@ def scaffold_osi(
             )
         else:
             warnings.append(
-                "No marts found. Looked for tables prefixed " + ", ".join(MART_PREFIXES) + f" in {warehouse_db}."
+                "No marts found. Looked for tables prefixed "
+                + ", ".join(MART_PREFIXES)
+                + f" in {display_target(str(warehouse_db))}."
             )
 
     doc = _build_osi_document(project_name=project_name, datasets=datasets)
@@ -192,13 +213,13 @@ def _resolve_marts_from_manifest(
 
 
 def _build_datasets(
-    warehouse_db: Path,
+    warehouse_db: Path | str,
     *,
     mart_set: set[tuple[str, str]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Introspect DuckDB and return (datasets, warnings).
 
-    Connects read-only. Iterates schemas, finds mart tables, pulls
+    Connects read-only for a local file. Iterates schemas, finds mart tables, pulls
     column names + types, classifies each column as measure-eligible /
     dimension / time-dimension.
 
@@ -212,10 +233,14 @@ def _build_datasets(
     warnings: list[str] = []
     out: list[dict[str, Any]] = []
 
+    is_md = _is_motherduck(warehouse_db)
     try:
-        con = duckdb.connect(str(warehouse_db), read_only=True)
+        con = duckdb.connect(str(warehouse_db)) if is_md else duckdb.connect(str(warehouse_db), read_only=True)
     except duckdb.Error as exc:
-        return [], [f"Could not open warehouse: {exc}"]
+        message = f"Could not open warehouse: {redact_secrets(str(exc))}"
+        if is_md:
+            raise WarehouseOpenError(message) from None
+        return [], [message]
 
     try:
         db_name = _resolve_db_name(con)
@@ -223,7 +248,8 @@ def _build_datasets(
         rows = con.execute(
             "SELECT table_schema, table_name "
             "FROM information_schema.tables "
-            "WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'main_information_schema') "
+            "WHERE table_catalog = current_database() "
+            "AND table_schema NOT IN ('information_schema', 'pg_catalog', 'main_information_schema') "
             "ORDER BY table_schema, table_name"
         ).fetchall()
 
@@ -236,7 +262,7 @@ def _build_datasets(
             cols = con.execute(
                 "SELECT column_name, data_type "
                 "FROM information_schema.columns "
-                "WHERE table_schema = ? AND table_name = ? "
+                "WHERE table_catalog = current_database() AND table_schema = ? AND table_name = ? "
                 "ORDER BY ordinal_position",
                 [schema, table],
             ).fetchall()

@@ -1,5 +1,11 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`tycoon semantics scaffold` and the post-transform OSI scaffold read a MotherDuck warehouse** (#298). With `database.warehouse: md:<db>` both open the database through `config.warehouse_target` and read only that catalog's tables, so the other databases on the account are never listed. Dataset sources come out as `<db>.<schema>.<table>`. If the database cannot be opened, for example because there is no token, `semantics scaffold` prints the error with the token redacted and exits 1 without touching `osi.yaml`; the automatic scaffold is skipped with a one-line note when neither `MOTHERDUCK_TOKEN` nor a `motherduck_token` in the connection string is available, because DuckDB would otherwise open a browser sign-in, and stays silent on other failures. Local DuckDB warehouses produce the same output as before.
+
 ## [0.2.3] - 2026-10-24
 
 _Headline: **documentation site and a tested city**. The documentation site now publishes to GitHub Pages whenever a release reaches `main`, with internal pages withheld by a check that fails the build rather than leaking them. The city renderer is tested and gated in CI like the CLI, and its vehicles, guests and refresh now work. Also here: `tycoon-city` help that matches every other command, and tycoon's agent skills as three Claude Code plugins._
