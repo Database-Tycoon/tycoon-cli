@@ -28,6 +28,23 @@ Each block runs in a fresh `tmp_path` with `HOME` rebound, so caches don't leak 
 
 Why subprocess? In-process Typer tests can't see PATH resolution, Rich rendering (the v0.1.6 `[extra]` bracket strip bug), stdout/stderr framing, or console-script wiring. The recipe harness + `test_e2e_demo_arc.py` close that gap.
 
+### Real MotherDuck tests (scratch databases)
+
+Tests that need a real MotherDuck catalog use the `motherduck_scratch_db` fixture from `tests/motherduck_scratch.py` (re-exported by `conftest.py`). With `MOTHERDUCK_TOKEN` set it creates `tycoon_e2e_scratch_<hex>`, yields its `md:` URL and drops it in a `finally` block. Without the token the test skips.
+
+Mark such tests `e2e`, so they stay out of the default run, and put `motherduck` in the file or test name: the `motherduck-e2e` job in `e2e.yml` selects them with `pytest -m e2e -k motherduck`.
+
+Maintainer setup for the `motherduck-e2e` job. Repository settings cannot be changed from a PR, so none of this exists until a maintainer does it, and the workflow is not safe to dispatch before then:
+
+1. Create an environment named `motherduck-e2e` (Settings, Environments) before the first run. GitHub creates an unprotected environment if the name does not exist yet.
+2. Restrict its deployment branches to `main` and `v*`, and optionally require a reviewer. `workflow_dispatch` runs the workflow file from whichever ref the dispatcher picks, so without the branch restriction anyone with write access can push a branch that prints the token and dispatch it.
+3. Store the token as an environment secret named `MOTHERDUCK_TOKEN`, not a repository secret, so jobs outside the environment never see it.
+4. Use a dedicated MotherDuck account or service-account token that cannot see any real catalog.
+
+The job passes the token to the pytest step only. A cancelled or timed-out run skips the fixture's cleanup, so the same step then runs `python -m tests.motherduck_scratch`, which drops scratch databases older than 24 hours (by `md_information_schema.databases.created_ts`) through the same name check.
+
+Safety rule: the helper refuses to create, alter or drop any database whose name does not start with `tycoon_e2e_scratch_` (`tests/test_motherduck_scratch.py` proves it, no token needed). Never point a test at a real catalog; use the fixture and drop the database it hands you.
+
 ### Snapshot tests for Rich CLI output
 
 `tests/test_snapshots.py` uses [syrupy](https://github.com/syrupy-project/syrupy) to pin the exact rendered string of user-facing Rich output — install hints, doctor rows, common error paths. Golden files live in `tests/__snapshots__/test_snapshots.ambr`.
