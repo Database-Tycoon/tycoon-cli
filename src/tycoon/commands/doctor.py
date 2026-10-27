@@ -280,6 +280,56 @@ def _check_stack_config() -> None:
             error(f"External dbt project not found at {project.dbt_project_dir}.")
 
 
+def _check_dlt_state() -> None:
+    """Report where dlt keeps each source's state, and what its next run carries over (gh-394)."""
+    from tycoon.ingestion import pipeline_state as ps
+
+    project = config.project
+    if project is None or project.stack.ingestion != IngestionTool.dlt or not project.stack.ingestion_managed:
+        return
+    if not config.sources:
+        info("dlt state: no sources registered yet.")
+        return
+    project_dir = ps.project_pipelines_dir(config.root)
+    user_dir = ps.user_dlt_data_dir()
+    if user_dir is not None:
+        warn(
+            f"dlt state: DLT_DATA_DIR is set to {user_dir}, so pipelines keep their state there instead of in "
+            f"{project_dir}. Projects that share that directory share incremental state for same-named sources."
+        )
+        return
+    if config.raw_is_motherduck:
+        info("dlt state: skipped, the raw database is on MotherDuck.")
+        return
+
+    CarryOver = ps.CarryOver
+    next_run = {
+        CarryOver.COPY: "copy its state from",
+        CarryOver.COPY_UNVERIFIED: "copy its state, unverified, from",
+        CarryOver.RESTORE_FROM_DESTINATION: "restore its state from the raw database instead of copying",
+        CarryOver.FRESH: "start fresh instead of copying",
+    }
+    shared = ps.shared_pipelines_dir()
+    pending = False
+    for name, source_config in config.sources.items():
+        pipeline_name, dataset_name = ps.pipeline_identity(name, source_config.schema_name)
+        try:
+            plan = ps.plan_carry_over(pipeline_name, dataset_name, config.raw_db, project_dir, shared)
+        except ps.StateCarryOverError as exc:
+            pending = True
+            warn(f"dlt state for '{name}': {exc}")
+            continue
+        if plan.action is CarryOver.NOT_NEEDED:
+            continue
+        pending = True
+        report = warn if plan.action is CarryOver.COPY_UNVERIFIED else info
+        report(
+            f"dlt state for '{name}': the next run will {next_run[plan.action]} {plan.shared_dir}, because {plan.reason}."
+        )
+    if not pending:
+        success(f"dlt state: kept per project in {project_dir}.")
+
+
 def _check_fivetran_credentials(stack) -> None:
     """Validate Fivetran API creds + group_id can reach the API.
 
@@ -512,6 +562,9 @@ def doctor_cmd(
         if config.has_project_file:
             console.print(Panel("Checking stack configuration...", expand=False))
             _check_stack_config()
+
+            console.print(Panel("Checking dlt state...", expand=False))
+            _check_dlt_state()
 
             console.print(Panel("Checking dbt profile...", expand=False))
             _check_dbt_profile()

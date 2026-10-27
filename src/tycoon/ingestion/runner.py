@@ -12,13 +12,15 @@ import glob
 import re
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
 import dlt
 
 from tycoon.core.events import RunCompleted, RunFailed, RunStarted
+from tycoon.ingestion import pipeline_state
 from tycoon.ingestion.catalog import CATALOG
 from tycoon.ingestion.source_manager import (
     SOURCES_DIR,
@@ -551,6 +553,54 @@ def _capture_and_refresh_safe(
         pass
 
 
+def _report_carry_over(plan: pipeline_state.StatePlan) -> None:
+    from tycoon.utils.console import info, warn
+
+    CarryOver = pipeline_state.CarryOver
+    if plan.action is CarryOver.NOT_NEEDED:
+        return
+    moved = f"'{plan.pipeline_name}' now keeps its dlt state in {plan.project_dir}."
+    if plan.action is CarryOver.COPY:
+        info(f"{moved} Copied it from {plan.shared_dir} because {plan.reason}. The shared copy was left in place.")
+    elif plan.action is CarryOver.COPY_UNVERIFIED:
+        warn(
+            f"{moved} Copied it from {plan.shared_dir} because {plan.reason}. If another project uses the "
+            "same pipeline name, check this run's row counts. The shared copy was left in place."
+        )
+    else:
+        info(f"{moved} Not copying {plan.shared_dir}: {plan.reason}.")
+
+
+@contextmanager
+def _project_dlt_state(name: str, schema_name: str, raw_db_path: Path) -> Iterator[None]:
+    """Run inside this project's own dlt working directory (gh-394).
+
+    The first run of a pipeline there decides whether to carry over state
+    from dlt's shared directory, see ``pipeline_state.plan_carry_over``.
+    """
+    from tycoon.config import config
+
+    root = config.root
+    plan: pipeline_state.StatePlan | None = None
+    if pipeline_state.user_dlt_data_dir() is None:
+        pipeline_name, dataset_name = pipeline_state.pipeline_identity(name, schema_name)
+        try:
+            plan = pipeline_state.plan_carry_over(
+                pipeline_name,
+                dataset_name,
+                raw_db_path,
+                pipeline_state.project_pipelines_dir(root),
+                pipeline_state.shared_pipelines_dir(),
+            )
+        except pipeline_state.StateCarryOverError as exc:
+            raise IngestionError(str(exc)) from exc
+    with pipeline_state.project_pipelines_env(root):
+        if plan is not None:
+            pipeline_state.carry_over(plan)
+            _report_carry_over(plan)
+        yield
+
+
 def _keep_first_rows(max_rows: int) -> Callable[[Any], bool]:
     seen = 0
 
@@ -648,7 +698,10 @@ def run_source(
 
     _emit_event_safe(_metadata_db, RunStarted(source_id=name, runtime_id="dlt-managed"))
 
+    dlt_state = ExitStack()
     try:
+        dlt_state.enter_context(_project_dlt_state(name, source_config.schema_name, raw_db_path))
+
         # 1. Legacy pipeline delegation (keyed by source name)
         if name in _LEGACY_PIPELINES:
             pipeline, load_info = _run_legacy(name, raw_db_path=raw_db_path, max_records=max_records, **kwargs)
@@ -765,6 +818,8 @@ def run_source(
     except Exception as exc:
         _emit_event_safe(_metadata_db, RunFailed(source_id=name, runtime_id="dlt-managed", error=str(exc)))
         raise
+    finally:
+        dlt_state.close()
 
 
 def _run_legacy(
