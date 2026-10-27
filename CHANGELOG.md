@@ -8,8 +8,13 @@ All notable changes to this project will be documented in this file. The format 
 
 - **`tycoon city` names the dbt sources a staging model reads, even when they live outside the warehouse** ([#387][]). When a project's sources point at a separate database (for example `database: raw`, an attached DuckDB file or a DuckLake), none of them is an object in the warehouse the city reads, so lineage stopped at staging and every staging model listed its upstream as "none". The export now lists those sources on each model under `objects[].dbt.external_upstream`, with dbt's freshness verdict when `sources.json` has one; a source read through an ephemeral model is listed on the model that uses it. The city still draws no building for them, because nothing about them can be measured from the warehouse.
 
+### Security
+
+- **Local secret files can no longer be committed by accident** ([#410][]). The repository's `.gitignore` now covers `.env`, `.env.*` and any `.dlt/secrets.toml`, so credentials a contributor keeps for local runs stay out of commits in this public repo. `.env.example` stays committable, and a test fails if these rules are ever dropped. This changes nothing in the published package.
+
 [#385]: https://github.com/Database-Tycoon/tycoon-cli/issues/385
 [#387]: https://github.com/Database-Tycoon/tycoon-cli/issues/387
+[#410]: https://github.com/Database-Tycoon/tycoon-cli/issues/410
 
 ## [0.2.3] - 2026-10-24
 
