@@ -9,7 +9,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from tycoon.project import PROJECT_FILENAME, SCHEMA_VERSION, TycoonProject, load_project
+from tycoon.project import (
+    MOTHERDUCK_PREFIX as MOTHERDUCK_PREFIX,
+    PROJECT_FILENAME,
+    SCHEMA_VERSION,
+    TycoonProject,
+    is_motherduck,
+    load_project,
+)
 from tycoon.utils.console import error as _error_console, warn as _warn_console
 
 # v0.1 defaults (used when no tycoon.yml exists)
@@ -18,10 +25,8 @@ _DEFAULT_LOCAL_DB = "data/warehouse.duckdb"
 _DEFAULT_DBT_DIR = "dbt_project"
 _DEFAULT_RILL_DIR = "rill"
 
-MOTHERDUCK_PREFIX = "md:"
-
-# The query part of an md: string can carry motherduck_token=<secret>.
-_MD_QUERY_RE = re.compile(r"(md:[^\s'\"?]*)\?[^\s'\"]*")
+# The query part of an md:/motherduck: string can carry motherduck_token=<secret>.
+_MD_QUERY_RE = re.compile(r"((?:md|motherduck):[^\s'\"?]*)\?[^\s'\"]*")
 # The key, any spaces around "=", and an opening quote stay; the value is masked
 # and stops at a quote, so a closing quote survives too (SET motherduck_token = '...').
 _MD_TOKEN_RE = re.compile(r"(motherduck_token\s*=\s*['\"]?)[^\s&'\"]+", re.IGNORECASE)
@@ -30,10 +35,10 @@ _MD_TOKEN_RE = re.compile(r"(motherduck_token\s*=\s*['\"]?)[^\s&'\"]+", re.IGNOR
 def display_target(target: str) -> str:
     """A connection target that is safe to print.
 
-    An ``md:`` string loses everything from ``?`` onwards, where a
+    An ``md:`` or ``motherduck:`` string loses everything from ``?`` onwards, where a
     ``motherduck_token`` can sit; a local path is returned unchanged.
     """
-    if target.startswith(MOTHERDUCK_PREFIX):
+    if is_motherduck(target):
         return target.split("?", 1)[0]
     return target
 
@@ -93,7 +98,7 @@ class TycoonConfig:
 
     @property
     def raw_is_motherduck(self) -> bool:
-        return self._raw_setting.startswith(MOTHERDUCK_PREFIX)
+        return is_motherduck(self._raw_setting)
 
     @property
     def raw_target(self) -> str:
@@ -128,13 +133,13 @@ class TycoonConfig:
 
     @property
     def warehouse_is_motherduck(self) -> bool:
-        return self._warehouse_setting.startswith(MOTHERDUCK_PREFIX)
+        return is_motherduck(self._warehouse_setting)
 
     @property
     def warehouse_target(self) -> str:
         """What ``duckdb.connect`` opens for the warehouse.
 
-        A MotherDuck ``md:`` connection string passes through verbatim; a
+        A MotherDuck ``md:`` or ``motherduck:`` connection string passes through verbatim; a
         local path resolves under the project root.
         """
         if self.warehouse_is_motherduck:

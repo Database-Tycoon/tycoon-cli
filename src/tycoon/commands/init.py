@@ -10,6 +10,7 @@ from typing import Annotated
 import typer
 
 from tycoon.project import (
+    is_motherduck,
     BITool,
     IngestionTool,
     StackConfig,
@@ -336,7 +337,7 @@ def _normalize_warehouse_for_compare(value: str) -> str:
     ``md:*`` strings are returned verbatim; filesystem paths are resolved
     against CWD if relative and returned as absolute.
     """
-    if value.startswith("md:"):
+    if is_motherduck(value):
         return value
     abs_path = Path(value).expanduser()
     if not abs_path.is_absolute():
@@ -403,7 +404,7 @@ def _run_wizard(target: Path, project_name: str) -> WizardResult:
         aligned = _maybe_align_warehouse(warehouse_path, Path(dbt_path))
         if aligned != warehouse_path:
             warehouse_path = aligned
-            if aligned.startswith("md:"):
+            if is_motherduck(aligned):
                 warehouse = WarehouseType.motherduck
             else:
                 warehouse = WarehouseType.duckdb

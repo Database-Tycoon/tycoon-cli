@@ -525,6 +525,27 @@ class TestExtractDbtWarehouseTarget:
         assert target.identifier == "md:mine"
         assert target.tycoon_warehouse_type == "motherduck"
 
+    def test_motherduck_long_prefix_is_preserved(self, tmp_path):
+        from tycoon.commands.init import _extract_dbt_warehouse_target
+
+        dbt_dir = tmp_path / "dbt"
+        _make_dbt_project(dbt_dir, "p", "motherduck:mine")
+        target = _extract_dbt_warehouse_target(dbt_dir)
+
+        assert target is not None
+        assert target.identifier == "motherduck:mine"
+        assert target.tycoon_warehouse_type == "motherduck"
+
+    def test_path_containing_md_later_stays_duckdb(self, tmp_path):
+        from tycoon.commands.init import _extract_dbt_warehouse_target
+
+        dbt_dir = tmp_path / "dbt"
+        _make_dbt_project(dbt_dir, "p", "/data/backup-md:/w.duckdb")
+        target = _extract_dbt_warehouse_target(dbt_dir)
+
+        assert target is not None
+        assert target.tycoon_warehouse_type == "duckdb"
+
     def test_snowflake_exposes_account_and_details(self, tmp_path):
         from tycoon.commands.init import _extract_dbt_warehouse_target
 

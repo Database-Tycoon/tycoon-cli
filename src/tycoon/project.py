@@ -467,6 +467,22 @@ class TycoonProject(BaseModel):
 
 
 PROJECT_FILENAME = "tycoon.yml"
+
+# DuckDB and dbt-duckdb treat both schemes as the same MotherDuck connection.
+MOTHERDUCK_PREFIX = "md:"
+MOTHERDUCK_PREFIXES = (MOTHERDUCK_PREFIX, "motherduck:")
+
+
+def is_motherduck(target: str) -> bool:
+    """True when ``target`` is a MotherDuck connection string (``md:`` or ``motherduck:``).
+
+    Only the start of the string counts, so a path that contains ``md:`` further in is a file.
+    Lives here, not in ``tycoon.config``, so callers that must not import that module's
+    cwd-bound singleton (``tycoon city``) can use it.
+    """
+    return target.startswith(MOTHERDUCK_PREFIXES)
+
+
 SCHEMA_VERSION = 2
 
 
