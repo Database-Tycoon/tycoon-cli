@@ -104,7 +104,7 @@ def run_all_cmd(
                 _pipeline, load_info = _run_source(
                     name=name,
                     source_config=source_config,
-                    raw_db_path=cfg.raw_db,
+                    raw_db_path=cfg.raw_target,
                     max_records=max_records,
                     fail_on_empty=fail_on_empty,
                 )
