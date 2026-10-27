@@ -42,6 +42,26 @@ def _summarize_completed(e: RunCompleted) -> RunSummary:
     )
 
 
+def _summarize_dbt(e: DbtRunCompleted) -> RunSummary:
+    return RunSummary(
+        run_id=e.event_id,
+        source_id=e.source_id,
+        runtime_id=e.runtime_id,
+        status="failed" if e.failed else "success",
+        started_at=e.timestamp,
+        duration_seconds=e.duration_seconds,
+        rows_total=e.models_run,
+        command=e.command,
+    )
+
+
+def _dbt_error(e: DbtRunCompleted) -> str | None:
+    if e.exit_code in (None, 0):
+        return e.error
+    exited = f"dbt exited with code {e.exit_code}"
+    return f"{exited}: {e.error}" if e.error else exited
+
+
 class HistoryRepository:
     def __init__(self, backend: MetadataBackend) -> None:
         self._backend = backend
@@ -65,18 +85,7 @@ class HistoryRepository:
                     )
                 )
             elif isinstance(e, DbtRunCompleted):
-                summaries.append(
-                    RunSummary(
-                        run_id=e.event_id,
-                        source_id=e.source_id,
-                        runtime_id=e.runtime_id,
-                        status="success" if e.models_errored == 0 else "failed",
-                        started_at=e.timestamp,
-                        duration_seconds=e.duration_seconds,
-                        rows_total=e.models_run,
-                        command=e.command,
-                    )
-                )
+                summaries.append(_summarize_dbt(e))
         summaries.sort(key=lambda s: s.started_at, reverse=True)
         if limit is not None:
             return summaries[:limit]
@@ -111,21 +120,7 @@ class HistoryRepository:
                     )
             elif isinstance(e, DbtRunCompleted):
                 if e.event_id.startswith(run_id_prefix):
-                    matches.append(
-                        (
-                            RunSummary(
-                                run_id=e.event_id,
-                                source_id=e.source_id,
-                                runtime_id=e.runtime_id,
-                                status="success" if e.models_errored == 0 else "failed",
-                                started_at=e.timestamp,
-                                duration_seconds=e.duration_seconds,
-                                rows_total=e.models_run,
-                                command=e.command,
-                            ),
-                            e,
-                        )
-                    )
+                    matches.append((_summarize_dbt(e), e))
 
         if len(matches) == 0:
             return None
@@ -155,6 +150,6 @@ class HistoryRepository:
                 summary=summary,
                 rows_by_table={},
                 tables_created=[],
-                error=None,
+                error=_dbt_error(event),
             )
         return None

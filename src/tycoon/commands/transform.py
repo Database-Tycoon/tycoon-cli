@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
+import sys
 import time
+from collections import deque
+from collections.abc import Iterable
 from pathlib import Path
 
 import typer
@@ -40,8 +44,6 @@ _FULL_REFRESH_FLAG = typer.Option(False, "--full-refresh", help="Drop and recrea
 
 def _dbt_executable() -> str:
     """Find the dbt binary, preferring the one co-located with this Python."""
-    import sys
-
     venv_dbt = Path(sys.executable).parent / "dbt"
     if venv_dbt.exists():
         return str(venv_dbt)
@@ -52,11 +54,74 @@ def _dbt_executable() -> str:
     return dbt
 
 
-def _capture_dbt_and_refresh_safe(dbt_cmd: str, *, started_at: float, exit_code: int | None = None) -> None:
+_OUTPUT_TAIL_LINES = 20
+_ERROR_SUMMARY_CHARS = 300
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_DBT_LOG_TIMESTAMP = re.compile(r"^\d{2}:\d{2}:\d{2}\s+")
+
+
+def _stream_dbt(cmd: list[str], cwd: Path) -> tuple[int, list[str]]:
+    """Run dbt, echoing its stdout as it arrives, and keep the last lines.
+
+    The kept lines are the only record of an error dbt hits before it writes
+    run_results.json, such as an unknown target or a locked DuckDB file.
+    """
+    tail: deque[str] = deque(maxlen=_OUTPUT_TAIL_LINES)
+    with subprocess.Popen(
+        cmd, cwd=cwd, stdout=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", bufsize=1
+    ) as proc:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            tail.append(line)
+    return proc.returncode, list(tail)
+
+
+def _clip(text: str) -> str:
+    text = " ".join(text.split())
+    if len(text) <= _ERROR_SUMMARY_CHARS:
+        return text
+    return text[: _ERROR_SUMMARY_CHARS - 3] + "..."
+
+
+def _dbt_error_summary(results: list[dict], output_tail: Iterable[str]) -> str | None:
+    """One line on why a dbt run failed: the first failed node, else dbt's own error text."""
+    from tycoon.core.events import DBT_ERROR_STATUSES
+
+    failed = [r for r in results if (r.get("status") or "").lower() in DBT_ERROR_STATUSES]
+    if failed:
+        first = failed[0]
+        text = f"{first.get('unique_id')}: {first.get('message') or first.get('status')}"
+        if len(failed) > 1:
+            text += f" (and {len(failed) - 1} more)"
+        return _clip(text)
+
+    lines = [_DBT_LOG_TIMESTAMP.sub("", _ANSI_ESCAPE.sub("", line)).strip() for line in output_tail]
+    lines = [line for line in lines if line]
+    if not lines:
+        return None
+    marker = max((i for i, line in enumerate(lines) if "Encountered an error" in line), default=None)
+    if marker is not None and marker + 1 < len(lines):
+        kind, *detail = lines[marker + 1 :]
+        return _clip(f"{kind}: {' '.join(detail)}" if detail else kind)
+    return _clip(lines[-1])
+
+
+def _capture_dbt_and_refresh_safe(
+    dbt_cmd: str,
+    *,
+    started_at: float,
+    exit_code: int | None = None,
+    target: str | None = None,
+    output_tail: Iterable[str] = (),
+) -> None:
     """Best-effort dbt observability capture + Rill dashboard refresh.
 
     ``exit_code`` is dbt's own; ``None`` means the caller doesn't know it, and
-    the run's outcome is then read from the node statuses alone.
+    the run's outcome is then read from the node statuses alone. A failed run
+    is recorded even when dbt stopped before writing run_results.json, with
+    ``output_tail`` (dbt's last lines of output) as its error summary.
     """
     run_results_path = config.dbt_project_dir / "target" / "run_results.json"
     try:
@@ -93,29 +158,34 @@ def _capture_dbt_and_refresh_safe(dbt_cmd: str, *, started_at: float, exit_code:
         from tycoon.metadata_backends.duckdb_file import DuckDBFileBackend
         from tycoon.observability import metadata_db_path
 
-        if not fresh:
+        if fresh:
+            with open(run_results_path, encoding="utf-8") as f:
+                run_results = json.load(f)
+            elapsed = float(run_results.get("elapsed_time") or 0.0)
+            args = run_results.get("args") or {}
+            target = args.get("target") or target
+            results = run_results.get("results") or []
+        elif exit_code not in (None, 0):
+            elapsed = time.time() - started_at
+            results = []
+        else:
             return
 
-        with open(run_results_path, encoding="utf-8") as f:
-            run_results = json.load(f)
-
-        elapsed = float(run_results.get("elapsed_time") or 0.0)
-        args = run_results.get("args") or {}
-        target = args.get("target", "dev") or "dev"
-        results = run_results.get("results") or []
         models_run = len(results)
         models_errored = sum(1 for r in results if (r.get("status") or "").lower() in DBT_ERROR_STATUSES)
-        models_passed = models_run - models_errored
+        failed = models_errored > 0 or exit_code not in (None, 0)
 
         event = DbtRunCompleted(
             source_id="dbt",
             runtime_id="dbt",
             command=dbt_cmd,
-            target=target,
+            target=target or "dev",
             models_run=models_run,
-            models_passed=models_passed,
+            models_passed=models_run - models_errored,
             models_errored=models_errored,
             duration_seconds=elapsed,
+            exit_code=exit_code,
+            error=_dbt_error_summary(results, output_tail) if failed else None,
         )
         with DuckDBFileBackend(metadata_db_path(config.root)) as b:
             b.append_event(event)
@@ -220,11 +290,17 @@ def _run_dbt(
     console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")
 
     started_at = time.time()
-    result = subprocess.run(cmd, cwd=project_dir)
-    _capture_dbt_and_refresh_safe(dbt_cmd, started_at=started_at, exit_code=result.returncode)
-    if result.returncode == 0 and dbt_cmd in {"run", "build"}:
+    returncode, output_tail = _stream_dbt(cmd, project_dir)
+    _capture_dbt_and_refresh_safe(
+        dbt_cmd,
+        started_at=started_at,
+        exit_code=returncode,
+        target=resolved_target,
+        output_tail=output_tail,
+    )
+    if returncode == 0 and dbt_cmd in {"run", "build"}:
         _auto_osi_scaffold_safe()
-    return result.returncode
+    return returncode
 
 
 @app.command()

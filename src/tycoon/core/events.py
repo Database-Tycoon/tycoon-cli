@@ -58,6 +58,13 @@ class DbtRunCompleted(BaseEvent):
     models_passed: int = 0
     models_errored: int = 0
     duration_seconds: float = 0.0
+    # None on ledger rows written before dbt's exit code was recorded (gh-377).
+    exit_code: int | None = None
+    error: str | None = None
+
+    @property
+    def failed(self) -> bool:
+        return self.models_errored > 0 or self.exit_code not in (None, 0)
 
 
 Event = Annotated[
