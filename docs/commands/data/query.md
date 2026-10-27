@@ -60,23 +60,21 @@ When a [Quack](../start.md#quack-the-live-multi-client-warehouse-v019) server is
 ## `schema` — dump tables, row counts, sizes
 
 ```bash
-tycoon data schema                  # all schemas
-tycoon data schema mart             # one schema
-tycoon data schema --db .tycoon/metadata.duckdb
+tycoon data schema
 ```
 
-Lists every table in the warehouse (or the `--db` you pointed at), with row counts and DuckDB file size. Useful for "what's in this DB?" / "which tables have rows?" without writing SQL.
+Lists every table in the raw and warehouse databases, plus any other `.duckdb` file in the data directory, with row counts and DuckDB file size. Useful for "what's in this DB?" / "which tables have rows?" without writing SQL.
+
+On a MotherDuck database (`database.warehouse: md:<name>`), row counts are estimates read from the catalog, printed as `~1,000 rows (estimate)`, because an exact `count(*)` per table is slow and spends compute. The estimate comes from DuckDB's table statistics and does not drop after deletes: a table that held 100,000 rows and lost half of them still shows `~100,000 rows (estimate)` where `--exact` shows `50,000 rows`. A view has no estimate and prints `view (use --exact to count)`; a table whose catalog reports no estimate prints `no estimate (use --exact to count)`. Pass `--exact` to count every table and view. Local DuckDB files always show exact counts.
 
 ### Synopsis
 
 ```
-tycoon data schema [SCHEMA] [OPTIONS]
-
-Arguments:
-  [SCHEMA]    Optional schema filter
+tycoon data schema [OPTIONS]
 
 Options:
-  --db PATH   Override which DuckDB to inspect (default: warehouse)
+  --exact     Count rows exactly on a MotherDuck database instead of estimating
+  -h, --help  Show this message and exit
 ```
 
 ## `clean` — remove warehouse files
