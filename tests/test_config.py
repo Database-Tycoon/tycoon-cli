@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import os
+import secrets
+
 import pytest
 
-from tycoon.config import TycoonConfig, display_target, load_config, redact_secrets
+from tycoon.config import TycoonConfig, display_target, is_motherduck, load_config, redact_secrets
 from tycoon.project import SCHEMA_VERSION
 
 
@@ -152,6 +155,7 @@ class TestRedaction:
             ("md:", "md:"),
             ("md:db", "md:db"),
             ("md:db?motherduck_token=x&saas_mode=true", "md:db"),
+            ("motherduck:db?motherduck_token=x", "motherduck:db"),
             ("/tmp/proj/data/warehouse.duckdb", "/tmp/proj/data/warehouse.duckdb"),
         ],
     )
@@ -173,6 +177,7 @@ class TestRedaction:
             ("SET motherduck_token = 'abc123'", "SET motherduck_token = '***'"),
             ("MotherDuck_Token='abc123'", "MotherDuck_Token='***'"),
             ("md:db?motherduck_token=abc123&saas_mode=true", "md:db"),
+            ("motherduck:db?motherduck_token=abc123&saas_mode=true", "motherduck:db"),
             (
                 "Error: SET motherduck_token = 'abc123' failed (token expired)",
                 "Error: SET motherduck_token = '***' failed (token expired)",
@@ -183,3 +188,92 @@ class TestRedaction:
     )
     def test_redact_secrets_token_forms(self, text, redacted):
         assert redact_secrets(text) == redacted
+
+
+class TestIsMotherduck:
+    @pytest.mark.parametrize(
+        "target",
+        ["md:x", "md:", "motherduck:x", "md:_share/name/uuid", "motherduck:x?motherduck_token=t"],
+    )
+    def test_accepts_both_prefixes(self, target):
+        assert is_motherduck(target)
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "data/raw.duckdb",
+            "/abs/backup-md:/raw.duckdb",
+            "data/motherduck:x.duckdb",
+            "C:\\data\\md:raw.duckdb",
+            "./md",
+            "mdx:x",
+            "",
+        ],
+    )
+    def test_everything_else_is_a_file(self, target):
+        assert not is_motherduck(target)
+
+    def test_long_prefix_warehouse_resolves_like_short(self, tmp_path):
+        def target(value: str) -> tuple[str, bool, object]:
+            (tmp_path / "tycoon.yml").write_text(f"name: t\nsources: {{}}\ndatabase:\n  warehouse: '{value}'\n")
+            cfg = TycoonConfig(project_root=tmp_path)
+            return cfg.warehouse_target, cfg.warehouse_is_motherduck, cfg.local_db
+
+        assert target("md:x") == ("md:x", True, None)
+        assert target("motherduck:x") == ("motherduck:x", True, None)
+
+    def test_raw_with_md_later_in_path_is_a_file(self, tmp_path):
+        (tmp_path / "tycoon.yml").write_text("name: t\nsources: {}\ndatabase:\n  raw: 'data/md:backup/raw.duckdb'\n")
+        cfg = TycoonConfig(project_root=tmp_path)
+        assert not cfg.raw_is_motherduck
+        assert cfg.raw_db == tmp_path / "data" / "md:backup" / "raw.duckdb"
+
+    def test_long_prefix_raw_exits_like_short(self, tmp_path):
+        (tmp_path / "tycoon.yml").write_text("name: t\nsources: {}\ndatabase:\n  raw: 'motherduck:x_raw'\n")
+        cfg = TycoonConfig(project_root=tmp_path)
+        assert cfg.raw_is_motherduck
+        with pytest.raises(SystemExit):
+            _ = cfg.raw_db
+
+
+_E2E_PREFIX = "tycoon_e2e_scratch_"
+needs_token = pytest.mark.skipif(not os.environ.get("MOTHERDUCK_TOKEN"), reason="MOTHERDUCK_TOKEN not set")
+
+
+@pytest.fixture
+def scratch_db():
+    import duckdb
+
+    name = f"{_E2E_PREFIX}a{secrets.token_hex(3)}"
+    assert name.startswith(_E2E_PREFIX)
+    admin = duckdb.connect("md:")
+    admin.execute(f'CREATE DATABASE "{name}"')
+    try:
+        yield name
+    finally:
+        assert name.startswith(_E2E_PREFIX)
+        admin.execute(f'DROP DATABASE IF EXISTS "{name}"')
+        admin.close()
+
+
+@pytest.mark.e2e
+@needs_token
+def test_both_prefixes_open_the_same_real_catalog(scratch_db):
+    import duckdb
+
+    short = duckdb.connect(f"md:{scratch_db}")
+    short.execute("CREATE TABLE t AS SELECT 42 AS answer")
+    short.close()
+
+    long = duckdb.connect(f"motherduck:{scratch_db}")
+    assert long.execute("SELECT current_database()").fetchone() == (scratch_db,)
+    assert long.execute("SELECT answer FROM t").fetchone() == (42,)
+    long.close()
+
+
+@pytest.mark.e2e
+@needs_token
+def test_dbt_duckdb_recognises_the_long_prefix(scratch_db):
+    from dbt.adapters.duckdb.credentials import DuckDBCredentials
+
+    assert DuckDBCredentials(path=f"motherduck:{scratch_db}").is_motherduck

@@ -19,6 +19,7 @@ from tycoon.project import (
     BITool,
     TransformationTool,
     WarehouseType,
+    is_motherduck,
 )
 from tycoon.utils.console import console, error, header, info, success, warn
 
@@ -360,7 +361,7 @@ def register_dbt(
 def _align_duckdb_warehouse(raw: dict, stack: dict, dbt_warehouse: str) -> None:
     """DuckDB / MotherDuck alignment (v0.1.1 + v0.1.2 behavior, unchanged)."""
     current_warehouse = raw.get("database", {}).get("warehouse", "")
-    if current_warehouse.startswith("md:"):
+    if is_motherduck(current_warehouse):
         current_norm = current_warehouse
     else:
         abs_path = Path(current_warehouse).expanduser() if current_warehouse else Path()
@@ -380,7 +381,7 @@ def _align_duckdb_warehouse(raw: dict, stack: dict, dbt_warehouse: str) -> None:
         if raw["database"].get("raw", "") == current_warehouse:
             raw["database"]["raw"] = dbt_warehouse
         stack["warehouse"] = (
-            WarehouseType.motherduck.value if dbt_warehouse.startswith("md:") else WarehouseType.duckdb.value
+            WarehouseType.motherduck.value if is_motherduck(dbt_warehouse) else WarehouseType.duckdb.value
         )
 
 
