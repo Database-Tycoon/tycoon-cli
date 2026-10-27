@@ -132,3 +132,42 @@ def test_demo_arc_csv_import(tmp_path: Path) -> None:
     )
     warehouse_db = project / "data" / "files_warehouse.duckdb"
     assert warehouse_db.exists(), f"warehouse db missing after transform: {warehouse_db}"
+
+
+@pytest.mark.subprocess_e2e
+def test_run_all_ignores_dbt_on_path(tmp_path: Path) -> None:
+    """``data run-all`` must run the dbt next to tycoon's Python (#439).
+
+    PATH holds a stub ``dbt`` that leaves a marker and fails, and does not
+    hold the venv's bin dir, so resolving dbt through PATH either runs the
+    stub or finds nothing.
+    """
+    tycoon = _tycoon_bin()
+    project = tmp_path / "demo"
+    project.mkdir()
+
+    stub_bin = tmp_path / "global-bin"
+    stub_bin.mkdir()
+    marker = tmp_path / "stub-dbt-ran"
+    stub = stub_bin / "dbt"
+    stub.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 3\n")
+    stub.chmod(0o755)
+
+    env = os.environ.copy()
+    env["HOME"] = str(tmp_path / "home")
+    Path(env["HOME"]).mkdir()
+    env["TYCOON_DISABLE_LLM_PROBE"] = "1"
+    env["TYCOON_INIT_NO_VENV"] = "1"
+    venv_bin = str(Path(tycoon).resolve().parent)
+    kept = [p for p in env.get("PATH", "").split(os.pathsep) if p and str(Path(p).resolve()) != venv_bin]
+    env["PATH"] = os.pathsep.join([str(stub_bin), *kept])
+    env.pop("VIRTUAL_ENV", None)
+
+    _assert_ok(
+        "tycoon init",
+        _run([tycoon, "init", "--template", "csv-import", "--name", "demo"], cwd=project, env=env),
+    )
+    _assert_ok("tycoon data run-all", _run([tycoon, "data", "run-all"], cwd=project, env=env, timeout=180))
+
+    assert not marker.exists(), "run-all ran the dbt on PATH instead of the one next to tycoon's Python"
+    assert (project / "data" / "files_warehouse.duckdb").exists(), "warehouse db missing after run-all"
