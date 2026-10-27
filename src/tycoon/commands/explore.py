@@ -112,6 +112,10 @@ def analyze_cmd(
     header(f"Analyzing: {source_name}")
     info(f"Schema: {schema_name}")
 
+    if cfg.raw_is_motherduck:
+        error("data analyze reads a local raw file, and database.raw is MotherDuck.")
+        raise typer.Exit(1)
+
     # 3. Verify raw database exists and has data for this schema
     raw_db = cfg.raw_db
     if not raw_db.exists():
@@ -248,6 +252,9 @@ def _analyze_all(*, cfg: TycoonConfig, force: bool, no_dbt: bool, rill: bool, bu
 
     sources = cfg.sources
     header(f"Analyzing all sources ({len(sources)})")
+    if cfg.raw_is_motherduck:
+        error("data analyze reads a local raw file, and database.raw is MotherDuck.")
+        raise typer.Exit(1)
 
     total_generated: list[str] = []
     total_skipped: list[str] = []
