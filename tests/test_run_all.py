@@ -11,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from tycoon.cli import app
@@ -80,3 +81,34 @@ def test_run_all_uses_the_dbt_next_to_python(cli_runner, tmp_path, monkeypatch, 
 
     assert calls, "run-all did not invoke dbt"
     assert calls[0][:2] == [str(venv_dbt), "build"]
+
+
+@pytest.mark.offline_e2e
+def test_run_all_records_dbt_runs_like_transform_build(cli_runner, tmp_path, monkeypatch):
+    project = tmp_path / "csv-import"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    _invoke_ok(cli_runner, ["init", "--template", "csv-import"])
+    _rebind_config(monkeypatch, project)
+    metadata_db = project / ".tycoon" / "metadata.duckdb"
+
+    def build_rows() -> tuple[int, int]:
+        con = duckdb.connect(str(metadata_db), read_only=True)
+        try:
+            runs = con.execute("SELECT count(*) FROM dbt_runs WHERE command = 'build'").fetchone()
+            nodes = con.execute(
+                "SELECT count(*) FROM dbt_nodes WHERE status = 'success' AND node_name LIKE '%stg_widgets%'"
+            ).fetchone()
+        finally:
+            con.close()
+        assert runs is not None and nodes is not None
+        return runs[0], nodes[0]
+
+    _invoke_ok(cli_runner, ["data", "run-all"])
+    runs, nodes = build_rows()
+    assert runs == 1, f"run-all should record one dbt 'build' run, got {runs}"
+    assert nodes >= 1, "run-all should record the successful stg_widgets node"
+
+    _invoke_ok(cli_runner, ["data", "transform", "build"])
+    runs, _ = build_rows()
+    assert runs == 2, f"transform build should add a second dbt 'build' run, got {runs}"

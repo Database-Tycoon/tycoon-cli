@@ -140,7 +140,8 @@ def test_run_all_ignores_dbt_on_path(tmp_path: Path) -> None:
 
     PATH holds a stub ``dbt`` that leaves a marker and fails, and does not
     hold the venv's bin dir, so resolving dbt through PATH either runs the
-    stub or finds nothing.
+    stub or finds nothing. The run must also record the build in
+    ``dbt_runs`` like ``transform build`` does (#326).
     """
     tycoon = _tycoon_bin()
     project = tmp_path / "demo"
@@ -171,3 +172,12 @@ def test_run_all_ignores_dbt_on_path(tmp_path: Path) -> None:
 
     assert not marker.exists(), "run-all ran the dbt on PATH instead of the one next to tycoon's Python"
     assert (project / "data" / "files_warehouse.duckdb").exists(), "warehouse db missing after run-all"
+
+    import duckdb
+
+    con = duckdb.connect(str(project / ".tycoon" / "metadata.duckdb"), read_only=True)
+    try:
+        row = con.execute("SELECT count(*) FROM dbt_runs WHERE command = 'build'").fetchone()
+    finally:
+        con.close()
+    assert row is not None and row[0] == 1, f"run-all should record one dbt 'build' run, got {row}"

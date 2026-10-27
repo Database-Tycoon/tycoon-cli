@@ -120,7 +120,7 @@ def run_all_cmd(
 
     # 2. Transform
     if not skip_transform:
-        from tycoon.commands.transform import _dbt_executable
+        from tycoon.commands.transform import _capture_dbt_and_refresh_safe, _dbt_executable
 
         try:
             dbt = _dbt_executable()
@@ -137,7 +137,9 @@ def run_all_cmd(
             console.rule("[bold cyan]dbt build")
             cmd = [dbt, "build", "--target", target, "--profiles-dir", str(project_dir)]
             console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")
+            started_at = time.time()
             result = subprocess.run(cmd, cwd=project_dir)
+            _capture_dbt_and_refresh_safe("build", started_at=started_at)
             if result.returncode != 0:
                 error(f"dbt build failed (exit {result.returncode}).")
                 _emit("error", "run-all failed during dbt build", stage="transform", exit_code=str(result.returncode))
