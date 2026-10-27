@@ -47,6 +47,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from .catalog.errors import CatalogError
+from .catalog.loader import is_motherduck
 from .catalog.models import PipelineContext
 from .catalog.tycoon_project import TYCOON_FILE, read_project_info
 from .export.build import build_city
@@ -106,13 +107,13 @@ def _default_dist() -> Path | None:
 
 def _source_files(db_path: str) -> list[Path] | None:
     """Every file a load of `db_path` reads, or None when there are no files
-    behind it (an `md:` catalog, or a directory that is not a tycoon project).
+    behind it (an `md:` or `motherduck:` catalog, or a directory that is not a tycoon project).
 
     The list, not just the mtimes, is part of the key: a manifest that did not
     exist last request and does now is a change, and it shows up here as a new
     path rather than as a moved one.
     """
-    if db_path.startswith("md:"):
+    if is_motherduck(db_path):
         return None
     path = Path(db_path)
     if not path.is_dir():
@@ -319,7 +320,7 @@ class _Handler(BaseHTTPRequestHandler):
         # This is inefficient: it checks the file system on every request.
         # But this is only done if ?crlf=1 is passed, and requests are not
         # huge, so it's probably fine for now.
-        if self.db_path.startswith("md:"):
+        if is_motherduck(self.db_path):
             self._respond(404, b"not found", "text/plain")
             return
 
