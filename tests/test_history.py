@@ -713,3 +713,111 @@ class TestTransformRecordsDbtRuns:
         row = _only_dbt_row(cli_runner)
         assert "✓" in row
         assert "✗" not in row
+
+    def test_failure_before_run_results_is_recorded(self, transform_project, cli_runner, monkeypatch):
+        """A bad target or a DuckDB lock stops dbt before it writes run_results.json (gh-377)."""
+        _install_fake_dbt(
+            monkeypatch,
+            transform_project,
+            exit_code=2,
+            output=(
+                "\x1b[0m14:45:23  Running with dbt=1.12.0\n"
+                "\x1b[0m14:45:23  [\x1b[31mERROR\x1b[0m]: Encountered an error:\n"
+                "Runtime Error\n"
+                "  The profile 'p' does not have a target named 'nonexistent'.\n"
+            ),
+        )
+        result = cli_runner.invoke(app, ["data", "transform", "run"])
+        assert result.exit_code == 2
+        assert "does not have a target named" in result.stdout
+
+        row = _only_dbt_row(cli_runner)
+        assert "✗" in row
+
+        shown = _show_dbt_run(cli_runner, row)
+        assert "failed" in shown
+        assert "dbt exited with code 2" in shown
+        assert "Runtime Error: The profile 'p' does not have a target named 'nonexistent'." in shown
+
+    def test_failure_does_not_reuse_stale_run_results(self, transform_project, cli_runner, monkeypatch):
+        """An earlier run's run_results.json must not stand in for a run that failed early."""
+        import json
+        import os
+
+        target = transform_project / "dbt_project" / "target"
+        target.mkdir()
+        stale = target / "run_results.json"
+        stale.write_text(
+            json.dumps(
+                {
+                    "metadata": {"invocation_id": "old"},
+                    "args": {"target": "dev"},
+                    "results": [_result("model.demo.m", "success")],
+                    "elapsed_time": 9.0,
+                }
+            )
+        )
+        os.utime(stale, (1_000_000_000, 1_000_000_000))
+        _install_fake_dbt(monkeypatch, transform_project, exit_code=2, output="IO Error: Could not set lock\n")
+
+        result = cli_runner.invoke(app, ["data", "transform", "run"])
+        assert result.exit_code == 2
+
+        row = _only_dbt_row(cli_runner)
+        assert "✗" in row
+        assert "IO Error: Could not set lock" in _show_dbt_run(cli_runner, row)
+
+    def test_node_errors_are_summarised(self, transform_project, cli_runner, monkeypatch):
+        _install_fake_dbt(
+            monkeypatch,
+            transform_project,
+            exit_code=1,
+            results=[
+                _result("model.demo.ok", "success"),
+                _result("model.demo.bad", "error", "Catalog Error: Table raw.x does not exist"),
+            ],
+        )
+        result = cli_runner.invoke(app, ["data", "transform", "build"])
+        assert result.exit_code == 1
+
+        row = _only_dbt_row(cli_runner)
+        assert "✗" in row
+        shown = _show_dbt_run(cli_runner, row)
+        assert "dbt exited with code 1" in shown
+        assert "model.demo.bad: Catalog Error: Table raw.x does not exist" in shown
+
+    def test_real_dbt_bad_target_is_recorded(self, transform_project, cli_runner):
+        """Unmocked: the real dbt binary exits 2 on an unknown target, before any run_results.json."""
+        import importlib.util
+
+        from tycoon.commands import transform as transform_mod
+
+        if importlib.util.find_spec("dbt.adapters.duckdb") is None:
+            pytest.skip("dbt-duckdb is not installed")
+        try:
+            transform_mod._dbt_executable()
+        except Exception:
+            pytest.skip("dbt binary not found")
+
+        dbt_dir = transform_project / "dbt_project"
+        (dbt_dir / "dbt_project.yml").write_text("name: p\nversion: '1.0'\nprofile: p\nconfig-version: 2\n")
+        (dbt_dir / "profiles.yml").write_text(
+            "p:\n  target: dev\n  outputs:\n    dev:\n      type: duckdb\n      path: wh.duckdb\n"
+        )
+
+        result = cli_runner.invoke(app, ["data", "transform", "run", "-t", "nonexistent"])
+        assert result.exit_code == 2, result.output
+
+        row = _only_dbt_row(cli_runner)
+        assert "✗" in row
+        shown = _show_dbt_run(cli_runner, row)
+        assert "dbt exited with code 2" in shown
+        assert "does not have a target named 'nonexistent'" in shown
+
+
+def _show_dbt_run(cli_runner, row: str) -> str:
+    """Run `data history show` for a history row and return its output, whitespace-collapsed."""
+    run_id = row.split("(", 1)[1].split(")", 1)[0]
+    result = cli_runner.invoke(app, ["data", "history", "show", run_id])
+    assert result.exit_code == 0, result.output
+    return " ".join(result.stdout.split())
