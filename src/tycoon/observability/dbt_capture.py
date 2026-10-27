@@ -8,6 +8,7 @@ from pathlib import Path
 
 import duckdb
 
+from tycoon.core.events import DBT_ERROR_STATUSES
 from tycoon.observability.store import ensure_schema
 
 # ---------------------------------------------------------------------------
@@ -60,8 +61,13 @@ def capture_dbt(
     metadata_db: Path,
     dbt_project_dir: Path,
     command: str | None = None,
+    exit_code: int | None = None,
 ) -> str | None:
     """Parse run_results.json and insert one invocation + one row per node.
+
+    ``success`` comes from dbt's ``exit_code`` when the caller has it, and
+    otherwise from the node statuses, since run_results.json carries no
+    top-level success flag.
 
     Returns the invocation_id on successful capture, or None if
     run_results.json is missing / malformed / duplicate.
@@ -86,7 +92,10 @@ def capture_dbt(
     dbt_version = metadata.get("dbt_version")
     target_name = args.get("target")
     cmd = command or args.get("which") or args.get("rpc_method") or "unknown"
-    success = data.get("success")
+    if exit_code is not None:
+        success = exit_code == 0
+    else:
+        success = not any((res.get("status") or "").lower() in DBT_ERROR_STATUSES for res in results)
     elapsed = data.get("elapsed_time")
     started_at = _earliest_started_at(results) or _parse_run_results_timestamp(metadata.get("generated_at"))
 
@@ -425,10 +434,11 @@ def capture_dbt_safe(
     metadata_db: Path,
     dbt_project_dir: Path,
     command: str | None = None,
+    exit_code: int | None = None,
 ) -> None:
     """Best-effort wrapper around capture_dbt; swallows all exceptions."""
     try:
-        capture_dbt(metadata_db, dbt_project_dir, command)
+        capture_dbt(metadata_db, dbt_project_dir, command, exit_code)
     except Exception:
         pass
 
