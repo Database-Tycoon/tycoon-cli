@@ -6,7 +6,12 @@ All notable changes to this project will be documented in this file. The format 
 
 - **City labels no longer draw on top of each other** ([#385][]). District and civic chips were placed independently, so on a real catalog `main_semantic` and `main_intermediate` merged into one unreadable line and the library and firehouse chips stacked on one spot. A colliding chip now moves up or down by a chip height or two; larger districts keep their spot, and a civic chip that still has no room is hidden until the view changes.
 
+### Changed
+
+- **The city opens framed on the whole city** ([#386][]). The opening camera used to size itself from the flat footprint of the catalog, so a real catalog could open as a thin strip of buildings in a frame of grass with its tallest towers cut off at the top. The opening view is now fitted to the city in three dimensions, rooftop spires and usage beacons included, with a small margin. It refits when the window is resized until you move the camera, and `H` or `Home` returns to it.
+
 [#385]: https://github.com/Database-Tycoon/tycoon-cli/issues/385
+[#386]: https://github.com/Database-Tycoon/tycoon-cli/issues/386
 
 ## [0.2.3] - 2026-10-24
 
