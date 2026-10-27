@@ -22,24 +22,27 @@ logger = logging.getLogger(__name__)
 __all__ = ["load_catalog", "load_context"]
 
 # A MotherDuck catalog, e.g. "md:my_db" or a share URL "md:_share/name/uuid".
-_MD_PREFIX = "md:"
+# DuckDB reads "motherduck:" as the same scheme. This package does not import
+# `tycoon`, so the rule is restated here rather than shared with
+# `tycoon.config.is_motherduck`.
+_MD_PREFIXES = ("md:", "motherduck:")
 
 
-def _is_motherduck(source: str) -> bool:
-    return source.startswith(_MD_PREFIX)
+def is_motherduck(source: str) -> bool:
+    return source.startswith(_MD_PREFIXES)
 
 
 def _database_name_for(source: str) -> str:
     """The name to show in the status strip.
 
     For a file that is its stem. For MotherDuck it is the catalog name: the
-    segment after `md:`, or the middle segment of a share URL
+    segment after `md:` or `motherduck:`, or the middle segment of a share URL
     (`md:_share/<name>/<uuid>`), since neither `_share` nor a UUID tells anyone
     which database they are looking at.
     """
-    if not _is_motherduck(source):
+    if not is_motherduck(source):
         return Path(source).stem
-    rest = source[len(_MD_PREFIX) :]
+    rest = source.split(":", 1)[1]
     parts = [p for p in rest.split("/") if p]
     if parts and parts[0] == "_share" and len(parts) >= 2:
         return parts[1]
@@ -100,7 +103,7 @@ def _load_base(path: Path | str) -> tuple[PipelineContext, frozenset[tuple[str, 
     stops being a guess.
     """
     source = str(path)
-    if not _is_motherduck(source):
+    if not is_motherduck(source):
         # MotherDuck catalogs are not filesystem paths, so the existence check
         # only applies to files.
         if not Path(source).exists():
@@ -288,7 +291,7 @@ def load_context(source: Path | str) -> PipelineContext:
     `tycoon.yml` or it is an error, not a guess.
     """
     text = str(source)
-    if not _is_motherduck(text) and Path(text).is_dir():
+    if not is_motherduck(text) and Path(text).is_dir():
         try:
             info = read_project_info(text)
         except ValueError as exc:
@@ -301,7 +304,7 @@ def load_context(source: Path | str) -> PipelineContext:
         return _load_tycoon_project(info)
 
     ctx = load_catalog(source)
-    if not _is_motherduck(text):
+    if not is_motherduck(text):
         root = _find_tycoon_root(Path(text))
         if root is not None:
             logger.info(
