@@ -1,5 +1,15 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`tycoon data run-all` runs tycoon's own dbt, not whichever is first on `PATH`** ([#439][]). `data transform` already preferred the dbt installed next to the Python running tycoon; `run-all` looked it up on `PATH` instead. A global dbt Fusion on `PATH` rewrote the warehouse file in a storage format the project's dbt-duckdb could not read, and a `uv tool install` with no dbt on `PATH` ingested and then failed with "`dbt` not found on PATH". `run-all` now resolves dbt the same way `data transform` does.
+- **`tycoon data run-all` records its dbt build in run history** ([#326][]). After `run-all`, `.tycoon/metadata.duckdb` had no `dbt_runs` or `dbt_nodes` rows, so a project that only used `run-all` showed no dbt history and the city had no build traffic or test signal for it. Its dbt step now records the build the same way `transform build` does.
+
+[#326]: https://github.com/Database-Tycoon/tycoon-cli/issues/326
+[#439]: https://github.com/Database-Tycoon/tycoon-cli/issues/439
+
 ## [0.2.3] - 2026-10-24
 
 _Headline: **documentation site and a tested city**. The documentation site now publishes to GitHub Pages whenever a release reaches `main`, with internal pages withheld by a check that fails the build rather than leaking them. The city renderer is tested and gated in CI like the CLI, and its vehicles, guests and refresh now work. Also here: `tycoon-city` help that matches every other command, and tycoon's agent skills as three Claude Code plugins._
