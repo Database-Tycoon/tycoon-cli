@@ -129,6 +129,7 @@ nav:
   - Releases:
     - releases/index.md
     - 0.2.x:
+      - "v0.2.4": releases/v0.2.4.md
       - "v0.2.3": releases/v0.2.3.md
       - "v0.2.2": releases/v0.2.2.md
       - "v0.2.1": releases/v0.2.1.md
