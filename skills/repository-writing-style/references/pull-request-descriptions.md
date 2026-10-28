@@ -10,7 +10,7 @@ Begin with the change and its purpose.
 
 Prefer:
 
-> Adds validation for PR titles and documents the accepted GitHub and Jira scope formats.
+> Adds validation for PR titles and documents the accepted GitHub issue scope format.
 
 Avoid:
 
@@ -54,7 +54,7 @@ Explain decisions that help reviewers understand the diff.
 ## Verification
 
 - `pytest tests/test_pr_title.py`
-- Tested valid GitHub and Jira scopes
+- Tested valid and invalid issue scopes
 - Tested the release promotion exemption
 
 ## Out of scope
