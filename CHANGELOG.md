@@ -1,5 +1,13 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`tycoon data status` shows when each dbt layer was last built** ([#390][]). The staging, intermediate and marts panels always said "last build never", even when `tycoon data history` listed successful builds of those models. Status looked models up by bare name, but the run ledger stores each node under its dbt `unique_id` (`model.<project>.<name>`), so nothing ever matched. It now matches on `unique_id`. The ledger also stores build start times as local wall-clock time and status read them as UTC, which would have made a build two hours old in New York show as "6h ago"; status now reads them in local time. Ledgers written by earlier versions need no migration: their builds show up on the next `data status`.
+
+[#390]: https://github.com/Database-Tycoon/tycoon-cli/issues/390
+
 ## [0.2.3] - 2026-10-24
 
 _Headline: **documentation site and a tested city**. The documentation site now publishes to GitHub Pages whenever a release reaches `main`, with internal pages withheld by a check that fails the build rather than leaking them. The city renderer is tested and gated in CI like the CLI, and its vehicles, guests and refresh now work. Also here: `tycoon-city` help that matches every other command, and tycoon's agent skills as three Claude Code plugins._
