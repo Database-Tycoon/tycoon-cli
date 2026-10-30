@@ -1,5 +1,13 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **City labels no longer draw on top of each other** ([#385][]). District and civic chips were placed independently, so on a real catalog `main_semantic` and `main_intermediate` merged into one unreadable line and the library and firehouse chips stacked on one spot. A colliding chip now moves up or down by a chip height or two; larger districts keep their spot, and a civic chip that still has no room is hidden until the view changes.
+
+[#385]: https://github.com/Database-Tycoon/tycoon-cli/issues/385
+
 ## [0.2.3] - 2026-10-24
 
 _Headline: **documentation site and a tested city**. The documentation site now publishes to GitHub Pages whenever a release reaches `main`, with internal pages withheld by a check that fails the build rather than leaking them. The city renderer is tested and gated in CI like the CLI, and its vehicles, guests and refresh now work. Also here: `tycoon-city` help that matches every other command, and tycoon's agent skills as three Claude Code plugins._
