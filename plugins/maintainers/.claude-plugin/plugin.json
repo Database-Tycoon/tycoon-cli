@@ -1,0 +1,9 @@
+{
+  "name": "tycoon-maintainers",
+  "version": "0.1.0",
+  "description": "Skills for tycoon-cli maintainers: cutting and publishing releases",
+  "author": {
+    "name": "Database Tycoon",
+    "url": "https://github.com/Database-Tycoon"
+  }
+}
