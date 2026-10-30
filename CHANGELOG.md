@@ -1,5 +1,13 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`tycoon city` names the dbt sources a staging model reads, even when they live outside the warehouse** ([#387][]). When a project's sources point at a separate database (for example `database: raw`, an attached DuckDB file or a DuckLake), none of them is an object in the warehouse the city reads, so lineage stopped at staging and every staging model listed its upstream as "none". The export now lists those sources on each model under `objects[].dbt.external_upstream`, with dbt's freshness verdict when `sources.json` has one. The city still draws no building for them, because nothing about them can be measured from the warehouse.
+
+[#387]: https://github.com/Database-Tycoon/tycoon-cli/issues/387
+
 ## [0.2.3] - 2026-10-24
 
 _Headline: **documentation site and a tested city**. The documentation site now publishes to GitHub Pages whenever a release reaches `main`, with internal pages withheld by a check that fails the build rather than leaking them. The city renderer is tested and gated in CI like the CLI, and its vehicles, guests and refresh now work. Also here: `tycoon-city` help that matches every other command, and tycoon's agent skills as three Claude Code plugins._
