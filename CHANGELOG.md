@@ -1,5 +1,11 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`tycoon data schema` estimates row counts on a MotherDuck database** ([#310][]). It ran an exact `count(*)` on every table, which is slow and spends compute on a large account. It now reads `estimated_size` from `duckdb_tables()` and prints each figure as `~1,000 rows (estimate)`. The estimate does not drop after deletes (100,000 rows less half of them still shows `~100,000`), so treat it as an upper bound on a table that has lost rows. A view has no catalog estimate and prints `view (use --exact to count)`; a table whose catalog reports none prints `no estimate (use --exact to count)`. Pass `--exact` to count every table and view as before. Local DuckDB files are unchanged and still show exact counts, with or without `--exact`.
+
 ## [0.2.3] - 2026-10-24
 
 _Headline: **documentation site and a tested city**. The documentation site now publishes to GitHub Pages whenever a release reaches `main`, with internal pages withheld by a check that fails the build rather than leaking them. The city renderer is tested and gated in CI like the CLI, and its vehicles, guests and refresh now work. Also here: `tycoon-city` help that matches every other command, and tycoon's agent skills as three Claude Code plugins._
@@ -28,6 +34,7 @@ _Headline: **documentation site and a tested city**. The documentation site now 
 ### Removed
 
 - **The retired v5 city planner and its tests** ([#281][], PR [#256][]). The ring planner replaced it in 0.2.1, and the city contract doc and design log now describe the ring planner instead (PR [#254][]). For contributors; nothing user-facing used it.
+[#310]: https://github.com/Database-Tycoon/tycoon-cli/issues/310
 [#250]: https://github.com/Database-Tycoon/tycoon-cli/pull/250
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252

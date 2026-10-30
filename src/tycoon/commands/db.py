@@ -69,8 +69,24 @@ def _has_schema(db_path: Path, schema_name: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def schema() -> None:
-    """Show database tables, row counts, and file sizes."""
+def schema(
+    exact: Annotated[
+        bool,
+        typer.Option(
+            "--exact",
+            help=(
+                "Count rows exactly on a MotherDuck database instead of reading the catalog's estimate, "
+                "which does not drop after deletes."
+            ),
+        ),
+    ] = False,
+) -> None:
+    """Show database tables, row counts, and file sizes.
+
+    On a MotherDuck database, row counts are estimates read from the catalog
+    unless --exact is passed; the estimate does not drop after deletes. Local
+    DuckDB files always show exact counts.
+    """
     header("Database Schema")
 
     rows: list[tuple[str, str, str]] = []
@@ -82,7 +98,7 @@ def schema() -> None:
         (local_db, "Warehouse", config.warehouse_target),
     ]:
         if db_path is None:
-            rows.extend(_motherduck_schema_rows(target, label))
+            rows.extend(_motherduck_schema_rows(target, label, exact))
             continue
         size = db_file_size_mb(db_path)
         if size is not None:
@@ -127,26 +143,41 @@ def schema() -> None:
     console.print(status_table(rows, title="Database Schema"))
 
 
-def _motherduck_schema_rows(target: str, label: str) -> list[tuple[str, str, str]]:
+def _motherduck_schema_rows(target: str, label: str, exact: bool = False) -> list[tuple[str, str, str]]:
     """Schema rows for a MotherDuck database, read over one connection."""
     try:
         con = duckdb.connect(target)
         try:
             # An md: connection attaches every database on the account, so
-            # scope the listing to the one the target names.
+            # scope the listing to the one the target names. duckdb_tables()
+            # has no row for a view, and an attached catalog may report no
+            # estimate for a table, so the estimate can be NULL for either.
             tables = con.execute(
-                "SELECT table_schema, table_name FROM information_schema.tables "
-                "WHERE table_catalog = current_database() "
-                "AND table_schema NOT IN ('information_schema', 'pg_catalog') "
-                "ORDER BY table_schema, table_name"
+                "SELECT t.table_schema, t.table_name, t.table_type, d.estimated_size "
+                "FROM information_schema.tables t "
+                "LEFT JOIN duckdb_tables() d ON d.database_name = t.table_catalog "
+                "AND d.schema_name = t.table_schema AND d.table_name = t.table_name "
+                "WHERE t.table_catalog = current_database() "
+                "AND t.table_schema NOT IN ('information_schema', 'pg_catalog') "
+                "ORDER BY t.table_schema, t.table_name"
             ).fetchall()
             rows = [
                 (f"{label} database", "OK", f"MotherDuck {display_target(target)}"),
                 ("  Tables", "", f"{len(tables)}"),
             ]
-            for s, table in tables:
-                count = con.execute(f"SELECT count(*) FROM {quote_identifier(s)}.{quote_identifier(table)}").fetchone()
-                rows.append((f"  {s}.{table}", "", f"{count[0]:,} rows" if count else "empty"))
+            for s, table, table_type, estimate in tables:
+                if exact:
+                    count = con.execute(
+                        f"SELECT count(*) FROM {quote_identifier(s)}.{quote_identifier(table)}"
+                    ).fetchone()
+                    detail = f"{count[0]:,} rows" if count else "empty"
+                elif table_type == "VIEW":
+                    detail = "view (use --exact to count)"
+                elif estimate is None:
+                    detail = "no estimate (use --exact to count)"
+                else:
+                    detail = f"~{estimate:,} rows (estimate)"
+                rows.append((f"  {s}.{table}", "", detail))
         finally:
             con.close()
     except duckdb.Error as exc:
