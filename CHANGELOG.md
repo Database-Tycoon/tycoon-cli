@@ -1,5 +1,13 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`tycoon doctor` no longer calls a working `.venv` without tycoon "empty or broken"** ([#392][]). A project whose `.venv` was healthy, but with tycoon installed as a separate uv tool, got told to run `tycoon setup --force`, which re-resolves every dependency and in one project downgraded duckdb and dbt-core. Doctor now checks whether the `.venv` can run Python. If it can, doctor says the project is on the shared/tool model, which still works, and suggests `uv add database-tycoon` (or `uv pip install --python .venv database-tycoon` without a `pyproject.toml`), noting that tycoon's exact pins will apply. The rebuild advice is kept for a `.venv` that is empty, a plain file, or missing its interpreter.
+
+[#392]: https://github.com/Database-Tycoon/tycoon-cli/issues/392
+
 ## [0.2.3] - 2026-10-24
 
 _Headline: **documentation site and a tested city**. The documentation site now publishes to GitHub Pages whenever a release reaches `main`, with internal pages withheld by a check that fails the build rather than leaking them. The city renderer is tested and gated in CI like the CLI, and its vehicles, guests and refresh now work. Also here: `tycoon-city` help that matches every other command, and tycoon's agent skills as three Claude Code plugins._
