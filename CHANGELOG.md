@@ -1,5 +1,13 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **A mental model of the city map** ([#323][]). `docs/city/mental-model.md` maps each data-stack concept (source, table, dbt model, test, run, freshness SLA, docs coverage) to what it becomes on the `tycoon city` map and the `city.json` field it comes from, walks one worked example from the `csv-import` template to the rendered city, and gives reviewers a table of which layer a PR touches plus a short checklist.
+
+[#323]: https://github.com/Database-Tycoon/tycoon-cli/issues/323
+
 ## [0.2.3] - 2026-10-24
 
 _Headline: **documentation site and a tested city**. The documentation site now publishes to GitHub Pages whenever a release reaches `main`, with internal pages withheld by a check that fails the build rather than leaking them. The city renderer is tested and gated in CI like the CLI, and its vehicles, guests and refresh now work. Also here: `tycoon-city` help that matches every other command, and tycoon's agent skills as three Claude Code plugins._
