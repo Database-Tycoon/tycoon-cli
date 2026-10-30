@@ -1,12 +1,19 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **A mental model of the city map** ([#323][]). `docs/city/mental-model.md` maps each data-stack concept (source, table, dbt model, test, run, freshness SLA, docs coverage) to what it becomes on the `tycoon city` map and the `city.json` field it comes from, walks one worked example from the `csv-import` template to the rendered city, and gives reviewers a table of which layer a PR touches plus a short checklist.
+
+[#323]: https://github.com/Database-Tycoon/tycoon-cli/issues/323
+
 ## [0.2.3] - 2026-10-24
 
 _Headline: **documentation site and a tested city**. The documentation site now publishes to GitHub Pages whenever a release reaches `main`, with internal pages withheld by a check that fails the build rather than leaking them. The city renderer is tested and gated in CI like the CLI, and its vehicles, guests and refresh now work. Also here: `tycoon-city` help that matches every other command, and tycoon's agent skills as three Claude Code plugins._
 
 ### Added
 
-- **A mental model of the city map** ([#323][]). `docs/city/mental-model.md` maps each data-stack concept (source, table, dbt model, test, run, freshness SLA, docs coverage) to what it becomes on the `tycoon city` map and the `city.json` field it comes from, walks one worked example from the `csv-import` template to the rendered city, and gives reviewers a table of which layer a PR touches plus a short checklist.
 - **The documentation site is published** ([#348][], PR [#415][]). `mkdocs build --strict` already ran on every pull request, but the built site was discarded: GitHub Pages had never been enabled, `https://database-tycoon.github.io/tycoon-cli/` returned 404, and three places in the repository linked to that dead URL (`site_url` in `mkdocs.yml`, the `tycoon docs` module docstring, which calls it "the public docs", and `docs/reference/dependencies.md`, which calls it "the docs site you're reading right now"). A `docs.yml` workflow builds the site on every push to `main` and deploys it to Pages, so those three references resolve. Since `main` only advances when a release branch merges, the published site tracks the released version. Both the pull-request job and the deploy run `scripts/check_docs_publishable.py` after the build: it fails if a page `draft_docs` or `exclude_docs` withholds reached the build, or if a `nav` entry points at a page that was not built, which `mkdocs build --strict` reports only at INFO and would otherwise ship as a dead link on every page. `CONTRIBUTING.md` gains a Documentation section recording where the line between published and internal pages is drawn, and which of its two rules the docs job can enforce.
 - **The docs site has a releases index and a regrouped navigation** (PRs [#416][], [#417][]). A releases page links the current release and the 0.2 series, the home page's Releases card points at it instead of the 0.1.5 notes, a Recipes card is added, the sidebar groups releases into 0.2.x and 0.1.x sections that fold away, and every page gets its own table of contents.
 - **Agent skills install as Claude Code plugins** ([#307][], PRs [#374][], [#375][]). Three plugins ship from this repository's marketplace, each in its own plugin root under `plugins/`: `tycoon`, five skills for working in a tycoon project (adding data sources, diagnosing projects, reading pipeline state, building models and dashboards, operating pipelines), and `tycoon-contributors` and `tycoon-maintainers`, for working on tycoon itself. Install with `/plugin marketplace add Database-Tycoon/tycoon-cli`, then `/plugin install tycoon@tycoon-skills`. The skills are not part of the Python package. `tests/test_agent_skills.py` checks each plugin's manifest and skill list, frontmatter, install names and `CONTRIBUTING.md` citations, and fails on stale text such as `uvx ruff`.
@@ -33,7 +40,6 @@ _Headline: **documentation site and a tested city**. The documentation site now 
 [#251]: https://github.com/Database-Tycoon/tycoon-cli/pull/251
 [#252]: https://github.com/Database-Tycoon/tycoon-cli/pull/252
 [#256]: https://github.com/Database-Tycoon/tycoon-cli/pull/256
-[#323]: https://github.com/Database-Tycoon/tycoon-cli/issues/323
 [#282]: https://github.com/Database-Tycoon/tycoon-cli/issues/282
 [#348]: https://github.com/Database-Tycoon/tycoon-cli/issues/348
 [#421]: https://github.com/Database-Tycoon/tycoon-cli/pull/421
