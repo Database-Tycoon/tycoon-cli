@@ -12,6 +12,7 @@ from rich.table import Table
 from tycoon.config import config, display_target, redact_secrets
 from tycoon.utils.console import console, error, header, info, status_table, success, warn
 from tycoon.utils.duckdb_utils import db_file_size_mb, get_row_count, get_tables, quote_identifier
+from tycoon.utils.sql_guard import refused_statement
 
 
 def _resolve_source_db(source_name: str) -> Path | None:
@@ -204,11 +205,27 @@ def query(
         Path | None,
         typer.Option("--db", help="Path to a DuckDB file to query directly."),
     ] = None,
+    allow_writes: Annotated[
+        bool,
+        typer.Option(
+            "--allow-writes",
+            help=(
+                "On MotherDuck, run statements other than read-only queries (SELECT, WITH, FROM, TABLE, VALUES, "
+                "DESCRIBE, SHOW, SUMMARIZE, PIVOT, UNPIVOT, EXPLAIN). Only statement types are checked, so a "
+                "function call inside a SELECT is not inspected: this guards against accidents and is not a "
+                "permission boundary."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Run a SQL query against the warehouse, raw, or a source database.
 
-    Local DuckDB files open read-only. A MotherDuck database runs with the
-    permissions of your MotherDuck token.
+    Local DuckDB files open read-only. A MotherDuck database cannot open
+    read-only, so tycoon refuses any statement that is not a read-only query
+    unless --allow-writes is passed; with it, the statement runs with the
+    permissions of your MotherDuck token. The check reads statement types
+    only: function calls inside a SELECT are not inspected, so it is a guard
+    against accidents and not a permission boundary.
     """
     is_warehouse = False
     db_path: Path | None
@@ -253,13 +270,23 @@ def query(
     elif db_path is None:
         label = f"{label} (MotherDuck)"
 
+    if db_path is None and not via_quack and not allow_writes:
+        refused = refused_statement(sql)
+        if refused is not None:
+            error(
+                f"Refusing to run {refused} against MotherDuck ({display_target(target)}). "
+                "On MotherDuck, 'data query' only runs SELECT, WITH, FROM, TABLE, VALUES, DESCRIBE, SHOW, "
+                "SUMMARIZE, PIVOT, UNPIVOT and EXPLAIN. Pass --allow-writes to run other statements."
+            )
+            raise typer.Exit(1)
+
     try:
         if via_quack:
             con = quack.connect(quack_token)
         elif db_path is None:
             # read_only=True is a local-file flag: an md: URL opens an
             # in-memory local database, which DuckDB refuses to start
-            # read-only. Write protection comes from the token's scope.
+            # read-only, so the guard above stands in for it.
             con = duckdb.connect(target)
         else:
             con = duckdb.connect(target, read_only=True)
