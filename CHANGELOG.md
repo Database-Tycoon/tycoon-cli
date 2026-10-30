@@ -1,5 +1,13 @@
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **dlt trace capture follows the pipeline's working directory** ([#394][]). Run-history capture read `trace.pickle` from a hard-coded `~/.dlt/pipelines`, so a pipeline that ran anywhere else, for example with `DLT_DATA_DIR` set, loaded fine but never showed up in `dlt_trace_runs` or the byte and timing detail of `tycoon data history`. Capture now reads from the directory the pipeline itself used, and falls back to dlt's own default (`DLT_DATA_DIR`, else `~/.dlt/pipelines`) when it doesn't know the pipeline.
+
+[#394]: https://github.com/Database-Tycoon/tycoon-cli/issues/394
+
 ## [0.2.3] - 2026-10-24
 
 _Headline: **documentation site and a tested city**. The documentation site now publishes to GitHub Pages whenever a release reaches `main`, with internal pages withheld by a check that fails the build rather than leaking them. The city renderer is tested and gated in CI like the CLI, and its vehicles, guests and refresh now work. Also here: `tycoon-city` help that matches every other command, and tycoon's agent skills as three Claude Code plugins._

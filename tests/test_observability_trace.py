@@ -227,3 +227,49 @@ class TestTraceParquetExport:
         assert "dlt_trace_steps" in exported
         assert "dlt_trace_jobs" in exported
         assert exported["dlt_trace_runs"].exists()
+
+
+class TestTraceFollowsThePipeline:
+    """Capture reads the trace from wherever the pipeline actually ran (gh-394)."""
+
+    def test_default_location_honours_dlt_data_dir(self, tmp_path: Path, monkeypatch) -> None:
+        import pickle
+
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.setenv("DLT_DATA_DIR", str(tmp_path / "dlt_data"))
+        pipeline_dir = tmp_path / "dlt_data" / "pipelines" / "sample_pipeline"
+        pipeline_dir.mkdir(parents=True)
+        with (pipeline_dir / "trace.pickle").open("wb") as f:
+            pickle.dump(_sample_trace(), f)
+
+        meta = metadata_db_path(tmp_path)
+        ensure_schema(meta)
+
+        assert capture_dlt_trace(meta, "sample_pipeline") == "txn-001"
+
+    def test_runner_capture_uses_the_pipelines_own_dir(self, tmp_path: Path, monkeypatch, tmp_config) -> None:
+        import dlt
+
+        import tycoon.config as cfg_mod
+        from tycoon.ingestion import runner
+
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.delenv("DLT_DATA_DIR", raising=False)
+        monkeypatch.setattr(cfg_mod, "config", tmp_config)
+        raw_db = tmp_path / "raw.duckdb"
+        pipeline = dlt.pipeline(
+            pipeline_name="trace_follow",
+            pipelines_dir=str(tmp_path / "project_pipelines"),
+            destination=dlt.destinations.duckdb(str(raw_db)),
+            dataset_name="raw_trace_follow",
+        )
+        pipeline.run([{"id": 1}], table_name="widgets")
+
+        runner._capture_and_refresh_safe(raw_db, pipeline=pipeline)
+
+        con = duckdb.connect(str(metadata_db_path(tmp_config.root)), read_only=True)
+        try:
+            rows = con.execute("SELECT pipeline_name FROM dlt_trace_runs").fetchall()
+        finally:
+            con.close()
+        assert rows == [("trace_follow",)]
