@@ -741,23 +741,7 @@ class TestTransformRecordsDbtRuns:
 
     def test_failure_does_not_reuse_stale_run_results(self, transform_project, cli_runner, monkeypatch):
         """An earlier run's run_results.json must not stand in for a run that failed early."""
-        import json
-        import os
-
-        target = transform_project / "dbt_project" / "target"
-        target.mkdir()
-        stale = target / "run_results.json"
-        stale.write_text(
-            json.dumps(
-                {
-                    "metadata": {"invocation_id": "old"},
-                    "args": {"target": "dev"},
-                    "results": [_result("model.demo.m", "success")],
-                    "elapsed_time": 9.0,
-                }
-            )
-        )
-        os.utime(stale, (1_000_000_000, 1_000_000_000))
+        _write_stale_run_results(transform_project)
         _install_fake_dbt(monkeypatch, transform_project, exit_code=2, output="IO Error: Could not set lock\n")
 
         result = cli_runner.invoke(app, ["data", "transform", "run"])
@@ -766,6 +750,16 @@ class TestTransformRecordsDbtRuns:
         row = _only_dbt_row(cli_runner)
         assert "✗" in row
         assert "IO Error: Could not set lock" in _show_dbt_run(cli_runner, row)
+
+    def test_failure_does_not_file_stale_run_results_as_this_run(self, transform_project, cli_runner, monkeypatch):
+        """A run_results.json left by a manual ``dbt run`` must not become a ``dbt_runs`` row for a failed run."""
+        _write_stale_run_results(transform_project)
+        _install_fake_dbt(monkeypatch, transform_project, exit_code=2, output="IO Error: Could not set lock\n")
+
+        result = cli_runner.invoke(app, ["data", "transform", "run"])
+        assert result.exit_code == 2
+
+        assert _dbt_runs_rows(transform_project) == []
 
     def test_node_errors_are_summarised(self, transform_project, cli_runner, monkeypatch):
         _install_fake_dbt(
@@ -831,6 +825,40 @@ class TestTransformRecordsDbtRuns:
         assert "✓" not in row
         assert "nothing ran" in row
         assert "success, but nothing ran" in _show_dbt_run(cli_runner, row)
+
+
+def _write_stale_run_results(project: Path) -> None:
+    """Leave a run_results.json from an invocation tycoon never saw, dated long before any test run."""
+    import json
+    import os
+
+    target = project / "dbt_project" / "target"
+    target.mkdir()
+    stale = target / "run_results.json"
+    stale.write_text(
+        json.dumps(
+            {
+                "metadata": {"invocation_id": "manual-dbt-run"},
+                "args": {"which": "run", "target": "prod"},
+                "results": [_result("model.demo.m", "success")],
+                "elapsed_time": 9.0,
+            }
+        )
+    )
+    os.utime(stale, (1_000_000_000, 1_000_000_000))
+
+
+def _dbt_runs_rows(project: Path) -> list[tuple]:
+    from tycoon.observability import metadata_db_path
+
+    con = duckdb.connect(str(metadata_db_path(project)), read_only=True)
+    try:
+        tables = con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = 'dbt_runs'").fetchone()
+        if not tables or tables[0] == 0:
+            return []
+        return con.execute("SELECT invocation_id, command, target_name, success FROM dbt_runs").fetchall()
+    finally:
+        con.close()
 
 
 def _show_dbt_run(cli_runner, row: str) -> str:
