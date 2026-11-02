@@ -31,12 +31,34 @@ MODEL_SPECS = (
         "depends_on": ("source.fx_dbt.raw.orders", "source.fx_dbt.raw_citibike.station_status"),
     },
     {"schema": "marts", "name": "fct_stations", "depends_on": ("model.fx_dbt.stg_citibike__stations",)},
+    # dbt inlines an ephemeral model as a CTE and never builds it, so the
+    # warehouse has no staging.eph_payments: the source behind it is still
+    # what stg_payments reads.
+    {
+        "schema": "staging",
+        "name": "eph_payments",
+        "materialized": "ephemeral",
+        "depends_on": ("source.fx_dbt.raw_pay.payments",),
+    },
+    {"schema": "staging", "name": "stg_payments", "depends_on": ("model.fx_dbt.eph_payments",)},
+    # A hand-written manifest can repeat a node in depends_on.
+    {
+        "schema": "staging",
+        "name": "stg_twice",
+        "depends_on": (
+            "source.fx_dbt.raw.orders",
+            "source.fx_dbt.raw.orders",
+            "source.fx_dbt.raw_citibike.station_status",
+            "source.fx_dbt.raw_citibike.station_status",
+        ),
+    },
 )
 
 SOURCE_SPECS = (
     {"schema": "raw", "name": "orders"},
     {"schema": "raw_citibike", "name": "station_information", "database": "raw"},
     {"schema": "raw_citibike", "name": "station_status", "database": "raw"},
+    {"schema": "raw_pay", "name": "payments", "database": "raw"},
 )
 
 
@@ -102,3 +124,20 @@ def test_an_external_source_carries_its_dbt_freshness_verdict(project):
 
     (stub,) = _object(doc, "staging.stg_citibike__stations")["dbt"]["external_upstream"]
     assert stub["freshness_status"] == "warn"
+
+
+def test_a_source_read_through_an_ephemeral_model_is_still_named(project):
+    doc = _document(project)
+
+    payments = _object(doc, "staging.stg_payments")
+    assert [s["name"] for s in payments["dbt"]["external_upstream"]] == ["raw_pay.payments"]
+    assert not any(obj["key"] == "staging.eph_payments" for obj in doc["objects"])
+    assert not any(edge["dst"] == "staging.stg_payments" for edge in doc["edges"])
+
+
+def test_a_dependency_repeated_in_the_manifest_is_named_and_drawn_once(project):
+    doc = _document(project)
+
+    twice = _object(doc, "staging.stg_twice")
+    assert [s["name"] for s in twice["dbt"]["external_upstream"]] == ["raw_citibike.station_status"]
+    assert [e["src"] for e in doc["edges"] if e["dst"] == "staging.stg_twice"] == ["raw.orders"]
