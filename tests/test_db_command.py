@@ -265,3 +265,248 @@ class TestMotherDuckWarehouse:
         assert result.exit_code == 0, result.stdout
         assert [c[0] for c in calls] == ["md:x_raw"]
         assert "read_only" not in calls[0][1]
+
+
+WIDE_COLUMNS = [f"metric_column_number_{i}" for i in range(12)]
+
+
+def _wide_db(tmp_path: Path) -> Path:
+    db_path = tmp_path / "wide.duckdb"
+    con = duckdb.connect(str(db_path))
+    select = ", ".join(f"'value {i}' AS {name}" for i, name in enumerate(WIDE_COLUMNS))
+    con.execute(f"CREATE TABLE wide AS SELECT 'M15' AS route_id, 1.50::DECIMAL(4,2) AS fare, NULL AS notes, {select}")
+    con.close()
+    return db_path
+
+
+class TestQueryFormats:
+    """gh-391: machine-readable output, and no squashed headers on wide results."""
+
+    def _query(self, cli_runner, db_path: Path, *args: str):
+        return cli_runner.invoke(app, ["data", "query", "SELECT * FROM wide", "--db", str(db_path), *args])
+
+    def test_csv_prints_only_rows(self, cli_runner, tmp_path):
+        result = self._query(cli_runner, _wide_db(tmp_path), "--format", "csv")
+        assert result.exit_code == 0
+        lines = result.stdout.splitlines()
+        assert lines[0] == ",".join(["route_id", "fare", "notes", *WIDE_COLUMNS])
+        assert lines[1].startswith("M15,1.50,,value 0,")
+        assert len(lines) == 2
+
+    def test_json_prints_only_parseable_rows(self, cli_runner, tmp_path):
+        import json
+
+        result = self._query(cli_runner, _wide_db(tmp_path), "--format", "json")
+        assert result.exit_code == 0
+        records = json.loads(result.stdout)
+        assert records[0]["route_id"] == "M15"
+        assert records[0]["fare"] == 1.5
+        assert records[0]["notes"] is None
+        assert records[0]["metric_column_number_11"] == "value 11"
+
+    def test_markdown_escapes_pipes(self, cli_runner, tmp_path):
+        db_path = tmp_path / "pipes.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute("CREATE TABLE wide AS SELECT 'a|b' AS label, NULL AS notes")
+        con.close()
+
+        result = self._query(cli_runner, db_path, "-f", "markdown")
+        assert result.exit_code == 0
+        assert result.stdout.splitlines() == [
+            "| label | notes |",
+            "| --- | --- |",
+            r"| a\|b |  |",
+        ]
+
+    def test_unknown_format_is_a_usage_error(self, cli_runner, tmp_path):
+        result = self._query(cli_runner, _wide_db(tmp_path), "--format", "xml")
+        assert result.exit_code == 2
+
+    def test_format_name_is_case_insensitive(self, cli_runner, tmp_path):
+        result = self._query(cli_runner, _wide_db(tmp_path), "--format", "CSV")
+        assert result.exit_code == 0, result.stdout
+        assert result.stdout.splitlines()[0].startswith("route_id,fare,")
+
+    def test_json_turns_nan_and_inf_into_null(self, cli_runner, tmp_path):
+        """JSON.parse and strict Python parsers reject the bare NaN that json.dumps emits by default."""
+        import json
+
+        db_path = tmp_path / "nonfinite.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute(
+            "CREATE TABLE wide AS SELECT 'nan'::DOUBLE AS n, 'inf'::DOUBLE AS i, "
+            "[1.0, 'nan'::DOUBLE] AS l, {'x': '-inf'::DOUBLE} AS s"
+        )
+        con.close()
+
+        result = self._query(cli_runner, db_path, "--format", "json")
+        assert result.exit_code == 0, result.stdout
+
+        def reject(constant: str) -> None:
+            raise AssertionError(f"bare {constant} in JSON output")
+
+        records = json.loads(result.stdout, parse_constant=reject)
+        assert records == [{"n": None, "i": None, "l": [1.0, None], "s": {"x": None}}]
+
+    def test_blob_and_interval_read_outside_python(self, cli_runner, tmp_path):
+        import json
+
+        db_path = tmp_path / "typed.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute("CREATE TABLE wide AS SELECT '\\xDE\\xAD'::BLOB AS b, INTERVAL '1 day 2 hours 30 minutes' AS d")
+        con.close()
+
+        as_json = self._query(cli_runner, db_path, "--format", "json")
+        assert json.loads(as_json.stdout) == [{"b": "dead", "d": "P1DT2H30M"}]
+        as_csv = self._query(cli_runner, db_path, "--format", "csv")
+        assert as_csv.stdout.splitlines()[1] == "dead,P1DT2H30M"
+
+    def test_wide_table_prints_one_block_per_record(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.setenv("COLUMNS", "100")
+        result = self._query(cli_runner, _wide_db(tmp_path))
+        assert result.exit_code == 0
+        assert "metric_column_number_11" in result.stdout
+        assert "record 1" in result.stdout
+        assert "…" not in result.stdout
+        assert "1 row(s) returned" in result.stdout
+
+    def test_empty_wide_result_lists_every_column_name(self, cli_runner, tmp_path, monkeypatch):
+        """gh-391: an empty result used to print the squashed header row the issue complains about."""
+        monkeypatch.setenv("COLUMNS", "80")
+        columns = [f"very_long_column_name_{i}" for i in range(30)]
+        db_path = tmp_path / "empty.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute(f"CREATE TABLE wide ({', '.join(f'{c} INTEGER' for c in columns)})")
+        con.close()
+
+        result = self._query(cli_runner, db_path)
+        assert result.exit_code == 0, result.stdout
+        listed = {line.strip(" │") for line in result.stdout.splitlines()}
+        assert set(columns) <= listed
+        assert "…" not in result.stdout
+        assert "0 row(s) returned" in result.stdout
+        assert "columns are listed" in result.stdout
+
+    def test_narrow_table_keeps_the_column_layout(self, cli_runner, tmp_path, monkeypatch):
+        monkeypatch.setenv("COLUMNS", "100")
+        result = cli_runner.invoke(
+            app, ["data", "query", "SELECT route_id, fare FROM wide", "--db", str(_wide_db(tmp_path))]
+        )
+        assert result.exit_code == 0
+        assert "record 1" not in result.stdout
+        header = next(line for line in result.stdout.splitlines() if "route_id" in line)
+        assert "fare" in header
+
+
+class TestSchemaFilters:
+    """gh-393: narrow `data schema` to one database, one schema, and no dlt bookkeeping."""
+
+    def _setup(self, tmp_path: Path, monkeypatch) -> None:
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        (tmp_path / "tycoon.yml").write_text("name: test\nsources: {}\n")
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+
+        raw = duckdb.connect(str(data_dir / "raw.duckdb"))
+        for schema_name in ("raw_bus", "raw_traffic"):
+            raw.execute(f"CREATE SCHEMA {schema_name}")
+            raw.execute(f"CREATE TABLE {schema_name}.events AS SELECT 1 AS id")
+            raw.execute(f"CREATE TABLE {schema_name}._dlt_loads AS SELECT 1 AS load_id")
+        raw.close()
+
+        warehouse = duckdb.connect(str(data_dir / "warehouse.duckdb"))
+        for schema_name in ("main_staging", "main_marts"):
+            warehouse.execute(f"CREATE SCHEMA {schema_name}")
+            warehouse.execute(f"CREATE TABLE {schema_name}.model_in_{schema_name} AS SELECT 1 AS id")
+        warehouse.close()
+
+        extra = duckdb.connect(str(data_dir / "snapshot.duckdb"))
+        extra.execute("CREATE TABLE snapshot_table AS SELECT 1 AS id")
+        extra.close()
+
+        monkeypatch.setattr("tycoon.commands.db.config", TycoonConfig(project_root=tmp_path))
+        monkeypatch.setenv("COLUMNS", "200")
+
+    def test_hides_dlt_tables_by_default(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema"])
+        assert result.exit_code == 0, result.stdout
+        assert "raw_bus.events" in result.stdout
+        assert "_dlt_loads" not in result.stdout
+        assert "2 _dlt_* hidden" in result.stdout
+        assert "snapshot_table" in result.stdout
+
+    def test_include_dlt_shows_them(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--include-dlt"])
+        assert result.exit_code == 0, result.stdout
+        assert "raw_bus._dlt_loads" in result.stdout
+        assert "hidden" not in result.stdout
+
+    def test_schema_name_matches_exactly(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--schema", "main_marts"])
+        assert result.exit_code == 0, result.stdout
+        assert "main_marts.model_in_main_marts" in result.stdout
+        assert "main_staging" not in result.stdout
+        assert "raw_bus" not in result.stdout
+
+    def test_schema_glob(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--schema", "RAW_*"])
+        assert result.exit_code == 0, result.stdout
+        assert "raw_bus.events" in result.stdout
+        assert "raw_traffic.events" in result.stdout
+        assert "main_marts" not in result.stdout
+
+    def test_schema_with_no_match_warns(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--schema", "nope"])
+        assert result.exit_code == 0, result.stdout
+        assert "No tables in a schema matching 'nope'" in result.stdout
+
+    def test_raw_shows_only_the_raw_database(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--raw"])
+        assert result.exit_code == 0, result.stdout
+        assert "Raw database" in result.stdout
+        assert "Warehouse database" not in result.stdout
+        assert "snapshot" not in result.stdout
+
+    def test_warehouse_shows_only_the_warehouse(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--warehouse"])
+        assert result.exit_code == 0, result.stdout
+        assert "Warehouse database" in result.stdout
+        assert "Raw database" not in result.stdout
+        assert "snapshot" not in result.stdout
+
+    def test_motherduck_counts_only_the_tables_it_shows(self, monkeypatch):
+        """#310: every count(*) on MotherDuck costs a query, so filtered-out tables aren't counted."""
+        from tycoon.commands import db
+
+        con = duckdb.connect(":memory:")
+        con.execute("CREATE SCHEMA main_marts")
+        con.execute("CREATE TABLE main_marts.kept AS SELECT 1 AS id")
+        con.execute("CREATE TABLE main_marts._dlt_loads AS SELECT 1 AS id")
+        con.execute("CREATE TABLE main.skipped AS SELECT 1 AS id")
+        executed: list[str] = []
+
+        class RecordingConnection:
+            def execute(self, sql: str):
+                executed.append(sql)
+                return con.execute(sql)
+
+            def close(self) -> None:
+                pass
+
+        monkeypatch.setattr(duckdb, "connect", lambda *args, **kwargs: RecordingConnection())
+
+        rows, shown = db._motherduck_schema_rows("md:x", "Warehouse", "main_marts", include_dlt=False)
+
+        assert shown == 1
+        assert ("  main_marts.kept", "", "1 rows") in rows
+        counts = [sql for sql in executed if sql.startswith("SELECT count(*)")]
+        assert counts == ['SELECT count(*) FROM "main_marts"."kept"']
