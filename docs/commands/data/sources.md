@@ -1,6 +1,6 @@
 # `tycoon data sources`
 
-Manage data ingestion sources. Six subcommands.
+Manage data ingestion sources. Seven subcommands.
 
 | Command | What it does |
 |---|---|
@@ -10,6 +10,7 @@ Manage data ingestion sources. Six subcommands.
 | `tycoon data sources run [NAME]` | Ingest one source (or all) |
 | `tycoon data sources remove NAME` | Remove a registered source |
 | `tycoon data sources migrate TYPE` | Copy a source from the shared `~/.tycoon/sources/` into this project |
+| `tycoon data sources explore [NAME]` | Inspect a source's schema, sample rows and run history |
 
 ## `catalog` — browse available source types
 
@@ -203,6 +204,23 @@ A source downloaded before the project had its own `.venv` sits in the shared `~
 It then installs those requirements into the project the same way `add` does: `uv add` into the project's `pyproject.toml` when the project has both a `pyproject.toml` and a `.venv`, `uv pip install` otherwise. If the install fails, `migrate` prints uv's error, removes the package directory it just copied and exits 1, so the source still reads as not migrated and a rerun starts over. The carried `requirements.txt` and `.gitignore` stay.
 
 If the project dir already has the source with its `_run.py`, `migrate` reports it as already installed and changes nothing. If the source's directory exists there without a `_run.py`, `migrate` refuses, names the directory, and leaves it as it is.
+
+## `explore`: inspect a source
+
+```bash
+tycoon data sources explore                 # every registered source, with its catalog entry
+tycoon data sources explore github          # one source: schema, sample rows, run history
+tycoon data sources explore github -n 25    # more sample rows (default 10)
+```
+
+Without a name, `explore` lists every source in `tycoon.yml` with its type,
+schema, catalog category and resource count. With a name it reads the raw
+DuckDB directly: every table in the source's schema with its columns and
+types, the first rows of the first table the source loaded (dlt's own
+`_dlt_*` bookkeeping tables are skipped), and the run history captured in
+`.tycoon/metadata.duckdb`: how many loads, when the last one ran, whether it
+completed, and the rows loaded across all of them. A source that has not run
+yet gets a pointer at `tycoon data sources run <name>` instead.
 
 ## Pipeline dispatch model
 
