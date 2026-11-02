@@ -1,4 +1,4 @@
-"""Tests for `tycoon data layers`, `tycoon data health` and `tycoon data sources explore` (PTC-126).
+"""Tests for `tycoon data layers` and `tycoon data sources explore` (gh-306).
 
 Each test builds a small real project: a tycoon.yml with a dlt source, a dbt
 `target/manifest.json`, a raw DuckDB with the source's tables, and a metadata
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import duckdb
@@ -46,13 +46,34 @@ def _write_manifest(root: Path, nodes: dict) -> None:
     (target / "manifest.json").write_text(json.dumps({"nodes": nodes}))
 
 
-def _write_raw_db(root: Path) -> None:
+def _write_raw_db(root: Path, *, with_dlt_tables: bool = False) -> None:
     raw = root / "data" / "raw.duckdb"
     raw.parent.mkdir(parents=True, exist_ok=True)
     with duckdb.connect(str(raw)) as con:
         con.execute("CREATE SCHEMA raw_shop")
         con.execute("CREATE TABLE raw_shop.orders (order_id INTEGER, customer VARCHAR)")
         con.execute("INSERT INTO raw_shop.orders VALUES (101, 'ada'), (102, 'grace'), (103, 'linus')")
+        if with_dlt_tables:
+            con.execute("CREATE TABLE raw_shop._dlt_loads (load_id VARCHAR, status INTEGER)")
+            con.execute("INSERT INTO raw_shop._dlt_loads VALUES ('1726000000.1', 0)")
+
+
+def _run_results(unique_ids: list[str], started_at: datetime) -> dict:
+    stamp = started_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return {
+        "metadata": {"invocation_id": "inv-built", "generated_at": stamp},
+        "args": {"which": "build"},
+        "results": [
+            {
+                "unique_id": uid,
+                "status": "success",
+                "execution_time": 0.5,
+                "timing": [{"name": "execute", "started_at": stamp, "completed_at": stamp}],
+            }
+            for uid in unique_ids
+        ],
+        "elapsed_time": 1.0,
+    }
 
 
 def _flat(output: str) -> str:
@@ -62,11 +83,7 @@ def _flat(output: str) -> str:
 
 def _make_project(root: Path, monkeypatch, *, yml_tail: str = _YML_SOURCE) -> Path:
     (root / "tycoon.yml").write_text(_YML_HEAD + yml_tail)
-    from tycoon.commands import layers as layers_mod
-    from tycoon.config import TycoonConfig
-
-    monkeypatch.setattr(layers_mod, "config", TycoonConfig(project_root=root))
-    # sources explore resolves the project from the working directory.
+    # Both commands resolve the project from the working directory.
     monkeypatch.chdir(root)
     return root
 
@@ -78,18 +95,11 @@ def project(tmp_path: Path, monkeypatch) -> Path:
 
 @pytest.fixture
 def no_project(tmp_path: Path, monkeypatch) -> Path:
-    from tycoon.commands import layers as layers_mod
-    from tycoon.config import TycoonConfig
-
-    monkeypatch.setattr(layers_mod, "config", TycoonConfig(project_root=tmp_path))
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
 
-@pytest.mark.parametrize(
-    "argv",
-    [["data", "layers"], ["data", "health"], ["data", "sources", "explore"]],
-)
+@pytest.mark.parametrize("argv", [["data", "layers"], ["data", "sources", "explore"]])
 def test_requires_tycoon_yml(no_project, cli_runner, argv):
     result = cli_runner.invoke(app, argv)
     assert result.exit_code == 1
@@ -153,50 +163,28 @@ class TestLayers:
         assert "No sources registered" in _flat(result.output)
         assert "fct_orders" in result.output
 
-
-# ---------------------------------------------------------------------------
-# tycoon data health
-# ---------------------------------------------------------------------------
-
-
-class TestHealth:
-    def test_runs_on_a_project_without_history(self, project, cli_runner):
-        _write_manifest(project, _MANIFEST_NODES)
+    def test_health_is_not_a_command(self, project, cli_runner):
         result = cli_runner.invoke(app, ["data", "health"])
-        assert result.exit_code == 0
+        assert result.exit_code != 0
 
-    def test_no_dbt_manifest(self, project, cli_runner):
-        result = cli_runner.invoke(app, ["data", "health"])
-        assert result.exit_code == 0
-        assert "No dbt manifest yet" in _flat(result.output)
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason="data health renders the layers panels, not one count per problem class as documented",
-    )
-    def test_one_count_per_problem_class(self, project, cli_runner):
+    def test_a_captured_build_shows_as_the_layer_last_build(self, project, cli_runner):
+        # Regression for the gh-390 shape: the ledger keys nodes by dbt unique_id,
+        # so looking them up by bare model name always said "never".
         _write_manifest(project, _MANIFEST_NODES)
         dbt_dir = project / "dbt_project"
-        (dbt_dir / "target" / "run_results.json").write_text(
-            json.dumps(
-                {
-                    "metadata": {"invocation_id": "inv-a", "generated_at": "2026-09-01T10:00:00Z"},
-                    "results": [
-                        {"unique_id": "model.p.fct_orders", "status": "error"},
-                        {"unique_id": "test.p.nn_id", "status": "fail"},
-                        {"unique_id": "test.p.warn_id", "status": "warn"},
-                    ],
-                }
-            )
-        )
-        capture_dbt(metadata_db_path(project), dbt_dir)
-        result = cli_runner.invoke(app, ["data", "health"])
-        out = _flat(result.output).lower()
-        assert re.search(r"failing tests\D*1\b", out)
-        assert re.search(r"build errors\D*1\b", out)
-        assert re.search(r"test warnings\D*1\b", out)
-        for chip in ("late sources", "stale builds", "schema drift"):
-            assert chip in out
+        started = datetime.now(tz=UTC) - timedelta(hours=2)
+        payload = _run_results(["model.p.stg_orders", "model.p.fct_orders"], started)
+        (dbt_dir / "target" / "run_results.json").write_text(json.dumps(payload))
+        assert capture_dbt(metadata_db_path(project), dbt_dir) == "inv-built"
+
+        result = cli_runner.invoke(app, ["data", "layers"])
+        assert result.exit_code == 0
+        summaries = [line.strip() for line in result.output.splitlines() if "last build" in line]
+        assert summaries == [
+            "1 model(s), last build 2h ago",
+            "1 model(s), last build never",
+            "1 model(s), last build 2h ago",
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -237,17 +225,23 @@ class TestSourcesExplore:
         assert "order_id: INTEGER" in out
         assert "customer: VARCHAR" in out
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="_sample_rows reads cursor.description after its connection closed, so sample rows never render",
-    )
     def test_shows_sample_rows(self, project, cli_runner):
         _write_raw_db(project)
         result = cli_runner.invoke(app, ["data", "sources", "explore", "shop", "--sample", "2"])
+        assert result.exit_code == 0
         out = _flat(result.output)
         assert "first 2 rows" in out
         assert "ada" in out and "grace" in out
         assert "linus" not in out
+
+    def test_samples_the_users_table_not_dlt_bookkeeping(self, project, cli_runner):
+        # `_dlt_loads` sorts before `orders`; the sample must still come from orders.
+        _write_raw_db(project, with_dlt_tables=True)
+        result = cli_runner.invoke(app, ["data", "sources", "explore", "shop"])
+        assert result.exit_code == 0
+        out = _flat(result.output)
+        assert "orders (first 3 rows)" in out
+        assert "_dlt_loads (first" not in out
 
     def test_health_without_runs(self, project, cli_runner):
         _write_raw_db(project)
@@ -255,10 +249,6 @@ class TestSourcesExplore:
         assert result.exit_code == 0
         assert "No runs recorded yet" in result.output
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="_source_health sums dlt_runs.rows_loaded, a column dlt_runs does not have, so runs never show",
-    )
     def test_health_reports_captured_runs(self, project, cli_runner):
         _write_raw_db(project)
         meta = metadata_db_path(project)
@@ -268,5 +258,12 @@ class TestSourcesExplore:
                 "INSERT INTO dlt_runs VALUES (?, ?, ?, ?, ?, ?)",
                 ["raw_shop", "1726000000.1", 0, datetime(2026, 9, 1, 10), "h", datetime(2026, 9, 1, 10)],
             )
+            con.execute(
+                "INSERT INTO dlt_rows_by_table VALUES (?, ?, ?, ?, ?)",
+                ["raw_shop", "orders", "1726000000.1", 3, datetime(2026, 9, 1, 10)],
+            )
         result = cli_runner.invoke(app, ["data", "sources", "explore", "shop"])
+        assert result.exit_code == 0
         assert "Total runs: 1" in result.output
+        assert "Last status: completed" in result.output
+        assert "Total rows loaded: 3" in result.output

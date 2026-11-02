@@ -10,24 +10,18 @@ The existing ``tycoon data status`` command shows a **layered health view**
 but does not distinguish vendors in the dbt-side panels. This command fills
 that gap: every object is tagged with who created it, and sources are
 grouped by vendor (dlt vs. fivetran) in the Sources panel.
-
-Two commands:
-
-* ``tycoon data layers``:            full architecture with vendor info
-* ``tycoon data health``:            health chips (tests, builds, freshness,
-                                         staleness, drift) matching the UI's
-                                         health strip
 """
 
 from __future__ import annotations
 
+import datetime
 from pathlib import Path
 
 import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from tycoon.config import config
+from tycoon.config import load_config
 from tycoon.layers import (
     Layer,
     LayerClassification,
@@ -39,14 +33,9 @@ from tycoon.layers import (
     load_manifest,
 )
 from tycoon.observability import metadata_db_path
+from tycoon.observability.dbt_builds import latest_successful_build
 from tycoon.project import TransformationTool
 from tycoon.utils.console import console, error, header, info
-
-app = typer.Typer(
-    help="Layers and health: CLI views of the pipeline architecture and its health.",
-    no_args_is_help=True,
-)
-
 
 # ---------------------------------------------------------------------------
 # Helpers: data loading
@@ -83,10 +72,8 @@ def _sources_from_backend(metadata_db: Path) -> dict[str, dict]:
         return {}
 
 
-def _freshness_label(last_sync) -> tuple[str, str]:
+def _freshness_label(last_sync: datetime.datetime | None) -> tuple[str, str]:
     """Return (label, style) describing how fresh a sync is."""
-    import datetime
-
     if last_sync is None:
         return "never", "red"
 
@@ -107,52 +94,11 @@ def _freshness_label(last_sync) -> tuple[str, str]:
     return f"{int(hours / 24)}d ago", "red"
 
 
-def _query_layer_last_build(metadata_db: Path, model_names: list[str]) -> object:
-    """Latest successful build start time across ``model_names``."""
-    import duckdb
-
-    if not model_names or not metadata_db.exists():
-        return None
-    try:
-        with duckdb.connect(str(metadata_db), read_only=True) as con:
-            row = con.execute(
-                "SELECT MAX(r.started_at) "
-                "FROM dbt_runs r "
-                "JOIN dbt_nodes n ON n.invocation_id = r.invocation_id "
-                "WHERE n.status = 'success' AND list_contains(?, n.node_name)",
-                [model_names],
-            ).fetchone()
-        return row[0] if row and row[0] else None
-    except Exception:
-        return None
-
-
-def _query_layer_freshness(metadata_db: Path, model_names: list[str]) -> object:
-    """Latest freshness timestamp for models in ``model_names``."""
-    import duckdb
-
-    if not model_names or not metadata_db.exists():
-        return None
-    try:
-        with duckdb.connect(str(metadata_db), read_only=True) as con:
-            row = con.execute(
-                "SELECT MAX(r.started_at) "
-                "FROM dbt_runs r "
-                "JOIN dbt_nodes n ON n.invocation_id = r.invocation_id "
-                "WHERE n.status = 'success' AND list_contains(?, n.node_name)",
-                [model_names],
-            ).fetchone()
-        return row[0] if row and row[0] else None
-    except Exception:
-        return None
-
-
 # ---------------------------------------------------------------------------
-# Commands
+# Command
 # ---------------------------------------------------------------------------
 
 
-@app.command("layers")
 def layers() -> None:
     """Show the layered architecture with vendor info.
 
@@ -166,27 +112,26 @@ def layers() -> None:
     This is the **same data** the 3D city renders; the CLI and the city
     show the same architecture, just in different formats.
     """
-    if not config.has_project_file:
+    cfg = load_config()
+    if not cfg.has_project_file:
         error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
         raise typer.Exit(1)
 
-    project = config.project
+    project = cfg.project
     assert project is not None  # narrowed by has_project_file
 
     header("Layers")
+    metadata_db = metadata_db_path(cfg.root)
 
     # ---- Sources panel (dlt + Fivetran unified with vendor) ----
     dlt_sources = classify_dlt_sources(project.sources)
     fivetran_sources: list[LayerClassification] = []
-    fivetran_managed = project.stack.ingestion.value == "fivetran"
-    if fivetran_managed:
+    if project.stack.ingestion.value == "fivetran":
         from tycoon.ingestion.fivetran_sync import latest_connector_snapshot
 
-        fivetran_sources = classify_fivetran_sources(latest_connector_snapshot(metadata_db_path(config.root)))
+        fivetran_sources = classify_fivetran_sources(latest_connector_snapshot(metadata_db))
 
-    all_sources = [*dlt_sources, *fivetran_sources]
-    _meta_db = metadata_db_path(config.root)
-    _render_sources_panel(all_sources, metadata_db=_meta_db)
+    _render_sources_panel([*dlt_sources, *fivetran_sources], metadata_db=metadata_db)
 
     # ---- dbt-side layers ----
     if project.stack.transformation == TransformationTool.none:
@@ -198,7 +143,7 @@ def layers() -> None:
         )
         return
 
-    manifest = load_manifest(config.dbt_project_dir)
+    manifest = load_manifest(cfg.dbt_project_dir)
     if manifest is None:
         console.print()
         info(
@@ -209,121 +154,6 @@ def layers() -> None:
         return
 
     models = classify_dbt_models(manifest)
-    metadata_db = metadata_db_path(config.root)
-
-    _render_layer_panel(
-        "Staging",
-        filter_by_layer(models, Layer.STAGING),
-        metadata_db,
-        empty_hint=("No staging models. Scaffold one with [bold]tycoon data analyze <source>[/bold]."),
-    )
-    _render_layer_panel(
-        "Intermediate",
-        filter_by_layer(models, Layer.INTERMEDIATE),
-        metadata_db,
-        empty_hint=("No intermediate models. Optional layer, typically used to combine staging models before marts."),
-    )
-    _render_layer_panel(
-        "Marts",
-        filter_by_layer(models, Layer.MART),
-        metadata_db,
-        empty_hint=(
-            "No mart models. Write `fct_*` / `dim_*` / `obt_*` models under "
-            "`models/marts/` (or override per-folder with "
-            "`+meta.tycoon_layer: mart`)."
-        ),
-    )
-
-
-@app.command("health")
-def health() -> None:
-    """Show pipeline health: failing tests, build errors, late sources, stale builds, schema drift.
-
-    Mirrors the **health strip** visible at the top of the 3D city UI.
-    Every chip is a count of problematic objects: failing tests, build
-    errors, late sources, test warnings, stale builds (14+ days), and
-    schema drift (7 days).
-
-    This is the **same data** the 3D city renders; the CLI and the city
-    show the same health, just in different formats.
-    """
-    if not config.has_project_file:
-        error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
-        raise typer.Exit(1)
-
-    header("Health")
-
-    # Sources panel (dlt + Fivetran unified with vendor)
-    project = config.project
-    assert project is not None  # narrowed by has_project_file
-
-    dlt_sources = classify_dlt_sources(project.sources)
-    fivetran_sources: list[LayerClassification] = []
-    fivetran_managed = project.stack.ingestion.value == "fivetran"
-    if fivetran_managed:
-        from tycoon.ingestion.fivetran_sync import latest_connector_snapshot
-
-        fivetran_sources = classify_fivetran_sources(latest_connector_snapshot(metadata_db_path(config.root)))
-
-    all_sources = [*dlt_sources, *fivetran_sources]
-    _meta_db = metadata_db_path(config.root)
-    _render_sources_panel(all_sources, metadata_db=_meta_db)
-
-    if fivetran_managed:
-        from tycoon.ingestion.fivetran_sync import (
-            latest_connector_snapshot,
-        )
-
-        rows = latest_connector_snapshot(metadata_db_path(config.root))
-        if rows:
-            table = Table(show_header=True, header_style="bold cyan")
-            table.add_column("Connector")
-            table.add_column("Service", style="dim")
-            table.add_column("Sync state")
-            table.add_column("Last activity")
-            for r in rows:
-                from tycoon.ingestion.fivetran_sync import freshness_label as fv_freshness_label
-
-                label, style = fv_freshness_label(
-                    succeeded_at=r["succeeded_at"],
-                    failed_at=r["failed_at"],
-                    paused=bool(r["paused"]),
-                )
-                table.add_row(
-                    r["name"] or r["connector_id"],
-                    r.get("service") or "—",
-                    r.get("sync_state") or "—",
-                    f"[{style}]{label}[/{style}]",
-                )
-            console.print()
-            console.print(table)
-
-    if _meta_db.exists():
-        console.print()
-        info("Drill in with [bold]tycoon data history[/bold] for per-run detail.")
-
-    # ---- dbt-side layers ----
-    if project.stack.transformation == TransformationTool.none:
-        console.print()
-        info(
-            "No dbt project; set up via [bold]tycoon register dbt[/bold] "
-            "or [bold]tycoon register dbt --create[/bold] to surface the "
-            "staging / intermediate / marts layers."
-        )
-        return
-
-    manifest = load_manifest(config.dbt_project_dir)
-    if manifest is None:
-        console.print()
-        info(
-            "No dbt manifest yet; run [bold]tycoon data transform run[/bold] "
-            "(or [bold]dbt compile[/bold]) to surface staging / intermediate / "
-            "marts panels."
-        )
-        return
-
-    models = classify_dbt_models(manifest)
-    metadata_db = metadata_db_path(config.root)
 
     _render_layer_panel(
         "Staging",
@@ -350,7 +180,7 @@ def health() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Panel renderers (shared between layers and health)
+# Panel renderers
 # ---------------------------------------------------------------------------
 
 
@@ -433,7 +263,7 @@ def _render_layer_panel(
         info(empty_hint)
         return
 
-    last_build = _query_layer_last_build(metadata_db, [m.name for m in models])
+    last_build = latest_successful_build(metadata_db, [m.identifier.removeprefix("dbt:") for m in models])
     fresh_label, fresh_style = _freshness_label(last_build)
 
     table = Table(show_header=True, header_style="cyan")

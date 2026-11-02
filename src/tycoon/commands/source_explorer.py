@@ -1,6 +1,4 @@
-"""tycoon data sources explore: interactive source inspection.
-
-Commands:
+"""tycoon data sources explore: inspect a source without leaving the terminal.
 
 * ``tycoon data sources explore``:          list all sources with metadata
 * ``tycoon data sources explore <name>``:   inspect schema, sample data, health
@@ -14,15 +12,11 @@ from typing import Annotated
 import duckdb
 import typer
 
-from tycoon.config import load_config
+from tycoon.config import TycoonConfig, load_config
 from tycoon.ingestion.catalog import get_entry
+from tycoon.observability import metadata_db_path
 from tycoon.utils.console import console, error, header, info, next_steps, warn
 from tycoon.utils.duckdb_utils import quote_identifier
-
-app = typer.Typer(
-    help="Explore sources: inspect schema, sample data, and health.",
-    no_args_is_help=True,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -57,28 +51,24 @@ def _sample_rows(raw_db: Path, schema_name: str, table_name: str, limit: int = 1
         return None
     try:
         with duckdb.connect(str(raw_db), read_only=True) as con:
-            quoted_table = quote_identifier(table_name)
-            quoted_schema = quote_identifier(schema_name)
-            rows = con.execute(
-                f"SELECT * FROM {quoted_schema}.{quoted_table} LIMIT ?",
+            cursor = con.execute(
+                f"SELECT * FROM {quote_identifier(schema_name)}.{quote_identifier(table_name)} LIMIT ?",
                 [limit],
-            ).fetchall()
-        if not rows:
-            return []
-        desc = con.execute(
-            f"SELECT * FROM {quoted_schema}.{quoted_table} LIMIT 1",
-        ).description
-        if not desc:
-            return None
-        columns = [d[0] for d in desc]
+            )
+            columns = [d[0] for d in cursor.description or ()]
+            rows = cursor.fetchall()
         return [dict(zip(columns, row)) for row in rows]
     except Exception:
         return None
 
 
-def _source_health(raw_db: Path, schema_name: str) -> dict:
-    """Return freshness / run info from the metadata DB."""
-    meta_db = Path.cwd() / ".tycoon" / "metadata.duckdb"
+def _source_health(meta_db: Path, schema_name: str) -> dict:
+    """Return run history for ``schema_name`` from the metadata DB.
+
+    Row counts live on ``dlt_rows_by_table``, one row per table per load;
+    ``dlt_runs`` carries one row per load with its status (0 means it
+    completed).
+    """
     health: dict = {"runs": 0, "last_run": None, "last_status": None, "total_rows": 0}
     if not meta_db.exists():
         return health
@@ -86,14 +76,16 @@ def _source_health(raw_db: Path, schema_name: str) -> dict:
     try:
         with duckdb.connect(str(meta_db), read_only=True) as con:
             row = con.execute(
-                "SELECT COUNT(*), MAX(inserted_at), MAX(status), COALESCE(SUM(rows_loaded), 0) "
+                "SELECT COUNT(*), MAX(inserted_at), "
+                "  (SELECT status FROM dlt_runs WHERE source_schema = ? ORDER BY inserted_at DESC LIMIT 1), "
+                "  (SELECT COALESCE(SUM(rows_loaded), 0) FROM dlt_rows_by_table WHERE source_schema = ?) "
                 "FROM dlt_runs WHERE source_schema = ?",
-                [schema_name],
+                [schema_name, schema_name, schema_name],
             ).fetchone()
             if row and row[0]:
                 health["runs"] = row[0]
                 health["last_run"] = str(row[1]) if row[1] else None
-                health["last_status"] = row[2]
+                health["last_status"] = "completed" if row[2] == 0 else f"status {row[2]}"
                 health["total_rows"] = row[3]
     except Exception:
         pass
@@ -105,7 +97,6 @@ def _source_health(raw_db: Path, schema_name: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@app.command()
 def explore(
     source_name: Annotated[
         str | None,
@@ -181,7 +172,7 @@ def _list_sources(sources: dict[str, object]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _inspect_source(cfg: object, source_name: str, sample_limit: int) -> None:
+def _inspect_source(cfg: TycoonConfig, source_name: str, sample_limit: int) -> None:
     """Show schema, sample data, and health for a single source."""
     source_cfg = cfg.sources[source_name]
     schema_name = getattr(source_cfg, "schema_name", None)
@@ -229,32 +220,33 @@ def _inspect_source(cfg: object, source_name: str, sample_limit: int) -> None:
 
     console.print(table)
 
-    # Sample data (first table only)
-    if schema_data:
-        first_table = schema_data[0]["table"]
-        console.print()
-        console.print(("[bold]Sample Data[/bold]"))
-        rows = _sample_rows(raw_db, schema_name, first_table, sample_limit)
-        if rows is None:
-            warn(f"Could not read sample data from '{first_table}'.")
-        elif not rows:
-            info(f"'{first_table}' is empty.")
-        else:
-            from rich.panel import Panel
-            from rich.table import Table as RichTable
+    # Sample data: the first table the source loaded. dlt's own `_dlt_*`
+    # bookkeeping tables sort first alphabetically and are not what the
+    # user came to see.
+    user_tables = [td["table"] for td in schema_data if not td["table"].startswith("_dlt_")]
+    first_table = (user_tables or [schema_data[0]["table"]])[0]
+    console.print()
+    console.print(("[bold]Sample Data[/bold]"))
+    rows = _sample_rows(raw_db, schema_name, first_table, sample_limit)
+    if rows is None:
+        warn(f"Could not read sample data from '{first_table}'.")
+    elif not rows:
+        info(f"'{first_table}' is empty.")
+    else:
+        from rich.panel import Panel
+        from rich.table import Table as RichTable
 
-            sample_table = RichTable(show_header=True, header_style="bold cyan", box=None)
-            columns = list(rows[0].keys())
-            for col in columns:
-                sample_table.add_column(str(col))
-            for row in rows:
-                sample_table.add_row(*[str(v) for v in row.values()])
-            console.print(Panel(sample_table, title=f"{first_table} (first {len(rows)} rows)"))
+        sample_table = RichTable(show_header=True, header_style="bold cyan", box=None)
+        for col in rows[0]:
+            sample_table.add_column(str(col))
+        for row in rows:
+            sample_table.add_row(*[str(v) for v in row.values()])
+        console.print(Panel(sample_table, title=f"{first_table} (first {len(rows)} rows)"))
 
     # Health info
     console.print()
     console.print(("[bold]Health[/bold]"))
-    health = _source_health(raw_db, schema_name)
+    health = _source_health(metadata_db_path(cfg.root), schema_name)
     if health["runs"] == 0:
         warn("No runs recorded yet.")
         next_steps(("Run the source", f"tycoon data sources run {source_name}"))
