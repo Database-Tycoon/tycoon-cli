@@ -138,14 +138,11 @@ def _capture_dbt_and_refresh_safe(
         from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
 
         meta = metadata_db_path(config.root)
-        capture_dbt_safe(
-            meta,
-            config.dbt_project_dir,
-            command=dbt_cmd,
-            # A stale run_results.json belongs to an earlier invocation, so
-            # this run's exit code says nothing about it.
-            exit_code=exit_code if fresh else None,
-        )
+        # A stale run_results.json belongs to an earlier invocation, which may
+        # never have gone through tycoon; recording it here would file it as
+        # this command's run, with this run's outcome lost.
+        if fresh:
+            capture_dbt_safe(meta, config.dbt_project_dir, command=dbt_cmd, exit_code=exit_code)
         capture_dbt_manifest_safe(meta, config.dbt_project_dir)
         refresh_usage_dashboards(project_root=config.root, rill_dir=config.rill_dir)
     except Exception:
