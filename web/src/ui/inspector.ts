@@ -27,6 +27,13 @@ export class Inspector {
     private extras: (key: string) => string = () => "",
   ) {
     this.root = document.getElementById("inspector")!;
+    // The panel sits inside #app, where Picking treats any non-drag pointerup
+    // as a click on the scene and selects whatever is under it, usually
+    // nothing, which closes this panel. Clicking text in the panel (an
+    // off-map source, a dt label) must not reach it.
+    for (const type of ["pointerdown", "pointerup"] as const) {
+      this.root.addEventListener(type, (e) => e.stopPropagation());
+    }
   }
 
   /** In-place R refresh: swap the document; panels re-render on next show. */
