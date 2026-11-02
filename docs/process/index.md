@@ -3,7 +3,7 @@ title: Process
 description: Maintainer-facing process documentation for CI/CD, QA, and project metrics
 tags: [process, ci-cd, qa, metrics]
 related: []
-updated: '2026-10-21'
+updated: '2026-11-02'
 ---
 
 # Process

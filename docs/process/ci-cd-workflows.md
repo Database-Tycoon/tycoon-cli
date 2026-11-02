@@ -3,12 +3,12 @@ title: CI/CD GitHub Actions workflows
 description: What each of the seven GitHub Actions workflows does, why it exists, its current run status, and the gaps worth closing
 tags: [ci-cd, github-actions, release-process, testing]
 related: [qa-test-plan, metrics]
-updated: '2026-10-21'
+updated: '2026-11-02'
 ---
 
 # CI/CD GitHub Actions workflows
 
-The repo (`Database-Tycoon/tycoon-cli`) carries seven workflows. **Workflow YAML lives on the active release branch, not `main`.** `main` lags a release cycle, so always read and diagnose CI from the release branch. Run status below is from `gh run list` on 2026-10-21.
+The repo (`Database-Tycoon/tycoon-cli`) carries seven workflows. **Workflow YAML lives on the active release branch, not `main`.** `main` lags a release cycle, so always read and diagnose CI from the release branch. Run status below is from `gh run list` on 2026-11-02, read against the `v0.2.4` branch.
 
 ## 1. `ci.yml`: CI (the merge gate)
 
@@ -28,7 +28,7 @@ The repo (`Database-Tycoon/tycoon-cli`) carries seven workflows. **Workflow YAML
 | `docs` | `mkdocs build --strict`, then `scripts/check_docs_publishable.py`. Strict catches broken links and nav targets, and a page in none of `nav`, `draft_docs`, `exclude_docs` or `not_in_nav`. The script catches the two cases strict reports only at INFO: an internal page reaching the build, and a published page linking to a withheld one. See the Documentation section of `CONTRIBUTING.md`. |
 | `template-smoke` (csv-import + nyc-transit matrix) | `tycoon init --template <t>` into a fresh dir, then `tycoon doctor`, asserting no `ERROR` lines (doctor always exits 0, so the grep is the real gate). |
 
-**Status:** passing. Every PR run on 2026-10-20 and 2026-10-21 succeeded. Typical duration 2 to 5 minutes; the `web` job is the long pole.
+**Status:** passing. Every PR run from 2026-10-20 through 2026-10-30 (the latest at the time of writing) succeeded. Typical duration 2 to 5 minutes; the `web` job is the long pole.
 
 ## 2. `pr-compliance.yml`: PR size and title checks
 
@@ -44,7 +44,7 @@ The repo (`Database-Tycoon/tycoon-cli`) carries seven workflows. **Workflow YAML
 
 **Purpose:** publish the MkDocs site to GitHub Pages at `https://database-tycoon.github.io/tycoon-cli/`. The job runs `mkdocs build --strict` and `scripts/check_docs_publishable.py` itself before uploading, because nothing guarantees that `ci.yml` ran on the commit being deployed. Permissions are zero at the workflow level; the deploy job holds `contents: read`, `pages: write` and `id-token: write`. Concurrency group `pages` without cancel-in-progress, since a cancelled Pages deploy can leave the site half-applied. Pages is set to the "GitHub Actions" build type (switched 2026-10-11).
 
-**Status:** no runs yet. The workflow landed on the `v0.2.3` branch (#415) and reaches `main` with the v0.2.3 release, which is the first publish. Verify the site after that merge.
+**Status:** two runs, both successful, on the `main` pushes of 2026-10-24 that carried the v0.2.3 release (#445). The workflow landed on the `v0.2.3` branch (#415); the first publish was the v0.2.3 merge, and the site has served since. Pages reports the `workflow` build type (`gh api repos/Database-Tycoon/tycoon-cli/pages`).
 
 ## 4. `publish.yml`: Publish to PyPI (the release train)
 
@@ -59,19 +59,19 @@ The repo (`Database-Tycoon/tycoon-cli`) carries seven workflows. **Workflow YAML
 3. `publish-testpypi`: publishes to TestPyPI first (environment `testpypi`).
 4. `publish-pypi`: only after TestPyPI succeeds, publishes to PyPI (environment `pypi`).
 
-**Status:** v0.2.2 (2026-10-09), v0.2.1 (2026-09-17) and the v0.2.0 re-tag (2026-08-28) all published clean. The run before the re-tag **failed**: the v0.2.0 wheel carried Metadata-Version 2.5, which the publisher rejected even though CI's build job was green (fixed in #210, tag re-pushed). That failure is why the backend is pinned, and the motivating example for gap G2 below.
+**Status:** v0.2.3 (2026-10-24), v0.2.2 (2026-10-09), v0.2.1 (2026-09-17) and the v0.2.0 re-tag (2026-08-28) all published clean. The run before the re-tag **failed**: the v0.2.0 wheel carried Metadata-Version 2.5, which the publisher rejected even though CI's build job was green (fixed in #210, tag re-pushed). That failure is why the backend is pinned, and the motivating example for gap G2 below.
 
 ## 5. `jira-sync.yml`: one-way GitHub to Jira sync (retired)
 
 **Trigger:** `issues: [opened, closed, reopened]`.
 
-**Purpose, historically:** mirror issue lifecycle onto the PTC Jira board. The board was retired on 2026-10-09 (Discussion #353); tracking is the GitHub Project "Tycoon CLI" and milestones only.
+**Purpose, historically:** mirror issue lifecycle onto the PTC Jira board. The board was retired in October 2026 (Discussion #353, opened 2026-10-05); tracking is the GitHub Project "Tycoon CLI" and milestones only.
 
-**Status:** every run is a no-op bailout. The repo has no Actions secrets, so the workflow logs `JIRA_EMAIL or JIRA_API_TOKEN secret not set; skipping sync.` and exits 0. It still fires on every issue event (five runs on 2026-10-20 alone). Removing the workflow and the `PTC-` key handling is #351, scheduled for v0.2.3. Do not set the secrets.
+**Status:** every run is a no-op bailout. The repo has no Actions secrets, so the workflow logs `JIRA_EMAIL or JIRA_API_TOKEN secret not set; skipping sync.` and exits 0. It still fires on every issue event (five runs on 2026-10-27 alone). v0.2.3 shipped with the workflow still present. #351 (milestone v0.2.4) is open, and PR #463 against `v0.2.4` removes the workflow and the `PTC-` title scopes. Do not set the secrets.
 
 ## 6. `nightly-e2e.yml`: Nightly e2e (live APIs, no credentials)
 
-**Trigger:** cron `0 8 * * *` (04:00 ET, a low-traffic window for the NYC Open Data and NOAA APIs), plus `workflow_dispatch` for post-fix confirmation.
+**Trigger:** cron `0 8 * * *` (08:00 UTC, which is 04:00 EDT or 03:00 EST, a low-traffic window for the NYC Open Data and NOAA APIs), plus `workflow_dispatch` for post-fix confirmation.
 
 **Purpose:** upstream API drift should surface as an overnight issue, not as a failure during a release. Runs only the **no-credential** live subset:
 
@@ -80,7 +80,7 @@ The repo (`Database-Tycoon/tycoon-cli`) carries seven workflows. **Workflow YAML
 
 **On failure it files a GitHub issue itself** (job-level `issues: write`): dated title, link to the failed run, embedded triage steps (upstream flake: close and let the next nightly clear it; tycoon regression: fix via PR). Deduped by searching for an open `nightly-e2e` issue before creating.
 
-**Status:** green every night through 2026-10-21, about a minute each.
+**Status:** green every night through 2026-11-02, about a minute each.
 
 ## 7. `e2e.yml`: End-to-end template tests (manual, credentialed)
 
@@ -95,7 +95,7 @@ The repo (`Database-Tycoon/tycoon-cli`) carries seven workflows. **Workflow YAML
 - **G1: `e2e.yml` has never run.** The credentialed live-API suite it exists for has no CI baseline. Either run it once per release cycle (add it to the release checklist) or fold the no-credential parts into `nightly-e2e.yml` and delete it. #431 may settle this.
 - **G2: no "publishable" check before tag time.** The build backend is pinned now, which removes the cause of the v0.2.0 failure, but nothing in `ci.yml`'s `build` job or `publish.yml`'s `preflight` validates the artifact the way the publisher will (a `twine check` equivalent). Add one.
 - **G3: CI is ubuntu-only, Python 3.12 and 3.13 only.** For a local-first CLI aimed at analyst laptops, macOS (the primary user platform, including Apple Silicon) and Windows are never exercised. At minimum add a macOS leg to the `build` and `template-smoke` jobs.
-- **G4: the coverage floor should keep ratcheting.** `fail_under` is 73 since #256; the suite collects 1,551 tests on `v0.2.3`. Raise the floor toward the actual figure each quarter so regressions cannot hide in the headroom. The comment in `ci.yml` still says 60; fix it with the next ratchet.
-- **G5: `jira-sync.yml` still fires.** Retired board, dormant workflow, a run per issue event. #351 removes it.
+- **G4: the coverage floor should keep ratcheting.** `fail_under` is 73 since #256; the suite collects 1,551 tests on `v0.2.3`. Raise the floor toward the actual figure each quarter so regressions cannot hide in the headroom. Known mismatch: the comment above the pytest step in `ci.yml` still reads `Pinned at 60% for v0.1.2` on `v0.2.4`, while `pyproject.toml` says 73. Fix the comment with the next ratchet.
+- **G5: `jira-sync.yml` still fires.** Retired board, dormant workflow, a run per issue event. #351 removes it; PR #463 is the change, targeting `v0.2.4`.
 - **G6: `scripts/` is outside the lint gate.** The docs guard and the PR-compliance checks live there and are CI-critical (#426).
 - **G7: no dependency-vulnerability scanning.** gitleaks covers committed secrets, but nothing runs `pip-audit` or Dependabot-style checks against the pinned dependency tree.

@@ -3,7 +3,7 @@ title: Project metrics proposal
 description: Monthly metrics for tycoon-cli across adoption, quality, and community, with the definition, source, collection method, and target for each
 tags: [metrics, qa, community, adoption]
 related: [ci-cd-workflows, qa-test-plan]
-updated: '2026-10-21'
+updated: '2026-11-02'
 ---
 
 # Project metrics proposal (monthly)
@@ -32,7 +32,7 @@ Review cadence: first week of each month, alongside the board reality check agai
 | Metric | Definition | Source | Collection | Suggested target |
 |---|---|---|---|---|
 | Issues opened / closed | Count per month, and the ratio | GitHub | Scriptable: `gh issue list` with `--search "created:>=..."` / `closed:` filters | Closed ≥ opened (backlog not growing) |
-| External contributors | Unique PR authors per month outside the maintainer team (`db-tycoon-stephen`, `JesuFemi-O`, `Mercy2codesgit`) | GitHub PRs | Scriptable: `gh pr list --state merged --json author` + filter | First external PR in 2026; then ≥ 1/quarter |
+| External contributors | Unique merged-PR authors per month who are not repository collaborators (`gh api repos/Database-Tycoon/tycoon-cli/collaborators`, eight accounts on 2026-11-02) | GitHub PRs | Scriptable: `gh pr list --state merged --json author` + filter against the collaborator list | ≥ 1/quarter. The first external PR already landed: #200 by `karlimess`, merged 2026-08-07 |
 | Discussions engagement | New GitHub Discussions threads + non-maintainer replies | GitHub Discussions | Manual skim (API scriptable later) | ≥ 1 active thread/month once Discussions launch |
 
 ## Notes

@@ -3,14 +3,14 @@ title: Per-release manual QA test plan
 description: Reusable manual QA checklist run against the built/published package before (RC) and after (PyPI) each tycoon release
 tags: [qa, testing, release-process, checklist]
 related: [ci-cd-workflows, metrics]
-updated: '2026-10-21'
+updated: '2026-11-02'
 ---
 
 # Per-release manual QA test plan
 
 Run this checklist for every release, twice if possible: once against the release-branch wheel (`uv build`, then install the wheel) as the ship gate, and once against the published PyPI package as post-publish verification. Automated CI (unit + offline-e2e + template smoke) already gates the merge; this plan covers what CI cannot: the interactive wizard, the browser surfaces (Rill, city), and the real-PyPI install/upgrade path.
 
-Commands below are the real v0.2.3 surface (README CLI reference + `src/tycoon/cli.py`). Update the table when the surface changes.
+Commands below are the real v0.2.4 surface (README CLI reference + `src/tycoon/cli.py`, checked 2026-11-02). Update the table when the surface changes.
 
 ## Environment setup
 
