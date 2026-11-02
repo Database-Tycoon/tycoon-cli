@@ -1,9 +1,9 @@
-# `tycoon fire` / `firehouse` / `repair`
+# `tycoon fire` / `firehouse`
 
 CLI views of the city's fire-and-response system. These commands read the
-**same data** the 3D city renders (dbt run artifacts for test results, the
-observability metadata DB for run history and source freshness) and present
-it as text, so you can check "what's burning?" without opening the browser.
+**same data** the 3D city renders (the observability metadata DB for run
+history, falling back to dbt's own `target/run_results.json`) and present it
+as text, so you can check "what's burning?" without opening the browser.
 
 ## The metaphor, and what it promises
 
@@ -15,13 +15,12 @@ commands keep it too:
 
 | In the data | In the city | In the CLI |
 |---|---|---|
-| A test with `status: fail` | Its building is **on fire**; the firehouse dispatches one red **fire truck** over the roads | `tycoon fire` lists it |
-| A source past its freshness SLA (`warn` / `error`) | A **worn building**; one amber **contractor van** dispatched; **fog** over every district it feeds | `tycoon repair` lists it |
-| The dispatch overview | The **firehouse** on the civic strip, wired in by its access road | `tycoon firehouse` counts the fleets |
+| A test with status `fail` or `error` | Its building is **on fire**; the firehouse dispatches one red **fire truck** over the roads | `tycoon fire` lists it |
+| The dispatch overview | The **firehouse** on the civic strip, wired in by its access road | `tycoon firehouse` counts the fleet |
 
-Trucks and vans are restatements of measured, unresolved facts: the same
-`test_status` / `freshness_status` fields in `city.json`, selected by the same
-rules the renderer's fleets use. Nothing here claims a fix is in progress.
+A fire is one failing test. A model that errored during a build is a build
+failure, and `tycoon data history` is where to look for it; the city does not
+set that building on fire, and neither does `fire`.
 
 ## `tycoon fire`
 
@@ -33,22 +32,14 @@ tycoon fire --run 1a2b   # a specific run, by invocation-ID prefix
 ```
 
 Reads the metadata DB when the project has one (`tycoon data transform run`
-captures it), falling back to dbt's own `target/run_results.json`.
-
-## `tycoon repair`
-
-The contractor call sheet: every source past its SLA, with status and last
-load time:
-
-```
-tycoon repair
-```
+captures it), falling back to dbt's own `target/run_results.json`. Tests are
+named the way dbt names them (`not_null_stg_widgets_id`), without the
+project prefix or the hash suffix dbt appends to a test's unique id.
 
 ## `tycoon firehouse`
 
-Dispatch stats: the station's map location (when an exported `city.json`
-exists; the location is a map fact) and the fleet counts (facts about the
-data, available with or without a map):
+Dispatch stats: the number of fire trucks on duty, one per fire in the
+latest run:
 
 ```
 tycoon firehouse
@@ -57,3 +48,7 @@ tycoon firehouse
 There is no "unreachable buildings" stat: the planner guarantees every lot
 fronts the one connected street network, and the renderer independently
 re-checks by routing each vehicle over roads.
+
+The contractor vans (one amber van per source past its freshness SLA) are
+not listed yet. They arrive with the `tycoon repair` call sheet once tycoon
+captures source freshness into the metadata DB.

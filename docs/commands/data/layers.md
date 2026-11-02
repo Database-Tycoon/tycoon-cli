@@ -1,7 +1,7 @@
-# `tycoon data layers` / `tycoon data health`
+# `tycoon data layers`
 
-Text views of the layered architecture and its health: the **same data** the
-3D city renders, without the browser.
+A text view of the layered architecture: the **same data** the 3D city
+renders, without the browser.
 
 ## Layers are the city's rings
 
@@ -27,16 +27,6 @@ as *unclassified*; tycoon has opinions only about the surfaces it manages.
 tycoon data layers
 ```
 
-## `tycoon data health`
-
-The city UI's **health strip** as text, one chip per problem class:
-failing tests, build errors, late sources, test warnings, stale builds
-(14+ days), schema drift (7 days). Every chip is a count of problematic
-objects from the same fields the city colors buildings with.
-
-```
-tycoon data health
-```
-
-Drill into any count with `tycoon fire` (failing tests), `tycoon repair`
-(late sources), or `tycoon data history` (per-run detail).
+Each dbt panel ends with the layer's model count and when it was last built,
+read from the run ledger `tycoon data transform run` captures. Drill into a
+failing test with `tycoon fire`, or into one run with `tycoon data history`.

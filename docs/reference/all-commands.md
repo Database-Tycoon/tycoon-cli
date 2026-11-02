@@ -386,16 +386,7 @@ Failing tests from the latest run: the buildings on fire in the 3D city.
 tycoon firehouse
 ```
 
-Dispatch stats: station location (from an exported city.json), fire trucks
-and contractor vans on duty.
-
-### [`tycoon repair`](../commands/fire.md#tycoon-repair)
-
-```
-tycoon repair
-```
-
-The contractor call sheet: sources past their freshness SLA.
+Dispatch stats: fire trucks on duty, one per fire in the latest run.
 
 ---
 
@@ -403,20 +394,22 @@ The contractor call sheet: sources past their freshness SLA.
 
 ```
 tycoon data layers
-tycoon data health
 ```
 
-The layered architecture ring by ring with vendor per object, and the city's
-health strip as text.
+The layered architecture ring by ring with vendor per object, and each dbt
+layer's last build.
 
-### [`tycoon data sources explore`](../commands/data/sources.md)
+### [`tycoon data sources explore`](../commands/data/sources.md#explore-inspect-a-source)
 
 ```
-tycoon data sources explore [NAME] [--limit N]
+tycoon data sources explore [NAME] [OPTIONS]
+
+Options:
+  -n, --sample INTEGER     Number of sample rows to show (default: 10).
 ```
 
 List all sources with metadata, or inspect one source's schema, sample rows,
-and health.
+and run history.
 
 ## Tools
 
