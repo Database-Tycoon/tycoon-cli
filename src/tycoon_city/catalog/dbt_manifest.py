@@ -264,6 +264,31 @@ class ManifestJoin:
     external_upstream_by_key: dict[str, tuple[ExternalSource, ...]] = dataclasses.field(default_factory=dict)
 
 
+def _resolved_dependencies(index: ManifestIndex, model_id: str, canonical: dict[str, str]) -> list[str]:
+    """The unique_ids a model reads, in declaration order and without repeats.
+
+    A dependency that is a model with no catalog object (an ephemeral model,
+    which dbt inlines as a CTE and never builds) is not an input in its own
+    right: the model reads whatever that model reads. Those are walked
+    through, so a source behind an ephemeral model is still named. The walk
+    is cycle-safe; a cycle in a real manifest would have failed `dbt compile`.
+    """
+    seen = {model_id}
+    resolved: list[str] = []
+    stack = list(reversed(index.model_dependencies[model_id]))
+    while stack:
+        dep_id = stack.pop()
+        if dep_id in seen:
+            continue
+        seen.add(dep_id)
+        unmapped_model = dep_id in index.model_dependencies and index.key_of.get(dep_id, "") not in canonical
+        if unmapped_model:
+            stack.extend(reversed(index.model_dependencies[dep_id]))
+        else:
+            resolved.append(dep_id)
+    return resolved
+
+
 def join_manifest(index: ManifestIndex, catalog_keys: set[str]) -> ManifestJoin:
     """Resolve the manifest onto a catalog's object keys.
 
@@ -280,12 +305,12 @@ def join_manifest(index: ManifestIndex, catalog_keys: set[str]) -> ManifestJoin:
 
     edges: list[Edge] = []
     external_upstream_by_key: dict[str, tuple[ExternalSource, ...]] = {}
-    for model_id, deps in index.model_dependencies.items():
+    for model_id in index.model_dependencies:
         dst = canonical.get(index.key_of.get(model_id, ""))
         if dst is None:
             continue
         external: list[ExternalSource] = []
-        for dep_id in deps:
+        for dep_id in _resolved_dependencies(index, model_id, canonical):
             src = canonical.get(index.key_of.get(dep_id, ""))
             if src is not None and src != dst:
                 edges.append(Edge(src=src, dst=dst, provenance="manifest"))

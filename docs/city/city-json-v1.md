@@ -3,7 +3,7 @@ title: city.json v1
 description: The normative wire format between Database Tycoon's Python side and any renderer, and why each decision was taken
 tags: [contract, format, export, renderer]
 related: [handover, superpowers/specs/2026-08-03-city-foundation-design]
-updated: '2026-10-10'
+updated: '2026-11-02'
 ---
 
 # `city.json` v1
@@ -301,6 +301,11 @@ not contain it. Each entry carries `name` (dbt's `source_name.table`),
 `relation` (`database.schema.identifier` as the manifest records it) and
 `freshness_status` (dbt's `sources.json` verdict, null when none was recorded).
 Sorted by `name`; `[]` when the model reads nothing outside the catalog.
+The on-map test compares lowercased `schema.identifier` only and ignores
+`database`, so a source whose name matches an object here resolves to that
+building even when the manifest places it in another database. A source read
+through an ephemeral model (which dbt inlines and never builds) counts as read
+by the model that uses the ephemeral one.
 
 These entries are declared, never measured: the city has no row count, columns
 or build history for them. A client listing a model's upstream must show them
