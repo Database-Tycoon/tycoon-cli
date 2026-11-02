@@ -1,4 +1,4 @@
-"""Tests for `tycoon fire`, `tycoon repair` and `tycoon firehouse` (PTC-126).
+"""Tests for `tycoon fire` and `tycoon firehouse` (gh-306).
 
 Each test builds a small real project: a tycoon.yml, dbt's own
 `target/run_results.json`, and a metadata DB populated through the real
@@ -12,13 +12,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import duckdb
 import pytest
 
 from tycoon.cli import app
-from tycoon.observability import capture_dbt, ensure_schema, metadata_db_path
+from tycoon.observability import capture_dbt, metadata_db_path
 
-_TYCOON_YML = "name: test\nversion: 0.1.0\nsources: {}\n"
+_TYCOON_YML = "name: test\nversion: 0.1.0\nschema_version: 2\nsources: {}\n"
 
 
 def _result(unique_id: str, status: str, started_at: str = "2026-09-01T10:00:00Z") -> dict:
@@ -50,33 +49,15 @@ def _capture(root: Path, invocation_id: str, results: list[dict]) -> None:
     assert capture_dbt(metadata_db_path(root), dbt_dir) == invocation_id
 
 
-def _seed_source_freshness(root: Path, rows: list[tuple[str, str, str | None]]) -> None:
-    """Hand-seed the `source_freshness` table the fire module reads (see the xfail below)."""
-    meta = metadata_db_path(root)
-    ensure_schema(meta)
-    with duckdb.connect(str(meta)) as con:
-        con.execute("CREATE TABLE source_freshness (name VARCHAR, freshness_status VARCHAR, max_loaded_at TIMESTAMP)")
-        for row in rows:
-            con.execute("INSERT INTO source_freshness VALUES (?, ?, ?)", list(row))
-
-
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch) -> Path:
     (tmp_path / "tycoon.yml").write_text(_TYCOON_YML)
-    from tycoon.commands import fire as fire_mod
-    from tycoon.config import TycoonConfig
-
-    monkeypatch.setattr(fire_mod, "config", TycoonConfig(project_root=tmp_path))
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
 
 @pytest.fixture
 def no_project(tmp_path: Path, monkeypatch) -> Path:
-    from tycoon.commands import fire as fire_mod
-    from tycoon.config import TycoonConfig
-
-    monkeypatch.setattr(fire_mod, "config", TycoonConfig(project_root=tmp_path))
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
@@ -86,7 +67,7 @@ def no_project(tmp_path: Path, monkeypatch) -> Path:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("command", ["fire", "repair", "firehouse"])
+@pytest.mark.parametrize("command", ["fire", "firehouse"])
 def test_requires_tycoon_yml(no_project, cli_runner, command):
     result = cli_runner.invoke(app, [command])
     assert result.exit_code == 1
@@ -96,8 +77,9 @@ def test_requires_tycoon_yml(no_project, cli_runner, command):
 def test_commands_are_registered_at_the_top_level(cli_runner):
     result = cli_runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    for name in ("fire", "repair", "firehouse"):
+    for name in ("fire", "firehouse"):
         assert name in result.output
+    assert "repair" not in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -159,23 +141,33 @@ class TestFire:
         assert result.exit_code == 0
         assert "not being fixed" in _flat(result.output)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="fire counts dbt model build errors (status 'error') as fires; a fire is one failing test",
-    )
-    def test_a_model_build_error_is_not_a_fire(self, project, cli_runner):
-        _write_run_results(
-            project / "dbt_project",
-            "inv-a",
-            [_result("model.p.orders", "error"), _result("test.p.nn_id", "fail")],
-        )
+    @pytest.mark.parametrize("source", ["run_results", "metadata"])
+    def test_a_model_build_error_is_not_a_fire(self, project, cli_runner, source):
+        results = [_result("model.p.orders", "error"), _result("test.p.nn_id", "fail")]
+        if source == "metadata":
+            _capture(project, "inv-a", results)
+        else:
+            _write_run_results(project / "dbt_project", "inv-a", results)
         result = cli_runner.invoke(app, ["fire"])
+        assert result.exit_code == 0
+        assert "orders" not in result.output
         assert "1 building(s) on fire" in result.output
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="the latest run is picked with MAX(invocation_id), a UUID, not by started_at",
-    )
+    def test_a_test_that_errored_is_a_fire(self, project, cli_runner):
+        # The city sets a building on fire for a test in 'fail' or 'error'.
+        _capture(project, "inv-a", [_result("test.p.nn_id", "error")])
+        result = cli_runner.invoke(app, ["fire"])
+        assert "nn_id" in result.output
+        assert "1 building(s) on fire" in result.output
+
+    def test_fires_are_named_like_dbt_names_them(self, project, cli_runner):
+        # Real dbt test ids carry a hash suffix: test.<project>.<name>.<hash>.
+        _capture(project, "inv-a", [_result("test.p.not_null_orders_id.8478cd9390", "fail")])
+        result = cli_runner.invoke(app, ["fire"])
+        assert "not_null_orders_id" in result.output
+        assert "test.p." not in result.output
+        assert "8478cd9390" not in result.output
+
     def test_standing_state_reads_the_most_recent_run(self, project, cli_runner):
         # The newer run has the lexically SMALLER id, as random UUIDs often do.
         _capture(project, "ffff-old", [_result("test.p.old_fail", "fail", "2026-09-01T10:00:00Z")])
@@ -212,67 +204,6 @@ class TestFire:
 
 
 # ---------------------------------------------------------------------------
-# tycoon repair
-# ---------------------------------------------------------------------------
-
-
-class TestRepair:
-    def test_without_metadata_db(self, project, cli_runner):
-        result = cli_runner.invoke(app, ["repair"])
-        assert result.exit_code == 0
-        assert "No metadata database found" in result.output
-
-    def test_no_stale_sources_means_no_vans(self, project, cli_runner):
-        _seed_source_freshness(project, [("orders", "pass", "2026-09-01 10:00:00")])
-        result = cli_runner.invoke(app, ["repair"])
-        assert result.exit_code == 0
-        assert "All sources within SLA" in result.output
-        assert "orders" not in result.output
-
-    def test_one_van_per_source_past_sla(self, project, cli_runner):
-        _seed_source_freshness(
-            project,
-            [
-                ("orders", "warn", "2026-09-01 10:00:00"),
-                ("payments", "error", None),
-                ("customers", "pass", "2026-09-01 10:00:00"),
-            ],
-        )
-        result = cli_runner.invoke(app, ["repair"])
-        assert result.exit_code == 0
-        assert "orders" in result.output
-        assert "payments" in result.output
-        assert "customers" not in result.output
-        assert "2 source(s) past SLA" in result.output
-        assert "One contractor van dispatched per call" in result.output
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason="repair reads a source_freshness table that no tycoon capture creates; stale sources never get a van",
-    )
-    def test_stale_source_from_dbt_source_freshness_gets_a_van(self, project, cli_runner):
-        dbt_dir = project / "dbt_project"
-        _capture(project, "inv-a", [_result("model.p.orders", "success")])
-        (dbt_dir / "target" / "sources.json").write_text(
-            json.dumps(
-                {
-                    "metadata": {"invocation_id": "inv-fresh"},
-                    "results": [
-                        {
-                            "unique_id": "source.p.shop.orders",
-                            "status": "error",
-                            "max_loaded_at": "2026-08-01T00:00:00Z",
-                        }
-                    ],
-                }
-            )
-        )
-        result = cli_runner.invoke(app, ["repair"])
-        assert "orders" in result.output
-        assert "1 source(s) past SLA" in result.output
-
-
-# ---------------------------------------------------------------------------
 # tycoon firehouse
 # ---------------------------------------------------------------------------
 
@@ -283,33 +214,22 @@ class TestFirehouse:
         assert result.exit_code == 0
         assert "No data available" in result.output
 
-    def test_counts_fleets_from_an_exported_city(self, project, cli_runner):
-        city = {
-            "firehouse": {"x": 12, "y": -4},
-            "lots": [
-                {"test_status": "fail"},
-                {"test_status": "fail"},
-                {"test_status": "pass", "freshness_status": "warn"},
-                {"freshness_status": "error"},
-                {"freshness_status": "pass"},
-            ],
-        }
-        (project / "city.json").write_text(json.dumps(city))
+    def test_one_truck_per_fire_from_metadata(self, project, cli_runner):
+        _capture(
+            project,
+            "inv-a",
+            [_result("test.p.nn_id", "fail"), _result("model.p.orders", "error"), _result("test.p.ok", "pass")],
+        )
         result = cli_runner.invoke(app, ["firehouse"])
         assert result.exit_code == 0
-        assert "Firehouse at (12, -4)" in result.output
-        assert _count_for(result.output, "Fire trucks on duty") == 2
-        assert _count_for(result.output, "Contractor vans on duty") == 2
+        assert _count_for(result.output, "Fire trucks on duty") == 1
         assert "never that a fix is running" in _flat(result.output)
 
-    def test_counts_fleets_from_metadata_without_a_map(self, project, cli_runner):
-        _capture(project, "inv-a", [_result("test.p.nn_id", "fail"), _result("test.p.ok", "pass")])
+    def test_green_run_results_mean_an_idle_fleet(self, project, cli_runner):
+        _write_run_results(project / "dbt_project", "inv-green", [_result("test.p.ok", "pass")])
         result = cli_runner.invoke(app, ["firehouse"])
         assert result.exit_code == 0
-        assert "No exported city.json" in result.output
-        assert _count_for(result.output, "Fire trucks on duty") == 1
-        assert _count_for(result.output, "Contractor vans on duty") == 0
-        assert "never that a fix is running" in _flat(result.output)
+        assert _count_for(result.output, "Fire trucks on duty") == 0
 
 
 def _flat(output: str) -> str:
