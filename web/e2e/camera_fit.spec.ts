@@ -122,3 +122,58 @@ test("a resize refits the opening view until the viewer takes the camera", async
   const moved = Math.hypot(...after.target.map((v, i) => v - dragged.target[i]!));
   expect(moved, "a resize after a drag leaves the viewer's camera alone").toBeLessThan(0.01);
 });
+
+test("after a refresh to a different catalog, H frames the new city", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await open(page, "?settle=1&lens=none");
+  const demoLots = await page.evaluate(() => window.__tycoonCity!.doc.lots.length);
+
+  await page.route("**/city.json*", (route) => route.fulfill({ path: RICH }));
+  await page.evaluate(() => window.__tycoonCity!.refresh());
+  const richLots = await page.evaluate(() => window.__tycoonCity!.doc.lots.length);
+  expect(richLots, "the refresh swapped in the rich catalog").not.toBe(demoLots);
+
+  await page.keyboard.press("h");
+  await page.waitForTimeout(300);
+  const { canvas, lots, city } = await measure(page);
+  // A fit kept from the demo catalog parks the camera inside the larger city,
+  // so some of its buildings fall off the canvas.
+  for (const [key, r] of lots) {
+    expect(r, `${key} in front of the camera`).not.toBeNull();
+    const inside =
+      r!.left >= canvas.left - 1 &&
+      r!.right <= canvas.right + 1 &&
+      r!.top >= canvas.top - 1 &&
+      r!.bottom <= canvas.bottom + 1;
+    expect(inside, `${key} at ${JSON.stringify(r)} in ${JSON.stringify(canvas)}`).toBe(true);
+  }
+  const fill = Math.max(
+    (city.right - city.left) / (canvas.right - canvas.left),
+    (city.bottom - city.top) / (canvas.bottom - canvas.top),
+  );
+  expect(fill, `city ${JSON.stringify(city)} in ${JSON.stringify(canvas)}`).toBeGreaterThanOrEqual(MIN_FILL);
+});
+
+test("H pressed right after a drag still lands on the fitted home", async ({ page }) => {
+  await open(page, "?settle=1&lens=none");
+  const pose = () => page.evaluate(() => window.__tycoonCity!.cameraPose());
+  const home = await pose();
+
+  const box = (await page.locator("canvas").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 150, box.y + box.height / 2 + 60, { steps: 8 });
+  await page.mouse.up();
+  // The orbit's damping is still spending the drag's inertia here. Before the
+  // fix it kept turning the camera after H had placed it, and the view
+  // settled well away from home with the resize refit believing it was there.
+  await page.waitForTimeout(100);
+  await page.keyboard.press("h");
+  await page.waitForTimeout(1500);
+
+  const after = await pose();
+  const drift = Math.hypot(...after.position.map((v, i) => v - home.position[i]!));
+  expect(drift, `settled at ${JSON.stringify(after.position)}, home ${JSON.stringify(home.position)}`).toBeLessThan(
+    0.01,
+  );
+});

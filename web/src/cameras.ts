@@ -133,7 +133,7 @@ export class Cameras {
   private orbit: OrbitControls;
   private fly: FlyControls;
   private flying = false;
-  private readonly points: THREE.Vector3[];
+  private points: THREE.Vector3[];
   /** True until the viewer moves the camera: a resize refits the opening
    * view only while nobody has taken the controls. */
   private framed = true;
@@ -166,10 +166,26 @@ export class Cameras {
 
   private apply(name: PoseName): Pose {
     const pose = fitPose(this.points, DIRECTIONS[name], this.camera.fov, this.camera.aspect);
+    // A drag's inertia keeps turning the camera for about a second after the
+    // pointer lifts, and it would carry a pose set now away from the fit.
+    // Without damping, one update spends that inertia on the old pose and
+    // zeroes it, so the new pose is the one that stays.
+    this.orbit.enableDamping = false;
+    this.orbit.update();
+    this.orbit.enableDamping = true;
     this.camera.position.copy(pose.position);
     this.orbit.target.copy(pose.target);
     this.orbit.update();
     return pose;
+  }
+
+  /** An R refresh swaps the document, and the fit must follow it: a home
+   * solved for the previous city frames the wrong one after the catalog
+   * grows. While nobody has taken the camera the view is refitted at once;
+   * otherwise the viewer's pose stays and only the target of `H` moves. */
+  setDoc(doc: CityDocument): void {
+    this.points = cityPoints(doc);
+    if (this.framed) this.apply("home");
   }
 
   get mode(): "orbit" | "fly" {

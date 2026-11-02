@@ -324,6 +324,7 @@ export function setupHUD(
       // halves on the old city that is still on screen.
       currentDoc = next;
       picking.setTargets(cityRef.current.buildings, cityRef.current.plant, cityRef.current.civicTargets);
+      setup.camera.setDoc(next);
       inspector.setDoc(next);
       stats.setDoc(next);
       health.setDoc(next);
