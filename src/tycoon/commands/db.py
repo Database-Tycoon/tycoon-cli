@@ -238,6 +238,7 @@ def query(
         typer.Option(
             "--format",
             "-f",
+            case_sensitive=False,
             help="Output format. csv, json and markdown print only the rows, for scripts and notebooks.",
         ),
     ] = OutputFormat.table,
@@ -315,10 +316,12 @@ def query(
 
     by_record = print_table(console, f"Query Results ({label} db)", columns, rows)
     info(f"{len(rows)} row(s) returned")
-    if by_record:
+    if by_record and rows:
         info(
             "[dim]Too wide for the terminal, so each row is its own block. --format csv or json gives flat rows.[/dim]"
         )
+    elif by_record:
+        info("[dim]Too wide for the terminal, so the columns are listed one per line.[/dim]")
 
 
 # ---------------------------------------------------------------------------

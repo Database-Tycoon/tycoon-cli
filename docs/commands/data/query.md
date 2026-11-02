@@ -54,13 +54,15 @@ tycoon data query --format json "SELECT * FROM mart.fct_orders LIMIT 5" | jq '.[
 | Format | Output |
 |---|---|
 | `table` | The default. A Rich table with a title and a `N row(s) returned` line. |
-| `csv` | A header line, then one line per row. NULL is an empty field. |
-| `json` | A JSON array with one object per row, keyed by column name. NULL is `null`, `DECIMAL` values are numbers, and dates, timestamps and other types are strings. |
-| `markdown` | A GitHub-flavored Markdown table, ready to paste into an issue or a doc. |
+| `csv` | A header line, then one line per row. NULL is an empty field. `LIST`, `STRUCT` and `MAP` values use Python's text form, such as `[1, 2]` and `{'a': 1}`. |
+| `json` | A JSON array with one object per row, keyed by column name. NULL is `null`, `DECIMAL` values are numbers, `LIST`, `STRUCT` and `MAP` come out as nested JSON, and dates, timestamps and other types are strings. A `DOUBLE` that is NaN or infinite is `null`, since strict JSON parsers such as `JSON.parse` reject the bare `NaN` Python would otherwise write. |
+| `markdown` | A GitHub-flavored Markdown table, ready to paste into an issue or a doc. Nested values use the same text form as `csv`. |
 
-`csv`, `json` and `markdown` print the rows and nothing else, so the output can go straight into a file or another tool. Errors still go to stderr.
+In all three, a `BLOB` is its hex digits (`dead` for the bytes `DE AD`) and an `INTERVAL` is an ISO 8601 duration such as `P1DT2H30M`.
 
-In `table` format, a result too wide for the terminal (one where some column couldn't show its full name) prints one block per row instead, with each column name beside its value, like `psql`'s expanded display. A result that fits keeps the usual column layout.
+`csv`, `json` and `markdown` print the rows and nothing else, so the output can go straight into a file or another tool. Errors still go to stderr. The format name is not case-sensitive.
+
+In `table` format, a result too wide for the terminal (one where some column couldn't show its full name) prints one block per row instead, with each column name beside its value, like `psql`'s expanded display. A result that fits keeps the usual column layout. An empty result that is too wide lists the column names one per line, so you can still see what the query would have returned.
 
 ### Live warehouse via Quack (v0.1.9)
 

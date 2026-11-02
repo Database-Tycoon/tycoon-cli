@@ -322,6 +322,45 @@ class TestQueryFormats:
         result = self._query(cli_runner, _wide_db(tmp_path), "--format", "xml")
         assert result.exit_code == 2
 
+    def test_format_name_is_case_insensitive(self, cli_runner, tmp_path):
+        result = self._query(cli_runner, _wide_db(tmp_path), "--format", "CSV")
+        assert result.exit_code == 0, result.stdout
+        assert result.stdout.splitlines()[0].startswith("route_id,fare,")
+
+    def test_json_turns_nan_and_inf_into_null(self, cli_runner, tmp_path):
+        """JSON.parse and strict Python parsers reject the bare NaN that json.dumps emits by default."""
+        import json
+
+        db_path = tmp_path / "nonfinite.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute(
+            "CREATE TABLE wide AS SELECT 'nan'::DOUBLE AS n, 'inf'::DOUBLE AS i, "
+            "[1.0, 'nan'::DOUBLE] AS l, {'x': '-inf'::DOUBLE} AS s"
+        )
+        con.close()
+
+        result = self._query(cli_runner, db_path, "--format", "json")
+        assert result.exit_code == 0, result.stdout
+
+        def reject(constant: str) -> None:
+            raise AssertionError(f"bare {constant} in JSON output")
+
+        records = json.loads(result.stdout, parse_constant=reject)
+        assert records == [{"n": None, "i": None, "l": [1.0, None], "s": {"x": None}}]
+
+    def test_blob_and_interval_read_outside_python(self, cli_runner, tmp_path):
+        import json
+
+        db_path = tmp_path / "typed.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute("CREATE TABLE wide AS SELECT '\\xDE\\xAD'::BLOB AS b, INTERVAL '1 day 2 hours 30 minutes' AS d")
+        con.close()
+
+        as_json = self._query(cli_runner, db_path, "--format", "json")
+        assert json.loads(as_json.stdout) == [{"b": "dead", "d": "P1DT2H30M"}]
+        as_csv = self._query(cli_runner, db_path, "--format", "csv")
+        assert as_csv.stdout.splitlines()[1] == "dead,P1DT2H30M"
+
     def test_wide_table_prints_one_block_per_record(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.setenv("COLUMNS", "100")
         result = self._query(cli_runner, _wide_db(tmp_path))
@@ -330,6 +369,23 @@ class TestQueryFormats:
         assert "record 1" in result.stdout
         assert "…" not in result.stdout
         assert "1 row(s) returned" in result.stdout
+
+    def test_empty_wide_result_lists_every_column_name(self, cli_runner, tmp_path, monkeypatch):
+        """gh-391: an empty result used to print the squashed header row the issue complains about."""
+        monkeypatch.setenv("COLUMNS", "80")
+        columns = [f"very_long_column_name_{i}" for i in range(30)]
+        db_path = tmp_path / "empty.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute(f"CREATE TABLE wide ({', '.join(f'{c} INTEGER' for c in columns)})")
+        con.close()
+
+        result = self._query(cli_runner, db_path)
+        assert result.exit_code == 0, result.stdout
+        listed = {line.strip(" │") for line in result.stdout.splitlines()}
+        assert set(columns) <= listed
+        assert "…" not in result.stdout
+        assert "0 row(s) returned" in result.stdout
+        assert "columns are listed" in result.stdout
 
     def test_narrow_table_keeps_the_column_layout(self, cli_runner, tmp_path, monkeypatch):
         monkeypatch.setenv("COLUMNS", "100")
