@@ -49,13 +49,10 @@ requests are listed with their issues.
   and load duplicates ([#394], PRs [#398], [#399], [#400]). An invalid
   `tycoon.yml` crashes `--help` and `--version` ([#378]).
 - MotherDuck Phase 0 ([#429]). One helper accepts both `md:` and
-  `motherduck:` ([#308], PR [#454]; [#446], PR [#457]), raw ingestion lands
-  in a MotherDuck raw database ([#430], [#447], [#448], PRs [#455], [#456])
-  with a `motherduck` extra for pyarrow ([#459]), `data query` refuses DDL
-  and DML on MotherDuck unless asked ([#309], PR [#452]), `data schema`
-  estimates row counts instead of counting every table ([#310], PR [#451]),
-  OSI scaffolding reads a MotherDuck warehouse ([#298], PR [#450]), and a
-  token-gated e2e job runs on demand ([#437], PR [#449]).
+  `motherduck:` ([#308], PR [#454]), `data query` refuses DDL and DML on
+  MotherDuck unless asked ([#309], PR [#452]), and `data schema` estimates
+  row counts instead of counting every table ([#310], PR [#451]). The rest
+  of Phase 0 moved to v0.2.5, below.
 - Run history. Successful dbt builds are marked failed ([#341], PR [#462]),
   failed runs are never recorded ([#377]), `data status` says "last build
   never" when history has the builds ([#390], PR [#397]), and `data run-all`
@@ -76,9 +73,9 @@ requests are listed with their issues.
 - Docs. This page ([#219], PR [#218]) and maintainer process pages for CI/CD,
   QA and metrics ([#220], PR [#217]).
 
-Also open against v0.2.4: the layer-aware data CLI ([#306], PRs [#288],
-[#289]) and the DuckLake storage proposal (PR [#74]). Both are milestoned
-beyond this cycle (check: [#306] sits on v0.2.5 while its PRs target v0.2.4).
+Also open against the v0.2.4 branch, but not part of this cycle: the
+layer-aware data CLI ([#306], PRs [#288], [#289]), scheduled for v0.2.5
+below, and the DuckLake storage proposal (PR [#74]), which has no milestone.
 
 ## Next: v0.2.5 to v0.3.1
 
@@ -87,9 +84,13 @@ Two-week cycles, each with a GitHub milestone.
 - v0.2.5, to 2026-11-20: the rewrite foundation. The remaining config
   singleton uses move to the project model ([#175], [#176], [#189]); the
   source catalog gets its JSON manifest and loader ([#98], [#100], design in
-  [#197]); the layer-aware data CLI lands ([#306], blocked on [#302]);
-  MotherDuck Phase 1 adds the Destination protocol and a MotherDuck
-  destination ([#110], [#118]). Alongside: `data transform freshness`
+  [#197]); the layer-aware data CLI lands ([#306], PRs [#288], [#289]).
+  MotherDuck Phase 0 finishes: raw ingestion lands in a MotherDuck raw
+  database ([#430], [#447], [#448], PRs [#455], [#456]) with a `motherduck`
+  extra for pyarrow ([#459]), the city accepts `motherduck:` ([#446], PR
+  [#457]), OSI scaffolding reads a MotherDuck warehouse ([#298], PR [#450]),
+  and a token-gated e2e job runs on demand ([#437], PR [#449]). Phase 1 adds
+  the Destination protocol and a MotherDuck destination ([#110], [#118]). Alongside: `data transform freshness`
   ([#340]), a looser `dbt-core` pin ([#347]), consistent local time in
   status and history ([#322], [#327]), and an `md:` target with no token
   failing instead of opening a browser ([#460]).
@@ -125,9 +126,8 @@ tycoon's bet is to be the stack agents stand on, not another agent.
   run triage ([#325]). These are proposals, not commitments.
 - MCP. The open scope is helping users install the dbt and dlt MCP servers
   into their project ([#142], [#143]). Query-level MCP already exists in
-  DuckDB and MotherDuck; tycoon only builds what those do not cover, and a
-  tycoon MCP server of its own is not planned (check: the previous draft
-  framed this as a timeboxed spike).
+  DuckDB and MotherDuck; tycoon only builds what those do not cover. No
+  tycoon MCP server of its own is on the roadmap today.
 
 ## Later
 
@@ -165,8 +165,8 @@ Reviewed at retros; not scheduled, not promised.
 - Filesystem sources that expose what dlt supports: per-resource naming,
   more formats, more options ([#221]).
 - Redesign `tycoon init` around a required dbt or dlt project ([#14]).
-- Rendering the city as a MotherDuck flight or dive (check: no issue filed).
-- Dashboards over tycoon's own run metadata (check: no issue filed).
+- Rendering the city as a MotherDuck flight or dive (no issue yet).
+- Dashboards over tycoon's own run metadata (no issue yet).
 - pandas as an optional extra ([#148]).
 - Align the PyPI, docs and CLI naming ([#140]).
 
@@ -274,7 +274,6 @@ The last three releases, with their release notes.
 [#289]: https://github.com/Database-Tycoon/tycoon-cli/pull/289
 [#291]: https://github.com/Database-Tycoon/tycoon-cli/issues/291
 [#298]: https://github.com/Database-Tycoon/tycoon-cli/issues/298
-[#302]: https://github.com/Database-Tycoon/tycoon-cli/issues/302
 [#306]: https://github.com/Database-Tycoon/tycoon-cli/issues/306
 [#307]: https://github.com/Database-Tycoon/tycoon-cli/issues/307
 [#308]: https://github.com/Database-Tycoon/tycoon-cli/issues/308
