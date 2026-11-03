@@ -92,3 +92,10 @@ gha-creds-*.json
 .coverage.*
 coverage.xml
 htmlcov/
+
+# Local secrets. Credentials belong in your shell or a secrets manager, never
+# in a commit, and this repo is public.
+.env
+.env.*
+!.env.example
+**/.dlt/secrets.toml
