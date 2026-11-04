@@ -151,7 +151,7 @@ def _clone_repo(url: str, dest: Path) -> bool:
 
 
 def _prompt_register_project(component: str, target: Path, project_name: str) -> str | None:
-    """Shared sub-flow for "register existing" — returns absolute path string or None on failure.
+    """Shared sub-flow for "register existing": returns absolute path string or None on failure.
 
     `target` is the tycoon project root, used to reject a path outside its
     parent directory (#65) at prompt time rather than only the first time a
@@ -209,7 +209,10 @@ def _prompt_register_project(component: str, target: Path, project_name: str) ->
     try:
         resolved = resolve_contained_path(dest_input, target, f"{component} project path")
     except ValueError as exc:
-        warn(f"{exc} Enter a path under that directory, or leave it blank to skip. Treating this component as skipped.")
+        warn(
+            f"{exc} Treating this component as skipped. Move the project under "
+            f"{containment_boundary(target)} and add it afterwards with `tycoon register {component.lower()}`."
+        )
         return None
 
     if is_url:
