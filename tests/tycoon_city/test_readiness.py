@@ -15,7 +15,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 
 # A catalog full of words that appear nowhere in the report's own text, so a
 # leak cannot hide behind ordinary English.

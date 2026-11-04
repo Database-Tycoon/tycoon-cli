@@ -106,6 +106,8 @@ def _render_history_table(runs: list[RunSummary]) -> Table:
             detail = _fmt_duration(s.duration_seconds)
             if s.rows_total:
                 detail += f" · {s.rows_total} models"
+            elif s.zero_rows:
+                detail += " · [yellow]nothing ran[/yellow]"
         else:
             ref = f"{s.source_id}/{_short(s.run_id)}"
             if not s.zero_rows:
@@ -250,6 +252,8 @@ def _show_run(id_prefix: str) -> None:
 
     if s.status != "success":
         status_str = "[red]failed[/red]"
+    elif s.zero_rows and is_dbt:
+        status_str = "[yellow]success, but nothing ran[/yellow]"
     elif s.zero_rows and s.rows_total:
         status_str = "[yellow]success, but a table got zero rows[/yellow]"
     elif s.zero_rows:

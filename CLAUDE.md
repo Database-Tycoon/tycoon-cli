@@ -17,4 +17,8 @@ below; this page only points at them.
   --strict` must stay clean.
 - **Checks before opening a PR:** `uv run pytest -q`, `uv run ruff check src
   tests`, `uv run ruff format --check src tests`; for `web/`, `npx tsc
-  --noEmit` and `npx playwright test`.
+  --noEmit` and `npx playwright test`. If you touched `docs/` or
+  `mkdocs.yml`, also `uv run mkdocs build --strict` followed by `uv run python
+  scripts/check_docs_publishable.py`. Run the build without `-d`: the check
+  reads `site_dir` from `mkdocs.yml`, so a build sent elsewhere leaves it
+  inspecting a stale `site/`.

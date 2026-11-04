@@ -292,6 +292,12 @@ def _dbt_block(ctx: PipelineContext, key: str) -> dict[str, Any] | None:
         "tags": list(context.tags) if context else [],
         "owner": context.owner if context else None,
         "tests": tests,
+        # Declared sources this model reads that are not on the map, so no
+        # edge reaches them. Unmeasured by definition; [] when there are none.
+        "external_upstream": [
+            {"name": source.name, "relation": source.relation, "freshness_status": source.freshness_status}
+            for source in ctx.external_upstream_by_key.get(key, ())
+        ],
     }
 
 
