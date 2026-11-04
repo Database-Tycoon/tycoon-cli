@@ -1,0 +1,9 @@
+{
+  "name": "tycoon-contributors",
+  "version": "0.1.0",
+  "description": "Skills for contributing to tycoon-cli: the release-branch PR model and the test layers",
+  "author": {
+    "name": "Database Tycoon",
+    "url": "https://github.com/Database-Tycoon"
+  }
+}

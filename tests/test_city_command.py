@@ -9,6 +9,7 @@ fail, a damaged install reports one diagnosable line rather than a traceback.
 from __future__ import annotations
 
 import builtins
+import subprocess
 import sys
 from pathlib import Path
 
@@ -36,8 +37,15 @@ class TestCityRegistration:
         assert "[city]" not in result.stdout
 
     def test_cli_imports_without_the_addon(self):
-        """The CLI's startup must not depend on tycoon_city being importable."""
-        assert "tycoon_city" not in sys.modules
+        """The CLI's startup must not depend on tycoon_city being importable.
+
+        Checked in a subprocess: in-process, pytest itself imports tycoon_city
+        while collecting the renderer's own suite, so `sys.modules` here says
+        nothing about what `import tycoon.cli` pulls in.
+        """
+        probe = "import sys, tycoon.cli; sys.exit(1 if 'tycoon_city' in sys.modules else 0)"
+        result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+        assert result.returncode == 0, "importing tycoon.cli pulled in tycoon_city"
 
     def test_city_module_does_not_import_tycoon_city_at_module_scope(self):
         source = Path(city.__file__).read_text()
