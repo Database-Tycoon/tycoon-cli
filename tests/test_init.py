@@ -131,6 +131,75 @@ class TestBlankScaffold:
         )
         assert result.returncode == 0
 
+    def _init_with_detected_inline_dbt(self, cli_runner, tmp_path, monkeypatch) -> Path:
+        """Run the real wizard in a repo that already has an inline dbt project
+        whose profiles.yml holds a password, and choose "Use detected project".
+
+        The project sits in its own subdirectory of `tmp_path`: the wizard also
+        scans siblings of the project root for dbt projects, and `tmp_path` is
+        shared with other tests.
+        """
+        import subprocess
+
+        proj = tmp_path / "proj"
+        dbt = proj / "dbt_project"
+        dbt.mkdir(parents=True)
+        (dbt / "dbt_project.yml").write_text("name: sn\nprofile: sn\nconfig-version: 2\n")
+        (dbt / "profiles.yml").write_text(
+            "sn:\n  target: dev\n  outputs:\n    dev:\n      type: snowflake\n"
+            "      account: acme\n      user: me\n      password: hunter2-real\n"
+        )
+        subprocess.run(["git", "init", "-q"], cwd=proj, check=True)
+        monkeypatch.chdir(proj)
+
+        # ingestion=skip, warehouse=local DuckDB, dbt=detected project, rill=skip
+        result = cli_runner.invoke(app, ["init", "--name", "sn"], input="3\n1\n1\n3\n")
+        assert result.exit_code == 0, f"init failed: {result.stdout}"
+        return proj
+
+    def test_gitignore_keeps_ignoring_a_detected_unmanaged_dbt_profile(self, cli_runner, tmp_path, monkeypatch):
+        """gh-259 review, blocking: the `!dbt_project/profiles.yml` negation
+        was written into every .gitignore, so a detected inline dbt project
+        that tycoon did not create, with real credentials in its
+        profiles.yml, would be committed by `git add -A`. The negation is
+        only safe for the profile tycoon itself wrote. Verified against real
+        git: `git add -A` must not stage the file."""
+        import subprocess
+
+        proj = self._init_with_detected_inline_dbt(cli_runner, tmp_path, monkeypatch)
+
+        stack = yaml.safe_load((proj / "tycoon.yml").read_text())["stack"]
+        assert stack["transformation_managed"] is False
+        assert "!dbt_project/profiles.yml" not in (proj / ".gitignore").read_text()
+
+        # Exit 0 means "ignored"; with -q a negated match would exit 1.
+        ignored = subprocess.run(["git", "check-ignore", "-q", "dbt_project/profiles.yml"], cwd=proj)
+        assert ignored.returncode == 0, "the detected profiles.yml is not ignored"
+
+        subprocess.run(["git", "add", "-A"], cwd=proj, check=True)
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"], cwd=proj, capture_output=True, text=True, check=True
+        ).stdout.split()
+        assert "dbt_project/profiles.yml" not in staged
+        assert "tycoon.yml" in staged  # the add really ran
+
+    def test_gitignore_negation_only_covers_the_default_inline_location(self, tmp_path, monkeypatch):
+        """Counterpart to the detected case: even a dbt project tycoon does
+        scaffold stays ignored when it lands somewhere other than
+        `dbt_project/`, because the negation names that one path only."""
+        from tycoon.project import StackConfig, TransformationTool
+
+        monkeypatch.chdir(tmp_path)
+        elsewhere = tmp_path / "analytics"
+        scaffold_blank_project(
+            tmp_path,
+            "test-project",
+            stack=StackConfig(transformation=TransformationTool.dbt, transformation_managed=True),
+            existing_dbt_path=str(elsewhere),
+        )
+        assert (elsewhere / "profiles.yml").exists()
+        assert "!dbt_project/profiles.yml" not in (tmp_path / ".gitignore").read_text()
+
     def test_scaffolded_yml_loads_with_load_project(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         scaffold_blank_project(tmp_path, "test-project")
@@ -596,7 +665,7 @@ class TestPromptRill:
         """gh-259 review should-fix: `_prompt_rill`'s clone default changed
         from inline (`target/rill`) to sibling (via the shared
         `_prompt_register_project`, same as dbt) when this PR moved
-        "create new" inline — a real behavior change for Rill that the PR
+        "create new" inline, a real behavior change for Rill that the PR
         didn't name and nothing pinned. Justified (a cloned URL brings its
         own `.git`, same nested-repo concern `_prompt_register_project`
         documents for dbt), but needs a test."""
@@ -646,12 +715,45 @@ class TestPromptRegisterProjectContainment:
         result = _prompt_register_project("dbt", target, "myproj")
 
         assert result is None
-        out = " ".join(capsys.readouterr().out.split())
-        assert "outside the project's parent" in out
+        # Rich hard-wraps long tmp_path-based paths mid-word, so drop all
+        # whitespace from both sides before matching a message with a path in it.
+        out = "".join(capsys.readouterr().out.split())
+        assert "".join(f"outside the project's parent directory {tmp_path}".split()) in out
         # Wizard-specific remediation (gh-259 review): the shared function's
-        # message only states the fact, this caller appends what to do.
-        assert "Enter a path under that directory" in out
-        assert "treating this component as skipped" in out.lower()
+        # message only states the fact, this caller appends what to do. The
+        # wizard never re-prompts, so it must not tell the user to "enter a
+        # path", and no tycoon.yml exists yet to "point" anywhere.
+        assert "Treatingthiscomponentasskipped" in out
+        assert "".join(f"Move the project under {tmp_path}".split()) in out
+        assert "`tycoonregisterdbt`" in out
+        for runtime_only in ("Enterapath", "pointtycoon.yml", "sharedtycoon.yml", "securityboundary"):
+            assert runtime_only not in out
+
+    def test_local_path_rejection_at_top_level_root_names_the_project_directory(self, tmp_path, monkeypatch, capsys):
+        """gh-259 review: for an `/app`-style root the boundary is the project
+        itself, but the rejection used to call it "the project's parent
+        directory /Users"-style, pointing the user at the wrong place. The
+        wizard line must name the project directory instead."""
+        import tycoon.commands.init as init_mod
+        from tycoon.commands.init import _prompt_register_project
+
+        target = tmp_path / "app"
+        target.mkdir()
+        outside = tmp_path / "elsewhere"
+        # Simulate a top-level root: containment_boundary returns the root itself.
+        monkeypatch.setattr(init_mod, "containment_boundary", lambda root: root.resolve())
+        monkeypatch.setattr("tycoon.config.containment_boundary", lambda root: root.resolve())
+
+        prompts = iter([str(outside)])
+        monkeypatch.setattr("typer.prompt", lambda *a, **k: next(prompts))
+
+        result = _prompt_register_project("dbt", target, "myproj")
+
+        assert result is None
+        out = "".join(capsys.readouterr().out.split())
+        assert "".join(f"outside the project directory {target.resolve()}".split()) in out
+        assert "parentdirectory" not in out
+        assert "".join(f"Move the project under {target.resolve()}".split()) in out
 
     def test_clone_destination_defaults_beside_the_project_not_inside_it(self, tmp_path, monkeypatch):
         """A cloned URL brings its own .git; defaulting inside `target` would

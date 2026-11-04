@@ -85,11 +85,7 @@ _GITIGNORE_CONTENT = """\
 .env
 .dlt/secrets.toml
 **/profiles.yml
-# ...except the one tycoon itself writes for the managed inline dbt project
-# (gh-259 review): it holds relative DuckDB paths only, no secrets, and a
-# fresh clone needs it to run `tycoon data transform` at all. A profiles.yml
-# anywhere else (a registered, non-inline dbt project) stays ignored.
-!dbt_project/profiles.yml
+_DBT_PROFILE_EXCEPTION_SLOT
 
 # Tycoon
 data/*.duckdb
@@ -114,6 +110,17 @@ dbt_project/logs/
 
 # OS
 .DS_Store
+"""
+
+# Written into .gitignore only when tycoon itself scaffolded the inline
+# dbt project: its profiles.yml holds relative DuckDB paths and no secrets,
+# and a fresh clone needs it to run `tycoon data transform` at all. A dbt
+# project tycoon did not create (detected or registered) may hold real
+# credentials in its profiles.yml, so that file stays ignored (gh-259).
+_GITIGNORE_DBT_PROFILE_EXCEPTION = """\
+# ...except the profiles.yml tycoon wrote for the dbt project it scaffolded
+# here: relative DuckDB paths only, no secrets, and a fresh clone needs it.
+!dbt_project/profiles.yml
 """
 
 
@@ -206,6 +213,9 @@ def scaffold_blank_project(
     info("Created data/")
 
     # ---- dbt scaffold (if active, managed, and project doesn't already exist) ----
+    # Only a profiles.yml tycoon wrote itself, at the default inline location,
+    # is safe to leave trackable; see _write_gitignore.
+    scaffolded_inline_dbt = False
     if transformation == TransformationTool.dbt:
         dbt_abs = Path(existing_dbt_path).resolve() if existing_dbt_path else (target / "dbt_project")
         dbt_already_exists = dbt_abs.exists() and (dbt_abs / "dbt_project.yml").exists()
@@ -221,6 +231,7 @@ def scaffold_blank_project(
                 raw_db_path=raw_db_path,
                 target=target,
             )
+            scaffolded_inline_dbt = dbt_abs == (target / "dbt_project").resolve()
 
     # ---- Rill scaffold (if active and managed) ----
     if bi == BITool.rill:
@@ -232,7 +243,7 @@ def scaffold_blank_project(
             scaffold_rill_dir(rill_abs)
 
     # ---- .gitignore ----
-    _write_gitignore(target)
+    _write_gitignore(target, track_dbt_profile=scaffolded_inline_dbt)
 
 
 def _scaffold_dbt_project(
@@ -637,13 +648,19 @@ def scaffold_from_template(
 # ---------------------------------------------------------------------------
 
 
-def _write_gitignore(target: Path) -> None:
-    """Write ``.gitignore`` if it does not already exist."""
+def _write_gitignore(target: Path, *, track_dbt_profile: bool = False) -> None:
+    """Write ``.gitignore`` if it does not already exist.
+
+    ``track_dbt_profile`` un-ignores ``dbt_project/profiles.yml``. Pass it
+    only when tycoon itself scaffolded that dbt project; any other
+    ``profiles.yml`` may hold credentials and stays ignored.
+    """
     gitignore = target / ".gitignore"
     if gitignore.exists():
         warn(".gitignore already exists, skipping")
     else:
-        gitignore.write_text(_GITIGNORE_CONTENT)
+        exception = _GITIGNORE_DBT_PROFILE_EXCEPTION if track_dbt_profile else ""
+        gitignore.write_text(_GITIGNORE_CONTENT.replace("_DBT_PROFILE_EXCEPTION_SLOT\n", exception))
         info("Created .gitignore")
 
 

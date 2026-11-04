@@ -79,23 +79,26 @@ def resolve_contained_path(value: str, root: Path, field: str) -> Path:
     path it accepts can still only fail later, the first time something
     reads tycoon.yml.
 
-    The raised message states the fact (what's outside, and the boundary)
-    without prescribing a fix: `field` identifies which caller raised this,
-    not what the fix looks like, and "point tycoon.yml at ..." only makes
-    sense once a tycoon.yml exists to point. Callers append their own
-    remediation (see `TycoonConfig._resolve_contained_path` and the wizard's
+    The raised message states only the fact (what is outside, and the
+    boundary). `field` names the caller's input; it does not say what the
+    fix is, and the fix differs by caller: a tycoon.yml can be edited, a
+    wizard answer cannot. Callers append their own remediation (see
+    `TycoonConfig._resolve_contained_path` and the wizard's
     `_prompt_register_project`).
+
+    The boundary exists so a shared tycoon.yml cannot be used to reach
+    unrelated locations on the machine; that rationale lives here, not in
+    the message, because the wizard's user typed the path themselves.
     """
     p = Path(value)
     resolved = p.resolve() if p.is_absolute() else (root / p).resolve()
     boundary = containment_boundary(root)
     if not resolved.is_relative_to(boundary):
-        raise ValueError(
-            f"{field} ({value!r}) resolves to {resolved}, outside the project's parent directory {boundary}. "
-            "tycoon keeps dbt/Rill project paths inside the tycoon project or its parent directory as a "
-            "security boundary, so a shared tycoon.yml can't be used to reach unrelated locations on your "
-            "machine."
-        )
+        # For a top-level root (/app, /workspace) the boundary is the project
+        # directory itself, not its parent; naming it "parent" would point the
+        # reader at the project they are already in.
+        label = "the project directory" if boundary == root.resolve() else "the project's parent directory"
+        raise ValueError(f"{field} ({value!r}) resolves to {resolved}, outside {label} {boundary}.")
     return resolved
 
 
@@ -226,7 +229,11 @@ class TycoonConfig:
         try:
             return resolve_contained_path(value, self.root, f"tycoon.yml {field}")
         except ValueError as exc:
-            raise ValueError(f"{exc} Move the project there, or point tycoon.yml at a path within it.") from exc
+            raise ValueError(
+                f"{exc} tycoon keeps these paths inside the project or its parent directory as a security "
+                "boundary, so a shared tycoon.yml can't be used to reach unrelated locations on your machine. "
+                "Move the project there, or point tycoon.yml at a path within it."
+            ) from exc
 
     # -- Sources --
 

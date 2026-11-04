@@ -42,7 +42,7 @@ class TestTycoonConfig:
 
     def test_resolve_contained_path_appends_runtime_remediation(self, tmp_path: Path):
         """A tycoon.yml already exists at runtime, so "point tycoon.yml at a
-        path within it" is a real, actionable fix here — unlike at wizard
+        path within it" is a real, actionable fix here, unlike at wizard
         prompt time, before one is written (gh-259 review)."""
         cfg = TycoonConfig(project_root=tmp_path / "codespace" / "proj")
         cfg.root.mkdir(parents=True)
@@ -130,7 +130,7 @@ class TestResolveContainedPath:
 
     The inline/sibling/traversal acceptance-and-rejection cases are covered
     by `TestPathContainment` in test_project_validation.py, which reaches
-    this same function through `TycoonConfig`'s one-line passthrough — kept
+    this same function through `TycoonConfig`'s one-line passthrough. Kept
     here are only the cases unique to this level: the message's own wording
     (gh-259 review, to avoid two files needing an update if the boundary
     rule's cases change)."""
@@ -148,7 +148,7 @@ class TestResolveContainedPath:
         rejected, stating the fact without prescribing a fix: `field` is a
         label for which caller raised this, not a remediation seam, and
         "point tycoon.yml at ..." only makes sense once one exists to point
-        (gh-259 review). Callers append their own remediation — see
+        (gh-259 review). Callers append their own remediation; see
         TycoonConfig._resolve_contained_path's test for the runtime one."""
         root = tmp_path / "codespace" / "experiments"
         root.mkdir(parents=True)
@@ -159,10 +159,29 @@ class TestResolveContainedPath:
             resolve_contained_path(str(unrelated), root, "dbt project path")
 
         message = str(exc_info.value)
-        assert "security boundary" in message
-        assert str(root.parent) in message
-        assert "Move the project" not in message
-        assert "point tycoon.yml" not in message
+        assert f"outside the project's parent directory {root.parent}" in message
+        # None of the runtime story belongs at this level: the wizard reaches
+        # this message before any tycoon.yml exists, for a path the user just
+        # typed (gh-259 review).
+        for runtime_only in ("tycoon.yml", "shared", "security boundary", "Move the project"):
+            assert runtime_only not in message
+
+    def test_top_level_root_names_the_project_directory_not_its_parent(self, tmp_path: Path, monkeypatch):
+        """For a root like `/app`, containment_boundary falls back to the
+        root itself, so the label must not call it "parent directory": that
+        directory is the project, not its parent (gh-259 review). Simulated
+        by pointing the boundary at the root, which is exactly what the
+        helper returns for a real top-level root."""
+        root = tmp_path / "app"
+        root.mkdir()
+        monkeypatch.setattr("tycoon.config.containment_boundary", lambda r: r.resolve())
+
+        with pytest.raises(ValueError) as exc_info:
+            resolve_contained_path(str(tmp_path / "elsewhere"), root, "dbt project path")
+
+        message = str(exc_info.value)
+        assert f"outside the project directory {root.resolve()}" in message
+        assert "parent directory" not in message
 
 
 class TestWarehouseTarget:
