@@ -2,6 +2,10 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Changed
+
+- **`tycoon init` scaffolds a new dbt project inline, not as a sibling repo** ([#259][], PR [#260][]). "Create new" in the dbt wizard step now defaults to `<project>/dbt_project` instead of `../<project>-dbt`, matching the Rill step's existing inline default and the `dbt_project_dir` schema default, so a fresh `tycoon init` produces one folder, one `git init`, instead of two repos that have to be cloned and tracked separately. Registering an *existing* dbt project (local path or GitHub URL) is unaffected and still accepts a sibling location; a cloned URL still defaults beside the project rather than inside it, since cloning brings its own `.git`. The project's parent-directory boundary (#65) is now enforced the moment a path is entered in the wizard, not only the first time a command reads it from `tycoon.yml`. When tycoon itself scaffolds the inline project, the generated `.gitignore` no longer ignores its `dbt_project/profiles.yml` (it holds relative DuckDB paths only, no secrets), so a fresh clone can run `tycoon data transform` without regenerating it by hand. A dbt project tycoon did not create, such as one the wizard detected, keeps its `profiles.yml` ignored, since it may hold credentials.
+
 ### Fixed
 
 - **City labels no longer draw on top of each other** ([#385][]). District and civic chips were placed independently, so on a real catalog `main_semantic` and `main_intermediate` merged into one unreadable line and the library and firehouse chips stacked on one spot. A colliding chip now moves up or down by a chip height or two; larger districts keep their spot, and a civic chip that still has no room is hidden until the view changes.
@@ -11,6 +15,8 @@ All notable changes to this project will be documented in this file. The format 
 - **`data history` no longer marks a successful dbt build as failed** ([#341][]). dbt 1.10 and later report exposures and saved queries as `no-op`, and tycoon counted every status outside a fixed list of good ones as an error, so a clean build that touched an exposure showed `✗`. tycoon now counts only dbt's failure statuses (`error`, `fail`, `runtime error`, `partial success`), so a status dbt adds later doesn't turn into a false failure. `dbt_runs.success` in `.tycoon/metadata.duckdb` was NULL on every row, because tycoon read a top-level `success` key that `run_results.json` doesn't have. It now comes from dbt's exit code, or from the node statuses when the exit code isn't known.
 - **Failed dbt runs show up in `data history`** ([#377][]). A run that failed before dbt wrote `run_results.json`, such as an unknown target or a DuckDB file locked by another run, was never recorded, so the history only listed successes. `tycoon data transform` now records it as failed, and `data history show` gives dbt's exit code and a one-line error summary: the first failed node's message, or dbt's own error text when no node ran. dbt's output still prints as it runs; tycoon keeps its last lines for the summary. A run whose selector matched nothing, which dbt treats as a success, is now flagged with `!` and "nothing ran" instead of a green tick.
 
+[#259]: https://github.com/Database-Tycoon/tycoon-cli/issues/259
+[#260]: https://github.com/Database-Tycoon/tycoon-cli/pull/260
 [#341]: https://github.com/Database-Tycoon/tycoon-cli/issues/341
 [#377]: https://github.com/Database-Tycoon/tycoon-cli/issues/377
 [#385]: https://github.com/Database-Tycoon/tycoon-cli/issues/385
