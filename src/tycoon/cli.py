@@ -81,6 +81,7 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def _root(
+    ctx: typer.Context,
     version: bool = typer.Option(
         False,
         "--version",
@@ -90,7 +91,10 @@ def _root(
         is_eager=True,
     ),
 ) -> None:
-    pass
+    if ctx.invoked_subcommand not in (None, "doctor", "init", "setup"):
+        from tycoon.config import config
+
+        config.ensure_valid()
 
 
 from tycoon.commands import data, profiles, register, semantics

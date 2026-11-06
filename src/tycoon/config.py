@@ -68,7 +68,40 @@ class TycoonConfig:
 
     def __init__(self, project_root: Path | None = None) -> None:
         self.root = project_root or _find_project_root()
-        self._project: TycoonProject | None = load_project(self.root)
+        self._load_error: Exception | None = None
+        self._project: TycoonProject | None = None
+        try:
+            self._project = load_project(self.root)
+        except Exception as e:
+            self._load_error = e
+
+    @property
+    def load_error(self) -> Exception | None:
+        return self._load_error
+
+    def format_load_error(self) -> str:
+        """Format the load or validation error for console display."""
+        if not self._load_error:
+            return ""
+        from pydantic import ValidationError
+
+        if isinstance(self._load_error, ValidationError):
+            lines = []
+            for err in self._load_error.errors():
+                loc = ".".join(str(p) for p in err.get("loc", []))
+                msg = err.get("msg", "")
+                if loc:
+                    lines.append(f"  {loc}: {msg}")
+                else:
+                    lines.append(f"  {msg}")
+            return "\n".join(lines)
+        return str(self._load_error).strip()
+
+    def ensure_valid(self) -> None:
+        """If tycoon.yml failed to load or validate, print error and exit 1."""
+        if self._load_error is not None:
+            _error_console(f"Invalid {PROJECT_FILENAME}:\n{self.format_load_error()}")
+            raise SystemExit(1)
 
     # -- Project access --
 
@@ -82,7 +115,12 @@ class TycoonConfig:
 
     def reload(self) -> None:
         """Re-read tycoon.yml from disk."""
-        self._project = load_project(self.root)
+        self._load_error = None
+        self._project = None
+        try:
+            self._project = load_project(self.root)
+        except Exception as e:
+            self._load_error = e
 
     # -- Paths --
 
@@ -209,6 +247,7 @@ def load_config() -> TycoonConfig:
     Emits a console warning when tycoon.yml is at an older schema version.
     """
     cfg = TycoonConfig(project_root=_find_project_root())
+    cfg.ensure_valid()
     if cfg.project is not None:
         sv = cfg.project.schema_version
         if sv is not None and sv > SCHEMA_VERSION:
