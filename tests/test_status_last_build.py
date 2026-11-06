@@ -99,7 +99,8 @@ class TestLayerLastBuild:
         _write_run_results(status_project.dbt_project_dir, ["model.p.stg_orders"], started)
         meta = metadata_db_path(status_project.root)
         capture_dbt(meta, status_project.dbt_project_dir)
-        with duckdb.connect(str(meta), read_only=True) as con:
+        with duckdb.connect(str(meta)) as con:
+            con.execute("UPDATE dbt_runs SET success = NULL")
             assert con.execute("SELECT count(*), count(success) FROM dbt_runs").fetchone() == (1, 0)
 
         assert _query_layer_last_build(meta, ["model.p.stg_orders"]) is not None
