@@ -42,6 +42,7 @@ Each phase is one two-week release cycle and each task is one pull request withi
 | #309 | `data query` refuses DDL and DML against MotherDuck unless asked |
 | #430 | Raw ingestion builds `dlt.destinations.motherduck` for an `md:` raw database |
 | #298 | OSI scaffolding reads a MotherDuck warehouse (already planned for v0.2.4; it joins Phase 1 if it slips) |
+| #437 | A manual job in `.github/workflows/e2e.yml` that runs the `e2e`-marked MotherDuck tests against scratch databases, so #430 and every MotherDuck PR after it can be checked against a real catalog. Split out of #431 |
 
 #308 goes first because the other three want the helper; without it, `build_destination()` in Phase 1 would hardcode `md:` one more time. The four Phase 0 PRs are stacked in that order with `gh stack`, branched from the v0.2.4 release branch once it opens.
 
@@ -70,7 +71,7 @@ Where the catalog name lives for the metadata backend (`metadata.path` holding t
 | Issue | Change |
 |---|---|
 | #128 | MotherDuck dbt profiles stop ATTACHing `tycoon_meta`; a fresh MotherDuck scaffold from `tycoon init` writes `metadata.backend: motherduck`. Projects retrofitted with `register warehouse` are untouched |
-| #431 | A recipe page for the local-to-MotherDuck path, and a manual job in `.github/workflows/e2e.yml` that runs the token-gated tests against a dedicated test database |
+| #431 | A recipe page for the local-to-MotherDuck path. The token-gated e2e job moved to Phase 0 as #437 |
 
 Phase 3 depends on the legacy capture path having been retired, which no open issue currently covers (see the Phase 0 note above). If that work slips or stays unowned, #128's profile change can still ship and the `metadata.backend` default waits.
 
