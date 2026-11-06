@@ -20,6 +20,7 @@ Arguments:
 
 Options:
   --db PATH         Override which DuckDB to query. Default: warehouse
+  --allow-writes    On MotherDuck, run statements other than read-only queries
   --source NAME     Query a source's raw schema (resolves to data/raw_<name>.duckdb
                     or main raw.duckdb's raw_<name> schema)
   -h, --help        Show this message and exit
@@ -55,7 +56,10 @@ When a [Quack](../start.md#quack-the-live-multi-client-warehouse-v019) server is
 ### Limitations
 
 - **DuckDB / MotherDuck only.** Snowflake / BigQuery / Redshift warehouses can be registered, but `query` doesn't dispatch to them yet. Carried forward as a known limitation.
-- **Read-only by default.** The command opens the file with `read_only=True`. Use `tycoon run duckdb ...` for ad-hoc writes.
+- **Read-only by default.** A local file is opened with `read_only=True`. Use `tycoon run duckdb ...` for ad-hoc writes.
+- **MotherDuck needs `--allow-writes` to write.** DuckDB cannot open an `md:` database read-only, so tycoon checks each statement first and runs only SELECT, WITH, `FROM tbl`-first queries, `TABLE tbl`, VALUES, set operations, DESCRIBE, SHOW, SUMMARIZE, PIVOT, UNPIVOT and EXPLAIN of those. Anything else, a statement tycoon cannot parse (including a query nested too deeply, or a schema-qualified `TABLE s.t`; write `SELECT * FROM s.t`), or any statement in a multi-statement input exits 1 before connecting, with `Refusing to run DROP against MotherDuck (md:x)` and the flag to pass.
+- **The MotherDuck check is not a permission boundary.** It reads statement types only and does not inspect function calls inside a SELECT, so `SELECT nextval('s')` advances a sequence, `read_csv` reads a path or URL, and `FROM checkpoint()` runs, all without `--allow-writes`. It guards against accidental statements. Scope your token if you need more than that.
+- **A SQL comment cannot start the argument.** `tycoon data query "-- note\nSELECT 1"` is read as an option; put `--` before it: `tycoon data query -- "-- note\nSELECT 1"`.
 
 ## `schema` — dump tables, row counts, sizes
 
