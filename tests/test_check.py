@@ -275,7 +275,8 @@ class TestProjectVenvCheck:
             venv.write_text("")
         elif shape == "dangling_symlink":
             venv = self._real_venv_without_tycoon(tmp_path)
-            python = venv / "bin" / "python"
+            scripts_python = venv / "Scripts" / "python.exe"
+            python = scripts_python if scripts_python.exists() else venv / "bin" / "python"
             python.unlink()
             python.symlink_to(tmp_path / "deleted-interpreter")
         else:
