@@ -268,6 +268,58 @@ class TestImportTimeSafety:
             f"schema_version: 99 in cwd\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
         )
 
+    # gh-378: Invalid tycoon.yml (malformed YAML or schema validation error)
+    # must not crash the CLI at import time with a traceback. --help, --version,
+    # and doctor must remain usable; commands needing config fail cleanly (rc 1, no traceback).
+    @pytest.mark.parametrize(
+        "yml,args,expected_rc,expect_in_output",
+        [
+            ("name: [unclosed\n", ["--help"], 0, None),
+            ("name: [unclosed\n", ["--version"], 0, None),
+            ("name: bad\nstack:\n  warehouse: snowflakey\n", ["--help"], 0, None),
+            ("name: bad\nstack:\n  warehouse: snowflakey\n", ["--version"], 0, None),
+            ("name: bad\nstack:\n  warehouse: snowflakey\n", ["doctor"], 0, "failed validation"),
+            ("name: bad\nstack:\n  warehouse: snowflakey\n", ["data", "query", "SELECT 1"], 1, "stack.warehouse"),
+        ],
+        ids=[
+            "help-on-unclosed-yaml",
+            "version-on-unclosed-yaml",
+            "help-on-schema-error",
+            "version-on-schema-error",
+            "doctor-diagnoses-schema-error",
+            "data-query-fails-cleanly-on-schema-error",
+        ],
+    )
+    def test_cli_survives_invalid_tycoon_yml(
+        self, tmp_path: Path, yml: str, args: list[str], expected_rc: int, expect_in_output: str | None
+    ):
+        (tmp_path / "tycoon.yml").write_text(yml)
+        binary = shutil.which("tycoon")
+        if not binary:
+            pytest.skip(
+                "`tycoon` binary not on PATH. Run via `uv run pytest` so the "
+                "venv's bin dir is active (or `pip install -e .` first)."
+            )
+        result = subprocess.run(
+            [binary, *args],
+            cwd=tmp_path,
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        combined = result.stdout + result.stderr
+        assert "Traceback" not in combined, (
+            f"`tycoon {' '.join(args)}` tracebacked with invalid tycoon.yml in cwd:\n{combined}"
+        )
+        assert result.returncode == expected_rc, (
+            f"`tycoon {' '.join(args)}` exited {result.returncode} (expected {expected_rc})\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
+        if expect_in_output:
+            assert expect_in_output in combined, f"Expected substring {expect_in_output!r} in output:\n{combined}"
+
 
 # -- 5. Smoke-check that `tycoon --version` returns the published version
 #       (catches `__init__.py` and `pyproject.toml` drift). Belt-and-

@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Fixed
 
+- **An invalid `tycoon.yml` no longer crashes commands at import time with a traceback** ([#378][]). If `tycoon.yml` contained invalid YAML or failed schema validation, building the configuration singleton at module scope crashed `tycoon` before argument parsing, bricking `--help`, `--version`, and `tycoon doctor`. `TycoonConfig` now captures the load error at import time rather than raising; `--help`, `--version`, and `tycoon init` remain accessible, `tycoon doctor` reports the validation error cleanly in its diagnostic checks, and pipeline commands exit 1 with a formatted error and no traceback.
+
 - **`tycoon data run-all` runs tycoon's own dbt, not whichever is first on `PATH`** ([#439][]). `data transform` already preferred the dbt installed next to the Python running tycoon; `run-all` looked it up on `PATH` instead. A global dbt Fusion on `PATH` rewrote the warehouse file in a storage format the project's dbt-duckdb could not read, and a `uv tool install` with no dbt on `PATH` ingested and then failed with "`dbt` not found on PATH". `run-all` now resolves dbt the same way `data transform` does.
 - **`tycoon data run-all` records its dbt build in run history** ([#326][]). After `run-all`, `.tycoon/metadata.duckdb` had no `dbt_runs` or `dbt_nodes` rows, so a project that only used `run-all` showed no dbt history and the city had no build traffic or test signal for it. Its dbt step now records the build the same way `transform build` does.
 - **`tycoon data status` shows when each dbt layer was last built** ([#390][]). The staging, intermediate and marts panels always said "last build never", even when `tycoon data history` listed successful builds of those models. Status looked models up by bare name, but the run ledger stores each node under its dbt `unique_id` (`model.<project>.<name>`), so nothing ever matched. It now matches on `unique_id`. The ledger also stores build start times as local wall-clock time and status read them as UTC, which would have made a build two hours old in New York show as "6h ago"; status now reads them in local time. Ledgers written by earlier versions need no migration: their builds show up on the next `data status`.
@@ -31,6 +33,7 @@ All notable changes to this project will be documented in this file. The format 
 [#387]: https://github.com/Database-Tycoon/tycoon-cli/issues/387
 [#390]: https://github.com/Database-Tycoon/tycoon-cli/issues/390
 [#439]: https://github.com/Database-Tycoon/tycoon-cli/issues/439
+[#378]: https://github.com/Database-Tycoon/tycoon-cli/issues/378
 [#326]: https://github.com/Database-Tycoon/tycoon-cli/issues/326
 
 ## [0.2.3] - 2026-10-24

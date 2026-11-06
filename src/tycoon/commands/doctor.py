@@ -139,7 +139,9 @@ def _fix_python_env() -> None:
 
 def _check_tycoon_yml():
     """Check if tycoon.yml exists."""
-    if config.has_project_file:
+    if config.load_error:
+        error(f"`tycoon.yml` failed validation:\n{config.format_load_error()}")
+    elif config.has_project_file:
         success("`tycoon.yml` found.")
     else:
         error("`tycoon.yml` not found. Run `tycoon init` to create a new project.")
