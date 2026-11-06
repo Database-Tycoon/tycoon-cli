@@ -559,7 +559,8 @@ def _capture_and_refresh_safe(
         from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
 
         meta = metadata_db_path(config.root)
-        capture_dlt_safe(meta, raw_db_path)
+        if not is_motherduck(str(raw_db_path)):
+            capture_dlt_safe(meta, raw_db_path)
         pipeline_name = getattr(pipeline, "pipeline_name", None) if pipeline else None
         capture_dlt_trace_safe(meta, pipeline_name)
         refresh_usage_dashboards(project_root=config.root, rill_dir=config.rill_dir)
@@ -773,7 +774,7 @@ def run_source(
 
         load_info = pipeline.run(dlt_source)
         load_info.raise_on_failed_jobs()
-        if legacy_rename:
+        if legacy_rename and not is_motherduck(raw_target):
             _warn_if_legacy_filesystem_table_exists(raw_db_path, source_config.schema_name, name)
         _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
         _complete_run(
