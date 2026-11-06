@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Fixed
 
+- **`tycoon doctor` no longer calls a working `.venv` without tycoon "empty or broken"** ([#392][]). A project whose `.venv` was healthy, but with tycoon installed as a separate uv tool, got told to run `tycoon setup --force`, which re-resolves every dependency and in one project downgraded duckdb and dbt-core. Doctor now checks whether the `.venv` can run Python. If it can, doctor says the project is on the shared/tool model, which still works, and suggests `uv add database-tycoon` (or `uv pip install --python .venv database-tycoon` without a `pyproject.toml`), noting that tycoon's exact pins will apply. The rebuild advice is kept for a `.venv` that is empty, a plain file, or missing its interpreter.
 - **`tycoon data status` shows when each dbt layer was last built** ([#390][]). The staging, intermediate and marts panels always said "last build never", even when `tycoon data history` listed successful builds of those models. Status looked models up by bare name, but the run ledger stores each node under its dbt `unique_id` (`model.<project>.<name>`), so nothing ever matched. It now matches on `unique_id`. The ledger also stores build start times as local wall-clock time and status read them as UTC, which would have made a build two hours old in New York show as "6h ago"; status now reads them in local time. Ledgers written by earlier versions need no migration: their builds show up on the next `data status`.
 - **City labels no longer draw on top of each other** ([#385][]). District and civic chips were placed independently, so on a real catalog `main_semantic` and `main_intermediate` merged into one unreadable line and the library and firehouse chips stacked on one spot. A colliding chip now moves up or down by a chip height or two; larger districts keep their spot, and a civic chip that still has no room is hidden until the view changes.
 
@@ -26,6 +27,7 @@ All notable changes to this project will be documented in this file. The format 
 [#385]: https://github.com/Database-Tycoon/tycoon-cli/issues/385
 [#387]: https://github.com/Database-Tycoon/tycoon-cli/issues/387
 [#390]: https://github.com/Database-Tycoon/tycoon-cli/issues/390
+[#392]: https://github.com/Database-Tycoon/tycoon-cli/issues/392
 
 ## [0.2.3] - 2026-10-24
 
