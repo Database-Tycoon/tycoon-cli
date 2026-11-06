@@ -14,6 +14,8 @@ _COMMAND_ORDER = [
     "profiles",
     "semantics",
     "data",
+    "fire",
+    "firehouse",
     "start",
     "stop",
     "city",
@@ -31,6 +33,8 @@ _SECTIONS = {
     "profiles": "Project",
     "semantics": "Project",
     "data": "Data Pipeline",
+    "fire": "Fire & Response",
+    "firehouse": "Fire & Response",
     "start": "Services",
     "stop": "Services",
     "city": "Services",
@@ -97,6 +101,8 @@ from tycoon.commands import data, profiles, register, semantics
 from tycoon.commands import docs as docs_cmd_mod
 from tycoon.commands.city import city_cmd
 from tycoon.commands.doctor import doctor_cmd
+from tycoon.commands.fire import fire as fire_cmd
+from tycoon.commands.fire import firehouse as firehouse_cmd
 from tycoon.commands.init import init_cmd
 from tycoon.commands.notify import notify_cmd
 from tycoon.commands.run import run_cmd
@@ -112,6 +118,8 @@ app.add_typer(profiles.app, name="profiles")
 app.add_typer(semantics.app, name="semantics")
 app.add_typer(data.app, name="data")
 app.add_typer(docs_cmd_mod.app, name="docs")
+app.command(name="fire")(fire_cmd)
+app.command(name="firehouse")(firehouse_cmd)
 app.command(name="start")(start_cmd)
 app.command(name="stop")(stop_cmd)
 app.command(name="city")(city_cmd)
