@@ -2,6 +2,8 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-11-07
+
 ### Fixed
 
 - **`tycoon data run-all` runs tycoon's own dbt, not whichever is first on `PATH`** ([#439][]). `data transform` already preferred the dbt installed next to the Python running tycoon; `run-all` looked it up on `PATH` instead. A global dbt Fusion on `PATH` rewrote the warehouse file in a storage format the project's dbt-duckdb could not read, and a `uv tool install` with no dbt on `PATH` ingested and then failed with "`dbt` not found on PATH". `run-all` now resolves dbt the same way `data transform` does.
