@@ -147,6 +147,39 @@ class TestHelpSurface:
                 f"substring {needle!r} ({reason}):\n{result.stdout}"
             )
 
+    @pytest.mark.parametrize(
+        "path",
+        _KEY_HELP_PATHS + [("setup",), ("data", "sources", "add"), ("data", "clean")],
+        ids=lambda p: " ".join(p) or "tycoon",
+    )
+    def test_help_has_no_rst_double_backticks(self, path: tuple[str, ...], cli_runner):
+        result = cli_runner.invoke(app, list(path) + ["--help"])
+        assert "``" not in result.stdout, (
+            f"`tycoon {' '.join(path)} --help` output contains literal RST double backticks:\n{result.stdout}"
+        )
+
+    def test_registered_command_helps_have_no_rst_double_backticks(self):
+        import typer
+
+        click_app = typer.main.get_command(app)
+
+        def walk(cmd, prefix):
+            ctx = typer._click.Context(cmd)
+            assert not (cmd.help and "``" in cmd.help), (
+                f"{prefix} help contains literal RST double backticks: {cmd.help}"
+            )
+            for p in getattr(cmd, "params", []):
+                assert not (getattr(p, "help", None) and "``" in p.help), (
+                    f"{prefix} param {p.name} contains literal RST double backticks: {p.help}"
+                )
+            if hasattr(cmd, "list_commands"):
+                for sub_name in cmd.list_commands(ctx):
+                    sub_cmd = cmd.get_command(ctx, sub_name)
+                    if sub_cmd:
+                        walk(sub_cmd, f"{prefix} {sub_name}")
+
+        walk(click_app, "tycoon")
+
 
 # -- 3. Rich-markup pitfall: extras names must render literally ----------
 #

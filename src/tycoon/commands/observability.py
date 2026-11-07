@@ -41,12 +41,12 @@ def observability_scaffold(
 ) -> None:
     """Generate dbt staging models for tycoon's observability metadata.
 
-    Creates ``dbt_project/models/_tycoon/`` with one ``stg_tycoon__*.sql``
-    view per metadata table, a ``dim_runs.sql`` mart unifying dlt + dbt
-    timelines, and a ``_tycoon__schema.yml`` documenting every model.
+    Creates `dbt_project/models/_tycoon/` with one `stg_tycoon__*.sql`
+    view per metadata table, a `dim_runs.sql` mart unifying dlt + dbt
+    timelines, and a `_tycoon__schema.yml` documenting every model.
 
-    Also adds a ``tycoon_meta`` ATTACH entry to every duckdb output in
-    the project's ``profiles.yml`` so the staging models can SELECT from
+    Also adds a `tycoon_meta` ATTACH entry to every duckdb output in
+    the project's `profiles.yml` so the staging models can SELECT from
     the metadata DB without copying data.
 
     Idempotent — re-running overwrites the staging files but leaves the

@@ -221,11 +221,11 @@ def register_dbt(
         ),
     ] = False,
 ) -> None:
-    """Attach an existing dbt project — or bootstrap a new one with ``--create``.
+    """Attach an existing dbt project — or bootstrap a new one with `--create`.
 
     The three profile-related flags mirror dbt's own CLI options. Any value
-    you pass is also persisted in tycoon.yml under ``dbt_profiles_dir`` /
-    ``dbt_profile`` / ``dbt_target`` so subsequent ``tycoon data transform``
+    you pass is also persisted in tycoon.yml under `dbt_profiles_dir` /
+    `dbt_profile` / `dbt_target` so subsequent `tycoon data transform`
     runs use them automatically.
     """
     header("Register dbt project")
@@ -485,9 +485,9 @@ def register_warehouse(
 ) -> None:
     """Attach or switch the warehouse (local DuckDB or MotherDuck) in tycoon.yml.
 
-    Fully scriptable when ``--type`` plus the type-specific value (``--path``
-    or ``--catalog``) is set; otherwise drops to interactive prompts.
-    Combine with ``--no-prompt`` and ``--force`` for non-interactive CI use.
+    Fully scriptable when `--type` plus the type-specific value (`--path`
+    or `--catalog`) is set; otherwise drops to interactive prompts.
+    Combine with `--no-prompt` and `--force` for non-interactive CI use.
     """
     import os
 
