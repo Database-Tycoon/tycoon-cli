@@ -49,7 +49,7 @@ from urllib.parse import unquote
 from .catalog.errors import CatalogError
 from .catalog.models import PipelineContext
 from .catalog.tycoon_project import TYCOON_FILE, read_project_info
-from .export.build import build_city
+from .export.build import build_city, require_motherduck_token
 from .export.city_json import city_document, dumps
 
 # The meta document has ONE producer, and it is the exporter's. A server that
@@ -499,6 +499,12 @@ def run_server(
             f"no web bundle: run `npm run build` in web/, pass --dist, or set ${DIST_ENV}",
             file=sys.stderr,
         )
+        return 1
+
+    try:
+        require_motherduck_token(db_path)
+    except CatalogError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
 
     try:
