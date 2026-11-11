@@ -38,7 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # reads as an intentional change rather than the regression it is. This is the
 # floor. Publishing one of these deliberately means editing this line, which a
 # reviewer sees.
-MUST_STAY_WITHHELD = ("city", "proposals")
+MUST_STAY_WITHHELD = ("city", "proposals", "process")
 
 
 def dest_of(src: str, config) -> Path:

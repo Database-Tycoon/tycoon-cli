@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.motherduck_scratch import motherduck_scratch_db  # noqa: F401  (fixture re-export)
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
