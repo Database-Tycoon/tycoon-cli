@@ -66,7 +66,7 @@ class TestRawDestination:
 
     def test_missing_pyarrow_says_what_to_install(self, md_token, monkeypatch):
         monkeypatch.setattr("tycoon.ingestion.destination._has_pyarrow", lambda: False)
-        with pytest.raises(IngestionError, match="needs pyarrow"):
+        with pytest.raises(IngestionError, match=r"database-tycoon\[motherduck\]"):
             raw_destination("md:x")
 
     def test_token_in_the_query_string_is_enough(self, no_md_token, monkeypatch):
@@ -145,7 +145,7 @@ class TestRenderedErrors:
         result = cli_runner.invoke(app, ["data", "sources", "run", "s"])
 
         assert result.exit_code == 1
-        assert "pip install pyarrow" in " ".join(result.output.split())
+        assert "pip install 'database-tycoon[motherduck]'" in " ".join(result.output.split())
 
 
 class TestCatalogShimTarget:

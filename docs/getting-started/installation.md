@@ -32,16 +32,30 @@ tycoon --help          # top-level command surface
 
 ## Optional extras
 
-The base install covers the full data pipeline. One **optional
-dependency group** exists, installed by appending its name in brackets:
+The base install covers the full data pipeline. Two **optional
+dependency groups** exist, installed by appending the name in brackets:
 
 ```bash
+pip install 'database-tycoon[motherduck]'       # MotherDuck raw loads
 pip install 'database-tycoon[docs]'             # MkDocs docs site
 ```
 
 | Extra | Pulls in | When to use |
 |---|---|---|
+| `[motherduck]` | `pyarrow` (through `dlt[motherduck]`, pinned to the same dlt version as the base install) | `database.raw` is an `md:` or `motherduck:` target |
 | `[docs]` | `mkdocs` + Material theme | You're hacking on these docs |
+
+dlt loads into MotherDuck through Parquet, so a MotherDuck raw database needs
+`pyarrow`. Projects that keep their raw database in local DuckDB files don't,
+which is why it is an extra and not part of the base install. Install it into
+the environment tycoon runs in. For a project `.venv` built by `tycoon setup`,
+that means building it with the extra:
+
+```bash
+tycoon setup --force --from 'database-tycoon[motherduck]'
+```
+
+`--force` rebuilds the `.venv`, so skip it on a project that has no `.venv` yet.
 
 ## External tools
 

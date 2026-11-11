@@ -46,6 +46,7 @@ def raw_destination(target: str | Path) -> Destination:
 
         raise IngestionError(
             "Loading into MotherDuck needs pyarrow, which tycoon does not install by default. "
-            "Install it into the environment tycoon runs in (pip install pyarrow) and run again."
+            "Install the motherduck extra into the environment tycoon runs in "
+            "(pip install 'database-tycoon[motherduck]') and run again."
         )
     return dlt.destinations.motherduck(MOTHERDUCK_PREFIX + text.split(":", 1)[1])
