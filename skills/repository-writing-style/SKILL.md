@@ -180,7 +180,7 @@ When a decision has a known cost:
 
 Prefer:
 
-> Putting the issue reference in the title does not close the issue automatically. Add `Closes #128` to the PR body when that behavior is wanted.
+> Putting the issue reference in the title does not close the issue when the PR merges. Close it by hand after the merge, because closing keywords only work on merges into the default branch.
 
 Avoid:
 
