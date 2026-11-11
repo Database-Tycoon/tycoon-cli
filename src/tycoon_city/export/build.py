@@ -25,22 +25,18 @@ from ..sim.tiles import ZoneStyle
 # A copy of `tycoon.motherduck`'s token check: the renderer does not import
 # `tycoon`. The prefixes mirror `tycoon.project.is_motherduck`: `md:` and
 # `motherduck:`, matched case-insensitively as DuckDB does. Keep the two in step.
+# `~/.duckdb/motherduck_token` is deliberately not a token source: on DuckDB 1.5.4
+# a valid token in that file, with both variables unset, still started the sign-in.
 _MD_PREFIXES = ("md:", "motherduck:")
 _TOKEN_ENV_NAMES = ("MOTHERDUCK_TOKEN", "motherduck_token")
 _QUERY_TOKEN_RE = re.compile(r"[?&]motherduck_token=[^&\s]", re.IGNORECASE)
 
 
 def _has_motherduck_token(source: str) -> bool:
-    """A token in the environment, in the `md:` string, or stored by an earlier browser sign-in."""
+    """A token in the environment or in the `md:` string. The stored file does not count."""
     if any(os.environ.get(name, "").strip() for name in _TOKEN_ENV_NAMES):
         return True
-    if _QUERY_TOKEN_RE.search(source):
-        return True
-    stored = Path.home() / ".duckdb" / "motherduck_token"
-    try:
-        return stored.is_file() and stored.stat().st_size > 0
-    except OSError:
-        return False
+    return bool(_QUERY_TOKEN_RE.search(source))
 
 
 def require_motherduck_token(db_path: str | Path) -> None:

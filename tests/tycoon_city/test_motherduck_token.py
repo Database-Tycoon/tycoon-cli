@@ -74,13 +74,10 @@ class TestRequireMotherDuckToken:
         with pytest.raises(CatalogError):
             require_motherduck_token("md:my_db?motherduck_token=")
 
-    def test_stored_token_from_a_browser_sign_in(self, home):
+    def test_stored_token_file_is_not_a_token(self, home):
+        # DuckDB 1.5.4 still opens the browser sign-in with only this file present.
         _store_token(home)
-        require_motherduck_token("md:my_db")
-
-    def test_empty_stored_token_is_not_a_token(self, home):
-        _store_token(home, "")
-        with pytest.raises(CatalogError):
+        with pytest.raises(CatalogError, match="MOTHERDUCK_TOKEN"):
             require_motherduck_token("md:my_db")
 
     @pytest.mark.parametrize("source", ["/tmp/warehouse.duckdb", "/abs/md:backup/w.duckdb", "demo_project"])
@@ -122,8 +119,13 @@ class TestRunServer:
         assert len(err.strip().splitlines()) == 1
         assert no_connect == []
 
-    def test_stored_token_serves(self, home, no_connect, monkeypatch, tmp_path):
+    def test_stored_token_file_alone_exits_1_and_never_serves(self, home, no_connect, monkeypatch, tmp_path):
         _store_token(home)
+        assert self._run(monkeypatch, tmp_path, "md:my_db") == ["1"]
+        assert no_connect == []
+
+    def test_environment_token_serves(self, home, no_connect, monkeypatch, tmp_path):
+        monkeypatch.setenv("MOTHERDUCK_TOKEN", "env-token")
         assert self._run(monkeypatch, tmp_path, "md:my_db") == ["0", "md:my_db"]
 
     def test_local_file_needs_no_token(self, home, no_connect, monkeypatch, tmp_path):
