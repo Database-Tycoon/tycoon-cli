@@ -10,7 +10,12 @@ All notable changes to this project will be documented in this file. The format 
 
 - **Steps that run after a load skip a MotherDuck raw database** ([#448][], part of [#430][]). The legacy-table warning, the dlt run capture into `.tycoon/metadata.duckdb`, the dbt staging auto-scaffold after `data sources run`, and `tycoon data analyze` all assume the raw database is a local file. On `database.raw: md:<name>` the first two skip silently and the auto-scaffold skips with one line. `tycoon data analyze` is an explicit command, so it exits 1 with one line saying it reads a local raw file, as it already did in v0.2.3 and v0.2.4. Run history for an `md:` raw is therefore not captured yet. A project on a local raw file is unchanged. `src/tycoon/ingestion/ducklake_config.py`, which had no callers, is deleted.
 
+### Fixed
+
+- **`tycoon city`, `tycoon-city` and `tycoon data sync` accept a `motherduck:` target** ([#446][], follow-up to [#308][]). v0.2.4 taught the rest of tycoon the `motherduck:` prefix, but the city renderer and `data sync` still only recognised `md:`. The catalog name shown in the city's status strip now drops the `motherduck:` prefix the same way it drops `md:`, and a `motherduck:` catalog is not looked up as a file for `pricing.toml` or for the load cache. `tycoon_city` does not import `tycoon`, so it carries its own copy of the prefix rule.
+
 [#430]: https://github.com/Database-Tycoon/tycoon-cli/issues/430
+[#446]: https://github.com/Database-Tycoon/tycoon-cli/issues/446
 [#447]: https://github.com/Database-Tycoon/tycoon-cli/issues/447
 [#448]: https://github.com/Database-Tycoon/tycoon-cli/issues/448
 
