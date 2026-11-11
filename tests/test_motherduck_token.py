@@ -70,20 +70,10 @@ class TestHasMotherDuckToken:
     def test_empty_or_misplaced_token_in_the_string_is_not_a_token(self, home, target):
         assert not has_motherduck_token(target)
 
-    def test_stored_token_file(self, home):
+    def test_stored_token_file_is_not_a_token(self, home):
+        # DuckDB 1.5.4 still opens the browser sign-in with only this file present.
         _store_token(home)
-        assert has_motherduck_token("md:x")
-
-    def test_empty_stored_token_file_is_not_a_token(self, home):
-        _store_token(home, "")
         assert not has_motherduck_token("md:x")
-
-    def test_stored_token_path_that_is_a_directory_is_not_a_token(self, home):
-        (home / ".duckdb" / "motherduck_token").mkdir(parents=True)
-        assert not has_motherduck_token("md:x")
-
-    def test_stored_token_path_follows_home(self, home):
-        assert motherduck.stored_token_path() == home / ".duckdb" / "motherduck_token"
 
 
 class TestRequireMotherDuckToken:
@@ -180,12 +170,15 @@ class TestDataQuery:
         assert result.exit_code == 0, result.output
         assert connects == ["md:x?motherduck_token=abc"]
 
-    def test_stored_token_from_a_browser_sign_in_connects(self, tmp_path, monkeypatch, home, connects, cli_runner):
+    def test_stored_token_file_alone_exits_1_without_connecting(
+        self, tmp_path, monkeypatch, home, connects, cli_runner
+    ):
         _project(tmp_path, monkeypatch, warehouse="md:x")
         _store_token(home)
         result = cli_runner.invoke(app, ["data", "query", "SELECT 1"])
-        assert result.exit_code == 0, result.output
-        assert connects == ["md:x"]
+        assert result.exit_code == 1
+        assert "No MotherDuck token for" in _flat(result.output)
+        assert connects == []
 
     def test_local_warehouse_needs_no_token(self, tmp_path, monkeypatch, home, connects, cli_runner):
         root = _project(tmp_path, monkeypatch)
@@ -210,13 +203,6 @@ class TestDataSchema:
         assert result.exit_code == 1
         assert "MOTHERDUCK_TOKEN" in _flat(result.output)
         assert _md_calls(connects) == []
-
-    def test_stored_token_connects(self, tmp_path, monkeypatch, home, connects, cli_runner):
-        _project(tmp_path, monkeypatch, warehouse="md:x")
-        _store_token(home)
-        result = cli_runner.invoke(app, ["data", "schema"])
-        assert result.exit_code == 0, result.output
-        assert _md_calls(connects) == ["md:x"]
 
     def test_local_project_needs_no_token(self, tmp_path, monkeypatch, home, connects, cli_runner):
         _project(tmp_path, monkeypatch)
@@ -263,8 +249,8 @@ class TestDataSync:
         assert "MOTHERDUCK_TOKEN" in _flat(result.output)
         assert synced == []
 
-    def test_stored_token_lets_an_existing_sync_block_run(self, home, synced, cli_runner):
-        _store_token(home)
+    def test_env_token_lets_an_existing_sync_block_run(self, home, monkeypatch, synced, cli_runner):
+        monkeypatch.setenv("MOTHERDUCK_TOKEN", "env-token")
         result = cli_runner.invoke(app, ["data", "sync"])
         assert result.exit_code == 0, result.output
         assert synced == [["md:prod"]]

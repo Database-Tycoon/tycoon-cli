@@ -11,9 +11,11 @@ A token counts as available when any of these holds:
 * ``MOTHERDUCK_TOKEN`` or ``motherduck_token`` is set in the environment.
   MotherDuck documents both spellings, and #450 and #477 accept both.
 * The connection string carries ``motherduck_token=<value>`` in its query part.
-* ``~/.duckdb/motherduck_token`` exists and is not empty. ``tycoon doctor``
-  already treats that file as a stored sign-in, so someone who signed in once
-  through the browser is not turned away.
+
+The file ``~/.duckdb/motherduck_token`` is deliberately not a token source. On
+DuckDB 1.5.4 with both variables unset, a valid token written to that file
+still started the browser sign-in, so a guard that accepted the file would let
+through exactly the case this module exists to stop.
 
 The duplicate of this check in ``tycoon_city.export.build`` must stay in step:
 the renderer does not import ``tycoon``.
@@ -23,7 +25,6 @@ from __future__ import annotations
 
 import os
 import re
-from pathlib import Path
 
 import typer
 
@@ -35,22 +36,11 @@ _TOKEN_ENV_NAMES = (TOKEN_ENV, "motherduck_token")
 _QUERY_TOKEN_RE = re.compile(r"[?&]motherduck_token=[^&\s]", re.IGNORECASE)
 
 
-def stored_token_path() -> Path:
-    """Where a browser sign-in leaves its token. Resolved per call so ``HOME`` is read now."""
-    return Path.home() / ".duckdb" / "motherduck_token"
-
-
 def has_motherduck_token(target: str) -> bool:
-    """True when a token is available from the environment, ``target`` itself, or the stored file."""
+    """True when a token is available from the environment or from ``target`` itself."""
     if any(os.environ.get(name, "").strip() for name in _TOKEN_ENV_NAMES):
         return True
-    if _QUERY_TOKEN_RE.search(target):
-        return True
-    path = stored_token_path()
-    try:
-        return path.is_file() and path.stat().st_size > 0
-    except OSError:
-        return False
+    return bool(_QUERY_TOKEN_RE.search(target))
 
 
 def missing_token_message(target: str) -> str:
