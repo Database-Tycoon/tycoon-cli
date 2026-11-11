@@ -23,9 +23,9 @@ from ..sim.tiles import ZoneStyle
 
 
 # A copy of `tycoon.motherduck`'s token check: the renderer does not import
-# `tycoon`. It only looks at `md:`, the one prefix the city's loader treats as
-# MotherDuck. Keep the two in step.
-_MD_PREFIX = "md:"
+# `tycoon`. The prefixes mirror `tycoon.project.is_motherduck`: `md:` and
+# `motherduck:`, matched case-insensitively as DuckDB does. Keep the two in step.
+_MD_PREFIXES = ("md:", "motherduck:")
 _TOKEN_ENV_NAMES = ("MOTHERDUCK_TOKEN", "motherduck_token")
 _QUERY_TOKEN_RE = re.compile(r"[?&]motherduck_token=[^&\s]", re.IGNORECASE)
 
@@ -44,13 +44,13 @@ def _has_motherduck_token(source: str) -> bool:
 
 
 def require_motherduck_token(db_path: str | Path) -> None:
-    """Raise `CatalogError` for an `md:` catalog with no token (#460).
+    """Raise `CatalogError` for an `md:` or `motherduck:` catalog with no token (#460).
 
     Without one, DuckDB starts a browser sign-in and blocks until it finishes.
     A file or directory returns at once and never reaches the lookup.
     """
     source = str(db_path)
-    if not source.startswith(_MD_PREFIX) or _has_motherduck_token(source):
+    if not source.lower().startswith(_MD_PREFIXES) or _has_motherduck_token(source):
         return
     name = source.split("?", 1)[0]
     raise CatalogError(f"No MotherDuck token for {name}: export MOTHERDUCK_TOKEN and run again.")

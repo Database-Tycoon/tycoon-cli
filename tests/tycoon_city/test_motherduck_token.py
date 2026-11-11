@@ -48,9 +48,13 @@ def _store_token(home: Path, content: str = "stored-token\n") -> None:
 
 
 class TestRequireMotherDuckToken:
-    def test_no_token_raises_naming_the_variable(self, home):
+    @pytest.mark.parametrize("source", ["md:my_db", "motherduck:my_db", "MD:my_db", "MotherDuck:my_db"])
+    def test_no_token_raises_naming_the_variable(self, home, source):
         with pytest.raises(CatalogError, match="MOTHERDUCK_TOKEN"):
-            require_motherduck_token("md:my_db")
+            require_motherduck_token(source)
+
+    def test_motherduck_prefix_with_a_token_in_the_string(self, home):
+        require_motherduck_token("motherduck:my_db?motherduck_token=abc")
 
     def test_message_drops_the_query_string(self, home):
         with pytest.raises(CatalogError) as exc:
@@ -110,8 +114,9 @@ class TestRunServer:
         code = webserve.run_server(db_path=db_path, dist=dist, theme="default", pricing=None, port=0, host="127.0.0.1")
         return [str(code), *served]
 
-    def test_no_token_exits_1_and_never_serves(self, home, no_connect, monkeypatch, tmp_path, capsys):
-        assert self._run(monkeypatch, tmp_path, "md:my_db") == ["1"]
+    @pytest.mark.parametrize("source", ["md:my_db", "motherduck:my_db", "MD:my_db"])
+    def test_no_token_exits_1_and_never_serves(self, home, no_connect, monkeypatch, tmp_path, capsys, source):
+        assert self._run(monkeypatch, tmp_path, source) == ["1"]
         err = capsys.readouterr().err
         assert "MOTHERDUCK_TOKEN" in err
         assert len(err.strip().splitlines()) == 1
