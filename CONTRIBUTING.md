@@ -206,15 +206,17 @@ Release promotion PRs are exempt from the title format because they collect mult
 
 #### Closing GitHub issues
 
-A reference such as `gh-128` in the title does not automatically close the issue when the PR is merged.
+A reference such as `gh-128` in the title does not close the issue when the PR is merged.
 
-To close an issue automatically, include GitHub's closing syntax in the PR description:
+Closing keywords such as `Closes #128` in the PR description don't close it either. GitHub only acts on them when a PR merges into the default branch (`main`), and feature and fix PRs here merge into a version branch. Whoever merges the PR closes the issue by hand afterwards:
 
-```text
-Closes #128
+```shell
+gh issue close <N> --reason completed --comment "Shipped in <release> via #<PR>."
 ```
 
-This is optional and is not enforced by the title check.
+Close a parent issue once all its sub-issues are closed.
+
+Before calling an open issue unshipped, check the release branch's history (`git log origin/<release-branch> --grep "gh-128"`) and `CHANGELOG.md`: the issue may have shipped without being closed.
 
 ### Break up large issues
 
@@ -228,6 +230,7 @@ The parent issue remains the record of the overall goal, while each sub-issue pr
 |---|---|
 | Work is tied to a GitHub issue | `type(gh-<N>): description` |
 | Work is tied to a Jira ticket only (transition period) | `type(PTC-<N>): description` |
+| Filing or picking up an issue | Set its milestone to the active release |
 | Routine maintenance or CI work has no issue yet | File a lightweight issue first, then `chore(gh-<N>): description` or `ci(gh-<N>): description` |
 | A change needs more than 8 counted files | Split it into a sequence of smaller PRs |
 | An issue requires multiple PRs | Create smaller sub-issues or tickets, with one PR for each |
@@ -347,6 +350,9 @@ hard way.
 
   This call also merges every open PR **below** the one you name, so merge
   a stack from the bottom up, one layer at a time.
+- **Close the issue after the merge.** Closing keywords don't fire on a
+  release-branch merge, so close it with `gh issue close` ("Closing GitHub
+  issues" above).
 - **Check the next layer's base before merging it.** After a layer merges,
   GitHub sometimes retargets the PR above it to the release branch and
   sometimes doesn't. If `gh pr view <N> --json baseRefName` still names the

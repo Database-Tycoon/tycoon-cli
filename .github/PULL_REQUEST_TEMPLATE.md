@@ -14,7 +14,9 @@
 
 ## Linked issue
 
-Closes #
+<!-- gh-N, as in the title. Closing keywords don't fire on merges into a release branch, so the issue is closed by hand after the merge. -->
+
+#
 
 ## Type of change
 
