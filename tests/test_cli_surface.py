@@ -268,18 +268,28 @@ class TestImportTimeSafety:
             f"schema_version: 99 in cwd\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
         )
 
-    # gh-378: Invalid tycoon.yml (malformed YAML or schema validation error)
-    # must not crash the CLI at import time with a traceback. --help, --version,
-    # and doctor must remain usable; commands needing config fail cleanly (rc 1, no traceback).
+    _INVALID_SCHEMA = "name: bad\nstack:\n  warehouse: snowflakey\n"
+    _INVALID_MARKUP = 'name: demo\ndescription: "[/x]" oops: [\n'
+
     @pytest.mark.parametrize(
         "yml,args,expected_rc,expect_in_output",
         [
             ("name: [unclosed\n", ["--help"], 0, None),
             ("name: [unclosed\n", ["--version"], 0, None),
-            ("name: bad\nstack:\n  warehouse: snowflakey\n", ["--help"], 0, None),
-            ("name: bad\nstack:\n  warehouse: snowflakey\n", ["--version"], 0, None),
-            ("name: bad\nstack:\n  warehouse: snowflakey\n", ["doctor"], 0, "failed validation"),
-            ("name: bad\nstack:\n  warehouse: snowflakey\n", ["data", "query", "SELECT 1"], 1, "stack.warehouse"),
+            (_INVALID_SCHEMA, ["--help"], 0, None),
+            (_INVALID_SCHEMA, ["--version"], 0, None),
+            (_INVALID_SCHEMA, ["doctor"], 0, "failed validation"),
+            (_INVALID_SCHEMA, ["data", "query", "SELECT 1"], 1, "stack.warehouse"),
+            (_INVALID_MARKUP, ["data", "query", "SELECT 1"], 1, "[/x]"),
+            (_INVALID_MARKUP, ["doctor"], 0, "[/x]"),
+            (_INVALID_SCHEMA, ["data", "--help"], 0, "Data pipeline"),
+            (_INVALID_SCHEMA, ["data"], 2, "Data pipeline"),
+            (_INVALID_SCHEMA, ["data", "query", "-h"], 0, "Usage"),
+            (_INVALID_SCHEMA, ["schedule", "--help"], 0, "Schedule tycoon commands"),
+            (_INVALID_SCHEMA, ["docs", "--help"], 0, "Local documentation site"),
+            (_INVALID_SCHEMA, ["setup"], 1, "stack.warehouse"),
+            (_INVALID_SCHEMA, ["data", "query", "--", "--help"], 1, "stack.warehouse"),
+            (_INVALID_SCHEMA, ["doctor", "--fix"], 0, "Can't auto-fix: tycoon.yml is invalid"),
         ],
         ids=[
             "help-on-unclosed-yaml",
@@ -288,6 +298,16 @@ class TestImportTimeSafety:
             "version-on-schema-error",
             "doctor-diagnoses-schema-error",
             "data-query-fails-cleanly-on-schema-error",
+            "data-query-prints-literal-markup",
+            "doctor-prints-literal-markup",
+            "data-help",
+            "bare-data-help",
+            "nested-short-help",
+            "schedule-help",
+            "docs-help",
+            "setup-reports-invalid-config",
+            "help-looking-query-is-still-guarded",
+            "doctor-fix-reports-invalid-config",
         ],
     )
     def test_cli_survives_invalid_tycoon_yml(
@@ -319,6 +339,33 @@ class TestImportTimeSafety:
         )
         if expect_in_output:
             assert expect_in_output in combined, f"Expected substring {expect_in_output!r} in output:\n{combined}"
+        if args[0] == "doctor":
+            assert "project checks skipped until tycoon.yml is valid" in combined
+            assert "project not found" not in combined
+
+    @pytest.mark.parametrize("args", [["city"], ["docs", "build"]])
+    def test_config_independent_commands_run_with_invalid_yaml(self, cli_runner, tmp_path, monkeypatch, args):
+        from tycoon.commands import docs
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "tycoon.yml").write_text(self._INVALID_MARKUP)
+        monkeypatch.setattr("tycoon.config.config", TycoonConfig(project_root=tmp_path))
+
+        calls = []
+
+        def serve(argv):
+            calls.append("city")
+            return 0
+
+        def find_mkdocs():
+            calls.append("docs")
+            return None
+
+        monkeypatch.setattr("tycoon_city.webserve.main", serve)
+        monkeypatch.setattr(docs, "_mkdocs_executable", find_mkdocs)
+        result = cli_runner.invoke(app, args)
+        assert result.exit_code == (0 if args[0] == "city" else 1), result.output
+        assert calls == [args[0]]
 
 
 # -- 5. Smoke-check that `tycoon --version` returns the published version

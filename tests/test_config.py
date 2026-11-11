@@ -336,3 +336,17 @@ class TestInvalidConfigHandling:
         cfg = TycoonConfig(project_root=tmp_path)
         assert cfg.load_error is None
         cfg.ensure_valid()
+
+    @pytest.mark.parametrize("reload_existing", [False, True])
+    def test_permission_error_propagates(self, tmp_path, monkeypatch, reload_existing):
+        cfg = TycoonConfig(project_root=tmp_path)
+
+        def unreadable(root):
+            raise PermissionError("access denied")
+
+        monkeypatch.setattr("tycoon.config.load_project", unreadable)
+        with pytest.raises(PermissionError, match="access denied"):
+            if reload_existing:
+                cfg.reload()
+            else:
+                TycoonConfig(project_root=tmp_path)

@@ -9,6 +9,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from pydantic import ValidationError
+from rich.markup import escape
+from yaml import YAMLError
+
 from tycoon.project import (
     MOTHERDUCK_PREFIX as MOTHERDUCK_PREFIX,
     PROJECT_FILENAME,
@@ -68,23 +72,18 @@ class TycoonConfig:
 
     def __init__(self, project_root: Path | None = None) -> None:
         self.root = project_root or _find_project_root()
-        self._load_error: Exception | None = None
+        self._load_error: YAMLError | ValidationError | None = None
         self._project: TycoonProject | None = None
-        try:
-            self._project = load_project(self.root)
-        except Exception as e:
-            self._load_error = e
+        self.reload()
 
     @property
-    def load_error(self) -> Exception | None:
+    def load_error(self) -> YAMLError | ValidationError | None:
         return self._load_error
 
     def format_load_error(self) -> str:
         """Format the load or validation error for console display."""
         if not self._load_error:
             return ""
-        from pydantic import ValidationError
-
         if isinstance(self._load_error, ValidationError):
             lines = []
             for err in self._load_error.errors():
@@ -100,7 +99,7 @@ class TycoonConfig:
     def ensure_valid(self) -> None:
         """If tycoon.yml failed to load or validate, print error and exit 1."""
         if self._load_error is not None:
-            _error_console(f"Invalid {PROJECT_FILENAME}:\n{self.format_load_error()}")
+            _error_console(f"Invalid {PROJECT_FILENAME}:\n{escape(self.format_load_error())}")
             raise SystemExit(1)
 
     # -- Project access --
@@ -119,8 +118,8 @@ class TycoonConfig:
         self._project = None
         try:
             self._project = load_project(self.root)
-        except Exception as e:
-            self._load_error = e
+        except (YAMLError, ValidationError) as exc:
+            self._load_error = exc
 
     # -- Paths --
 
