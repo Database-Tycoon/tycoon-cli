@@ -20,6 +20,7 @@ from pathlib import Path
 import typer
 
 from tycoon.config import load_config
+from tycoon.motherduck import require_motherduck_token
 from tycoon.project import SyncSourceSpec
 from tycoon.sync import sync_to_local
 from tycoon.utils.console import console, error, info, next_steps, success, warn
@@ -108,6 +109,9 @@ def sync_cmd(
     if mode not in valid_modes:
         error(f"Unknown --mode {mode!r}. Expected one of: {', '.join(sorted(valid_modes))}.")
         raise typer.Exit(1)
+
+    for spec in sources:
+        require_motherduck_token(spec.from_)
 
     info(f"Syncing {len(sources)} source(s) → [bold]{to}[/bold] ([dim]mode: {mode}[/dim])")
 

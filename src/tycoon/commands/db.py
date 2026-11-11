@@ -10,6 +10,7 @@ import typer
 from rich.table import Table
 
 from tycoon.config import config, display_target, redact_secrets
+from tycoon.motherduck import require_motherduck_token
 from tycoon.utils.console import console, error, header, info, status_table, success, warn
 from tycoon.utils.duckdb_utils import db_file_size_mb, get_row_count, get_tables, quote_identifier
 from tycoon.utils.sql_guard import refused_statement
@@ -88,6 +89,9 @@ def schema(
     unless --exact is passed; the estimate does not drop after deletes. Local
     DuckDB files always show exact counts.
     """
+    for target in (config.raw_target, config.warehouse_target):
+        require_motherduck_token(target)
+
     header("Database Schema")
 
     rows: list[tuple[str, str, str]] = []
@@ -279,6 +283,9 @@ def query(
                 "SUMMARIZE, PIVOT, UNPIVOT and EXPLAIN. Pass --allow-writes to run other statements."
             )
             raise typer.Exit(1)
+
+    if db_path is None and not via_quack:
+        require_motherduck_token(target)
 
     try:
         if via_quack:
