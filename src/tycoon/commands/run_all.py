@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import time
 from typing import Annotated
 
@@ -121,11 +120,13 @@ def run_all_cmd(
 
     # 2. Transform
     if not skip_transform:
-        dbt = shutil.which("dbt")
-        if not dbt:
-            error("`dbt` not found on PATH. Is your virtual environment active?")
-            _emit("error", "run-all failed: dbt not found on PATH", stage="transform")
-            raise typer.Exit(1)
+        from tycoon.commands.transform import _capture_dbt_and_refresh_safe, _dbt_executable
+
+        try:
+            dbt = _dbt_executable()
+        except typer.Exit:
+            _emit("error", "run-all failed: dbt not found", stage="transform")
+            raise
 
         project_dir = cfg.dbt_project_dir
         if not project_dir.exists():
@@ -136,7 +137,9 @@ def run_all_cmd(
             console.rule("[bold cyan]dbt build")
             cmd = [dbt, "build", "--target", target, "--profiles-dir", str(project_dir)]
             console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")
+            started_at = time.time()
             result = subprocess.run(cmd, cwd=project_dir)
+            _capture_dbt_and_refresh_safe("build", started_at=started_at)
             if result.returncode != 0:
                 error(f"dbt build failed (exit {result.returncode}).")
                 _emit("error", "run-all failed during dbt build", stage="transform", exit_code=str(result.returncode))

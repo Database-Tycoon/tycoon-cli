@@ -45,7 +45,7 @@ jobs:
           fi
 
           # 3. CHANGELOG.md must have a dated entry — not UNRELEASED.
-          if ! grep -q "^## \[${VERSION}\] - 20" CHANGELOG.md; then
+          if ! grep -q "^## \[${VERSION}\] - 20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]$" CHANGELOG.md; then
             echo "::error::CHANGELOG.md is missing a dated '## [${VERSION}] - YYYY-MM-DD' entry"
             grep -E "^## \[${VERSION}\]" CHANGELOG.md || true
             exit 1

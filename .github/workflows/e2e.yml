@@ -23,3 +23,33 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.E2E_GITHUB_TOKEN }}
         run: uv run pytest -m e2e -v
+
+  motherduck-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The token lives in this environment's secrets, not in repository secrets, so
+    # no other job can read it. The environment must exist with branch restrictions
+    # before the first run; see "Real MotherDuck tests" in tests/README.md.
+    environment: motherduck-e2e
+    concurrency:
+      group: motherduck-e2e
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - run: uv sync --all-extras
+      - name: Run MotherDuck e2e tests
+        env:
+          # Only this step sees the token. To rename the secret, change it here and in the environment.
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        run: |
+          if [ -z "$MOTHERDUCK_TOKEN" ]; then
+            echo "::error::The MOTHERDUCK_TOKEN secret is not set in the motherduck-e2e environment. A maintainer must create it before this job can run."
+            exit 1
+          fi
+          rc=0
+          uv run pytest -m e2e -k motherduck -v || rc=$?
+          uv run python -m tests.motherduck_scratch
+          exit "$rc"

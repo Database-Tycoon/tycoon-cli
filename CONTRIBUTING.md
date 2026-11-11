@@ -287,7 +287,8 @@ enforces the last rule in full: every `nav` entry must resolve to a page that
 was actually built. The build itself now enforces the first. The script
 reads `draft_docs` and `exclude_docs` from `mkdocs.yml`, so it verifies that
 what the config withholds really is absent from the build, and it pins
-`docs/city/` and `docs/proposals/` so they cannot quietly stop being withheld.
+`docs/city/`, `docs/proposals/` and `docs/process/` so they cannot quietly stop
+being withheld.
 It cannot know that some new directory was meant to be internal. That judgment
 is yours, and the rule above is how you record it.
 
