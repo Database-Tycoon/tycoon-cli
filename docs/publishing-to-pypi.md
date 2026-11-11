@@ -68,7 +68,7 @@ It runs four jobs in sequence:
 preflight → build → publish-testpypi → publish-pypi
 ```
 
-1. **preflight** checks that the tag, `pyproject.toml`, `src/tycoon/__init__.py`, the `CHANGELOG.md` section and the release notes agree on the version and carry a real date (`UNRELEASED` and `_Released: TBD_` fail here).
+1. **preflight** refuses a tag whose commit is not on `main`, then checks that the tag, `pyproject.toml`, `src/tycoon/__init__.py`, the `CHANGELOG.md` section and the release notes agree on the version and carry a real date (`UNRELEASED` and `_Released: TBD_` fail here).
 2. **build** runs `uv build` to produce the wheel and sdist in `dist/`.
 3. **publish-testpypi** uploads to TestPyPI first; if this fails, the production publish is blocked.
 4. **publish-pypi** uploads to PyPI only after TestPyPI succeeds.
@@ -100,6 +100,11 @@ your own.
    git tag v0.2.2 tycoon-cli/main
    git push tycoon-cli refs/tags/v0.2.2   # triggers the publish workflow
    ```
+
+   Tag `main`, not the release branch. Preflight fails when the tagged
+   commit is not on `main`, so a tag pushed before the promotion PR merges
+   publishes nothing. If that happens, merge the PR and re-run the failed
+   job; the tag doesn't need to move.
 
    The branch and its tag share a name, so always push with the
    fully-qualified `refs/heads/...` / `refs/tags/...` form. A bare

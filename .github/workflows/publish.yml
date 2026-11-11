@@ -21,6 +21,23 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history, so the next step can see whether the tag is on main.
+          fetch-depth: 0
+
+      - name: Require the tagged commit to be on main
+        # main only advances when a release branch merges into it, so a tag
+        # that main does not contain was pushed from the release branch
+        # before the promotion PR merged (v0.2.4 shipped that way).
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "::error::${TAG} points at ${GITHUB_SHA}, which is not on main. Merge the release branch into main via PR, then tag main. If the PR has merged since this tag was pushed, re-run this job."
+            exit 1
+          fi
+          echo "OK: ${TAG} is on main"
 
       - name: Validate version + changelog coherence
         run: |
