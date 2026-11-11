@@ -81,13 +81,21 @@ def test_scan_catalog_ignores_attached_databases(tmp_path):
         con.close()
 
 
-def test_motherduck_source_is_not_treated_as_a_file_path():
+def test_motherduck_source_is_not_treated_as_a_file_path(monkeypatch):
     """`md:` catalogs are not filesystem paths.
 
     The existence check must be skipped for them, and the displayed name must be
-    the catalog rather than a path stem. Verified without a MotherDuck token by
-    exercising the two pure helpers; the connection itself is untested locally.
+    the catalog rather than a path stem. The connect is stubbed: a real `md:`
+    connect without a token starts MotherDuck's browser login on a laptop.
     """
+    connected = []
+
+    def refuse_connect(database, *args, **kwargs):
+        connected.append(database)
+        raise duckdb.IOException("stubbed: no MotherDuck in unit tests")
+
+    monkeypatch.setattr(duckdb, "connect", refuse_connect)
+
     assert _is_motherduck("md:my_db")
     assert not _is_motherduck("/tmp/my_db.duckdb")
 
@@ -98,8 +106,8 @@ def test_motherduck_source_is_not_treated_as_a_file_path():
 
     # A missing md: catalog must not raise "Database file not found" -- that
     # message would send the user looking for a file that was never meant to
-    # exist. It fails at connect instead (no token here, which is itself proof
-    # the existence check was skipped).
+    # exist. Reaching connect at all proves the existence check was skipped.
     with pytest.raises(CatalogError) as exc:
         load_catalog("md:definitely_not_a_real_catalog_xyz")
     assert "not found" not in str(exc.value).lower()
+    assert connected == ["md:definitely_not_a_real_catalog_xyz"]
