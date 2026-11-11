@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file. The format 
 ### Fixed
 
 - **An `md:` target with no MotherDuck token fails at once instead of opening a browser sign-in** ([#460][]). With no token, DuckDB's MotherDuck extension starts a browser sign-in and waits, so `tycoon data query` on an `md:` warehouse sat on the sign-in page for about a minute, and in a script or CI job it hung. `data query`, `data schema` and `data sync` now check before they connect and exit 1 with `No MotherDuck token for md:<db>: export MOTHERDUCK_TOKEN and run again.` A token counts when `MOTHERDUCK_TOKEN` or `motherduck_token` is set or when the connection string carries `motherduck_token=<value>`. The file `~/.duckdb/motherduck_token` does not count: on DuckDB 1.5.4 a valid token in that file, with both variables unset, still started the browser sign-in. Projects on local DuckDB files never reach the check.
+- **`tycoon city` refuses an `md:` catalog with no MotherDuck token** ([#460][]). `tycoon city --path md:<db>`, `tycoon-city` and `tycoon-city export` now exit 1 with the same one-line message instead of starting the server and opening a browser sign-in on the first request. The renderer accepts the same token sources as the CLI: `MOTHERDUCK_TOKEN` or `motherduck_token` in the environment, or `motherduck_token=<value>` in the catalog string. Local files and project directories are unaffected.
 
 [#460]: https://github.com/Database-Tycoon/tycoon-cli/issues/460
 
