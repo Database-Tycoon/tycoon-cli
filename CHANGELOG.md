@@ -2,6 +2,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Fixed
+
+- **An invalid `tycoon.yml` no longer crashes the CLI at startup** ([#378][]). Help is available at every command level. `--version`, `init`, `city`, `docs` and `run` remain available. `doctor` reports the error and skips dbt and Rill path checks until the file is fixed. Commands such as `setup` and `data query` exit with a validation message.
+
+[#378]: https://github.com/Database-Tycoon/tycoon-cli/issues/378
+
 ## [0.2.4] - 2026-11-07
 
 ### Fixed

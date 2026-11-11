@@ -268,6 +268,105 @@ class TestImportTimeSafety:
             f"schema_version: 99 in cwd\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
         )
 
+    _INVALID_SCHEMA = "name: bad\nstack:\n  warehouse: snowflakey\n"
+    _INVALID_MARKUP = 'name: demo\ndescription: "[/x]" oops: [\n'
+
+    @pytest.mark.parametrize(
+        "yml,args,expected_rc,expect_in_output",
+        [
+            ("name: [unclosed\n", ["--help"], 0, None),
+            ("name: [unclosed\n", ["--version"], 0, None),
+            (_INVALID_SCHEMA, ["--help"], 0, None),
+            (_INVALID_SCHEMA, ["--version"], 0, None),
+            (_INVALID_SCHEMA, ["doctor"], 0, "failed validation"),
+            (_INVALID_SCHEMA, ["data", "query", "SELECT 1"], 1, "stack.warehouse"),
+            (_INVALID_MARKUP, ["data", "query", "SELECT 1"], 1, "[/x]"),
+            (_INVALID_MARKUP, ["doctor"], 0, "[/x]"),
+            (_INVALID_SCHEMA, ["data", "--help"], 0, "Data pipeline"),
+            (_INVALID_SCHEMA, ["data"], 2, "Data pipeline"),
+            (_INVALID_SCHEMA, ["data", "query", "-h"], 0, "Usage"),
+            (_INVALID_SCHEMA, ["schedule", "--help"], 0, "Schedule tycoon commands"),
+            (_INVALID_SCHEMA, ["docs", "--help"], 0, "Local documentation site"),
+            (_INVALID_SCHEMA, ["setup"], 1, "stack.warehouse"),
+            (_INVALID_SCHEMA, ["data", "query", "--", "--help"], 1, "stack.warehouse"),
+            (_INVALID_SCHEMA, ["doctor", "--fix"], 0, "Can't auto-fix: tycoon.yml is invalid"),
+        ],
+        ids=[
+            "help-on-unclosed-yaml",
+            "version-on-unclosed-yaml",
+            "help-on-schema-error",
+            "version-on-schema-error",
+            "doctor-diagnoses-schema-error",
+            "data-query-fails-cleanly-on-schema-error",
+            "data-query-prints-literal-markup",
+            "doctor-prints-literal-markup",
+            "data-help",
+            "bare-data-help",
+            "nested-short-help",
+            "schedule-help",
+            "docs-help",
+            "setup-reports-invalid-config",
+            "help-looking-query-is-still-guarded",
+            "doctor-fix-reports-invalid-config",
+        ],
+    )
+    def test_cli_survives_invalid_tycoon_yml(
+        self, tmp_path: Path, yml: str, args: list[str], expected_rc: int, expect_in_output: str | None
+    ):
+        (tmp_path / "tycoon.yml").write_text(yml)
+        binary = shutil.which("tycoon")
+        if not binary:
+            pytest.skip(
+                "`tycoon` binary not on PATH. Run via `uv run pytest` so the "
+                "venv's bin dir is active (or `pip install -e .` first)."
+            )
+        result = subprocess.run(
+            [binary, *args],
+            cwd=tmp_path,
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        combined = result.stdout + result.stderr
+        assert "Traceback" not in combined, (
+            f"`tycoon {' '.join(args)}` tracebacked with invalid tycoon.yml in cwd:\n{combined}"
+        )
+        assert result.returncode == expected_rc, (
+            f"`tycoon {' '.join(args)}` exited {result.returncode} (expected {expected_rc})\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
+        if expect_in_output:
+            assert expect_in_output in combined, f"Expected substring {expect_in_output!r} in output:\n{combined}"
+        if args[0] == "doctor":
+            assert "project checks skipped until tycoon.yml is valid" in combined
+            assert "project not found" not in combined
+
+    @pytest.mark.parametrize("args", [["city"], ["docs", "build"]])
+    def test_config_independent_commands_run_with_invalid_yaml(self, cli_runner, tmp_path, monkeypatch, args):
+        from tycoon.commands import docs
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "tycoon.yml").write_text(self._INVALID_MARKUP)
+        monkeypatch.setattr("tycoon.config.config", TycoonConfig(project_root=tmp_path))
+
+        calls = []
+
+        def serve(argv):
+            calls.append("city")
+            return 0
+
+        def find_mkdocs():
+            calls.append("docs")
+            return None
+
+        monkeypatch.setattr("tycoon_city.webserve.main", serve)
+        monkeypatch.setattr(docs, "_mkdocs_executable", find_mkdocs)
+        result = cli_runner.invoke(app, args)
+        assert result.exit_code == (0 if args[0] == "city" else 1), result.output
+        assert calls == [args[0]]
+
 
 # -- 5. Smoke-check that `tycoon --version` returns the published version
 #       (catches `__init__.py` and `pyproject.toml` drift). Belt-and-

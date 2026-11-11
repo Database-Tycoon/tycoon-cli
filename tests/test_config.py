@@ -302,3 +302,51 @@ def test_dbt_duckdb_recognises_the_long_prefix(scratch_db):
     from dbt.adapters.duckdb.credentials import DuckDBCredentials
 
     assert DuckDBCredentials(path=f"motherduck:{scratch_db}").is_motherduck
+
+
+class TestInvalidConfigHandling:
+    """gh-378: TycoonConfig catches invalid YAML / validation errors without crashing at import."""
+
+    def test_invalid_yaml_records_load_error(self, tmp_path: Path):
+        (tmp_path / "tycoon.yml").write_text("name: [unclosed\n")
+        cfg = TycoonConfig(project_root=tmp_path)
+        assert cfg.project is None
+        assert not cfg.has_project_file
+        assert cfg.load_error is not None
+        assert "while parsing" in cfg.format_load_error()
+
+    def test_validation_error_records_load_error(self, tmp_path: Path):
+        (tmp_path / "tycoon.yml").write_text("name: bad\nstack:\n  warehouse: snowflakey\n")
+        cfg = TycoonConfig(project_root=tmp_path)
+        assert cfg.project is None
+        assert not cfg.has_project_file
+        assert cfg.load_error is not None
+        formatted = cfg.format_load_error()
+        assert "stack.warehouse" in formatted
+
+    def test_ensure_valid_exits_on_error(self, tmp_path: Path):
+        (tmp_path / "tycoon.yml").write_text("name: [unclosed\n")
+        cfg = TycoonConfig(project_root=tmp_path)
+        with pytest.raises(SystemExit) as exc_info:
+            cfg.ensure_valid()
+        assert exc_info.value.code == 1
+
+    def test_ensure_valid_noop_on_valid(self, tmp_path: Path):
+        (tmp_path / "tycoon.yml").write_text("name: good\n")
+        cfg = TycoonConfig(project_root=tmp_path)
+        assert cfg.load_error is None
+        cfg.ensure_valid()
+
+    @pytest.mark.parametrize("reload_existing", [False, True])
+    def test_permission_error_propagates(self, tmp_path, monkeypatch, reload_existing):
+        cfg = TycoonConfig(project_root=tmp_path)
+
+        def unreadable(root):
+            raise PermissionError("access denied")
+
+        monkeypatch.setattr("tycoon.config.load_project", unreadable)
+        with pytest.raises(PermissionError, match="access denied"):
+            if reload_existing:
+                cfg.reload()
+            else:
+                TycoonConfig(project_root=tmp_path)
