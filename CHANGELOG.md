@@ -2,6 +2,13 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Changed
+
+- **`tycoon init` scaffolds a new dbt project inline, not as a sibling repo** ([#259][], PR [#260][]). "Create new" in the dbt wizard step now defaults to `<project>/dbt_project` instead of `../<project>-dbt`, matching the Rill step's existing inline default and the `dbt_project_dir` schema default, so a fresh `tycoon init` produces one folder, one `git init`, instead of two repos that have to be cloned and tracked separately. Registering an *existing* dbt project (local path or GitHub URL) is unaffected and still accepts a sibling location; a cloned URL still defaults beside the project rather than inside it, since cloning brings its own `.git`. The project's parent-directory boundary (#65) is now enforced the moment a path is entered in the wizard, not only the first time a command reads it from `tycoon.yml`. When tycoon itself scaffolds the inline project, the generated `.gitignore` no longer ignores its `dbt_project/profiles.yml` (it holds relative DuckDB paths only, no secrets), so a fresh clone can run `tycoon data transform` without regenerating it by hand. A dbt project tycoon did not create, such as one the wizard detected, keeps its `profiles.yml` ignored, since it may hold credentials.
+
+[#259]: https://github.com/Database-Tycoon/tycoon-cli/issues/259
+[#260]: https://github.com/Database-Tycoon/tycoon-cli/pull/260
+
 ## [0.2.4] - 2026-11-07
 
 ### Fixed
