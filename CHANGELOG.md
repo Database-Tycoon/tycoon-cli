@@ -2,6 +2,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Changed
+
+- **The publish workflow refuses a tag that isn't on `main`** ([#473][]). The release process tags `main` after the release branch merges into it, but nothing checked that. v0.2.4 was tagged on its release branch and published to PyPI while `main` still pointed at v0.2.3, and `main` caught up three days later. Preflight now fails when the tagged commit is not on `main`, before anything builds. A tag pushed too early can stay where it is: merge the promotion PR, then re-run the job.
+
+[#473]: https://github.com/Database-Tycoon/tycoon-cli/issues/473
+
 ## [0.2.4] - 2026-11-07
 
 ### Fixed

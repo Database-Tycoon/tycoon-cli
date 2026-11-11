@@ -318,7 +318,8 @@ always reflects the latest published version.
 4. The release branch merges into `main` via PR, then the version tag is
    pushed (branch and tag share a name, so use fully-qualified refs — see
    `docs/publishing-to-pypi.md`). The tag triggers PyPI publish via
-   `.github/workflows/publish.yml`. The maintainer then creates the GitHub
+   `.github/workflows/publish.yml`, which refuses to publish a tag whose
+   commit is not on `main`. The maintainer then creates the GitHub
    release by hand.
 
 Contributors don't cut releases — maintainers do. If you want to propose one,
