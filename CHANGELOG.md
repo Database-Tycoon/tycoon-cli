@@ -2,6 +2,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Fixed
+
+- **`duckdb` is pinned to 1.5.4, which builds `QUALIFY` over cast columns as a table** ([#339][]). On the previous pin, `duckdb==1.5.2`, a `QUALIFY` window over columns cast in a CTE failed with `INTERNAL Error: Failed to bind column reference` once wrapped in `CREATE TABLE AS`, which is how dbt builds a table model. A staging dedupe of the form "cast in a CTE, then `qualify row_number() over (...) = 1`" therefore failed under `tycoon data transform`, and on MotherDuck targets too. DuckDB 1.5.4 fixes it; `uv.lock` changes only the `duckdb` entry. Existing warehouse files need no migration: a file written by 1.5.2 opens and accepts writes under 1.5.4. MotherDuck's server runs its own DuckDB, and the issue reports a similar crash there on a different code path (`TopNWindowElimination`) that this pin does not address.
+
+[#339]: https://github.com/Database-Tycoon/tycoon-cli/issues/339
+
 ## [0.2.4] - 2026-11-07
 
 ### Fixed
