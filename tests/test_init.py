@@ -200,6 +200,35 @@ class TestBlankScaffold:
         assert (elsewhere / "profiles.yml").exists()
         assert "!dbt_project/profiles.yml" not in (tmp_path / ".gitignore").read_text()
 
+    def test_gitignore_negation_written_when_target_is_a_symlink(self, tmp_path, monkeypatch):
+        """The scaffolded-inline check compares resolved paths. Given a
+        symlinked `target`, comparing an unresolved `target / "dbt_project"`
+        with a resolved one left the profile tycoon wrote ignored."""
+        real = tmp_path / "real"
+        real.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(real, target_is_directory=True)
+        monkeypatch.chdir(link)
+
+        scaffold_blank_project(link, "test-project")
+
+        assert (real / "dbt_project" / "profiles.yml").exists()
+        assert "!dbt_project/profiles.yml" in (real / ".gitignore").read_text()
+
+    def test_existing_gitignore_is_left_untouched(self, tmp_path, monkeypatch):
+        """Upgrade path: a repo that already has a .gitignore (for example one
+        written by an older tycoon, with `**/profiles.yml` and no exception)
+        keeps it byte for byte. tycoon never edits it, so it cannot un-ignore
+        a profiles.yml the user chose to ignore."""
+        monkeypatch.chdir(tmp_path)
+        original = ".env\n**/profiles.yml\n"
+        (tmp_path / ".gitignore").write_text(original)
+
+        scaffold_blank_project(tmp_path, "test-project")
+
+        assert (tmp_path / "dbt_project" / "profiles.yml").exists()
+        assert (tmp_path / ".gitignore").read_text() == original
+
     def test_scaffolded_yml_loads_with_load_project(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         scaffold_blank_project(tmp_path, "test-project")
@@ -724,7 +753,9 @@ class TestPromptRegisterProjectContainment:
         # wizard never re-prompts, so it must not tell the user to "enter a
         # path", and no tycoon.yml exists yet to "point" anywhere.
         assert "Treatingthiscomponentasskipped" in out
-        assert "".join(f"Move the project under {tmp_path}".split()) in out
+        # Nothing was cloned, so the fix is to clone it later, not to "move" it.
+        assert "".join(f"clone it under {tmp_path}".split()) in out
+        assert "Movetheproject" not in out
         assert "`tycoonregisterdbt`" in out
         for runtime_only in ("Enterapath", "pointtycoon.yml", "sharedtycoon.yml", "securityboundary"):
             assert runtime_only not in out

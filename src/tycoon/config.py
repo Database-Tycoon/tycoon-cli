@@ -235,7 +235,9 @@ class TycoonConfig:
             return resolve_contained_path(value, self.root, f"tycoon.yml {field}")
         except ValueError as exc:
             raise ValueError(
-                f"{exc} tycoon keeps these paths inside the project or its parent directory as a security "
+                # "that directory", not "the project or its parent": for a
+                # top-level root the boundary is the project itself.
+                f"{exc} tycoon keeps these paths inside that directory as a security "
                 "boundary, so a shared tycoon.yml can't be used to reach unrelated locations on your machine. "
                 "Move the project there, or point tycoon.yml at a path within it."
             ) from exc

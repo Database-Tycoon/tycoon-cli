@@ -64,6 +64,22 @@ class TestTycoonConfig:
         assert "security boundary" in message
         assert "point tycoon.yml at a path within it" in message
 
+    def test_runtime_remediation_at_top_level_root_does_not_mention_a_parent(self, tmp_path: Path, monkeypatch):
+        """For an `/app`-style root the boundary is the project directory
+        itself, so the appended runtime sentence must not say paths may sit
+        in the project's parent. Simulated the same way as the shared-level
+        test: point the boundary at the root."""
+        monkeypatch.setattr("tycoon.config.containment_boundary", lambda root: root.resolve())
+        cfg = TycoonConfig(project_root=tmp_path / "app")
+        cfg.root.mkdir(parents=True)
+
+        with pytest.raises(ValueError) as exc_info:
+            cfg._resolve_contained_path(str(tmp_path / "elsewhere"), "dbt_project_dir")
+
+        message = str(exc_info.value)
+        assert f"outside the project directory {cfg.root.resolve()}" in message
+        assert "parent directory" not in message
+
 
 class TestLoadConfigSchemaWarning:
     """T2-4: load_config warns via console when tycoon.yml schema_version is stale."""

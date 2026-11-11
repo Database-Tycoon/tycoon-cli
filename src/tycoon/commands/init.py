@@ -210,10 +210,14 @@ def _prompt_register_project(component: str, target: Path, project_name: str) ->
     try:
         resolved = resolve_contained_path(dest_input, target, f"{component} project path")
     except ValueError as exc:
-        warn(
-            f"{exc} Treating this component as skipped. Move the project under "
-            f"{containment_boundary(target)} and add it afterwards with `tycoon register {component.lower()}`."
-        )
+        boundary = containment_boundary(target)
+        register_cmd = f"`tycoon register {component.lower()}`"
+        if is_url:
+            # Nothing was cloned yet, so there is no project to move.
+            fix = f"To add it later, run {register_cmd} and clone it under {boundary}."
+        else:
+            fix = f"Move the project under {boundary} and add it afterwards with {register_cmd}."
+        warn(f"{exc} Treating this component as skipped. {fix}")
         return None
 
     if is_url:

@@ -231,7 +231,9 @@ def scaffold_blank_project(
                 raw_db_path=raw_db_path,
                 target=target,
             )
-            scaffolded_inline_dbt = dbt_abs == (target / "dbt_project").resolve()
+            # Resolve both sides: with no existing_dbt_path, dbt_abs is built
+            # from `target` as given, which may be relative or a symlink.
+            scaffolded_inline_dbt = dbt_abs.resolve() == (target / "dbt_project").resolve()
 
     # ---- Rill scaffold (if active and managed) ----
     if bi == BITool.rill:
