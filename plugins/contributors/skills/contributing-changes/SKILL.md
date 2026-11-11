@@ -35,8 +35,12 @@ Consequences:
 ## Change checklist
 
 1. Open an issue first for anything non-trivial (CONTRIBUTING.md, "Break up
-   large issues").
-2. Branch from the active release branch.
+   large issues"), and set its milestone to the active release
+   (`gh issue edit <N> --milestone <release>`), so the milestone's open count
+   reflects the work left.
+2. Before writing code, list the files the change will touch, including tests,
+   `CHANGELOG.md` and docs. Over 8 counted files means sub-issues, one PR each.
+   Branch from the active release branch.
 3. Tests: new behaviour needs a test, and a bug fix needs a regression test. For
    a CLI-surface bug, use the subprocess layer (testing-cli-changes skill).
 4. Update `CHANGELOG.md` under `[Unreleased]` in the section for the change's
@@ -47,6 +51,17 @@ Consequences:
    `uv run ruff format --check src tests`. Do not use `uvx ruff`: it resolves
    the latest release, not the version CI pins (CONTRIBUTING.md, "What CI gates on").
 7. Open the PR as a draft, with the template body and a Mental model section.
+8. After the PR merges, close its issue by hand. Closing keywords such as
+   `Closes #N` only fire on merges into `main`, and PRs here merge into the
+   release branch (CONTRIBUTING.md, "Title your PR consistently", under
+   "Closing GitHub issues").
+
+## Stacking PRs
+
+Stack PRs only when a later PR needs code from an earlier one. Independent
+PRs each target the release branch. A PR that might merge on its own must not
+sit inside a stack: once it merges, the stack can no longer be unstacked or
+retargeted, and the remaining layers have to be relinked as new PRs.
 
 ## Code conventions
 

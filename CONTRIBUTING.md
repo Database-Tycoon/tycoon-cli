@@ -206,15 +206,17 @@ Release promotion PRs are exempt from the title format because they collect mult
 
 #### Closing GitHub issues
 
-A reference such as `gh-128` in the title does not automatically close the issue when the PR is merged.
+A reference such as `gh-128` in the title does not close the issue when the PR is merged.
 
-To close an issue automatically, include GitHub's closing syntax in the PR description:
+Closing keywords such as `Closes #128` in the PR description don't close it either. GitHub only acts on them when a PR merges into the default branch, and feature and fix PRs here merge into a version branch. Close the issue by hand once the PR has merged:
 
-```text
-Closes #128
+```shell
+gh issue close 128 --reason completed --comment "Shipped in v0.2.5 via #130."
 ```
 
-This is optional and is not enforced by the title check.
+Close a parent issue once all its sub-issues are closed.
+
+Before calling an open issue unshipped, check the release branch's history (`git log origin/<release-branch> --grep "gh-128"`) and `CHANGELOG.md`: the issue may have shipped without being closed.
 
 ### Break up large issues
 
