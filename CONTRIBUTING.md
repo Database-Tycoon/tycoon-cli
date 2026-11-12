@@ -6,7 +6,14 @@ we care about.
 
 ## Dev setup
 
-Requires Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/).
+Requires Python ≥ 3.12 and a recent [uv](https://docs.astral.sh/uv/). The
+minimum uv version is `required-version` under `[tool.uv]` in `pyproject.toml`.
+An older uv writes `uv.lock` in an older format, so locking with it rewrites
+lines that have nothing to do with your change. uv releases that understand
+`required-version` refuse to run in this repository when they are too old;
+very old releases ignore the setting, so check `uv --version` if `uv.lock`
+changes more than you expected. To upgrade, run `brew upgrade uv` (Homebrew)
+or `uv self update` (standalone installer).
 
 ```bash
 git clone git@github.com:Database-Tycoon/tycoon-cli.git
