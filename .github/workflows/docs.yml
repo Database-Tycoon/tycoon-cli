@@ -40,6 +40,8 @@ jobs:
     # would cancel a slow rollout mid-deploy, which is the half-applied state
     # the concurrency group above exists to avoid.
     timeout-minutes: 15
+    env:
+      UV_LOCKED: "1"
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
