@@ -27,9 +27,9 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
+# Read-only floor; each job adds pull-requests: write for its comment step.
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: pr-compliance-${{ github.event.pull_request.number }}
@@ -39,6 +39,9 @@ jobs:
   size:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,6 +110,9 @@ jobs:
   title:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
