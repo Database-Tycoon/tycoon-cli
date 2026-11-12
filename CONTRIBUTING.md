@@ -218,9 +218,12 @@ This is optional and is not enforced by the title check.
 
 ### Files that need a code-owner review
 
-Changes to workflows, dependency lockfiles, release metadata and shared test
-setup are assigned to the maintainers listed in `.github/CODEOWNERS`. Expect
-a review request from them on any PR that touches those paths.
+Changes to workflows, dependency manifests and lockfiles, build config, the
+shipped web bundle, version metadata and shared test setup are assigned to the
+maintainers listed in `.github/CODEOWNERS`. A PR that touches those paths gets
+a review request from them. For now this only requests the review; it becomes
+a merge requirement once code-owner review is turned on for the release
+branches.
 
 ### Break up large issues
 

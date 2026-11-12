@@ -15,3 +15,7 @@
 /scripts/                 @db-tycoon-stephen @HeatherRametta @JesuFemi-O
 /tests/conftest.py        @db-tycoon-stephen @HeatherRametta @JesuFemi-O
 /src/tycoon/__init__.py   @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/web/vite.config.ts       @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/src/tycoon_city/web_dist/ @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/dbt_project/packages.yml @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/mkdocs.yml               @db-tycoon-stephen @HeatherRametta @JesuFemi-O
