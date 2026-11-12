@@ -1,0 +1,17 @@
+# Files that decide what runs in CI and what ships to PyPI. A change to any of
+# them is assigned to the owners below for review.
+#
+# This only requests reviews. It blocks merges once "Require review from Code
+# Owners" is on in the branch rulesets (tracked in #496).
+#
+# The last matching pattern wins, so keep specific paths after general ones.
+
+/.github/                 @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/.pre-commit-config.yaml  @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/pyproject.toml           @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/uv.lock                  @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/web/package.json         @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/web/package-lock.json    @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/scripts/                 @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/tests/conftest.py        @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/src/tycoon/__init__.py   @db-tycoon-stephen @HeatherRametta @JesuFemi-O

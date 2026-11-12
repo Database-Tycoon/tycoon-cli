@@ -216,6 +216,12 @@ Closes #128
 
 This is optional and is not enforced by the title check.
 
+### Files that need a code-owner review
+
+Changes to workflows, dependency lockfiles, release metadata and shared test
+setup are assigned to the maintainers listed in `.github/CODEOWNERS`. Expect
+a review request from them on any PR that touches those paths.
+
 ### Break up large issues
 
 If an issue requires several PRs, divide it into smaller sub-issues before starting implementation. Each sub-issue should represent a focused unit of work that can be completed by one reasonably sized PR.
