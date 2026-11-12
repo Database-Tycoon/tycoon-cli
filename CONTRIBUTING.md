@@ -6,8 +6,14 @@ we care about.
 
 ## Dev setup
 
-Requires Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/) 0.12.22 or later,
-below 0.14 (see *uv version* below).
+Requires Python ≥ 3.12 and a recent [uv](https://docs.astral.sh/uv/). The
+minimum uv version is `required-version` under `[tool.uv]` in `pyproject.toml`.
+An older uv writes `uv.lock` in an older format, so locking with it rewrites
+lines that have nothing to do with your change. uv releases that understand
+`required-version` refuse to run in this repository when they are too old;
+very old releases ignore the setting, so check `uv --version` if `uv.lock`
+changes more than you expected. To upgrade, run `brew upgrade uv` (Homebrew)
+or `uv self update` (standalone installer).
 
 ```bash
 git clone git@github.com:Database-Tycoon/tycoon-cli.git
@@ -20,31 +26,6 @@ Verify the install:
 ```bash
 uv run tycoon --version
 uv run pytest -q
-```
-
-### uv version
-
-The supported range is `required-version` under `[tool.uv]` in
-`pyproject.toml`, and CI installs the newest uv inside it. A uv outside the
-range refuses to run in this repository:
-
-```text
-error: Required uv version `>=0.12.22, <0.14` does not match the running version `0.6.2`
-```
-
-The range exists because `uv lock` writes the lockfile in its own release's
-format. uv 0.6 drops the upload time from every package entry, and releases
-before 0.12.22 roll the format revision back, so locking with the wrong uv
-turns a one-line dependency change into a diff that conflicts with every other
-open PR. Raise the upper bound in its own PR, after checking that the new uv
-leaves `uv.lock` unchanged.
-
-If the uv on your machine is outside the range, upgrade it with
-`uv self update 0.13.7` (standalone installs) or your package manager, or run a
-single command through a matching uv without installing it:
-
-```bash
-uvx --from 'uv>=0.12.22,<0.14' uv sync --all-extras
 ```
 
 ## What CI gates on

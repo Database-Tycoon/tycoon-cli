@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Changed
 
-- **Working on tycoon needs uv 0.12.22 or later, below 0.14** ([#493][]). `uv.lock` depended on which uv last locked it: uv 0.6 rewrote every package entry, and releases before 0.12.22 rolled the format revision back, so a one-line dependency change could come out as a whole-file diff. `required-version` in `pyproject.toml` now sets the range, a uv outside it refuses to run in the repository with a message naming both versions, and CI installs the newest uv inside it. For contributors; installing tycoon from PyPI is unaffected.
+- **Working on tycoon needs uv 0.12.22 or later** ([#493][]). `uv.lock` depended on which uv last locked it: older releases wrote it in an older format, so a one-line dependency change could come out as a much larger diff. The minimum now lives in `required-version` in `pyproject.toml`, CI installs the newest uv that satisfies it, and `uv.lock` is relocked once at the current format (no package versions change). For contributors; installing tycoon from PyPI is unaffected.
 
 [#493]: https://github.com/Database-Tycoon/tycoon-cli/issues/493
 
