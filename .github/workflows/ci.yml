@@ -113,6 +113,88 @@ jobs:
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           /tmp/gitleaks git --no-banner --redact --verbose .
 
+  workflow-security:
+    # Reviews the workflows themselves and what a PR adds to the supply
+    # chain: zizmor (workflow security audit), actionlint (workflow syntax
+    # and shell), dependency-review (new dependencies with known
+    # vulnerabilities, PRs only) and scripts/check_ci_risks.py (PRs only).
+    # zizmor and actionlint are checksum-verified release binaries, like
+    # gitleaks above, not marketplace actions.
+    name: workflow security
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Report-only rollout (#500): findings show on the job, but a failure
+    # does not fail the run. Remove this once the first week's findings are
+    # fixed, then make the job a required check in the branch rulesets.
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history so check_ci_risks.py can diff against the PR's base.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install zizmor and actionlint
+        env:
+          ZIZMOR_VERSION: 1.32.0
+          ZIZMOR_SHA256: bb110cc765eca9cd7efb2e284a956be5974c60027b0970f16397d86208a9957b
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          curl -sSfL -o /tmp/zizmor.tar.gz \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${ZIZMOR_SHA256}  /tmp/zizmor.tar.gz" | sha256sum --check
+          tar -xzf /tmp/zizmor.tar.gz -C /tmp zizmor
+          curl -sSfL -o /tmp/actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum --check
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+
+      # Each check below runs even when an earlier one failed, so one run
+      # reports every finding.
+      - name: zizmor
+        if: ${{ !cancelled() }}
+        env:
+          # Read-only token for zizmor's online audits (impostor commits,
+          # known-vulnerable actions, ref confusion).
+          GH_TOKEN: ${{ github.token }}
+        run: /tmp/zizmor --format=github .
+
+      - name: actionlint
+        if: ${{ !cancelled() }}
+        run: /tmp/actionlint
+
+      - name: Dependency review
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Writing a PR comment would need pull-requests: write; the job
+          # summary and the step result carry the findings instead.
+          comment-summary-in-pr: never
+
+      - name: Fetch trusted check code from the base ref
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p trusted
+          # Same pattern as pr-compliance.yml: run the checker from the base
+          # ref so a PR cannot edit the rules that judge it. Falls back to
+          # the PR's own copy only when the base predates the script.
+          if ! git show "$BASE_SHA:scripts/check_ci_risks.py" > trusted/check_ci_risks.py 2>/dev/null; then
+            cp scripts/check_ci_risks.py trusted/check_ci_risks.py
+          fi
+
+      - name: CI risk check
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 trusted/check_ci_risks.py
+
   build:
     # Verifies the wheel + sdist build cleanly with current pins, and
     # that the built wheel installs into a fresh venv with a working
