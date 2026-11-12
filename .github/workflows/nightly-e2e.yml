@@ -39,7 +39,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Sync project (all extras)
-        run: uv sync --all-extras --python 3.12
+        run: uv sync --all-extras --python 3.12 --locked
 
       - name: Run no-credential live-API e2e tests
         id: e2e

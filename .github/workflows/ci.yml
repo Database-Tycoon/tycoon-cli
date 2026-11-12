@@ -40,7 +40,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Sync project (including dagster + ask extras)
-        run: uv sync --all-extras --python ${{ matrix.python-version }}
+        run: uv sync --all-extras --python ${{ matrix.python-version }} --locked
 
       - name: Run pytest
         # Default addopts already excludes the `e2e` marker. The
@@ -75,7 +75,7 @@ jobs:
 
       - name: Sync dev deps
         # ruff is in [dependency-groups].dev, not an optional extra.
-        run: uv sync --group dev
+        run: uv sync --group dev --locked
 
       - name: Ruff lint
         # ruff is pinned in dev group so CI and local dev use the same version.
@@ -173,11 +173,13 @@ jobs:
       - name: Sync project
         # tycoon-city-export generates the e2e suite's demo data, and
         # sync_web_bundle.py runs under the project venv.
-        run: uv sync
+        run: uv sync --locked
 
       - name: Install web dependencies
+        # No dependency needs its install hook: esbuild's binary arrives as an
+        # optional @esbuild/<platform> package, not from its postinstall.
         working-directory: web
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Typecheck
         working-directory: web
@@ -228,7 +230,7 @@ jobs:
           enable-cache: true
 
       - name: Sync docs extra
-        run: uv sync --extra docs
+        run: uv sync --extra docs --locked
 
       - name: Build docs (strict)
         run: uv run mkdocs build --strict
@@ -258,7 +260,7 @@ jobs:
           enable-cache: true
 
       - name: Sync project (default extras)
-        run: uv sync
+        run: uv sync --locked
 
       - name: Init project from template
         run: |
