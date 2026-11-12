@@ -101,7 +101,7 @@ def test_continuations_are_not_joined_across_gaps_or_files(risks):
         'curl -sSfL -o /tmp/tool.tar.gz "https://example.com/tool.tar.gz"',
         "curl -s https://example.com/data.json | jq .version",
         "cat install.sh | " + "sh",
-        "curl -fsS https://example.com/health |" + "| sh -c 'exit 1'",
+        "curl -fsS https://example.com/health " + "|| " + "sh -c 'exit 1'",
         "curl -s https://example.com/x | shasum -a 256",
         "curl -s https://example.com/x | node_modules/.bin/prettier",
     ],
