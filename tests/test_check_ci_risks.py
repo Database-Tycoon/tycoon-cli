@@ -61,10 +61,38 @@ def test_tojson_of_another_context_is_not_flagged(risks):
         "wget -qO- https://example.com/x.sh | " + "bash",
         "curl -sSL https://example.com | sudo -E " + "bash -s -- --yes",
         "bash <(" + "curl -s https://example.com/x.sh)",
+        "curl -fsSL https://example.com/x | tee /tmp/x | " + "sh",
+        "curl -fsSL https://example.com/x | grep -v '^#' | " + "bash -s",
+        "curl -fsSL https://example.com/get.py | " + "python3 -",
+        "curl -fsSL https://example.com/get.py | " + "python",
+        "wget -qO- https://example.com/x.pl | /usr/bin/env " + "perl",
+        "curl -fsSL https://example.com/x.rb | " + "ruby",
+        "curl -fsSL https://example.com/x.js | " + "node",
+        "curl -fsSL https://example.com/x | " + "/bin/zsh",
+        "curl -fsSL https://example.com/x | " + "dash",
+        "curl -fsSL https://example.com/x | " + "ksh",
+        'bash -c "$(' + 'curl -fsSL https://example.com/x)"',
     ],
 )
 def test_piping_a_download_into_a_shell_is_flagged(risks, text):
     assert _rules(risks.scan_added_lines([risks.AddedLine("x.sh", 1, text)])) == ["pipe-to-shell"]
+
+
+def test_backslash_continued_commands_are_joined_before_matching(risks):
+    lines = [
+        risks.AddedLine("ci.yml", 10, "curl -fsSL \\"),
+        risks.AddedLine("ci.yml", 11, "  https://example.com/install \\"),
+        risks.AddedLine("ci.yml", 12, "  | " + "sh"),
+    ]
+    findings = risks.scan_added_lines(lines)
+    assert [(f.rule, f.line) for f in findings] == [("pipe-to-shell", 10)]
+
+
+def test_continuations_are_not_joined_across_gaps_or_files(risks):
+    gap = [risks.AddedLine("a.sh", 1, "curl -fsSL x \\"), risks.AddedLine("a.sh", 5, "| " + "sh")]
+    other_file = [risks.AddedLine("a.sh", 1, "curl -fsSL x \\"), risks.AddedLine("b.sh", 2, "| " + "sh")]
+    assert risks.scan_added_lines(gap) == []
+    assert risks.scan_added_lines(other_file) == []
 
 
 @pytest.mark.parametrize(
@@ -73,6 +101,9 @@ def test_piping_a_download_into_a_shell_is_flagged(risks, text):
         'curl -sSfL -o /tmp/tool.tar.gz "https://example.com/tool.tar.gz"',
         "curl -s https://example.com/data.json | jq .version",
         "cat install.sh | " + "sh",
+        "curl -fsS https://example.com/health |" + "| sh -c 'exit 1'",
+        "curl -s https://example.com/x | shasum -a 256",
+        "curl -s https://example.com/x | node_modules/.bin/prettier",
     ],
 )
 def test_downloads_that_do_not_reach_a_shell_are_not_flagged(risks, text):
@@ -122,9 +153,25 @@ def test_a_brand_new_package_json_with_install_scripts_is_flagged(risks):
     assert _rules(findings) == ["install-script", "install-script"]
 
 
-def test_ordinary_scripts_and_unparseable_json_are_ignored(risks):
+def test_ordinary_scripts_are_ignored(risks):
     assert risks.scan_package_json("package.json", _pkg(), _pkg(test="vitest")) == []
-    assert risks.scan_package_json("package.json", None, "{ not json") == []
+
+
+def test_a_byte_order_mark_does_not_hide_an_install_script(risks):
+    findings = risks.scan_package_json("package.json", _pkg(), "\ufeff" + _pkg(postinstall="node x.js"))
+    assert _rules(findings) == ["install-script"]
+    assert "adds" in findings[0].message
+
+
+def test_a_head_package_json_that_does_not_parse_is_flagged(risks):
+    findings = risks.scan_package_json("package.json", _pkg(prepare="husky"), "{ not json")
+    assert _rules(findings) == ["install-script"]
+    assert "not valid JSON" in findings[0].message
+
+
+def test_an_unparseable_base_counts_every_head_install_script_as_added(risks):
+    findings = risks.scan_package_json("package.json", "{ not json", _pkg(prepare="husky"))
+    assert _rules(findings) == ["install-script"]
 
 
 # --------------------------------------------------------------------------- #
@@ -152,6 +199,24 @@ def test_parse_added_lines_tracks_paths_and_line_numbers(risks):
         risks.AddedLine("a.yml", 4, "first"),
         risks.AddedLine("a.yml", 5, "+ starts with plus signs"),
     ]
+
+
+def test_parse_added_lines_unquotes_c_style_paths(risks):
+    diff = "\n".join(
+        [
+            'diff --git "a/caf\\303\\251 \\"x\\".yml" "b/caf\\303\\251 \\"x\\".yml"',
+            "new file mode 100644",
+            "--- /dev/null",
+            '+++ "b/caf\\303\\251 \\"x\\".yml"',
+            "@@ -0,0 +1 @@",
+            "+added",
+        ]
+    )
+    assert risks.parse_added_lines(diff) == [risks.AddedLine('caf\u00e9 "x".yml', 1, "added")]
+
+
+def test_unquote_c_handles_escapes(risks):
+    assert risks.unquote_c('"tab\\there\\\\back"') == "tab\there\\back"
 
 
 def test_annotation_escapes_workflow_command_syntax(risks):
@@ -208,6 +273,36 @@ def test_collect_flags_only_what_the_branch_adds(risks, repo):
         ("pth-file", "src/moved.pth"),
         ("tojson-context", ".github/workflows/new.yml"),
     ]
+
+
+@pytest.mark.parametrize("attributes", ["* -diff\n", "* binary\n", "* diff=hide\n"])
+def test_gitattributes_added_by_the_branch_cannot_hide_added_lines(risks, repo, attributes):
+    _write("README.md", "hello\n")
+    repo("add", "-A")
+    repo("commit", "-qm", "base")
+    base = repo("rev-parse", "HEAD")
+
+    _write(".gitattributes", attributes)
+    _write("ci.sh", PIPE_TO_SHELL + "\n")
+    repo("config", "diff.hide.textconv", "true")
+    repo("add", "-A")
+    repo("commit", "-qm", "pr")
+
+    findings = risks.collect(base, repo("rev-parse", "HEAD"))
+    assert ("pipe-to-shell", "ci.sh") in [(f.rule, f.path) for f in findings]
+
+
+def test_collect_reports_a_quoted_path_by_its_real_name(risks, repo):
+    _write("README.md", "hello\n")
+    repo("add", "-A")
+    repo("commit", "-qm", "base")
+    base = repo("rev-parse", "HEAD")
+    _write("scripts/in\tstall.sh", PIPE_TO_SHELL + "\n")
+    repo("add", "-A")
+    repo("commit", "-qm", "pr")
+
+    findings = risks.collect(base, repo("rev-parse", "HEAD"))
+    assert [(f.rule, f.path) for f in findings] == [("pipe-to-shell", "scripts/in\tstall.sh")]
 
 
 def test_main_exits_zero_on_a_clean_branch_and_writes_the_summary(risks, repo, tmp_path, monkeypatch):

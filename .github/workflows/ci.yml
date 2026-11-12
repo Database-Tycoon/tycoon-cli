@@ -132,8 +132,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Full history so check_ci_risks.py can diff against the PR's base.
-          fetch-depth: 0
+          # Full history on pull requests so check_ci_risks.py can diff
+          # against the PR's base; a push only needs the tip. The values are
+          # strings because a bare 0 is falsy and `&& 0 ||` would always give 1.
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
           persist-credentials: false
 
       - name: Install zizmor and actionlint
@@ -180,12 +182,19 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          mkdir -p trusted
           # Same pattern as pr-compliance.yml: run the checker from the base
-          # ref so a PR cannot edit the rules that judge it. Falls back to
-          # the PR's own copy only when the base predates the script.
-          if ! git show "$BASE_SHA:scripts/check_ci_risks.py" > trusted/check_ci_risks.py 2>/dev/null; then
-            cp scripts/check_ci_risks.py trusted/check_ci_risks.py
+          # ref so a PR cannot edit the rules that judge it. It goes to a
+          # fresh directory outside the checkout and runs with `python3 -I`,
+          # so nothing the PR commits (a json.py, say) is importable.
+          trusted="$RUNNER_TEMP/trusted-ci-risks"
+          rm -rf "$trusted"
+          mkdir -p "$trusted"
+          if git cat-file -e "$BASE_SHA:scripts/check_ci_risks.py" 2>/dev/null; then
+            git show "$BASE_SHA:scripts/check_ci_risks.py" > "$trusted/check_ci_risks.py"
+          else
+            # Only when the base genuinely predates the script.
+            echo "::warning::scripts/check_ci_risks.py is not on the base ref; running the PR's own copy"
+            cp scripts/check_ci_risks.py "$trusted/check_ci_risks.py"
           fi
 
       - name: CI risk check
@@ -193,7 +202,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: python3 trusted/check_ci_risks.py
+        run: python3 -I "$RUNNER_TEMP/trusted-ci-risks/check_ci_risks.py"
 
   build:
     # Verifies the wheel + sdist build cleanly with current pins, and
