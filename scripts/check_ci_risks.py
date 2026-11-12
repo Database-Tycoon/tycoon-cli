@@ -5,9 +5,11 @@ Rules, each applied only to what the PR adds relative to its base:
 
   * an added line passes the whole `secrets` or `vars` context to `toJSON`
   * a `package.json` gains (or changes) a `preinstall`, `install`,
-    `postinstall` or `prepare` script
+    `postinstall` or `prepare` script, or no longer parses as JSON
   * a `.pth` file is added
-  * an added line pipes a `curl` or `wget` download into a shell
+  * an added command pipes a `curl` or `wget` download into a shell or
+    script interpreter, anywhere later in the pipeline (backslash-continued
+    lines are joined first)
   * a file is added under `.github/workflows/`
 
 The last rule is noisy by design: new workflows are rare here, and each one
@@ -40,10 +42,15 @@ WORKFLOWS_DIR = ".github/workflows/"
 
 # GitHub expression function names are case-insensitive.
 TOJSON_RE = re.compile(r"toJSON\(\s*(secrets|vars)\s*\)", re.IGNORECASE)
-_SHELL = r"(?:ba|z|da|k)?sh\b"
+_INTERPRETER = r"(?:\S*/)?(?:(?:ba|z|da|k)?sh|python3?|perl|ruby|node)\b"
+_RUNNER = r"(?:sudo\s+(?:-\S+\s+)*)?(?:(?:\S*/)?env\s+)?" + _INTERPRETER
+_DOWNLOAD = r"\b(?:curl|wget)\b"
 PIPE_TO_SHELL_RES = (
-    re.compile(r"\b(?:curl|wget)\b[^|\n]*\|\s*(?:sudo\s+(?:-\S+\s+)*)?" + _SHELL),
-    re.compile(r"\b" + _SHELL + r"\s+<\(\s*(?:curl|wget)\b"),
+    # A download anywhere upstream of a single `|` (not `||`) into a runner,
+    # so `tee` or `grep` stages in between don't hide it.
+    re.compile(_DOWNLOAD + r".*?(?<!\|)\|(?!\|)\s*" + _RUNNER),
+    re.compile(r"\b" + _RUNNER + r"\s+<\(\s*" + _DOWNLOAD),
+    re.compile(r"\b" + _RUNNER + r"\s+-c\s+[\"']?\$\(\s*" + _DOWNLOAD),
 )
 
 
@@ -65,9 +72,29 @@ class AddedLine:
 # --------------------------------------------------------------------------- #
 # rules (pure, so the tests don't need a repository)
 # --------------------------------------------------------------------------- #
+def join_continuations(lines: list[AddedLine]) -> list[AddedLine]:
+    """Join backslash-continued added lines into one logical line.
+
+    The joined line keeps the path and line number of its first physical
+    line, and its parts are separated by newlines. Only consecutive added
+    lines in the same file are joined.
+    """
+    joined: list[AddedLine] = []
+    for added in lines:
+        if joined:
+            prev = joined[-1]
+            last_line = prev.line + prev.text.count("\n")
+            head = prev.text.rstrip()
+            if prev.path == added.path and added.line == last_line + 1 and head.endswith("\\"):
+                joined[-1] = AddedLine(prev.path, prev.line, head[:-1] + "\n" + added.text)
+                continue
+        joined.append(added)
+    return joined
+
+
 def scan_added_lines(lines: list[AddedLine]) -> list[Finding]:
     findings: list[Finding] = []
-    for added in lines:
+    for added in join_continuations(lines):
         m = TOJSON_RE.search(added.text)
         if m:
             findings.append(
@@ -78,7 +105,8 @@ def scan_added_lines(lines: list[AddedLine]) -> list[Finding]:
                     f"serializes the whole `{m.group(1)}` context; reference the values you need by name",
                 )
             )
-        if any(rx.search(added.text) for rx in PIPE_TO_SHELL_RES):
+        command = added.text.replace("\n", " ")
+        if any(rx.search(command) for rx in PIPE_TO_SHELL_RES):
             findings.append(
                 Finding(
                     "pipe-to-shell",
@@ -114,13 +142,14 @@ def scan_added_files(paths: list[str]) -> list[Finding]:
     return findings
 
 
-def _lifecycle_scripts(text: str | None) -> dict[str, str]:
+def _lifecycle_scripts(text: str | None) -> dict[str, str] | None:
+    """Return the lifecycle scripts in a package.json, or None if it doesn't parse."""
     if text is None:
         return {}
     try:
-        data = json.loads(text)
+        data = json.loads(text.removeprefix("\ufeff"))
     except ValueError:
-        return {}
+        return None
     scripts = data.get("scripts") if isinstance(data, dict) else None
     if not isinstance(scripts, dict):
         return {}
@@ -136,8 +165,18 @@ def _key_line(text: str, key: str) -> int | None:
 
 
 def scan_package_json(path: str, base_text: str | None, head_text: str) -> list[Finding]:
-    before = _lifecycle_scripts(base_text)
+    before = _lifecycle_scripts(base_text) or {}
     after = _lifecycle_scripts(head_text)
+    if after is None:
+        # Fail closed: a file this check can't read could hold anything.
+        return [
+            Finding(
+                "install-script",
+                path,
+                None,
+                "is not valid JSON, so its install scripts could not be checked",
+            )
+        ]
     findings: list[Finding] = []
     for name, command in after.items():
         if before.get(name) == command:
@@ -162,9 +201,14 @@ def git(*args: str) -> str:
     return out.decode("utf-8", errors="replace")
 
 
+# Every diff is forced to text with no textconv or external driver, so a PR
+# can't hide its added lines behind a `.gitattributes` it adds itself.
+DIFF_FLAGS = ("--no-renames", "--text", "--no-textconv", "--no-ext-diff", "--no-color")
+
+
 def git_show(rev: str, path: str) -> str | None:
     try:
-        return git("show", f"{rev}:{path}")
+        return git("show", "--no-textconv", f"{rev}:{path}")
     except subprocess.CalledProcessError:
         return None
 
@@ -178,8 +222,33 @@ def merge_base(base_sha: str, head_sha: str) -> str:
 
 def changed_paths(base: str, head: str, diff_filter: str) -> list[str]:
     # --no-renames: a file moved into .github/workflows/ is a new workflow.
-    raw = git("diff", "--no-renames", "--name-only", "-z", f"--diff-filter={diff_filter}", base, head)
+    raw = git("diff", *DIFF_FLAGS, "--name-only", "-z", f"--diff-filter={diff_filter}", base, head)
     return [p for p in raw.split("\0") if p]
+
+
+_C_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
+
+
+def unquote_c(quoted: str) -> str:
+    """Undo git's C-style path quoting, as in `"b/caf\\303\\251.yml"`."""
+    body = quoted[1:-1] if len(quoted) >= 2 and quoted[0] == quoted[-1] == '"' else quoted
+    out = bytearray()
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch != "\\" or i + 1 == len(body):
+            out += ch.encode("utf-8")
+            i += 1
+        elif re.fullmatch(r"[0-7]{3}", body[i + 1 : i + 4]):
+            out.append(int(body[i + 1 : i + 4], 8))
+            i += 4
+        elif body[i + 1] in _C_ESCAPES:
+            out.append(_C_ESCAPES[body[i + 1]])
+            i += 2
+        else:
+            out += body[i : i + 2].encode("utf-8")
+            i += 2
+    return out.decode("utf-8", errors="replace")
 
 
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
@@ -200,6 +269,8 @@ def parse_added_lines(diff: str) -> list[AddedLine]:
         if in_header:
             if raw.startswith("+++ "):
                 target = raw[4:]
+                if target.startswith('"'):
+                    target = unquote_c(target)
                 path = target[2:] if target.startswith("b/") else None
             elif _HUNK_RE.match(raw):
                 in_header = False
@@ -221,7 +292,7 @@ def parse_added_lines(diff: str) -> list[AddedLine]:
 
 def collect(base_sha: str, head_sha: str) -> list[Finding]:
     base = merge_base(base_sha, head_sha)
-    diff = git("diff", "--no-renames", "--no-color", "--no-ext-diff", "--unified=0", base, head_sha)
+    diff = git("diff", *DIFF_FLAGS, "--unified=0", base, head_sha)
     findings = scan_added_lines(parse_added_lines(diff))
     findings += scan_added_files(changed_paths(base, head_sha, "A"))
     for path in changed_paths(base, head_sha, "AM"):
