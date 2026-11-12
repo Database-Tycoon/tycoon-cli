@@ -6,16 +6,16 @@
 #
 # The last matching pattern wins, so keep specific paths after general ones.
 
-/.github/                 @db-tycoon-stephen @HeatherRametta @JesuFemi-O
-/.pre-commit-config.yaml  @db-tycoon-stephen @HeatherRametta @JesuFemi-O
-/pyproject.toml           @db-tycoon-stephen @HeatherRametta @JesuFemi-O
-/uv.lock                  @db-tycoon-stephen @HeatherRametta @JesuFemi-O
-/web/package.json         @db-tycoon-stephen @HeatherRametta @JesuFemi-O
-/web/package-lock.json    @db-tycoon-stephen @HeatherRametta @JesuFemi-O
-/scripts/                 @db-tycoon-stephen @HeatherRametta @JesuFemi-O
-/tests/conftest.py        @db-tycoon-stephen @HeatherRametta @JesuFemi-O
-/src/tycoon/__init__.py   @db-tycoon-stephen @HeatherRametta @JesuFemi-O
-/web/vite.config.ts       @db-tycoon-stephen @HeatherRametta @JesuFemi-O
-/src/tycoon_city/web_dist/ @db-tycoon-stephen @HeatherRametta @JesuFemi-O
-/dbt_project/packages.yml @db-tycoon-stephen @HeatherRametta @JesuFemi-O
-/mkdocs.yml               @db-tycoon-stephen @HeatherRametta @JesuFemi-O
+/.github/                 @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
+/.pre-commit-config.yaml  @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
+/pyproject.toml           @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
+/uv.lock                  @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
+/web/package.json         @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
+/web/package-lock.json    @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
+/scripts/                 @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
+/tests/conftest.py        @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
+/src/tycoon/__init__.py   @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
+/web/vite.config.ts       @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
+/src/tycoon_city/web_dist/ @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
+/dbt_project/packages.yml @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
+/mkdocs.yml               @db-tycoon-stephen @Mercy2codesgit @JesuFemi-O
