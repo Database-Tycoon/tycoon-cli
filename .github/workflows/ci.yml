@@ -40,7 +40,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Sync project (including dagster + ask extras)
-        run: uv sync --all-extras --python ${{ matrix.python-version }}
+        run: uv sync --all-extras --python ${{ matrix.python-version }} --locked
 
       - name: Run pytest
         # Default addopts already excludes the `e2e` marker. The
@@ -65,6 +65,12 @@ jobs:
     name: ruff
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # UV_LOCKED makes every uv command in the job, including the implicit sync
+    # behind `uv run`, fail on a stale uv.lock instead of re-resolving it. It is
+    # set per job, not per workflow: in the test and template-smoke jobs tycoon
+    # itself runs `uv add` in scaffolded projects, which UV_LOCKED would break.
+    env:
+      UV_LOCKED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -75,7 +81,7 @@ jobs:
 
       - name: Sync dev deps
         # ruff is in [dependency-groups].dev, not an optional extra.
-        run: uv sync --group dev
+        run: uv sync --group dev --locked
 
       - name: Ruff lint
         # ruff is pinned in dev group so CI and local dev use the same version.
@@ -117,6 +123,8 @@ jobs:
     name: build + install smoke
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      UV_LOCKED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -138,11 +146,14 @@ jobs:
       - name: Install built wheel into a fresh venv
         # Use a separate venv so we exercise the published wheel rather
         # than the editable install. Picks the wheel by glob so the
-        # version doesn't have to be hard-coded.
+        # version doesn't have to be hard-coded. The constraints file pins the
+        # wheel's runtime dependencies to uv.lock, so the smoke test installs
+        # what was reviewed rather than whatever PyPI serves today.
         run: |
+          uv export --frozen --no-hashes --no-dev --no-emit-project -o /tmp/constraints.txt
           uv venv /tmp/wheel-smoke --python 3.12
           /tmp/wheel-smoke/bin/python -m ensurepip
-          /tmp/wheel-smoke/bin/python -m pip install dist/database_tycoon-*.whl
+          /tmp/wheel-smoke/bin/python -m pip install -c /tmp/constraints.txt dist/database_tycoon-*.whl
 
       - name: Smoke-check tycoon entry point
         run: |
@@ -162,6 +173,8 @@ jobs:
     name: web (tsc + build + e2e)
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      UV_LOCKED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -173,11 +186,13 @@ jobs:
       - name: Sync project
         # tycoon-city-export generates the e2e suite's demo data, and
         # sync_web_bundle.py runs under the project venv.
-        run: uv sync
+        run: uv sync --locked
 
       - name: Install web dependencies
+        # No dependency needs its install hook: esbuild's binary arrives as an
+        # optional @esbuild/<platform> package, not from its postinstall.
         working-directory: web
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Typecheck
         working-directory: web
@@ -219,6 +234,8 @@ jobs:
     name: docs (mkdocs --strict)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      UV_LOCKED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -228,7 +245,7 @@ jobs:
           enable-cache: true
 
       - name: Sync docs extra
-        run: uv sync --extra docs
+        run: uv sync --extra docs --locked
 
       - name: Build docs (strict)
         run: uv run mkdocs build --strict
@@ -258,7 +275,7 @@ jobs:
           enable-cache: true
 
       - name: Sync project (default extras)
-        run: uv sync
+        run: uv sync --locked
 
       - name: Init project from template
         run: |
