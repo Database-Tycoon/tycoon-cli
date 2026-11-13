@@ -147,38 +147,26 @@ class TestHelpSurface:
                 f"substring {needle!r} ({reason}):\n{result.stdout}"
             )
 
-    @pytest.mark.parametrize(
-        "path",
-        _KEY_HELP_PATHS + [("setup",), ("data", "sources", "add"), ("data", "clean")],
-        ids=lambda p: " ".join(p) or "tycoon",
-    )
-    def test_help_has_no_rst_double_backticks(self, path: tuple[str, ...], cli_runner):
-        result = cli_runner.invoke(app, list(path) + ["--help"])
-        assert "``" not in result.stdout, (
-            f"`tycoon {' '.join(path)} --help` output contains literal RST double backticks:\n{result.stdout}"
-        )
-
     def test_registered_command_helps_have_no_rst_double_backticks(self):
+        """`--help` prints docstrings as-is, so RST double-backtick markup shows
+        up literally (#443). Check every text `--help` can show."""
         import typer
 
-        click_app = typer.main.get_command(app)
+        def check(where, field, text):
+            assert not (text and "``" in text), f"{where} {field} contains literal RST double backticks: {text}"
 
         def walk(cmd, prefix):
-            ctx = typer._click.Context(cmd)
-            assert not (cmd.help and "``" in cmd.help), (
-                f"{prefix} help contains literal RST double backticks: {cmd.help}"
-            )
-            for p in getattr(cmd, "params", []):
-                assert not (getattr(p, "help", None) and "``" in p.help), (
-                    f"{prefix} param {p.name} contains literal RST double backticks: {p.help}"
-                )
-            if hasattr(cmd, "list_commands"):
-                for sub_name in cmd.list_commands(ctx):
-                    sub_cmd = cmd.get_command(ctx, sub_name)
-                    if sub_cmd:
-                        walk(sub_cmd, f"{prefix} {sub_name}")
+            for field in ("help", "short_help", "epilog"):
+                check(prefix, field, getattr(cmd, field, None))
+            for p in cmd.params:
+                check(f"{prefix} param {p.name}", "help", getattr(p, "help", None))
+            # `commands` is the public attribute of a click group. Reading it
+            # directly avoids building a Context, whose class lives in
+            # typer's private vendored click.
+            for sub_name, sub_cmd in getattr(cmd, "commands", {}).items():
+                walk(sub_cmd, f"{prefix} {sub_name}")
 
-        walk(click_app, "tycoon")
+        walk(typer.main.get_command(app), "tycoon")
 
 
 # -- 3. Rich-markup pitfall: extras names must render literally ----------

@@ -1,4 +1,4 @@
-"""tycoon setup — build a project-local `.venv` on a supported interpreter (#57)."""
+"""tycoon setup — build a project-local ``.venv`` on a supported interpreter (#57)."""
 
 from __future__ import annotations
 
