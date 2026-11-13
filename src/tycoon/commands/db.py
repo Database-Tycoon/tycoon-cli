@@ -344,9 +344,9 @@ def clean(
 ) -> None:
     """Remove database files (with confirmation).
 
-    Run history in ``.tycoon/metadata.duckdb`` is preserved by default (even
-    with ``--all``) so `tycoon data history` and the Rill observability
-    dashboards survive routine data resets. Use ``--metadata`` to explicitly
+    Run history in `.tycoon/metadata.duckdb` is preserved by default (even
+    with `--all`) so `tycoon data history` and the Rill observability
+    dashboards survive routine data resets. Use `--metadata` to explicitly
     wipe it.
     """
     from tycoon.observability import metadata_db_path

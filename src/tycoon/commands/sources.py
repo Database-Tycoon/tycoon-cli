@@ -416,10 +416,10 @@ def add_source(
     """Register a new data source — interactively, or non-interactively via flags.
 
     Interactive mode (the default) prompts for each field. Pass
-    ``--no-prompt`` to skip every prompt; required fields then come
-    from flags (``--base-url`` for ``rest_api``, ``--connection-string``
-    for ``sql_database``, ``--path`` for ``filesystem``). Catalog
-    credentials default to ``${ENV_VAR}`` references in both modes —
+    `--no-prompt` to skip every prompt; required fields then come
+    from flags (`--base-url` for `rest_api`, `--connection-string`
+    for `sql_database`, `--path` for `filesystem`). Catalog
+    credentials default to `${ENV_VAR}` references in both modes —
     set the env var separately.
     """
     cfg = _require_project()

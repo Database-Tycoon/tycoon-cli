@@ -2,6 +2,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Fixed
+
+- **`--help` no longer shows literal RST double backticks** ([#443][]). Help text comes from command docstrings, and several of them used RST double-backtick markup, which `--help` prints as-is. `tycoon setup`, `tycoon data sources add`, `tycoon data clean`, `tycoon docs`, `tycoon doctor`, `tycoon notify`, `tycoon observability`, `tycoon register` and `tycoon schedule` now use single backticks. A test walks every registered command and fails if a help text, short help, epilog or option help contains a double backtick.
+
+[#443]: https://github.com/Database-Tycoon/tycoon-cli/issues/443
+
 ## [0.2.4] - 2026-11-07
 
 ### Fixed

@@ -63,8 +63,8 @@ def docs_serve(
 ) -> None:
     """Build the docs and serve them locally with hot-reload.
 
-    Runs ``mkdocs serve`` against the project's ``mkdocs.yml``. The site
-    rebuilds whenever you save a file under ``docs/``; refresh the
+    Runs `mkdocs serve` against the project's `mkdocs.yml`. The site
+    rebuilds whenever you save a file under `docs/`; refresh the
     browser to see changes.
     """
     mkdocs = _mkdocs_executable()
@@ -99,7 +99,7 @@ def docs_serve(
 def docs_build(
     strict: bool = typer.Option(False, "--strict", help="Fail on warnings (broken links, missing pages, ...)."),
 ) -> None:
-    """One-shot build of the docs into ``site/`` without serving.
+    """One-shot build of the docs into `site/` without serving.
 
     Useful before committing — the same check runs in CI when public
     docs hosting is wired up.

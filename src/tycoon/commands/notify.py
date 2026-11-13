@@ -43,10 +43,10 @@ def notify_cmd(
 ) -> None:
     """Send a one-off notification to the configured webhook.
 
-    The webhook URL comes from ``$TYCOON_NOTIFY_WEBHOOK_URL``. Slack incoming
+    The webhook URL comes from `$TYCOON_NOTIFY_WEBHOOK_URL`. Slack incoming
     webhooks get a coloured attachment; any other URL gets a generic JSON
-    envelope. Useful standalone or as a recipe hook; ``tycoon data run-all
-    --notify`` wires the same surface into pipeline runs.
+    envelope. Useful standalone or as a recipe hook; `tycoon data run-all
+    --notify` wires the same surface into pipeline runs.
     """
     if severity not in notify_mod.SEVERITIES:
         error(f"Unknown severity '{severity}'. Choose one of: {', '.join(notify_mod.SEVERITIES)}.")

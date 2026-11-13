@@ -34,8 +34,8 @@ def add_schedule(
 ) -> None:
     """Install a scheduled run of a tycoon command.
 
-    macOS uses a launchd LaunchAgent; Linux uses a ``systemd --user`` timer.
-    Output lands in ``~/.local/share/tycoon/schedule/<name>/run.log``.
+    macOS uses a launchd LaunchAgent; Linux uses a `systemd --user` timer.
+    Output lands in `~/.local/share/tycoon/schedule/<name>/run.log`.
     """
     if not config.has_project_file:
         error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
