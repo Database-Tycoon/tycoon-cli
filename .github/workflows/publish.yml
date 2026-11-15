@@ -24,6 +24,7 @@ jobs:
         with:
           # Full history, so the next step can see whether the tag is on main.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Require the tagged commit to be on main
         # main only advances when a release branch merges into it, so a tag
@@ -34,7 +35,7 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
-            echo "::error::${TAG} points at ${GITHUB_SHA}, which is not on main. Merge the release branch into main via PR, then tag main. If the PR has merged since this tag was pushed, re-run this job."
+            echo "::error::${TAG} points at ${GITHUB_SHA}, which is not on main. Merge the release branch into main via PR, then tag main. If the PR has since merged as a merge commit, re-run this job; a squash or rebase merge never puts this commit on main, so the tag has to be re-created on main."
             exit 1
           fi
           echo "OK: ${TAG} is on main"
@@ -88,6 +89,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv build
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

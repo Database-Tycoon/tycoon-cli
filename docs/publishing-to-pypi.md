@@ -103,8 +103,10 @@ your own.
 
    Tag `main`, not the release branch. Preflight fails when the tagged
    commit is not on `main`, so a tag pushed before the promotion PR merges
-   publishes nothing. If that happens, merge the PR and re-run the failed
-   job; the tag doesn't need to move.
+   publishes nothing. If that happens and the PR merges as a merge commit,
+   re-run the failed job; the tag doesn't need to move. A squash or rebase
+   merge never puts the tagged commit on `main`, so promote with a merge
+   commit only, or the tag has to be re-created on `main`.
 
    The branch and its tag share a name, so always push with the
    fully-qualified `refs/heads/...` / `refs/tags/...` form. A bare
