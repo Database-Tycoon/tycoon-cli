@@ -99,6 +99,11 @@ only-include = ["src", "pyproject.toml", "README.md", "LICENSE", "CHANGELOG.md",
 packages = ["src/tycoon", "src/tycoon_city"]
 
 [tool.uv]
+# uv 0.12.22 is the first release that writes uv.lock at format revision 5;
+# older releases write it back at revision 3 or lower, so a one-line dependency
+# change becomes a format flip. setup-uv in CI reads this and installs the
+# newest uv that satisfies it.
+required-version = ">=0.12.22"
 prerelease = "if-necessary-or-explicit"
 
 [tool.pytest.ini_options]
