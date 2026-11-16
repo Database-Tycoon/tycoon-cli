@@ -2,10 +2,20 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Changed
+
+- **Working on tycoon needs uv 0.12.22 or later** ([#493][]). `uv.lock` depended on which uv last locked it: older releases wrote it in an older format, so a one-line dependency change could come out as a much larger diff. The minimum now lives in `required-version` in `pyproject.toml`, CI installs the newest uv that satisfies it, and `uv.lock` is relocked once at the current format (no package versions change). For contributors; installing tycoon from PyPI is unaffected.
+- **The publish workflow refuses a tag that isn't on `main`** ([#473][]). The release process tags `main` after the release branch merges into it, but nothing checked that. v0.2.4 was tagged on its release branch and published to PyPI while `main` still pointed at v0.2.3, and `main` caught up three days later. Preflight now fails when the tagged commit is not on `main`, before anything builds. A tag pushed too early can stay where it is if the promotion PR merges as a merge commit: merge it, then re-run the job. A squash or rebase merge never puts the tagged commit on `main`, so the tag has to be re-created there.
+
 ### Fixed
 
+- **An `md:` target with no MotherDuck token fails at once instead of opening a browser sign-in** ([#460][]). With no token, DuckDB's MotherDuck extension starts a browser sign-in and waits, so `tycoon data query` on an `md:` warehouse sat on the sign-in page for about a minute, and in a script or CI job it hung. `data query`, `data schema` and `data sync` now check before they connect and exit 1 with `No MotherDuck token for md:<db>: export MOTHERDUCK_TOKEN and run again.` A token counts when `MOTHERDUCK_TOKEN` or `motherduck_token` is set or when the connection string carries `motherduck_token=<value>`. The file `~/.duckdb/motherduck_token` does not count: on DuckDB 1.5.4 a valid token in that file, with both variables unset, still started the browser sign-in. Projects on local DuckDB files never reach the check.
+- **`tycoon city` refuses an `md:` or `motherduck:` catalog with no MotherDuck token** ([#460][]). `tycoon city --path md:<db>`, `tycoon-city` and `tycoon-city export` now exit 1 with the same one-line message instead of starting the server and opening a browser sign-in on the first request. The renderer accepts the same token sources as the CLI: `MOTHERDUCK_TOKEN` or `motherduck_token` in the environment, or `motherduck_token=<value>` in the catalog string. Local files and project directories are unaffected.
 - **`duckdb` is pinned to 1.5.4, which builds `QUALIFY` over cast columns as a table** ([#339][]). On the previous pin, `duckdb==1.5.2`, a `QUALIFY` window over columns cast in a CTE failed with `INTERNAL Error: Failed to bind column reference` once wrapped in `CREATE TABLE AS`, which is how dbt builds a table model. A staging dedupe of the form "cast in a CTE, then `qualify row_number() over (...) = 1`" therefore failed under `tycoon data transform`, and on MotherDuck targets too. DuckDB 1.5.4 fixes it; `uv.lock` changes only the `duckdb` entry. Existing warehouse files need no migration: a file written by 1.5.2 opens and accepts writes under 1.5.4. MotherDuck's server runs its own DuckDB, and the issue reports a similar crash there on a different code path (`TopNWindowElimination`) that this pin does not address.
 
+[#493]: https://github.com/Database-Tycoon/tycoon-cli/issues/493
+[#473]: https://github.com/Database-Tycoon/tycoon-cli/issues/473
+[#460]: https://github.com/Database-Tycoon/tycoon-cli/issues/460
 [#339]: https://github.com/Database-Tycoon/tycoon-cli/issues/339
 
 ## [0.2.4] - 2026-11-07
