@@ -151,7 +151,7 @@ export class Inspector {
       <dl>
         <dt>${escapeHtml(labels.schema ?? "schema")}</dt><dd>${escapeHtml(obj.schema)}</dd>
         <dt>kind</dt><dd>${obj.kind}</dd>
-        <dt>${escapeHtml(labels.rows ?? "rows")}</dt><dd>${obj.row_count.toLocaleString()}</dd>
+        <dt>${escapeHtml(labels.rows ?? "rows")}</dt><dd>${obj.kind === "view" ? "not counted (view)" : obj.row_count.toLocaleString()}</dd>
         <dt>density</dt><dd>${lot.target_density} / 8</dd>
         <dt>powered</dt><dd>${lot.powered ? "yes" : "no — takes no part in lineage"}</dd>
         ${dbt?.materialized ? `<dt>materialized</dt><dd>${escapeHtml(dbt.materialized)}</dd>` : ""}

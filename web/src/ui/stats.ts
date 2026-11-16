@@ -52,7 +52,7 @@ export class Stats {
           <td>${escapeHtml(o.schema)}</td>
           <td>${escapeHtml(o.name)}</td>
           <td>${o.kind}</td>
-          <td class="num">${o.row_count.toLocaleString()}</td>
+          ${o.kind === "view" ? '<td class="num" title="not counted (view)">—</td>' : `<td class="num">${o.row_count.toLocaleString()}</td>`}
         </tr>`,
       )
       .join("");
