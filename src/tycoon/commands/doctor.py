@@ -107,11 +107,11 @@ def _check_project_venv() -> None:
 
 
 def _fix_python_env() -> None:
-    """Build a project-local ``.venv`` on a supported interpreter (``--fix``).
+    """Build a project-local `.venv` on a supported interpreter (`--fix`).
 
     The running interpreter can't be swapped under our own feet, so the repair
-    is to create the correct environment beside ``tycoon.yml`` and tell the user
-    to activate it. Delegates to the same core as ``tycoon setup``.
+    is to create the correct environment beside `tycoon.yml` and tell the user
+    to activate it. Delegates to the same core as `tycoon setup`.
     """
     from tycoon.constants import DEFAULT_SETUP_PYTHON
     from tycoon.venv import create_venv, find_uv
