@@ -353,6 +353,23 @@ class TestQueryFormats:
         records = json.loads(result.stdout, parse_constant=reject)
         assert records == [{"n": None, "i": None, "l": [1.0, None], "s": {"x": None}}]
 
+    def test_json_keeps_columns_that_share_a_name(self, cli_runner, tmp_path):
+        """SELECT a.id, b.id used to keep only the last id in each JSON object."""
+        import json
+
+        db_path = tmp_path / "dupes.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute("CREATE TABLE a AS SELECT 1 AS id, 'x' AS id_1")
+        con.execute("CREATE TABLE b AS SELECT 2 AS id")
+        con.close()
+
+        result = cli_runner.invoke(
+            app,
+            ["data", "query", "SELECT a.id, b.id, a.id_1, b.id FROM a, b", "--db", str(db_path), "-f", "json"],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout) == [{"id": 1, "id_2": 2, "id_1": "x", "id_3": 2}]
+
     def test_blob_and_interval_read_outside_python(self, cli_runner, tmp_path):
         import json
 

@@ -85,9 +85,33 @@ def to_csv(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
     return buffer.getvalue()
 
 
+def _unique_keys(columns: Sequence[str]) -> list[str]:
+    """Column names made unique for JSON keys: a repeated ``id`` becomes ``id_1``, ``id_2``.
+
+    ``SELECT a.id, b.id`` returns two columns named ``id``; as dict keys the
+    second would overwrite the first. A suffix that is already a column name
+    is skipped.
+    """
+    taken = set(columns)
+    seen: set[str] = set()
+    keys = []
+    for name in columns:
+        key = name
+        if key in seen:
+            n = 1
+            while f"{name}_{n}" in taken:
+                n += 1
+            key = f"{name}_{n}"
+            taken.add(key)
+        seen.add(key)
+        keys.append(key)
+    return keys
+
+
 def to_json(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
-    """Rows as a JSON array with one object per row."""
-    records = [dict(zip(columns, row, strict=True)) for row in _machine_rows(rows, nan_as_null=True)]
+    """Rows as a JSON array with one object per row. Repeated column names get a ``_1``, ``_2`` suffix."""
+    keys = _unique_keys(columns)
+    records = [dict(zip(keys, row, strict=True)) for row in _machine_rows(rows, nan_as_null=True)]
     return json.dumps(records, indent=2, default=_json_default, allow_nan=False)
 
 
