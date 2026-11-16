@@ -27,7 +27,7 @@ from pathlib import Path
 
 import duckdb
 
-from tycoon.project import SyncSourceSpec
+from tycoon.project import SyncSourceSpec, is_motherduck
 
 _SYSTEM_SCHEMAS = frozenset(
     {
@@ -80,8 +80,8 @@ def _alias_for(url: str) -> str:
     # md:dogfood_dbt_prod  → dogfood_dbt_prod
     # ./other.duckdb       → other
     # /abs/foo.duckdb      → foo
-    if url.startswith("md:"):
-        candidate = url[3:]
+    if is_motherduck(url):
+        candidate = url.split(":", 1)[1]
     else:
         candidate = Path(url).stem
     # Strip everything that isn't a SQL identifier char
@@ -95,7 +95,7 @@ def _attach_sql(url: str, alias: str) -> str:
     Sources are always attached READ_ONLY — `tycoon data sync` is a
     one-way pull and should never mutate the source.
     """
-    if url.startswith("md:"):
+    if is_motherduck(url):
         # MotherDuck — relies on MOTHERDUCK_TOKEN env var (or active OAuth).
         return f"ATTACH '{url}' AS {alias} (READ_ONLY)"
     # Local DuckDB file.
