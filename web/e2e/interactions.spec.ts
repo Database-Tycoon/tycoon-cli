@@ -45,6 +45,50 @@ test("hovering a building shows its tooltip", async ({ page }) => {
   await expect(page.locator("#tooltip")).toContainText("raw.events — 250,000 rows");
 });
 
+test("a view's row count reads as not counted, never as 0 rows (gh-388)", async ({ page }) => {
+  // A view stores no rows, so the producer emits row_count 0 as a
+  // placeholder. Rendered as "0" it says the view is empty.
+  await open(page, "?settle=1");
+  const view = "staging.stg_customers";
+
+  await page.evaluate((key) => window.__tycoonCity!.select(key), view);
+  const rows = page.locator("#inspector dt", { hasText: "rows" }).locator("xpath=following-sibling::dd[1]");
+  await expect(rows).toHaveText("not counted (view)");
+
+  const pos = await page.evaluate((key) => window.__tycoonCity!.screenPos(key), view);
+  await page.mouse.move(pos!.x, pos!.y);
+  await page.waitForTimeout(150);
+  await expect(page.locator("#tooltip")).toHaveText(`${view} — view, rows not counted`);
+
+  await page.click("#stats-button");
+  await expect(page.locator(`#stats tr[data-key="${view}"] td.num`)).toHaveText("—");
+});
+
+test("an empty table still reads as 0 rows, not as not counted (gh-388)", async ({ page }) => {
+  // The demo fixture has no empty table, so make one: only `kind` may
+  // decide "not counted", never a row count of 0.
+  const table = "raw.customers";
+  await page.route("**/city.json*", async (route) => {
+    const doc = await (await route.fetch()).json();
+    doc.objects.find((o: { key: string }) => o.key === table).row_count = 0;
+    await route.fulfill({ json: doc });
+  });
+  await open(page, "?settle=1");
+
+  await page.evaluate((key) => window.__tycoonCity!.select(key), table);
+  const rows = page.locator("#inspector dt", { hasText: "rows" }).locator("xpath=following-sibling::dd[1]");
+  await expect(rows).toHaveText("0");
+
+  const pos = await page.evaluate((key) => window.__tycoonCity!.screenPos(key), table);
+  await page.mouse.move(pos!.x, pos!.y);
+  await page.waitForTimeout(150);
+  await expect(page.locator("#tooltip")).toContainText("0 rows");
+  await expect(page.locator("#tooltip")).not.toContainText("not counted");
+
+  await page.click("#stats-button");
+  await expect(page.locator(`#stats tr[data-key="${table}"] td.num`)).toHaveText("0");
+});
+
 test("clicking the sky clears the selection", async ({ page }) => {
   await open(page, "?settle=1");
 
