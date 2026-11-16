@@ -318,7 +318,7 @@ test("the footer and the run header each say what their count counts (gh-389)", 
   page,
 }) => {
   // The two numbers count different things: buildings in the catalog, and
-  // dbt nodes in the run that have no building. Bare, side by side, they
+  // dbt nodes in the run not matched to a building. Bare, side by side, they
   // read as two answers to one question.
   await serve(page);
   await open(page, "?settle=1");
@@ -327,7 +327,7 @@ test("the footer and the run header each say what their count counts (gh-389)", 
   await page.locator("#replay-button").click();
   await page.locator(`#run-panel li[data-run="${FAIL_ID}"]`).click();
   await expect(page.locator("#run-panel .run-head")).toContainText(
-    "2 dbt nodes with no building (tests, seeds, models outside this catalog)",
+    "2 dbt nodes not matched to a building (tests, seeds, snapshots, models outside this catalog)",
   );
 });
 
