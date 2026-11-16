@@ -11,8 +11,16 @@ All notable changes to this project will be documented in this file. The format 
 
 - **Jira PTC keys are no longer accepted in PR titles, and the Jira sync workflow is gone** ([#351][]). The project moved its tracking from the Jira PTC board to GitHub issues and the Tycoon CLI project on 2026-10-09, so the PR title check now accepts `gh-<N>` scopes only, and `CONTRIBUTING.md` and the contributor skills no longer describe `PTC-<N>` as an option. `.github/workflows/jira-sync.yml` is deleted: its `JIRA_EMAIL` and `JIRA_API_TOKEN` secrets were never set, so every run exited without syncing anything. Existing commits, changelog entries and release notes that cite `PTC-<N>` keys are unchanged. For contributors.
 
+### Fixed
+
+- **An `md:` target with no MotherDuck token fails at once instead of opening a browser sign-in** ([#460][]). With no token, DuckDB's MotherDuck extension starts a browser sign-in and waits, so `tycoon data query` on an `md:` warehouse sat on the sign-in page for about a minute, and in a script or CI job it hung. `data query`, `data schema` and `data sync` now check before they connect and exit 1 with `No MotherDuck token for md:<db>: export MOTHERDUCK_TOKEN and run again.` A token counts when `MOTHERDUCK_TOKEN` or `motherduck_token` is set or when the connection string carries `motherduck_token=<value>`. The file `~/.duckdb/motherduck_token` does not count: on DuckDB 1.5.4 a valid token in that file, with both variables unset, still started the browser sign-in. Projects on local DuckDB files never reach the check.
+- **`tycoon city` refuses an `md:` or `motherduck:` catalog with no MotherDuck token** ([#460][]). `tycoon city --path md:<db>`, `tycoon-city` and `tycoon-city export` now exit 1 with the same one-line message instead of starting the server and opening a browser sign-in on the first request. The renderer accepts the same token sources as the CLI: `MOTHERDUCK_TOKEN` or `motherduck_token` in the environment, or `motherduck_token=<value>` in the catalog string. Local files and project directories are unaffected.
+- **dlt trace capture follows the pipeline's working directory** ([#394][]). Run-history capture read `trace.pickle` from a hard-coded `~/.dlt/pipelines`, so a pipeline that ran anywhere else, for example with `DLT_DATA_DIR` set, loaded fine but never showed up in `dlt_trace_runs` or the byte and timing detail of `tycoon data history`. Capture now reads from the directory the pipeline itself used, and falls back to dlt's own default (`DLT_DATA_DIR`, else `~/.dlt/pipelines`) when it doesn't know the pipeline.
+
 [#493]: https://github.com/Database-Tycoon/tycoon-cli/issues/493
 [#473]: https://github.com/Database-Tycoon/tycoon-cli/issues/473
+[#460]: https://github.com/Database-Tycoon/tycoon-cli/issues/460
+[#394]: https://github.com/Database-Tycoon/tycoon-cli/issues/394
 [#351]: https://github.com/Database-Tycoon/tycoon-cli/issues/351
 
 ## [0.2.4] - 2026-11-07
