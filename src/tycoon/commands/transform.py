@@ -192,9 +192,17 @@ def _capture_dbt_and_refresh_safe(
 
 
 def _has_motherduck_token(target: str) -> bool:
-    return bool(os.environ.get("MOTHERDUCK_TOKEN") or os.environ.get("motherduck_token")) or (
-        "motherduck_token=" in target.lower()
-    )
+    if os.environ.get("MOTHERDUCK_TOKEN") or os.environ.get("motherduck_token"):
+        return True
+    if "motherduck_token=" in target.lower():
+        return True
+    # A browser sign-in stores its token here; doctor.py probes the same file.
+    # Resolved per call (not at import) so it follows HOME.
+    try:
+        stored = Path.home() / ".duckdb" / "motherduck_token"
+        return stored.is_file() and stored.stat().st_size > 0
+    except OSError:
+        return False
 
 
 def _auto_osi_scaffold_safe() -> None:
@@ -210,18 +218,23 @@ def _auto_osi_scaffold_safe() -> None:
     target = config.local_db or config.warehouse_target
     if isinstance(target, str) and not _has_motherduck_token(target):
         # Without a token DuckDB starts a browser sign-in and blocks the command.
-        info("Skipped the OSI auto-scaffold: no MOTHERDUCK_TOKEN in the environment. Run `tycoon semantics scaffold`.")
+        info(
+            "Skipped the OSI auto-scaffold: no MotherDuck token found. "
+            "Export MOTHERDUCK_TOKEN, then run `tycoon semantics scaffold`."
+        )
         return
     try:
         from tycoon.scaffolding.osi_generator import scaffold_osi
 
         out_path = config.dbt_project_dir / "semantic" / "osi.yaml"
-        scaffold_osi(
+        result = scaffold_osi(
             warehouse_db=target,
             out_path=out_path,
             project_name=project.name,
             dbt_project_dir=config.dbt_project_dir,
         )
+        if result.error:
+            info(f"OSI auto-scaffold failed: {result.error}")
     except Exception:
         pass
 

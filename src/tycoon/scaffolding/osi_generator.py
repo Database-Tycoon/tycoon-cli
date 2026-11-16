@@ -55,7 +55,9 @@ from typing import Any
 import duckdb
 import yaml
 
-from tycoon.config import MOTHERDUCK_PREFIX, display_target, redact_secrets
+# display_target and redact_secrets only exist in tycoon.config, so that import stays.
+from tycoon.config import display_target, redact_secrets
+from tycoon.project import is_motherduck
 from tycoon.layers import (
     Layer,
     classify_dbt_models,
@@ -92,7 +94,7 @@ class WarehouseOpenError(Exception):
 
 
 def _is_motherduck(target: Path | str) -> bool:
-    return isinstance(target, str) and target.startswith(MOTHERDUCK_PREFIX)
+    return isinstance(target, str) and is_motherduck(target)
 
 
 def scaffold_osi(

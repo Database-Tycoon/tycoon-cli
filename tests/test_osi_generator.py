@@ -439,6 +439,20 @@ class TestMotherDuckTarget:
         assert "sekrit" not in "\n".join(result.warnings)
         assert "sekrit" not in out.read_text()
 
+    @pytest.mark.parametrize("target", ["motherduck:analytics", "MD:analytics", "MotherDuck:analytics"])
+    def test_other_motherduck_spellings_are_not_treated_as_local_paths(self, tmp_path, monkeypatch, target):
+        calls: list[str] = []
+        real_connect = duckdb.connect
+
+        def fake_connect(arg, *a, **k):
+            calls.append(arg)
+            return real_connect(":memory:")
+
+        monkeypatch.setattr(duckdb, "connect", fake_connect)
+        result = scaffold_osi(warehouse_db=target, out_path=tmp_path / "osi.yaml", project_name="demo")
+        assert calls == [target]
+        assert not any("Warehouse not found" in w for w in result.warnings)
+
     def test_existing_unsentineled_file_is_kept_for_md(self, tmp_path):
         out = tmp_path / "osi.yaml"
         out.write_text("hand: edited\n")
@@ -490,12 +504,61 @@ class TestAutoScaffoldMotherDuck:
 
         monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
         monkeypatch.delenv("motherduck_token", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
         self._project(tmp_path, monkeypatch, "md:x")
         calls: list[object] = []
         monkeypatch.setattr(duckdb, "connect", lambda *a, **k: calls.append(a))
         _auto_osi_scaffold_safe()
         assert calls == []
-        assert "MOTHERDUCK_TOKEN" in capsys.readouterr().out
+        out = " ".join(capsys.readouterr().out.split())
+        assert "Export MOTHERDUCK_TOKEN" in out
+
+    def test_stored_token_file_counts_as_a_token(self, tmp_path, monkeypatch):
+        from tycoon.commands.transform import _auto_osi_scaffold_safe
+
+        monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
+        monkeypatch.delenv("motherduck_token", raising=False)
+        home = tmp_path / "home"
+        (home / ".duckdb").mkdir(parents=True)
+        (home / ".duckdb" / "motherduck_token").write_text("stored-token")
+        monkeypatch.setenv("HOME", str(home))
+        self._project(tmp_path, monkeypatch, "md:x")
+        calls: list[object] = []
+
+        def fake_connect(*a, **k):
+            calls.append(a)
+            raise duckdb.Error("rejected")
+
+        monkeypatch.setattr(duckdb, "connect", fake_connect)
+        _auto_osi_scaffold_safe()
+        assert calls
+
+    def test_empty_stored_token_file_does_not_count(self, tmp_path, monkeypatch):
+        from tycoon.commands.transform import _has_motherduck_token
+
+        monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
+        monkeypatch.delenv("motherduck_token", raising=False)
+        home = tmp_path / "home"
+        (home / ".duckdb").mkdir(parents=True)
+        (home / ".duckdb" / "motherduck_token").write_text("")
+        monkeypatch.setenv("HOME", str(home))
+        assert not _has_motherduck_token("md:x")
+
+    def test_open_failure_is_reported(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.transform import _auto_osi_scaffold_safe
+
+        monkeypatch.setenv("MOTHERDUCK_TOKEN", "invalid-token-for-test")
+        self._project(tmp_path, monkeypatch, "md:x")
+
+        def fake_connect(*a, **k):
+            raise duckdb.Error("token expired")
+
+        monkeypatch.setattr(duckdb, "connect", fake_connect)
+        _auto_osi_scaffold_safe()
+        out = " ".join(capsys.readouterr().out.split())
+        assert "auto-scaffold failed" in out
+        assert "token expired" in out
+        assert "invalid-token-for-test" not in out
 
     def test_md_with_token_attempts_the_scaffold(self, tmp_path, monkeypatch):
         from tycoon.commands.transform import _auto_osi_scaffold_safe
