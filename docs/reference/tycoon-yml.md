@@ -71,7 +71,7 @@ database:
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `raw` | string | `data/raw.duckdb` | Always a local DuckDB file. Don't point at MotherDuck — dlt manages this. |
+| `raw` | string | `data/raw.duckdb` | Where dlt loads source data: a local DuckDB file, or `md:<name>` (or `motherduck:<name>`) for a MotherDuck database. The MotherDuck database must exist first, and `MOTHERDUCK_TOKEN` must be exported. |
 | `warehouse` | string | `data/warehouse.duckdb` | Local file or `md:<catalog>` for MotherDuck. |
 
 For Snowflake / BigQuery / Redshift warehouses, the `warehouse` field
