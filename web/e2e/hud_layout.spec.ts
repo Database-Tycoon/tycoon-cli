@@ -119,18 +119,50 @@ test("a trackpad pinch over a HUD panel does not zoom the page off the window (g
 });
 
 test("HUD panels stay inside a narrow window (gh-384)", async ({ page }) => {
-  await page.setViewportSize({ width: 360, height: 640 });
+  // 300 px is narrower than every panel's natural width (inspector 300,
+  // problems 340, legend about 350, run panel 360), so each width cap is
+  // what keeps its panel on screen with the same 12 px gutter it has at
+  // full size. Without its cap the legend shrinks to the window but loses
+  // the gutter on the left, so the gutter is what this checks.
+  const width = 300;
+  const gutter = 12;
+  await page.setViewportSize({ width, height: 640 });
   await open(page, "?settle=1");
+  const inside = async (id: string) => {
+    const box = (await page.locator(id).boundingBox())!;
+    expect(box.x, id).toBeGreaterThanOrEqual(gutter - 0.5);
+    expect(box.x + box.width, id).toBeLessThanOrEqual(width - gutter + 0.5);
+  };
+
+  // The legend hides while the detail panel is open (gh-382), so measure it first.
+  await expect(page.locator("#legend")).toBeVisible();
+  await inside("#legend");
+
   await page.keyboard.press("p");
   await page.click("#replay-button");
   await page.evaluate(() => window.__tycoonCity!.select("staging.stg_customers"));
   await expect(page.locator("#run-panel")).toBeVisible();
+  await expect(page.locator("#inspector dl")).toBeVisible();
+  for (const id of ["#problems", "#run-panel", "#inspector"]) await inside(id);
+});
 
-  for (const id of ["#problems", "#run-panel", "#inspector"]) {
-    const box = (await page.locator(id).boundingBox())!;
-    expect(box.x, id).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width, id).toBeLessThanOrEqual(360);
-  }
+test("a short window keeps the legend inside the map, scrolling its content (gh-384)", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 260 });
+  await open(page, "?settle=1");
+  const fit = await page.locator("#legend").evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const map = (el.offsetParent as HTMLElement).getBoundingClientRect();
+    return { top: box.top - map.top, bottom: map.bottom - box.bottom, scrolls: el.scrollHeight > el.clientHeight };
+  });
+  expect(fit.top).toBeGreaterThanOrEqual(0);
+  expect(fit.bottom).toBeGreaterThanOrEqual(0);
+  expect(fit.scrolls).toBe(true);
+});
+
+test("touch pinch-zoom is off for the page (gh-384)", async ({ page }) => {
+  await open(page, "?settle=1");
+  const touch = await page.evaluate(() => getComputedStyle(document.body).touchAction);
+  expect(touch).toBe("pan-x pan-y");
 });
 
 test("a name with no break point still wraps inside the panel, clear of the close button (gh-383)", async ({
