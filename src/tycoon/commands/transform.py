@@ -192,17 +192,13 @@ def _capture_dbt_and_refresh_safe(
 
 
 def _has_motherduck_token(target: str) -> bool:
-    if os.environ.get("MOTHERDUCK_TOKEN") or os.environ.get("motherduck_token"):
+    if any(os.environ.get(k, "").strip() for k in ("MOTHERDUCK_TOKEN", "motherduck_token")):
         return True
     if "motherduck_token=" in target.lower():
         return True
-    # A browser sign-in stores its token here; doctor.py probes the same file.
-    # Resolved per call (not at import) so it follows HOME.
-    try:
-        stored = Path.home() / ".duckdb" / "motherduck_token"
-        return stored.is_file() and stored.stat().st_size > 0
-    except OSError:
-        return False
+    # ~/.duckdb/motherduck_token is deliberately not a source: DuckDB 1.5.4 still
+    # starts the browser sign-in when only that file holds the token.
+    return False
 
 
 def _auto_osi_scaffold_safe() -> None:

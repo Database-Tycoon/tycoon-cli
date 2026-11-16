@@ -513,8 +513,8 @@ class TestAutoScaffoldMotherDuck:
         out = " ".join(capsys.readouterr().out.split())
         assert "Export MOTHERDUCK_TOKEN" in out
 
-    def test_stored_token_file_counts_as_a_token(self, tmp_path, monkeypatch):
-        from tycoon.commands.transform import _auto_osi_scaffold_safe
+    def test_stored_token_file_is_not_enough(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.transform import _auto_osi_scaffold_safe, _has_motherduck_token
 
         monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
         monkeypatch.delenv("motherduck_token", raising=False)
@@ -522,27 +522,13 @@ class TestAutoScaffoldMotherDuck:
         (home / ".duckdb").mkdir(parents=True)
         (home / ".duckdb" / "motherduck_token").write_text("stored-token")
         monkeypatch.setenv("HOME", str(home))
+        assert not _has_motherduck_token("md:x")
         self._project(tmp_path, monkeypatch, "md:x")
         calls: list[object] = []
-
-        def fake_connect(*a, **k):
-            calls.append(a)
-            raise duckdb.Error("rejected")
-
-        monkeypatch.setattr(duckdb, "connect", fake_connect)
+        monkeypatch.setattr(duckdb, "connect", lambda *a, **k: calls.append(a))
         _auto_osi_scaffold_safe()
-        assert calls
-
-    def test_empty_stored_token_file_does_not_count(self, tmp_path, monkeypatch):
-        from tycoon.commands.transform import _has_motherduck_token
-
-        monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
-        monkeypatch.delenv("motherduck_token", raising=False)
-        home = tmp_path / "home"
-        (home / ".duckdb").mkdir(parents=True)
-        (home / ".duckdb" / "motherduck_token").write_text("")
-        monkeypatch.setenv("HOME", str(home))
-        assert not _has_motherduck_token("md:x")
+        assert calls == []
+        assert "Export MOTHERDUCK_TOKEN" in " ".join(capsys.readouterr().out.split())
 
     def test_open_failure_is_reported(self, tmp_path, monkeypatch, capsys):
         from tycoon.commands.transform import _auto_osi_scaffold_safe
