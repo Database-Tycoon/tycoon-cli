@@ -3,10 +3,17 @@ title: Documentation log
 description: Chronological record of documentation changes
 tags: [log]
 related: []
-updated: '2026-10-11'
+updated: '2026-11-16'
 ---
 
 # Log
+
+- 2026-11-16: mental-model page review fixes. The skipped-test behaviour now
+  reads as a known bug tracked in #329, in the worked example and in the dbt
+  test row of the reference table. The road-load row credits
+  `export/blocks.py` for `edges[].daily_load_s` and `export/measured.py` for
+  `budget` only. The worked example notes that `stg_widgets` names its
+  off-map dlt source in `objects[].dbt.external_upstream` (#387).
 
 - 2026-10-11: mental-model page taken out of the site nav. It is written for
   reviewers of city PRs, like the rest of `docs/city/`, so it stays reachable

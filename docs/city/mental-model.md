@@ -3,7 +3,7 @@ title: The city map, a mental model
 description: How `tycoon city` turns a project into a map, which layer a city PR touches, a checklist for reviewing one, and what each thing on the map stands for with the city.json field it comes from
 tags: [city, mental-model, review, contract, renderer]
 related: [guide, city-json-v1, run-json-v1, conventions, hud-design]
-updated: '2026-10-21'
+updated: '2026-11-16'
 ---
 
 # The city map, a mental model
@@ -116,13 +116,13 @@ Reference. Chip wording, glyphs and colours are in [`guide.md`](guide.md).
 | Column-level lineage | Skybridges, for the selected building only | `edges[].columns` | `catalog/column_lineage.py` |
 | Where a street ends | A plaza (2x2 lot or civic building), else a dock (depth-0 source), else an apron | `street_features[]` | `sim/town_streets.py` |
 | Object with no lineage | A dimmed building; nothing is dimmed if the catalog has no lineage at all | `lots[].powered`, `database.has_known_edges` | `sim/signals.py` |
-| dbt test | Fail: the building burns. Warn or pass: a roof marker. Declared but never run: no marker | `lots[].test_status`, `objects[].dbt.tests[].status` | `sim/signals.py` |
+| dbt test | Fail: the building burns. Warn or pass: a roof marker. Declared but never run: no marker. Known bug: a skipped test also counts as a pass and gets the pass marker ([#329](https://github.com/Database-Tycoon/tycoon-cli/issues/329)); `objects[].dbt.tests[].status` still says `skipped` | `lots[].test_status`, `objects[].dbt.tests[].status` | `sim/signals.py` (`_TEST_PASSING`) |
 | Build error | Colour shifts toward red | `lots[].build_status` | `sim/signals.py` |
 | Time since last build or load | Colour fades toward grey over about 30 days | `lots[].last_build_age_s` | `sim/channels.py` (the age); the 30-day window is `DECAY_FULL_S` in `web/src/scene/buildings.ts` |
 | Freshness SLA | warn/error: cone, boarded windows | `lots[].freshness_status` | `sim/signals.py` |
 | Late source, downstream | Fog or overcast over the districts it feeds | `weather.cells[]` | `export/measured.py` |
 | Schema drift | A crane for 7 days | `lots[].schema_drift_age_s` | `sim/channels.py` (the age); the 7-day window is `DRIFT_RECENT_S` in `web/src/ui/health.ts` |
-| Build cadence x cost | Road-load overlay and compute gauge | `edges[].daily_load_s`, `budget` | `export/measured.py` |
+| Build cadence x cost | Road-load overlay and compute gauge | `edges[].daily_load_s`, `budget` | `export/blocks.py` (per edge, from `catalog/run_history.py`), `export/measured.py` (`budget`) |
 | Run appearances | Usage overlay; nothing for unmeasured | `objects[].usage` | `export/measured.py` |
 | One dbt invocation | Run replay: buildings grow in order, failures ignite | `replay`, `runs/<id>.json` | `sim/build_replay.py`, `export/run_json.py` |
 | Docs and test coverage | Library shelves, problems-panel gauges, achievements | `achievements.milestones[]` | `export/achievements.py` |
@@ -134,10 +134,19 @@ Reference. Chip wording, glyphs and colours are in [`guide.md`](guide.md).
 The `csv-import` template, built with the real CLI plus one failing test.
 
 - **The dlt source table is off the map.** dlt loads into the raw DuckDB file;
-  the city reads only the warehouse. The notes popover says so.
-- **A skipped test shows as a pass.** dbt skipped the downstream test after
-  the upstream failure, and the signal counts that as passing
-  ([#329](https://github.com/Database-Tycoon/tycoon-cli/issues/329)).
+  the city reads only the warehouse. The notes popover says so, and
+  `stg_widgets` names the missing source in `objects[].dbt.external_upstream`
+  (`files.files`, relation `raw.raw_files.files`), so the inspector can show
+  an input that has no building
+  ([#387](https://github.com/Database-Tycoon/tycoon-cli/issues/387)).
+- **A skipped test shows as a pass. This is a known bug**, tracked in
+  [#329](https://github.com/Database-Tycoon/tycoon-cli/issues/329), not how
+  the map is meant to work. dbt skipped the downstream test after the
+  upstream failure, and `sim/signals.py` counts `skipped` as passing, so the
+  building gets the pass marker. A skipped test never ran, so it should not
+  read as healthy; #329 proposes its own state or counting it as unknown.
+  Until #329 is fixed, check `objects[].dbt.tests[].status`, which still says
+  `skipped`.
 - **tycoon's own metadata views are buildings.** The `stg_tycoon__*` and
   `dim_runs` views turn two models into twelve buildings.
 - **No upstream on the map means depth 0.** `stg_widgets` reads the off-map
