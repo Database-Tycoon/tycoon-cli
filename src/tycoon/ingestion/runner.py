@@ -562,7 +562,8 @@ def _capture_and_refresh_safe(
         if not is_motherduck(str(raw_db_path)):
             capture_dlt_safe(meta, raw_db_path)
         pipeline_name = getattr(pipeline, "pipeline_name", None) if pipeline else None
-        capture_dlt_trace_safe(meta, pipeline_name)
+        pipelines_dir = getattr(pipeline, "pipelines_dir", None) if pipeline else None
+        capture_dlt_trace_safe(meta, pipeline_name, Path(pipelines_dir) if pipelines_dir else None)
         refresh_usage_dashboards(project_root=config.root, rill_dir=config.rill_dir)
     except Exception:
         pass
