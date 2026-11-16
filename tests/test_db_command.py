@@ -156,6 +156,8 @@ class TestMotherDuckWarehouse:
         )
         cfg = TycoonConfig(project_root=tmp_path)
         monkeypatch.setattr("tycoon.commands.db.config", cfg)
+        # The connect is faked, but the token check before it (#460) still looks.
+        monkeypatch.setenv("MOTHERDUCK_TOKEN", "not-a-real-token")
 
         calls: list[tuple[str, dict]] = []
         real_connect = duckdb.connect
@@ -296,6 +298,7 @@ class TestMotherDuckSchemaRowCounts:
             "name: test\nsources: {}\ndatabase:\n  warehouse: 'md:x'\n  raw: 'data/raw.duckdb'\n"
         )
         monkeypatch.setattr("tycoon.commands.db.config", TycoonConfig(project_root=tmp_path))
+        monkeypatch.setenv("MOTHERDUCK_TOKEN", "not-a-real-token")
 
         con = duckdb.connect(":memory:")
         con.execute("CREATE TABLE t AS SELECT range AS i FROM range(1000)")
