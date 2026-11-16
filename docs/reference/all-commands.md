@@ -374,11 +374,15 @@ The renderer ships with tycoon; there is nothing extra to install.
 tycoon fire [OPTIONS]
 
 Options:
-  -r, --run TEXT           Show failures for a specific run (invocation ID
-                           prefix).
+  -r, --run TEXT           Show failing tests in one run. Takes a run id (or
+                           prefix) from tycoon data history or from this
+                           command.
 ```
 
-Failing tests from the latest run: the buildings on fire in the 3D city.
+Failing tests, each counted by its newest result across captured runs: the
+buildings on fire in the 3D city. Models that failed to build are not fires;
+when there are any, the output says how many and points at `tycoon data
+history`.
 
 ### [`tycoon firehouse`](../commands/fire.md#tycoon-firehouse)
 
@@ -386,7 +390,8 @@ Failing tests from the latest run: the buildings on fire in the 3D city.
 tycoon firehouse
 ```
 
-Dispatch stats: fire trucks on duty, one per fire in the latest run.
+Fire trucks on duty, one per failing test, counted the same way as
+`tycoon fire`.
 
 ---
 
@@ -396,8 +401,8 @@ Dispatch stats: fire trucks on duty, one per fire in the latest run.
 tycoon data layers
 ```
 
-The layered architecture ring by ring with vendor per object, and each dbt
-layer's last build.
+The layered architecture with the vendor of every object, and each dbt
+model's latest status and last successful build.
 
 ### [`tycoon data sources explore`](../commands/data/sources.md#explore-inspect-a-source)
 
@@ -405,7 +410,8 @@ layer's last build.
 tycoon data sources explore [NAME] [OPTIONS]
 
 Options:
-  -n, --sample INTEGER     Number of sample rows to show (default: 10).
+  -n, --sample INTEGER     Number of sample rows to show (1 or more,
+                           default 10).
 ```
 
 List all sources with metadata, or inspect one source's schema, sample rows,

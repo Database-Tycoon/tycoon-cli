@@ -210,7 +210,7 @@ If the project dir already has the source with its `_run.py`, `migrate` reports 
 ```bash
 tycoon data sources explore                 # every registered source, with its catalog entry
 tycoon data sources explore github          # one source: schema, sample rows, run history
-tycoon data sources explore github -n 25    # more sample rows (default 10)
+tycoon data sources explore github -n 25    # more sample rows (default 10, at least 1)
 ```
 
 Without a name, `explore` lists every source in `tycoon.yml` with its type,
@@ -221,6 +221,10 @@ types, the first rows of the first table the source loaded (dlt's own
 `.tycoon/metadata.duckdb`: how many loads, when the last one ran, whether it
 completed, and the rows loaded across all of them. A source that has not run
 yet gets a pointer at `tycoon data sources run <name>` instead.
+
+Inspecting one source needs a local raw DuckDB file. With `database.raw` set
+to MotherDuck (`md:<name>`), `explore <name>` exits 1 with a message saying
+so; the list of sources still works.
 
 ## Pipeline dispatch model
 
