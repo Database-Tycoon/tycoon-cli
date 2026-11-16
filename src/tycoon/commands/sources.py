@@ -10,7 +10,7 @@ import typer
 from rich.markup import escape
 from rich.table import Table
 
-from tycoon.config import TycoonConfig, load_config
+from tycoon.config import TycoonConfig, load_config, redact_secrets
 from tycoon.ingestion.catalog import CATALOG, CatalogEntry
 from tycoon.project import ResourceConfig, SourceConfig, load_project, save_project
 from tycoon.utils.console import console, error, header, info, next_steps, success, warn
@@ -909,6 +909,13 @@ def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, cfg: 
     if _source_already_referenced(dbt_dir, source_name):
         return  # User already has staging models referencing this source.
 
+    if cfg.raw_is_motherduck:
+        info(
+            f"No staging models exist for {source_name}; skipping the auto-scaffold, which reads a local raw "
+            "file and database.raw is MotherDuck."
+        )
+        return
+
     staging_dir = dbt_dir / "models" / "staging" / source_name
     info(f"No staging models exist for {source_name} — auto-scaffolding...")
     try:
@@ -978,7 +985,7 @@ def run_source(
         _pipeline, load_info = _run_source(
             name=source_name,
             source_config=source_config,
-            raw_db_path=cfg.raw_db,
+            raw_db_path=cfg.raw_target,
             max_records=max_records,
             fail_on_empty=fail_on_empty,
         )
@@ -994,7 +1001,8 @@ def run_source(
     except Exception as exc:
         from tycoon.ingestion.runner import IngestionError
 
-        error(str(exc) if isinstance(exc, IngestionError) else f"{source_name} pipeline failed: {exc}")
+        message = redact_secrets(str(exc))
+        error(message if isinstance(exc, IngestionError) else f"{source_name} pipeline failed: {message}")
         raise typer.Exit(1) from exc
 
 
@@ -1034,7 +1042,7 @@ def run_all(
             _pipeline, load_info = _run_source(
                 name=name,
                 source_config=source_config,
-                raw_db_path=cfg.raw_db,
+                raw_db_path=cfg.raw_target,
                 max_records=max_records,
                 fail_on_empty=fail_on_empty,
             )
@@ -1044,7 +1052,7 @@ def run_all(
             success(f"{name} complete. {load_info}")
             _maybe_auto_scaffold(name, source_config, cfg=cfg, scaffold=not no_scaffold)
         except Exception as exc:
-            error(f"{name} pipeline failed: {exc}")
+            error(f"{name} pipeline failed: {redact_secrets(str(exc))}")
             raise typer.Exit(1) from exc
 
     success("All ingestion pipelines completed successfully.")
