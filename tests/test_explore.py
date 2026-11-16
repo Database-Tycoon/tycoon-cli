@@ -901,11 +901,14 @@ def _write_run_results(
     command: str = "build",
     dbt_version: str = "1.9.0",
     target: str = "dev",
-    success: bool = True,
     elapsed: float = 12.5,
     results: list[dict] | None = None,
 ) -> None:
-    """Write a plausible target/run_results.json into a fake dbt project."""
+    """Write a plausible target/run_results.json into a fake dbt project.
+
+    Real run_results.json has no top-level ``success`` key (gh-341), so the
+    fixture leaves it out too.
+    """
     import json as _json
 
     default_results = [
@@ -946,7 +949,6 @@ def _write_run_results(
         "args": {"which": command, "target": target},
         "results": results if results is not None else default_results,
         "elapsed_time": elapsed,
-        "success": success,
     }
     target_dir = dbt_project_dir / "target"
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -1115,7 +1117,6 @@ class TestCaptureDbt:
         _write_run_results(
             dbt_dir,
             invocation_id="mixed-1",
-            success=False,
             results=[
                 {
                     "unique_id": "model.demo.ok_model",
@@ -1153,6 +1154,48 @@ class TestCaptureDbt:
             assert row == (False, 1, 1, 0, 1)
         finally:
             con.close()
+
+    def _success(self, meta: Path) -> object:
+        con = duckdb.connect(str(meta), read_only=True)
+        try:
+            row = con.execute("SELECT success FROM dbt_runs").fetchone()
+        finally:
+            con.close()
+        assert row is not None
+        return row[0]
+
+    def test_no_op_results_count_as_success(self, tmp_path: Path):
+        """dbt >= 1.10 reports exposures and saved queries as ``no-op`` (gh-341)."""
+        from tycoon.observability import capture_dbt
+
+        dbt_dir = tmp_path / "dbt"
+        dbt_dir.mkdir()
+        _write_run_results(
+            dbt_dir,
+            invocation_id="noop-1",
+            results=[
+                {"unique_id": "model.demo.m", "status": "success", "timing": [], "adapter_response": {}},
+                {"unique_id": "test.demo.t", "status": "pass", "timing": [], "adapter_response": {}},
+                {"unique_id": "exposure.demo.e", "status": "no-op", "timing": [], "adapter_response": {}},
+                {"unique_id": "model.demo.cloned", "status": "reused", "timing": [], "adapter_response": {}},
+            ],
+        )
+
+        meta = tmp_path / "meta.duckdb"
+        capture_dbt(meta, dbt_dir)
+        assert self._success(meta) is True
+
+    def test_exit_code_decides_success_when_given(self, tmp_path: Path):
+        """dbt also fails a run on statuses tycoon does not count, so its exit code wins."""
+        from tycoon.observability import capture_dbt
+
+        dbt_dir = tmp_path / "dbt"
+        dbt_dir.mkdir()
+        _write_run_results(dbt_dir, invocation_id="rc-1")
+
+        meta = tmp_path / "meta.duckdb"
+        capture_dbt(meta, dbt_dir, exit_code=1)
+        assert self._success(meta) is False
 
 
 class TestRefreshUsageDashboards:
