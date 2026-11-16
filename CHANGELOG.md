@@ -31,6 +31,7 @@ All notable changes to this project will be documented in this file. The format 
 - **dlt trace capture follows the pipeline's working directory** ([#394][]). Run-history capture read `trace.pickle` from a hard-coded `~/.dlt/pipelines`, so a pipeline that ran anywhere else, for example with `DLT_DATA_DIR` set, loaded fine but never showed up in `dlt_trace_runs` or the byte and timing detail of `tycoon data history`. Capture now reads from the directory the pipeline itself used, and falls back to dlt's own default (`DLT_DATA_DIR`, else `~/.dlt/pipelines`) when it doesn't know the pipeline.
 - **`duckdb` is pinned to 1.5.4, which builds `QUALIFY` over cast columns as a table** ([#339][]). On the previous pin, `duckdb==1.5.2`, a `QUALIFY` window over columns cast in a CTE failed with `INTERNAL Error: Failed to bind column reference` once wrapped in `CREATE TABLE AS`, which is how dbt builds a table model. A staging dedupe of the form "cast in a CTE, then `qualify row_number() over (...) = 1`" therefore failed under `tycoon data transform`, and on MotherDuck targets too. DuckDB 1.5.4 fixes it; `uv.lock` changes only the `duckdb` entry. Existing warehouse files need no migration: a file written by 1.5.2 opens and accepts writes under 1.5.4. MotherDuck's server runs its own DuckDB, and the issue reports a similar crash there on a different code path (`TopNWindowElimination`) that this pin does not address.
 - **`tycoon city`: the legend no longer shows through the detail panel** ([#382][]). Both panels are translucent and sit on the right edge, so a tall detail panel stacked its text over the legend's. The legend now hides while a building is selected and comes back when the panel closes.
+- **`tycoon city`: long model and test names wrap instead of being clipped** ([#383][]). The detail panel split model names mid-word (`station_informa` / `tion`) and cut long dbt test names off at its right edge. Identifiers now wrap after an underscore or dot, and anything still too long wraps inside the panel rather than running past it.
 
 [#500]: https://github.com/Database-Tycoon/tycoon-cli/issues/500
 [#493]: https://github.com/Database-Tycoon/tycoon-cli/issues/493
@@ -49,6 +50,7 @@ All notable changes to this project will be documented in this file. The format 
 [#260]: https://github.com/Database-Tycoon/tycoon-cli/pull/260
 [#259]: https://github.com/Database-Tycoon/tycoon-cli/issues/259
 [#382]: https://github.com/Database-Tycoon/tycoon-cli/issues/382
+[#383]: https://github.com/Database-Tycoon/tycoon-cli/issues/383
 
 ## [0.2.4] - 2026-11-07
 
