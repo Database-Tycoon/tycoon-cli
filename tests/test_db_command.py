@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import secrets
 from pathlib import Path
 
 import duckdb
+import pytest
 
 from tycoon.cli import app
 
@@ -265,3 +268,315 @@ class TestMotherDuckWarehouse:
         assert result.exit_code == 0, result.stdout
         assert [c[0] for c in calls] == ["md:x_raw"]
         assert "read_only" not in calls[0][1]
+
+
+class _RecordingConnection:
+    """Wraps a DuckDB connection and records every statement sent to it."""
+
+    def __init__(self, con: duckdb.DuckDBPyConnection, log: list[str]) -> None:
+        self._con = con
+        self._log = log
+
+    def execute(self, sql: str, *args, **kwargs):
+        self._log.append(sql)
+        return self._con.execute(sql, *args, **kwargs)
+
+    def close(self) -> None:
+        self._con.close()
+
+
+class TestMotherDuckSchemaRowCounts:
+    """``data schema`` estimates MotherDuck row counts unless ``--exact`` (#310)."""
+
+    def _setup(self, tmp_path: Path, monkeypatch) -> list[str]:
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        (tmp_path / "tycoon.yml").write_text(
+            "name: test\nsources: {}\ndatabase:\n  warehouse: 'md:x'\n  raw: 'data/raw.duckdb'\n"
+        )
+        monkeypatch.setattr("tycoon.commands.db.config", TycoonConfig(project_root=tmp_path))
+
+        con = duckdb.connect(":memory:")
+        con.execute("CREATE TABLE t AS SELECT range AS i FROM range(1000)")
+        con.execute("CREATE TABLE empty_t (i INT)")
+        con.execute("CREATE VIEW v AS SELECT * FROM t")
+        statements: list[str] = []
+        real_connect = duckdb.connect
+
+        def fake_connect(database: str = ":memory:", **kwargs):
+            if str(database).startswith("md:"):
+                return _RecordingConnection(con, statements)
+            return real_connect(database, **kwargs)
+
+        monkeypatch.setattr(duckdb, "connect", fake_connect)
+        return statements
+
+    def test_default_reads_estimates_without_counting(self, tmp_path, monkeypatch, cli_runner):
+        statements = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema"])
+        assert result.exit_code == 0, result.stdout
+        assert not any("count(*)" in sql.lower() for sql in statements)
+        assert "~1,000 rows (estimate)" in result.stdout
+        assert "~0 rows (estimate)" in result.stdout
+        assert "view (use --exact to count)" in result.stdout
+
+    def test_base_table_with_null_estimate_is_not_called_a_view(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+
+        class _NullEstimate:
+            def __init__(self, con) -> None:
+                self._con = con
+
+            def execute(self, sql: str, *args, **kwargs):
+                if "duckdb_tables()" in sql:
+                    sql = sql.replace("d.estimated_size", "NULL::BIGINT")
+                return self._con.execute(sql, *args, **kwargs)
+
+            def close(self) -> None:
+                self._con.close()
+
+        patched = duckdb.connect
+
+        def connect(database: str = ":memory:", **kwargs):
+            con = patched(database, **kwargs)
+            return _NullEstimate(con) if str(database).startswith("md:") else con
+
+        monkeypatch.setattr(duckdb, "connect", connect)
+        result = cli_runner.invoke(app, ["data", "schema"])
+        assert result.exit_code == 0, result.stdout
+        output = " ".join(result.stdout.split())
+        assert output.count("no estimate (use --exact to count)") == 2
+        assert output.count("view (use --exact to count)") == 1
+
+    def test_single_row_estimate_is_singular(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        patched = duckdb.connect
+
+        class _OneRowEstimate:
+            def __init__(self, con) -> None:
+                self._con = con
+
+            def execute(self, sql: str, *args, **kwargs):
+                sql = sql.replace(
+                    "d.estimated_size", "CASE WHEN d.estimated_size = 1000 THEN 1 ELSE d.estimated_size END"
+                )
+                return self._con.execute(sql, *args, **kwargs)
+
+            def close(self) -> None:
+                self._con.close()
+
+        def connect(database: str = ":memory:", **kwargs):
+            con = patched(database, **kwargs)
+            return _OneRowEstimate(con) if str(database).startswith("md:") else con
+
+        monkeypatch.setattr(duckdb, "connect", connect)
+        result = cli_runner.invoke(app, ["data", "schema"])
+        assert result.exit_code == 0, result.stdout
+        assert "~1 row (estimate)" in result.stdout
+        assert "~1 rows" not in result.stdout
+
+    def test_exact_counts_every_table(self, tmp_path, monkeypatch, cli_runner):
+        statements = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "schema", "--exact"])
+        assert result.exit_code == 0, result.stdout
+        assert sum("count(*)" in sql.lower() for sql in statements) == 3
+        assert "1,000 rows" in result.stdout
+        assert "estimate" not in result.stdout
+
+    def test_local_project_output_is_unchanged_by_exact(self, tmp_path, monkeypatch, cli_runner):
+        from tycoon.config import TycoonConfig
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        (tmp_path / "tycoon.yml").write_text("name: test\nsources: {}\n")
+        (tmp_path / "data").mkdir()
+        con = duckdb.connect(str(tmp_path / "data" / "warehouse.duckdb"))
+        con.execute("CREATE TABLE t AS SELECT range AS i FROM range(5)")
+        con.close()
+        monkeypatch.setattr("tycoon.commands.db.config", TycoonConfig(project_root=tmp_path))
+
+        default = cli_runner.invoke(app, ["data", "schema"])
+        with_flag = cli_runner.invoke(app, ["data", "schema", "--exact"])
+        assert default.exit_code == with_flag.exit_code == 0
+        assert default.stdout == with_flag.stdout
+        assert "5 rows" in default.stdout
+        assert "estimate" not in default.stdout
+
+
+@pytest.mark.e2e
+@pytest.mark.skipif(not os.environ.get("MOTHERDUCK_TOKEN"), reason="MOTHERDUCK_TOKEN not set")
+def test_schema_estimates_against_real_motherduck(tmp_path, monkeypatch, cli_runner):
+    """Unmocked: estimated_size on a real database, then --exact on the same one."""
+    from tycoon.config import TycoonConfig
+
+    name = f"tycoon_e2e_scratch_b{secrets.token_hex(3)}"
+    assert name.startswith("tycoon_e2e_scratch_")
+    admin = duckdb.connect("md:")
+    try:
+        admin.execute(f"CREATE DATABASE {name}")
+        admin.execute(f"CREATE TABLE {name}.main.t AS SELECT range AS i FROM range(1000)")
+        admin.execute(f"CREATE VIEW {name}.main.v AS SELECT * FROM {name}.main.t")
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        (tmp_path / "tycoon.yml").write_text(
+            f"name: test\nsources: {{}}\ndatabase:\n  warehouse: 'md:{name}'\n  raw: 'data/raw.duckdb'\n"
+        )
+        monkeypatch.setattr("tycoon.commands.db.config", TycoonConfig(project_root=tmp_path))
+
+        estimate = cli_runner.invoke(app, ["data", "schema"])
+        assert estimate.exit_code == 0, estimate.stdout
+        assert "~1,000 rows (estimate)" in estimate.stdout
+        assert "view (use --exact to count)" in estimate.stdout
+
+        admin.execute(f"DELETE FROM {name}.main.t WHERE i % 2 = 0")
+        after_delete = cli_runner.invoke(app, ["data", "schema"])
+        assert "~1,000 rows (estimate)" in after_delete.stdout
+
+        exact = cli_runner.invoke(app, ["data", "schema", "--exact"])
+        assert exact.exit_code == 0, exact.stdout
+        assert "500 rows" in exact.stdout
+        assert "estimate" not in exact.stdout
+    finally:
+        assert name.startswith("tycoon_e2e_scratch_")
+        admin.execute(f"DROP DATABASE IF EXISTS {name}")
+        admin.close()
+
+
+class TestMotherDuckQueryWriteGuard:
+    """``data query`` refuses writes on an md: database unless ``--allow-writes`` (#309)."""
+
+    def _setup(self, tmp_path: Path, monkeypatch, **kwargs) -> list[tuple[str, dict]]:
+        return TestMotherDuckWarehouse._setup(self, tmp_path, monkeypatch, **kwargs)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "DROP TABLE t",
+            "INSERT INTO t VALUES (1)",
+            "-- harmless\nDELETE FROM t",
+            "SELECT 1; DROP TABLE t",
+            "COPY t TO 'x.csv'",
+            "ATTACH 'x.db'",
+            "CALL pragma_version()",
+            "SELEC 1 FROM",
+        ],
+    )
+    def test_refused_statement_never_connects(self, tmp_path, monkeypatch, cli_runner, sql):
+        calls = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "query", "--", sql], input="")
+        assert result.exit_code == 1
+        assert calls == []
+        output = " ".join(result.output.split())
+        assert "Refusing to run" in output
+        assert "against MotherDuck (md:x)" in output
+        assert "--allow-writes" in output
+
+    def test_refusal_names_the_statement_and_the_flag(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "query", "DROP TABLE t"])
+        assert (
+            "Refusing to run DROP against MotherDuck (md:x). "
+            "On MotherDuck, 'data query' only runs SELECT, WITH, FROM, TABLE, VALUES, DESCRIBE, SHOW, "
+            "SUMMARIZE, PIVOT, UNPIVOT and EXPLAIN. Pass --allow-writes to run other statements."
+        ) in " ".join(result.output.split())
+
+    def test_deeply_nested_sql_is_refused_cleanly(self, tmp_path, monkeypatch, cli_runner):
+        calls = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "query", "SELECT " + "(" * 500 + "1" + ")" * 500])
+        assert result.exit_code == 1
+        assert calls == []
+        assert "Refusing to run a statement tycoon could not parse" in " ".join(result.output.split())
+        assert "Traceback" not in result.output
+        assert not isinstance(result.exception, RecursionError)
+
+    def test_refusal_hides_motherduck_token(self, tmp_path, monkeypatch, cli_runner):
+        self._setup(tmp_path, monkeypatch, warehouse="md:x?motherduck_token=SECRET123")
+        result = cli_runner.invoke(app, ["data", "query", "DROP TABLE t"])
+        assert result.exit_code == 1
+        assert "SECRET123" not in result.output
+
+    @pytest.mark.parametrize(
+        "sql",
+        ["SELECT 1", "-- note\nSELECT 1;", "SELECT 1; SELECT 2", "FROM range(2)", "DESCRIBE SELECT 1", "SHOW TABLES"],
+    )
+    def test_read_only_statements_run(self, tmp_path, monkeypatch, cli_runner, sql):
+        calls = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "query", "--", sql])
+        assert result.exit_code == 0, result.output
+        assert [c[0] for c in calls] == ["md:x"]
+
+    def test_allow_writes_runs_the_statement(self, tmp_path, monkeypatch, cli_runner):
+        calls = self._setup(tmp_path, monkeypatch)
+        result = cli_runner.invoke(app, ["data", "query", "--allow-writes", "CREATE TABLE t AS SELECT 1"])
+        assert result.exit_code == 0, result.output
+        assert [c[0] for c in calls] == ["md:x"]
+
+    def test_raw_motherduck_database_is_guarded_too(self, tmp_path, monkeypatch, cli_runner):
+        calls = self._setup(tmp_path, monkeypatch, raw="md:x_raw")
+        result = cli_runner.invoke(app, ["data", "query", "--raw", "DROP TABLE t"])
+        assert result.exit_code == 1
+        assert calls == []
+        assert "md:x_raw" in result.output
+
+    def test_local_project_is_not_guarded(self, tmp_path, monkeypatch, cli_runner):
+        db_path = tmp_path / "test.duckdb"
+        con = duckdb.connect(str(db_path))
+        con.execute("CREATE TABLE t (i INTEGER)")
+        con.close()
+        result = cli_runner.invoke(app, ["data", "query", "DROP TABLE t", "--db", str(db_path)])
+        assert result.exit_code == 1
+        assert "Refusing to run" not in result.output
+        assert "read-only" in result.output.lower()
+        assert duckdb.connect(str(db_path), read_only=True).execute("SELECT count(*) FROM t").fetchone() == (0,)
+
+
+@pytest.mark.e2e
+@pytest.mark.skipif(not os.environ.get("MOTHERDUCK_TOKEN"), reason="MOTHERDUCK_TOKEN not set")
+def test_query_write_guard_against_real_motherduck(tmp_path, monkeypatch, cli_runner):
+    """Unmocked: a refused statement changes nothing, and --allow-writes does write."""
+    from tycoon.config import TycoonConfig
+
+    name = f"tycoon_e2e_scratch_b{secrets.token_hex(3)}"
+    assert name.startswith("tycoon_e2e_scratch_")
+    admin = duckdb.connect("md:")
+    try:
+        admin.execute(f"CREATE DATABASE {name}")
+        admin.execute(f"CREATE TABLE {name}.main.t AS SELECT range AS i FROM range(3)")
+
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        (tmp_path / "tycoon.yml").write_text(
+            f"name: test\nsources: {{}}\ndatabase:\n  warehouse: 'md:{name}'\n  raw: 'data/raw.duckdb'\n"
+        )
+        monkeypatch.setattr("tycoon.commands.db.config", TycoonConfig(project_root=tmp_path))
+
+        def row_count() -> int:
+            return admin.execute(f"SELECT count(*) FROM {name}.main.t").fetchone()[0]
+
+        read = cli_runner.invoke(app, ["data", "query", "--", "-- peek\nSELECT count(*) AS n FROM t;"])
+        assert read.exit_code == 0, read.output
+        assert "3" in read.output
+
+        for sql in (
+            "EXPLAIN SELECT * FROM t",
+            "SUMMARIZE t",
+            "PIVOT t ON i USING count(*)",
+            "DESCRIBE t",
+            "SHOW TABLES",
+        ):
+            ran = cli_runner.invoke(app, ["data", "query", sql])
+            assert ran.exit_code == 0, (sql, ran.output)
+            assert row_count() == 3, sql
+
+        for sql in ("DROP TABLE t", "INSERT INTO t VALUES (9)", "SELECT 1; DELETE FROM t", "COPY t TO 'x.csv'"):
+            refused = cli_runner.invoke(app, ["data", "query", sql])
+            assert refused.exit_code == 1, sql
+            assert "Refusing to run" in refused.output
+            assert row_count() == 3, sql
+
+        allowed = cli_runner.invoke(app, ["data", "query", "--allow-writes", "INSERT INTO t VALUES (9)"])
+        assert allowed.exit_code == 0, allowed.output
+        assert row_count() == 4
+    finally:
+        assert name.startswith("tycoon_e2e_scratch_")
+        admin.execute(f"DROP DATABASE IF EXISTS {name}")
+        admin.close()
