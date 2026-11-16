@@ -73,6 +73,21 @@ class TestRawDestination:
         monkeypatch.setattr("tycoon.ingestion.destination._has_pyarrow", lambda: True)
         assert raw_destination("md:x?motherduck_token=abc").destination_name == "motherduck"
 
+    @pytest.mark.parametrize(
+        "target", ["md:x?MOTHERDUCK_TOKEN=abc", "motherduck:x?attach_mode=single&Motherduck_Token=abc"]
+    )
+    def test_token_key_in_any_case_is_enough(self, target, no_md_token, monkeypatch):
+        monkeypatch.setattr("tycoon.ingestion.destination._has_pyarrow", lambda: True)
+        assert raw_destination(target).destination_name == "motherduck"
+
+    def test_token_file_in_home_does_not_count(self, no_md_token, monkeypatch, tmp_path):
+        # Deliberate (#460): DuckDB 1.5.4 still opened a browser sign-in with only this file present.
+        (tmp_path / ".duckdb").mkdir()
+        (tmp_path / ".duckdb" / "motherduck_token").write_text("abc")
+        monkeypatch.setenv("HOME", str(tmp_path))
+        with pytest.raises(IngestionError, match="MOTHERDUCK_TOKEN is not set"):
+            raw_destination("md:x")
+
 
 class TestRunSource:
     def _run(self, monkeypatch, raw_db_path):
@@ -146,6 +161,81 @@ class TestRenderedErrors:
 
         assert result.exit_code == 1
         assert "pip install pyarrow" in " ".join(result.output.split())
+
+
+FAKE_TOKEN = "fake-md-token-0123456789"
+LEAKY_ERROR = f"IO Error: Failed to connect to md:x_raw?motherduck_token={FAKE_TOKEN}"
+
+
+class TestLoadErrorsHideTheToken:
+    """dlt puts motherduck_token=<secret> in its connection string, and a failed load can echo it."""
+
+    PROJECT = "name: t\ndatabase:\n  raw: 'md:t_raw'\n  warehouse: 'md:t'\nsources:\n  s:\n    type: rest_api\n    schema: raw_s\n"
+
+    def test_metadata_row_is_redacted(self, monkeypatch, tmp_path, md_token):
+        metadata_db = tmp_path / "metadata.duckdb"
+        monkeypatch.setattr("tycoon.observability.metadata_db_path", lambda _root: metadata_db)
+        factory = MagicMock()
+        factory.return_value.run.side_effect = RuntimeError(LEAKY_ERROR)
+        monkeypatch.setattr(runner.dlt, "pipeline", factory)
+        monkeypatch.setattr(runner, "_NATIVE_BUILDERS", {"fake": lambda _cfg: object()})
+
+        with pytest.raises(RuntimeError):
+            run_source("src", SourceConfig(type="fake", schema="raw_src"), "md:x_raw")
+
+        con = duckdb.connect(str(metadata_db), read_only=True)
+        try:
+            tables = [row[0] for row in con.execute("SELECT table_name FROM information_schema.tables").fetchall()]
+            stored = " ".join(
+                str(row) for table in tables for row in con.execute(f'SELECT * FROM "{table}"').fetchall()
+            )
+        finally:
+            con.close()
+        assert "Failed to connect" in stored
+        assert FAKE_TOKEN not in stored
+
+    def _cli(self, monkeypatch, tmp_path, cli_runner, args, message=LEAKY_ERROR):
+        from tycoon.cli import app
+
+        (tmp_path / "tycoon.yml").write_text(self.PROJECT)
+        monkeypatch.chdir(tmp_path)
+
+        def failing_run_source(**_kwargs):
+            raise RuntimeError(message)
+
+        monkeypatch.setattr(runner, "run_source", failing_run_source)
+        return cli_runner.invoke(app, args)
+
+    @pytest.mark.parametrize("args", [["data", "sources", "run", "s"], ["data", "sources", "run-all"]])
+    def test_sources_commands_print_it_redacted(self, args, monkeypatch, tmp_path, cli_runner, md_token):
+        result = self._cli(monkeypatch, tmp_path, cli_runner, args)
+        output = " ".join(result.output.split())
+        assert result.exit_code == 1
+        assert "Failed to connect" in output
+        assert FAKE_TOKEN not in output
+
+    def test_run_all_prints_and_notifies_it_redacted(self, monkeypatch, tmp_path, cli_runner, md_token):
+        sent = []
+        monkeypatch.setenv("TYCOON_NOTIFY_WEBHOOK_URL", "https://example.invalid/hook")
+        monkeypatch.setattr("tycoon.notify.send", lambda *args, **kwargs: sent.append((args, kwargs)) or True)
+
+        result = self._cli(monkeypatch, tmp_path, cli_runner, ["data", "run-all", "--notify", "--skip-transform"])
+        output = " ".join(result.output.split())
+
+        assert result.exit_code == 1
+        assert "Failed to connect" in output
+        assert FAKE_TOKEN not in output
+        assert sent, "the --notify webhook was not called"
+        assert "Failed to connect" in str(sent)
+        assert FAKE_TOKEN not in str(sent)
+
+    def test_run_all_keeps_brackets_in_the_error(self, monkeypatch, tmp_path, cli_runner, md_token):
+        # Rich reads `[...]` as markup, so an unescaped error loses it.
+        result = self._cli(
+            monkeypatch, tmp_path, cli_runner, ["data", "run-all", "--skip-transform"], message="install 'pkg[extra]'"
+        )
+        assert result.exit_code == 1
+        assert "pkg[extra]" in result.output
 
 
 class TestCatalogShimTarget:

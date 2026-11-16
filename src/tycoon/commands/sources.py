@@ -10,7 +10,7 @@ import typer
 from rich.markup import escape
 from rich.table import Table
 
-from tycoon.config import TycoonConfig, load_config
+from tycoon.config import TycoonConfig, load_config, redact_secrets
 from tycoon.ingestion.catalog import CATALOG, CatalogEntry
 from tycoon.project import ResourceConfig, SourceConfig, load_project, save_project
 from tycoon.utils.console import console, error, header, info, next_steps, success, warn
@@ -994,7 +994,8 @@ def run_source(
     except Exception as exc:
         from tycoon.ingestion.runner import IngestionError
 
-        error(str(exc) if isinstance(exc, IngestionError) else f"{source_name} pipeline failed: {exc}")
+        message = redact_secrets(str(exc))
+        error(message if isinstance(exc, IngestionError) else f"{source_name} pipeline failed: {message}")
         raise typer.Exit(1) from exc
 
 
@@ -1044,7 +1045,7 @@ def run_all(
             success(f"{name} complete. {load_info}")
             _maybe_auto_scaffold(name, source_config, cfg=cfg, scaffold=not no_scaffold)
         except Exception as exc:
-            error(f"{name} pipeline failed: {exc}")
+            error(f"{name} pipeline failed: {redact_secrets(str(exc))}")
             raise typer.Exit(1) from exc
 
     success("All ingestion pipelines completed successfully.")

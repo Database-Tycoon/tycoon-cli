@@ -18,7 +18,7 @@ from typing import Any
 
 import dlt
 
-from tycoon.config import is_motherduck
+from tycoon.config import is_motherduck, redact_secrets
 from tycoon.core.events import RunCompleted, RunFailed, RunStarted
 from tycoon.ingestion.catalog import CATALOG
 from tycoon.ingestion.destination import raw_destination
@@ -788,7 +788,9 @@ def run_source(
         return pipeline, load_info
 
     except Exception as exc:
-        _emit_event_safe(_metadata_db, RunFailed(source_id=name, runtime_id="dlt-managed", error=str(exc)))
+        _emit_event_safe(
+            _metadata_db, RunFailed(source_id=name, runtime_id="dlt-managed", error=redact_secrets(str(exc)))
+        )
         friendly = _explain_missing_motherduck_database(exc)
         if friendly is not None:
             raise friendly from exc

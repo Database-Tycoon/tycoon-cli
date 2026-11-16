@@ -3,23 +3,17 @@
 from __future__ import annotations
 
 import importlib.util
-import os
 from pathlib import Path
 
 import dlt
 from dlt.common.destination import Destination
 
+from tycoon.motherduck import has_motherduck_token
 from tycoon.project import MOTHERDUCK_PREFIX, is_motherduck
 
 
 def _has_pyarrow() -> bool:
     return importlib.util.find_spec("pyarrow") is not None
-
-
-def _has_token(target: str) -> bool:
-    return bool(
-        os.environ.get("MOTHERDUCK_TOKEN") or os.environ.get("motherduck_token") or "motherduck_token=" in target
-    )
 
 
 def raw_destination(target: str | Path) -> Destination:
@@ -33,7 +27,7 @@ def raw_destination(target: str | Path) -> Destination:
     text = str(target)
     if not is_motherduck(text):
         return dlt.destinations.duckdb(text)
-    if not _has_token(text):
+    if not has_motherduck_token(text):
         from tycoon.ingestion.runner import IngestionError
 
         raise IngestionError(
