@@ -8,6 +8,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 
 from tycoon.config import config
@@ -116,6 +117,9 @@ def _fix_python_env() -> None:
     from tycoon.constants import DEFAULT_SETUP_PYTHON
     from tycoon.venv import create_venv, find_uv
 
+    if config.load_error is not None:
+        warn("Can't auto-fix: tycoon.yml is invalid. Correct the validation error above and retry.")
+        return
     if not config.has_project_file:
         warn("Can't auto-fix: no tycoon.yml found here. Run `tycoon init` first.")
         return
@@ -139,7 +143,9 @@ def _fix_python_env() -> None:
 
 def _check_tycoon_yml():
     """Check if tycoon.yml exists."""
-    if config.has_project_file:
+    if config.load_error:
+        error(f"`tycoon.yml` failed validation:\n{escape(config.format_load_error())}")
+    elif config.has_project_file:
         success("`tycoon.yml` found.")
     else:
         error("`tycoon.yml` not found. Run `tycoon init` to create a new project.")
@@ -503,11 +509,14 @@ def doctor_cmd(
         console.print(Panel("Checking for tycoon.yml...", expand=False))
         _check_tycoon_yml()
 
-        console.print(Panel("Checking for dbt project...", expand=False))
-        _check_dbt_project()
+        if config.load_error is None:
+            console.print(Panel("Checking for dbt project...", expand=False))
+            _check_dbt_project()
 
-        console.print(Panel("Checking for Rill project...", expand=False))
-        _check_rill_project()
+            console.print(Panel("Checking for Rill project...", expand=False))
+            _check_rill_project()
+        else:
+            info("dbt and Rill project checks skipped until tycoon.yml is valid.")
 
         if config.has_project_file:
             console.print(Panel("Checking stack configuration...", expand=False))
@@ -527,5 +536,5 @@ def doctor_cmd(
 
     info("All checks complete.")
 
-    if fix and not python_ok:
+    if fix and (not python_ok or config.load_error is not None):
         _fix_python_env()
