@@ -33,7 +33,7 @@ from tycoon.layers import (
     load_manifest,
 )
 from tycoon.observability import metadata_db_path
-from tycoon.observability.dbt_builds import latest_successful_build
+from tycoon.observability.dbt_builds import model_builds
 from tycoon.project import TransformationTool
 from tycoon.utils.console import console, error, header, info
 
@@ -94,6 +94,16 @@ def _freshness_label(last_sync: datetime.datetime | None) -> tuple[str, str]:
     return f"{int(hours / 24)}d ago", "red"
 
 
+def _local_time(ts: datetime.datetime) -> str:
+    """A timestamp in local time, as `tycoon data history` prints it."""
+    if ts.tzinfo is not None:
+        ts = ts.astimezone().replace(tzinfo=None)
+    return ts.strftime("%Y-%m-%d %H:%M")
+
+
+_STATUS_STYLES = {"success": "green", "error": "red", "skipped": "yellow"}
+
+
 # ---------------------------------------------------------------------------
 # Command
 # ---------------------------------------------------------------------------
@@ -129,7 +139,11 @@ def layers() -> None:
     if project.stack.ingestion.value == "fivetran":
         from tycoon.ingestion.fivetran_sync import latest_connector_snapshot
 
-        fivetran_sources = classify_fivetran_sources(latest_connector_snapshot(metadata_db))
+        try:
+            fivetran_sources = classify_fivetran_sources(latest_connector_snapshot(metadata_db))
+        except Exception:
+            # A locked or unreadable metadata DB costs the Fivetran rows, not the view.
+            fivetran_sources = []
 
     _render_sources_panel([*dlt_sources, *fivetran_sources], metadata_db=metadata_db)
 
@@ -220,7 +234,7 @@ def _render_sources_panel(
             last_sync = data.get("last_sync")
             row_counts = data.get("rows", {})
             runs = data.get("runs", 0)
-            sync_str = last_sync.strftime("%Y-%m-%d %H:%M") if last_sync else "—"
+            sync_str = _local_time(last_sync) if last_sync else "—"
             fresh_label, fresh_style = _freshness_label(last_sync)
             runs_str = f"{runs:,}" if runs else "—"
             tables_str = str(len(row_counts)) if row_counts else "—"
@@ -263,17 +277,36 @@ def _render_layer_panel(
         info(empty_hint)
         return
 
-    last_build = latest_successful_build(metadata_db, [m.identifier.removeprefix("dbt:") for m in models])
-    fresh_label, fresh_style = _freshness_label(last_build)
+    builds = model_builds(metadata_db, [m.identifier.removeprefix("dbt:") for m in models])
 
     table = Table(show_header=True, header_style="cyan")
     table.add_column("Model", style="bold")
     table.add_column("Schema", style="dim")
     table.add_column("Vendor", style="dim")
+    table.add_column("Latest run")
+    table.add_column("Last successful build")
 
+    failed = 0
+    successes: list[datetime.datetime] = []
     for m in models:
-        table.add_row(m.name, m.schema or "—", m.vendor.value)
+        build = builds.get(m.identifier.removeprefix("dbt:"))
+        if build is None:
+            status_cell, built_cell = "[dim]not run[/dim]", "[red]never[/red]"
+        else:
+            style = _STATUS_STYLES.get(build.latest_status, "yellow")
+            status_cell = f"[{style}]{build.latest_status or 'unknown'}[/{style}]"
+            label, label_style = _freshness_label(build.last_success)
+            built_cell = f"[{label_style}]{label}[/{label_style}]"
+            failed += build.latest_status == "error"
+            if build.last_success is not None:
+                successes.append(build.last_success)
+        table.add_row(m.name, m.schema or "—", m.vendor.value, status_cell, built_cell)
 
-    summary = f"{len(models)} model(s), last build [{fresh_style}]{fresh_label}[/{fresh_style}]"
+    # The summary names what it measures: the newest success of ANY model in
+    # the layer, so a failure next to it is counted out loud, not hidden.
+    fresh_label, fresh_style = _freshness_label(max(successes) if successes else None)
+    summary = f"{len(models)} model(s), newest successful build [{fresh_style}]{fresh_label}[/{fresh_style}]"
+    if failed:
+        summary += f", [red]{failed} failed in their latest run[/red]"
     console.print(table)
     console.print(summary)

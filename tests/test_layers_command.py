@@ -58,15 +58,17 @@ def _write_raw_db(root: Path, *, with_dlt_tables: bool = False) -> None:
             con.execute("INSERT INTO raw_shop._dlt_loads VALUES ('1726000000.1', 0)")
 
 
-def _run_results(unique_ids: list[str], started_at: datetime) -> dict:
+def _run_results(
+    unique_ids: list[str], started_at: datetime, *, invocation_id: str = "inv-built", statuses: dict | None = None
+) -> dict:
     stamp = started_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     return {
-        "metadata": {"invocation_id": "inv-built", "generated_at": stamp},
+        "metadata": {"invocation_id": invocation_id, "generated_at": stamp},
         "args": {"which": "build"},
         "results": [
             {
                 "unique_id": uid,
-                "status": "success",
+                "status": (statuses or {}).get(uid, "success"),
                 "execution_time": 0.5,
                 "timing": [{"name": "execute", "started_at": stamp, "completed_at": stamp}],
             }
@@ -179,12 +181,90 @@ class TestLayers:
 
         result = cli_runner.invoke(app, ["data", "layers"])
         assert result.exit_code == 0
-        summaries = [line.strip() for line in result.output.splitlines() if "last build" in line]
-        assert summaries == [
-            "1 model(s), last build 2h ago",
-            "1 model(s), last build never",
-            "1 model(s), last build 2h ago",
+        summaries = [
+            line.strip() for line in result.output.splitlines() if "successful build" in line and "model(s)" in line
         ]
+        assert summaries == [
+            "1 model(s), newest successful build 2h ago",
+            "1 model(s), newest successful build never",
+            "1 model(s), newest successful build 2h ago",
+        ]
+
+    def test_a_failing_model_is_not_hidden_by_its_neighbour(self, project, cli_runner):
+        # Review of #288: with a second staging model erroring, the panel read
+        # "2 model(s), last build 0m ago" in green.
+        nodes = {**_MANIFEST_NODES, "model.p.stg_widgets": _model("stg_widgets", "staging")}
+        _write_manifest(project, nodes)
+        dbt_dir = project / "dbt_project"
+        started = datetime.now(tz=UTC) - timedelta(minutes=5)
+        payload = _run_results(
+            ["model.p.stg_orders", "model.p.stg_widgets"], started, statuses={"model.p.stg_widgets": "error"}
+        )
+        (dbt_dir / "target" / "run_results.json").write_text(json.dumps(payload))
+        assert capture_dbt(metadata_db_path(project), dbt_dir) == "inv-built"
+
+        result = cli_runner.invoke(app, ["data", "layers"])
+        assert result.exit_code == 0
+        out = _flat(result.output)
+        assert "2 model(s), newest successful build 5m ago, 1 failed in their latest run" in out
+        rows = {line.split("│")[1].strip(): line for line in result.output.splitlines() if line.count("│") >= 5}
+        assert "error" in rows["stg_widgets"] and "never" in rows["stg_widgets"]
+        assert "success" in rows["stg_orders"] and "5m ago" in rows["stg_orders"]
+
+    def test_sync_time_is_local_like_data_history(self, project, cli_runner, monkeypatch):
+        import time
+
+        from tycoon.core.events import RunCompleted
+        from tycoon.metadata_backends.duckdb_file import DuckDBFileBackend
+
+        _write_manifest(project, _MANIFEST_NODES)
+        at = datetime(2026, 9, 1, 22, 5, tzinfo=UTC)
+        with DuckDBFileBackend(metadata_db_path(project)) as backend:
+            backend.append_event(
+                RunCompleted(source_id="shop", runtime_id="dlt", timestamp=at, rows_loaded={"orders": 3})
+            )
+        monkeypatch.setenv("TZ", "America/New_York")
+        time.tzset()
+        try:
+            result = cli_runner.invoke(app, ["data", "layers"])
+        finally:
+            monkeypatch.undo()
+            time.tzset()
+        # The table is narrow, so the date can wrap; the local clock time cannot.
+        assert "18:05" in result.output
+        assert "22:05" not in result.output
+
+
+class TestModelBuilds:
+    """`model_builds`, the ledger query behind each layer panel."""
+
+    def _capture(self, root: Path, invocation_id: str, started: datetime, statuses: dict) -> None:
+        dbt_dir = root / "dbt_project"
+        (dbt_dir / "target").mkdir(parents=True, exist_ok=True)
+        payload = _run_results(list(statuses), started, invocation_id=invocation_id, statuses=statuses)
+        (dbt_dir / "target" / "run_results.json").write_text(json.dumps(payload))
+        assert capture_dbt(metadata_db_path(root), dbt_dir) == invocation_id
+
+    def test_a_newer_error_keeps_the_older_success_as_last_build(self, tmp_path):
+        # Review of #288: the success filter was not pinned by any test.
+        from tycoon.observability.dbt_builds import model_builds
+
+        older = datetime(2026, 9, 1, 10, tzinfo=UTC)
+        newer = datetime(2026, 9, 2, 10, tzinfo=UTC)
+        self._capture(tmp_path, "inv-old", older, {"model.p.stg_orders": "success"})
+        self._capture(tmp_path, "inv-new", newer, {"model.p.stg_orders": "error"})
+
+        build = model_builds(metadata_db_path(tmp_path), ["model.p.stg_orders"])["model.p.stg_orders"]
+        assert build.latest_status == "error"
+        assert build.last_success == older
+
+    def test_never_built_model_has_no_success(self, tmp_path):
+        from tycoon.observability.dbt_builds import model_builds
+
+        self._capture(tmp_path, "inv-a", datetime(2026, 9, 1, 10, tzinfo=UTC), {"model.p.stg_orders": "error"})
+        builds = model_builds(metadata_db_path(tmp_path), ["model.p.stg_orders", "model.p.unseen"])
+        assert builds["model.p.stg_orders"].last_success is None
+        assert "model.p.unseen" not in builds
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +322,18 @@ class TestSourcesExplore:
         out = _flat(result.output)
         assert "orders (first 3 rows)" in out
         assert "_dlt_loads (first" not in out
+
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_sample_below_one_is_a_usage_error(self, project, cli_runner, value):
+        # Review of #288: -n 0 reported a 3-row table as empty.
+        _write_raw_db(project)
+        result = cli_runner.invoke(app, ["data", "sources", "explore", "shop", "--sample", value])
+        assert result.exit_code == 2
+        assert "is empty" not in result.output
+
+    def test_help_states_the_default_once(self, cli_runner):
+        result = cli_runner.invoke(app, ["data", "sources", "explore", "--help"])
+        assert "(default: 10)" not in result.output
 
     def test_health_without_runs(self, project, cli_runner):
         _write_raw_db(project)
