@@ -31,7 +31,10 @@ uv run pytest -q
 ## What CI gates on
 
 Every pull request (whatever branch it targets) and every push to `main` runs
-`.github/workflows/ci.yml`:
+`.github/workflows/ci.yml`. CI installs with `uv sync --locked`, so a job
+fails if `uv.lock` no longer matches `pyproject.toml`: when you change
+dependencies in `pyproject.toml`, run `uv lock` and commit `uv.lock` with it.
+The gates are:
 
 - **`uv run pytest -q`** — full default test suite (256 tests as of v0.1.2).
   Runs against Python 3.12 **and** 3.13 in parallel. Network-gated tests
