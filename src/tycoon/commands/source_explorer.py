@@ -104,7 +104,7 @@ def explore(
     ] = None,
     sample: Annotated[
         int,
-        typer.Option("--sample", "-n", help="Number of sample rows to show (default: 10)."),
+        typer.Option("--sample", "-n", min=1, help="Number of sample rows to show."),
     ] = 10,
 ) -> None:
     """Explore sources: inspect schema, sample data, and health.

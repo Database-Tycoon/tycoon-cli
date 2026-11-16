@@ -12,8 +12,8 @@ ever-growing agents file. Each skill is one directory holding a `SKILL.md`.
 | `plugins/contributors/` | People with this repo cloned, changing the CLI | branch model, test layers, snapshot tests |
 | `plugins/maintainers/` | Release-cutting maintainers | the release/publish cycle |
 
-Org-internal maintainer tooling that leans on private systems (Jira, meeting
-notes) is deliberately **not** committed here; it lives in maintainers'
+Org-internal maintainer tooling that leans on private systems (meeting
+notes, internal workspaces) is deliberately **not** committed here; it lives in maintainers'
 local `.claude/skills/`, which is gitignored.
 
 ## How agents get these skills

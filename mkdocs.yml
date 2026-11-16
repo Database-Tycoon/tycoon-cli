@@ -132,6 +132,7 @@ nav:
   - Releases:
     - releases/index.md
     - 0.2.x:
+      - "v0.2.5": releases/v0.2.5.md
       - "v0.2.4": releases/v0.2.4.md
       - "v0.2.3": releases/v0.2.3.md
       - "v0.2.2": releases/v0.2.2.md
@@ -173,6 +174,7 @@ validation:
 draft_docs: |
   /city/
   /proposals/
+  /process/
 
 # These three are not documentation in either mode, so they are excluded
 # outright rather than drafted: a PyPI publishing runbook, an OpenMetadata
