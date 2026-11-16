@@ -52,6 +52,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+motherduck = [
+    "dlt[motherduck]==1.26.0",
+]
 docs = [
     "mkdocs==1.6.1",
     "mkdocs-material==9.5.49",

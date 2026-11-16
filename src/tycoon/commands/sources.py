@@ -1001,7 +1001,7 @@ def run_source(
     except Exception as exc:
         from tycoon.ingestion.runner import IngestionError
 
-        message = redact_secrets(str(exc))
+        message = escape(redact_secrets(str(exc)))
         error(message if isinstance(exc, IngestionError) else f"{source_name} pipeline failed: {message}")
         raise typer.Exit(1) from exc
 
@@ -1052,7 +1052,7 @@ def run_all(
             success(f"{name} complete. {load_info}")
             _maybe_auto_scaffold(name, source_config, cfg=cfg, scaffold=not no_scaffold)
         except Exception as exc:
-            error(f"{name} pipeline failed: {redact_secrets(str(exc))}")
+            error(f"{name} pipeline failed: {escape(redact_secrets(str(exc)))}")
             raise typer.Exit(1) from exc
 
     success("All ingestion pipelines completed successfully.")
