@@ -12,19 +12,29 @@ All notable changes to this project will be documented in this file. The format 
 - **The publish workflow refuses a tag that isn't on `main`** ([#473][]). The release process tags `main` after the release branch merges into it, but nothing checked that. v0.2.4 was tagged on its release branch and published to PyPI while `main` still pointed at v0.2.3, and `main` caught up three days later. Preflight now fails when the tagged commit is not on `main`, before anything builds. A tag pushed too early can stay where it is if the promotion PR merges as a merge commit: merge it, then re-run the job. A squash or rebase merge never puts the tagged commit on `main`, so the tag has to be re-created there.
 - **Steps that run after a load skip a MotherDuck raw database** ([#448][], part of [#430][]). The legacy-table warning, the dlt run capture into `.tycoon/metadata.duckdb`, the dbt staging auto-scaffold after `data sources run`, and `tycoon data analyze` all assume the raw database is a local file. On `database.raw: md:<name>` the first two skip silently and the auto-scaffold skips with one line. `tycoon data analyze` is an explicit command, so it exits 1 with one line saying it reads a local raw file, as it already did in v0.2.3 and v0.2.4. Run history for an `md:` raw is therefore not captured yet. A project on a local raw file is unchanged. `src/tycoon/ingestion/ducklake_config.py`, which had no callers, is deleted.
 
+### Removed
+
+- **Jira PTC keys are no longer accepted in PR titles, and the Jira sync workflow is gone** ([#351][]). The project moved its tracking from the Jira PTC board to GitHub issues and the Tycoon CLI project on 2026-10-09, so the PR title check now accepts `gh-<N>` scopes only, and `CONTRIBUTING.md` and the contributor skills no longer describe `PTC-<N>` as an option. `.github/workflows/jira-sync.yml` is deleted: its `JIRA_EMAIL` and `JIRA_API_TOKEN` secrets were never set, so every run exited without syncing anything. Existing commits, changelog entries and release notes that cite `PTC-<N>` keys are unchanged. For contributors.
+
 ### Fixed
 
 - **An `md:` target with no MotherDuck token fails at once instead of opening a browser sign-in** ([#460][]). With no token, DuckDB's MotherDuck extension starts a browser sign-in and waits, so `tycoon data query` on an `md:` warehouse sat on the sign-in page for about a minute, and in a script or CI job it hung. `data query`, `data schema` and `data sync` now check before they connect and exit 1 with `No MotherDuck token for md:<db>: export MOTHERDUCK_TOKEN and run again.` A token counts when `MOTHERDUCK_TOKEN` or `motherduck_token` is set or when the connection string carries `motherduck_token=<value>`. The file `~/.duckdb/motherduck_token` does not count: on DuckDB 1.5.4 a valid token in that file, with both variables unset, still started the browser sign-in. Projects on local DuckDB files never reach the check.
 - **`tycoon city` refuses an `md:` or `motherduck:` catalog with no MotherDuck token** ([#460][]). `tycoon city --path md:<db>`, `tycoon-city` and `tycoon-city export` now exit 1 with the same one-line message instead of starting the server and opening a browser sign-in on the first request. The renderer accepts the same token sources as the CLI: `MOTHERDUCK_TOKEN` or `motherduck_token` in the environment, or `motherduck_token=<value>` in the catalog string. Local files and project directories are unaffected.
 - **`tycoon city`, `tycoon-city` and `tycoon data sync` accept a `motherduck:` target** ([#446][], follow-up to [#308][]). v0.2.4 taught the rest of tycoon the `motherduck:` prefix, but the city renderer and `data sync` still only recognised `md:`. The catalog name shown in the city's status strip now drops the `motherduck:` prefix the same way it drops `md:`, and a `motherduck:` catalog is not looked up as a file for `pricing.toml` or for the load cache. `tycoon_city` does not import `tycoon`, so it carries its own copy of the prefix rule.
+- **dlt trace capture follows the pipeline's working directory** ([#394][]). Run-history capture read `trace.pickle` from a hard-coded `~/.dlt/pipelines`, so a pipeline that ran anywhere else, for example with `DLT_DATA_DIR` set, loaded fine but never showed up in `dlt_trace_runs` or the byte and timing detail of `tycoon data history`. Capture now reads from the directory the pipeline itself used, and falls back to dlt's own default (`DLT_DATA_DIR`, else `~/.dlt/pipelines`) when it doesn't know the pipeline.
+- **`duckdb` is pinned to 1.5.4, which builds `QUALIFY` over cast columns as a table** ([#339][]). On the previous pin, `duckdb==1.5.2`, a `QUALIFY` window over columns cast in a CTE failed with `INTERNAL Error: Failed to bind column reference` once wrapped in `CREATE TABLE AS`, which is how dbt builds a table model. A staging dedupe of the form "cast in a CTE, then `qualify row_number() over (...) = 1`" therefore failed under `tycoon data transform`, and on MotherDuck targets too. DuckDB 1.5.4 fixes it; `uv.lock` changes only the `duckdb` entry. Existing warehouse files need no migration: a file written by 1.5.2 opens and accepts writes under 1.5.4. MotherDuck's server runs its own DuckDB, and the issue reports a similar crash there on a different code path (`TopNWindowElimination`) that this pin does not address.
 
 [#493]: https://github.com/Database-Tycoon/tycoon-cli/issues/493
 [#473]: https://github.com/Database-Tycoon/tycoon-cli/issues/473
 [#460]: https://github.com/Database-Tycoon/tycoon-cli/issues/460
-[#430]: https://github.com/Database-Tycoon/tycoon-cli/issues/430
 [#446]: https://github.com/Database-Tycoon/tycoon-cli/issues/446
+[#430]: https://github.com/Database-Tycoon/tycoon-cli/issues/430
 [#447]: https://github.com/Database-Tycoon/tycoon-cli/issues/447
 [#448]: https://github.com/Database-Tycoon/tycoon-cli/issues/448
+[#430]: https://github.com/Database-Tycoon/tycoon-cli/issues/430
+[#394]: https://github.com/Database-Tycoon/tycoon-cli/issues/394
+[#351]: https://github.com/Database-Tycoon/tycoon-cli/issues/351
+[#339]: https://github.com/Database-Tycoon/tycoon-cli/issues/339
 
 ## [0.2.4] - 2026-11-07
 
