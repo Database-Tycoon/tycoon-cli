@@ -7,9 +7,11 @@ Rules, each applied only to what the PR adds relative to its base:
   * a `package.json` gains (or changes) a `preinstall`, `install`,
     `postinstall` or `prepare` script, or no longer parses as JSON
   * a `.pth` file is added
-  * an added command pipes a `curl` or `wget` download into a shell or
-    script interpreter, anywhere later in the pipeline (backslash-continued
-    lines are joined first)
+  * an added command in a workflow, a composite action or a script pipes a
+    `curl` or `wget` download into a shell or script interpreter, anywhere
+    later in the pipeline, or hands one to `eval` (lines continued with a
+    trailing backslash or pipe are joined first). Other files, such as docs
+    and the CLI's own install hints, are not checked for this.
   * a file is added under `.github/workflows/`
 
 The last rule is noisy by design: new workflows are rare here, and each one
@@ -39,6 +41,9 @@ from pathlib import PurePosixPath
 
 LIFECYCLE_SCRIPTS = ("preinstall", "install", "postinstall", "prepare")
 WORKFLOWS_DIR = ".github/workflows/"
+# Where an added line is a command CI or a contributor will run.
+COMMAND_DIRS = (WORKFLOWS_DIR, ".github/actions/", "scripts/")
+SHELL_SUFFIXES = (".sh", ".bash", ".zsh", ".ksh")
 
 # GitHub expression function names are case-insensitive.
 TOJSON_RE = re.compile(r"toJSON\(\s*(secrets|vars)\s*\)", re.IGNORECASE)
@@ -51,7 +56,12 @@ PIPE_TO_SHELL_RES = (
     re.compile(_DOWNLOAD + r".*?(?<!\|)\|(?!\|)\s*" + _RUNNER),
     re.compile(r"\b" + _RUNNER + r"\s+<\(\s*" + _DOWNLOAD),
     re.compile(r"\b" + _RUNNER + r"\s+-c\s+[\"']?\$\(\s*" + _DOWNLOAD),
+    re.compile(r"\beval\s+[\"']?(?:\$\(|`)\s*" + _DOWNLOAD),
 )
+# A `|` that ends a line continues the pipeline on the next one; a YAML
+# block scalar header such as `run: |` does not.
+_TRAILING_PIPE_RE = re.compile(r"\|\s*$")
+_BLOCK_SCALAR_RE = re.compile(r":\s*\|$")
 
 
 @dataclass(frozen=True)
@@ -72,12 +82,25 @@ class AddedLine:
 # --------------------------------------------------------------------------- #
 # rules (pure, so the tests don't need a repository)
 # --------------------------------------------------------------------------- #
-def join_continuations(lines: list[AddedLine]) -> list[AddedLine]:
-    """Join backslash-continued added lines into one logical line.
+def runs_commands(path: str) -> bool:
+    """True for files whose added lines run as commands: workflows, scripts."""
+    return path.startswith(COMMAND_DIRS) or PurePosixPath(path).suffix in SHELL_SUFFIXES
 
-    The joined line keeps the path and line number of its first physical
-    line, and its parts are separated by newlines. Only consecutive added
-    lines in the same file are joined.
+
+def _continues(path: str, head: str) -> bool:
+    if head.endswith("\\"):
+        return True
+    # A trailing pipe only continues a command; in a Markdown table it doesn't.
+    return runs_commands(path) and bool(_TRAILING_PIPE_RE.search(head)) and not _BLOCK_SCALAR_RE.search(head)
+
+
+def join_continuations(lines: list[AddedLine]) -> list[AddedLine]:
+    """Join continued added lines into one logical line.
+
+    A line continues onto the next when it ends with a backslash or, in a
+    workflow or script, with a pipe (as in a `run: |` block). The joined line keeps the path and line
+    number of its first physical line, and its parts are separated by
+    newlines. Only consecutive added lines in the same file are joined.
     """
     joined: list[AddedLine] = []
     for added in lines:
@@ -85,8 +108,10 @@ def join_continuations(lines: list[AddedLine]) -> list[AddedLine]:
             prev = joined[-1]
             last_line = prev.line + prev.text.count("\n")
             head = prev.text.rstrip()
-            if prev.path == added.path and added.line == last_line + 1 and head.endswith("\\"):
-                joined[-1] = AddedLine(prev.path, prev.line, head[:-1] + "\n" + added.text)
+            if prev.path == added.path and added.line == last_line + 1 and _continues(added.path, head):
+                if head.endswith("\\"):
+                    head = head[:-1]
+                joined[-1] = AddedLine(prev.path, prev.line, head + "\n" + added.text)
                 continue
         joined.append(added)
     return joined
@@ -106,13 +131,13 @@ def scan_added_lines(lines: list[AddedLine]) -> list[Finding]:
                 )
             )
         command = added.text.replace("\n", " ")
-        if any(rx.search(command) for rx in PIPE_TO_SHELL_RES):
+        if runs_commands(added.path) and any(rx.search(command) for rx in PIPE_TO_SHELL_RES):
             findings.append(
                 Finding(
                     "pipe-to-shell",
                     added.path,
                     added.line,
-                    "pipes a download into a shell; download to a file and verify its checksum first",
+                    "runs a download as code; download to a file and verify its checksum first",
                 )
             )
     return findings

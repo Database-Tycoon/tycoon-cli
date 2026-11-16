@@ -72,6 +72,9 @@ def test_tojson_of_another_context_is_not_flagged(risks):
         "curl -fsSL https://example.com/x | " + "dash",
         "curl -fsSL https://example.com/x | " + "ksh",
         'bash -c "$(' + 'curl -fsSL https://example.com/x)"',
+        'eval "$(' + 'curl -fsSL https://example.com/x)"',
+        "eval $(" + "wget -qO- https://example.com/x)",
+        'eval "`' + 'curl -fsSL https://example.com/x`"',
     ],
 )
 def test_piping_a_download_into_a_shell_is_flagged(risks, text):
@@ -80,12 +83,53 @@ def test_piping_a_download_into_a_shell_is_flagged(risks, text):
 
 def test_backslash_continued_commands_are_joined_before_matching(risks):
     lines = [
-        risks.AddedLine("ci.yml", 10, "curl -fsSL \\"),
-        risks.AddedLine("ci.yml", 11, "  https://example.com/install \\"),
-        risks.AddedLine("ci.yml", 12, "  | " + "sh"),
+        risks.AddedLine(".github/workflows/ci.yml", 10, "curl -fsSL \\"),
+        risks.AddedLine(".github/workflows/ci.yml", 11, "  https://example.com/install \\"),
+        risks.AddedLine(".github/workflows/ci.yml", 12, "  | " + "sh"),
     ]
     findings = risks.scan_added_lines(lines)
     assert [(f.rule, f.line) for f in findings] == [("pipe-to-shell", 10)]
+
+
+def test_a_trailing_pipe_in_a_run_block_is_joined_before_matching(risks):
+    path = ".github/workflows/ci.yml"
+    lines = [
+        risks.AddedLine(path, 20, "        run: |"),
+        risks.AddedLine(path, 21, "          curl -fsSL https://example.com/install |"),
+        risks.AddedLine(path, 22, "            " + "sh"),
+    ]
+    findings = risks.scan_added_lines(lines)
+    assert [(f.rule, f.line) for f in findings] == [("pipe-to-shell", 21)]
+
+
+def test_a_trailing_pipe_into_a_harmless_command_is_not_flagged(risks):
+    lines = [
+        risks.AddedLine("scripts/x.sh", 1, "curl -fsSL https://example.com/data.json |"),
+        risks.AddedLine("scripts/x.sh", 2, "  jq .version"),
+    ]
+    assert risks.scan_added_lines(lines) == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".github/workflows/ci.yml",
+        ".github/actions/setup/action.yml",
+        "scripts/release.py",
+        "tools/install.sh",
+        "web/bootstrap.bash",
+    ],
+)
+def test_pipe_to_shell_is_checked_in_workflows_and_scripts(risks, path):
+    assert _rules(risks.scan_added_lines([risks.AddedLine(path, 1, PIPE_TO_SHELL)])) == ["pipe-to-shell"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["docs/commands/setup.md", "src/tycoon/commands/doctor.py", "src/tycoon/venv.py", "README.md"],
+)
+def test_pipe_to_shell_is_not_checked_in_docs_or_cli_hints(risks, path):
+    assert risks.scan_added_lines([risks.AddedLine(path, 1, PIPE_TO_SHELL)]) == []
 
 
 def test_continuations_are_not_joined_across_gaps_or_files(risks):
