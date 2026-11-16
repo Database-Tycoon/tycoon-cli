@@ -22,17 +22,20 @@ interface Doc {
   edges: { dst: string }[];
 }
 
-async function serve(page: Page, external: unknown[]): Promise<void> {
+async function serve(page: Page, external: unknown[], keepInbound = false): Promise<void> {
   const doc = JSON.parse(await readFile(FIXTURE, "utf8")) as Doc;
-  doc.edges = doc.edges.filter((e) => e.dst !== KEY);
+  if (!keepInbound) doc.edges = doc.edges.filter((e) => e.dst !== KEY);
   doc.objects.find((o) => o.key === KEY)!.dbt!.external_upstream = external;
   await page.route("**/city.json*", (route) => route.fulfill({ json: doc }));
 }
 
+function upstreamUl(page: Page) {
+  return page.locator("#inspector h3", { hasText: /^upstream$/ }).locator("xpath=following-sibling::ul[1]");
+}
+
 async function upstreamList(page: Page): Promise<string> {
   await page.evaluate((key) => window.__tycoonCity!.select(key), KEY);
-  const heading = page.locator("#inspector h3", { hasText: /^upstream$/ });
-  return (await heading.locator("xpath=following-sibling::ul[1]").innerText()).toLowerCase();
+  return (await upstreamUl(page).innerText()).toLowerCase();
 }
 
 test("a source outside the warehouse is named as upstream, not none", async ({ page }) => {
@@ -57,7 +60,9 @@ test("a source outside the warehouse is named as upstream, not none", async ({ p
 });
 
 test("clicking an off-map source keeps the inspector open; a linked entry still re-selects", async ({ page }) => {
-  await serve(page, [{ name: "raw_citibike.station_status", relation: "raw.raw_citibike.station_status", freshness_status: null }]);
+  // Keep the inbound edge so the linked entry sits in UPSTREAM beside the
+  // off-map one, rather than borrowing a DOWNSTREAM entry.
+  await serve(page, [{ name: "raw_citibike.station_status", relation: "raw.raw_citibike.station_status", freshness_status: null }], true);
   await open(page, "?settle=1");
   await upstreamList(page);
 
@@ -65,11 +70,32 @@ test("clicking an off-map source keeps the inspector open; a linked entry still 
   await expect(page.locator("#inspector")).toBeVisible();
   await expect(page.locator("#inspector h2")).toHaveText(KEY.split(".").pop()!);
 
-  const link = page.locator("#inspector li[data-key]").first();
+  const link = upstreamUl(page).locator("li[data-key]");
+  await expect(link).toHaveCount(1);
   const target = await link.getAttribute("data-key");
   await link.click();
   await expect(page.locator("#inspector")).toBeVisible();
   await expect(page.locator("#inspector h2")).toHaveText(target!.split(".").pop()!);
+});
+
+test("a drag from the panel onto the map is a drag, not a click on the map", async ({ page }) => {
+  await serve(page, [{ name: "raw_citibike.station_status", relation: "raw.raw_citibike.station_status", freshness_status: null }]);
+  await open(page, "?settle=1");
+  await upstreamList(page);
+
+  // Press on the source name (as if to select its text) and release over sky,
+  // where a click would clear the selection and close the panel.
+  const box = (await page.locator("#inspector li.external").boundingBox())!;
+  await page.mouse.move(box.x + 10, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(80, 120, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator("#inspector")).toBeVisible();
+  await expect(page.locator("#inspector h2")).toHaveText(KEY.split(".").pop()!);
+
+  // The release left no stale press behind: a real click on sky still clears.
+  await page.mouse.click(80, 120);
+  await expect(page.locator("#inspector")).toBeHidden();
 });
 
 test("an unbroken 80-character source name wraps inside the panel", async ({ page }) => {
