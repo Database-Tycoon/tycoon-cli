@@ -32,6 +32,8 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from .catalog.loader import is_motherduck
+
 logger = logging.getLogger(__name__)
 
 PRICING_FILE = "pricing.toml"
@@ -178,11 +180,11 @@ def resolve_price_book(source: Path | str | None, explicit: Path | str | None = 
 
 def _candidate_files(source: Path | str | None) -> list[Path]:
     """`pricing.toml` in the tycoon project root, or beside a `.duckdb` file.
-    An `md:` catalog has no directory and therefore no discoverable file."""
+    An `md:` or `motherduck:` catalog has no directory and therefore no discoverable file."""
     if source is None:
         return []
     text = str(source)
-    if text.startswith("md:"):
+    if is_motherduck(text):
         return []
     path = Path(text)
     root = path if path.is_dir() else path.parent

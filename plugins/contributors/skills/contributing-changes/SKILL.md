@@ -35,18 +35,37 @@ Consequences:
 ## Change checklist
 
 1. Open an issue first for anything non-trivial (CONTRIBUTING.md, "Break up
-   large issues").
-2. Branch from the active release branch.
-3. Tests: new behaviour needs a test, and a bug fix needs a regression test. For
+   large issues"), and set its milestone to the active release
+   (`gh issue edit <N> --milestone <release>`), so the milestone's open count
+   reflects the work left.
+2. Before writing code, list the files the change will touch, including tests,
+   `CHANGELOG.md` and docs. Over 8 counted files means several PRs, and an
+   issue that needs several PRs gets sub-issues, one per PR (CONTRIBUTING.md,
+   "Break up large issues").
+3. Branch from the active release branch.
+4. Tests: new behaviour needs a test, and a bug fix needs a regression test. For
    a CLI-surface bug, use the subprocess layer (testing-cli-changes skill).
-4. Update `CHANGELOG.md` under `[Unreleased]` in the section for the change's
+5. Update `CHANGELOG.md` under `[Unreleased]` in the section for the change's
    type.
-5. A user-visible change also updates `README.md` and the relevant `docs/` page.
-6. Before pushing, run the gates CI runs, with `uv run`:
+6. A user-visible change also updates `README.md` and the relevant `docs/` page.
+7. Before pushing, run the gates CI runs, with `uv run`:
    `uv run pytest -q`, `uv run ruff check src tests`,
    `uv run ruff format --check src tests`. Do not use `uvx ruff`: it resolves
    the latest release, not the version CI pins (CONTRIBUTING.md, "What CI gates on").
-7. Open the PR as a draft, with the template body and a Mental model section.
+8. Open the PR as a draft, with the template body and a Mental model section.
+9. After the PR merges, close its issue by hand. Closing keywords such as
+   `Closes #N` only fire on merges into the default branch (`main`), and PRs
+   here merge into the release branch (CONTRIBUTING.md, "Title your PR consistently", under
+   "Closing GitHub issues").
+
+## Stacking PRs
+
+Stack PRs only when a later PR needs code from an earlier one. Independent
+PRs each target the release branch. A stack merges from the bottom up
+(CONTRIBUTING.md, "Merging into the release branch"). Don't put a PR in a
+stack if it might merge on its own, out of that order: `gh stack` then refuses
+to unstack or retarget the stack, and the layers above have to be relinked as
+new PRs.
 
 ## Code conventions
 
