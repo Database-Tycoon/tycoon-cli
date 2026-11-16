@@ -80,8 +80,10 @@ def _alias_for(url: str) -> str:
     # md:dogfood_dbt_prod  → dogfood_dbt_prod
     # ./other.duckdb       → other
     # /abs/foo.duckdb      → foo
+    # The `?...` query is dropped before the name is taken: it can carry
+    # `motherduck_token`, and a bare `md:?...` then falls back to "src" like `md:`.
     if is_motherduck(url):
-        candidate = url.split(":", 1)[1]
+        candidate = url.split(":", 1)[1].split("?", 1)[0]
     else:
         candidate = Path(url).stem
     # Strip everything that isn't a SQL identifier char
