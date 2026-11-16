@@ -32,6 +32,7 @@ All notable changes to this project will be documented in this file. The format 
 - **`duckdb` is pinned to 1.5.4, which builds `QUALIFY` over cast columns as a table** ([#339][]). On the previous pin, `duckdb==1.5.2`, a `QUALIFY` window over columns cast in a CTE failed with `INTERNAL Error: Failed to bind column reference` once wrapped in `CREATE TABLE AS`, which is how dbt builds a table model. A staging dedupe of the form "cast in a CTE, then `qualify row_number() over (...) = 1`" therefore failed under `tycoon data transform`, and on MotherDuck targets too. DuckDB 1.5.4 fixes it; `uv.lock` changes only the `duckdb` entry. Existing warehouse files need no migration: a file written by 1.5.2 opens and accepts writes under 1.5.4. MotherDuck's server runs its own DuckDB, and the issue reports a similar crash there on a different code path (`TopNWindowElimination`) that this pin does not address.
 - **`tycoon city`: the legend no longer shows through the detail panel** ([#382][]). Both panels are translucent and sit on the right edge, so a tall detail panel stacked its text over the legend's. The legend now hides while a building is selected and comes back when the panel closes.
 - **`tycoon city`: long model and test names wrap instead of being clipped** ([#383][]). The detail panel split model names mid-word (`station_informa` / `tion`) and cut long dbt test names off at its right edge. Identifiers now wrap after an underscore or dot, and anything still too long wraps inside the panel rather than running past it.
+- **`tycoon city`: HUD panels no longer run off the window edges** ([#384][]). A trackpad pinch over a HUD panel zoomed the whole page instead of the city, which cuts the panels and the header chips off at both edges; that is the likeliest cause of the report and reproduces in headless Chrome. A pinch now only zooms the camera over the canvas and does nothing elsewhere. The page cancels every Ctrl+wheel event to do this, so Ctrl plus a mouse wheel no longer zooms the browser either; keyboard zoom (Cmd/Ctrl with + and -) still works. The panels also cap their width at the window width.
 
 [#500]: https://github.com/Database-Tycoon/tycoon-cli/issues/500
 [#493]: https://github.com/Database-Tycoon/tycoon-cli/issues/493
@@ -51,6 +52,7 @@ All notable changes to this project will be documented in this file. The format 
 [#259]: https://github.com/Database-Tycoon/tycoon-cli/issues/259
 [#382]: https://github.com/Database-Tycoon/tycoon-cli/issues/382
 [#383]: https://github.com/Database-Tycoon/tycoon-cli/issues/383
+[#384]: https://github.com/Database-Tycoon/tycoon-cli/issues/384
 
 ## [0.2.4] - 2026-11-07
 
