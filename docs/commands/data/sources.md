@@ -189,6 +189,8 @@ The first time a pipeline runs in the project's own directory, tycoon decides wh
 
 `tycoon doctor` reports what the next run of each source will do. If you set `DLT_DATA_DIR` yourself, tycoon leaves it alone and uses that directory instead.
 
+If tycoon can't write `.tycoon/dlt/`, for example on a read-only checkout or one owned by another user, the run still loads. It prints a one-line warning and keeps its state in dlt's shared `~/.dlt/pipelines/`, as it did before. Set `DLT_DATA_DIR` to a writable directory to keep state per project there. With a MotherDuck raw database (`md:<name>`), the first run skips the comparison above, since there is no local raw file to read, and dlt restores the pipeline's state from MotherDuck.
+
 `run` warns loudly if any config field still contains an unexpanded `${VAR}`:
 
 ```

@@ -94,6 +94,22 @@ def _rows(cfg: TycoonConfig) -> tuple[int, int]:
     return row[0], row[1]
 
 
+_MARKER = "copied-by-test"
+
+
+def _mark_shared_dir(home: Path) -> None:
+    """Plant a file only a copy of the shared working directory can carry into a project.
+
+    A copy and a restore from the raw database load the same rows, so row
+    counts alone can't tell whether ``carry_over`` ran.
+    """
+    (home / ".dlt" / "pipelines" / "github" / _MARKER).write_text("")
+
+
+def _copied_from_shared(cfg: TycoonConfig) -> bool:
+    return (ps.project_pipelines_dir(cfg.root) / "github" / _MARKER).is_file()
+
+
 def test_same_named_sources_in_two_projects_load_no_duplicates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     a = _project(tmp_path, "project_a", monkeypatch)
     _run(a, "a", 10)
@@ -139,11 +155,13 @@ def test_first_run_after_upgrade_ignores_a_cursor_another_project_moved(
     _run_before_upgrade(b, "b", 5)
     _run_before_upgrade(b, "b", 6)
     shared_state = (isolated / ".dlt" / "pipelines" / "github" / "state.json").read_bytes()
+    _mark_shared_dir(isolated)
 
     a = _project(tmp_path, "project_a", monkeypatch)
     _run(a, "a", 12)
 
     assert _rows(a) == (12, 12)
+    assert not _copied_from_shared(a)
     assert (isolated / ".dlt" / "pipelines" / "github" / "state.json").read_bytes() == shared_state
 
 
@@ -152,11 +170,13 @@ def test_first_run_after_upgrade_keeps_a_single_projects_cursor(
 ) -> None:
     a = _project(tmp_path, "project_a", monkeypatch)
     _run_before_upgrade(a, "a", 10)
+    _mark_shared_dir(isolated)
 
     _run(a, "a", 12)
 
     assert _rows(a) == (12, 12)
     assert (isolated / ".dlt" / "pipelines" / "github" / "state.json").is_file()
+    assert _copied_from_shared(a)
 
 
 def test_a_users_dlt_data_dir_is_left_alone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -181,6 +201,72 @@ def test_unreadable_raw_database_fails_the_run_without_touching_state(
     with pytest.raises(runner.IngestionError, match="Nothing was changed"):
         _run(a, "a", 5)
     assert not ps.project_dlt_data_dir(a.root).exists()
+
+
+def test_first_run_in_a_project_that_never_loaded_the_dataset_starts_fresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated: Path
+) -> None:
+    a = _project(tmp_path, "project_a", monkeypatch)
+    _run_before_upgrade(a, "a", 10)
+    _mark_shared_dir(isolated)
+
+    b = _project(tmp_path, "project_b", monkeypatch)
+    _run(b, "b", 4)
+
+    assert _rows(b) == (4, 4)
+    assert not _copied_from_shared(b)
+
+
+def test_the_env_is_restored_when_the_run_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    a = _project(tmp_path, "project_a", monkeypatch)
+    broken = SourceConfig(type="github", schema="raw_github", config={"project": "a", "upto": "not a number"})
+
+    with pytest.raises(runner.IngestionError, match="invalid literal") as failure:
+        runner.run_source("github", broken, a.root / "raw.duckdb")
+    # The traceback keeps run_source's frame alive, so garbage collection
+    # can't be what restored the env.
+    assert failure.tb is not None
+    assert "DLT_DATA_DIR" not in os.environ
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores permissions")
+def test_a_read_only_tycoon_dir_falls_back_to_the_shared_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated: Path
+) -> None:
+    import tycoon.utils.console as console
+
+    warnings: list[str] = []
+    monkeypatch.setattr(console, "warn", warnings.append)
+    a = _project(tmp_path, "project_a", monkeypatch)
+    _run_before_upgrade(a, "a", 10)
+    tycoon_dir = a.root / ".tycoon"
+    tycoon_dir.mkdir(exist_ok=True)
+    tycoon_dir.chmod(0o555)
+    try:
+        _run(a, "a", 12)
+    finally:
+        tycoon_dir.chmod(0o755)
+
+    assert _rows(a) == (12, 12)
+    assert not ps.project_dlt_data_dir(a.root).exists()
+    assert (isolated / ".dlt" / "pipelines" / "github" / "state.json").is_file()
+    assert "DLT_DATA_DIR" not in os.environ
+    fallback = [w for w in warnings if w.startswith(f"Couldn't write {ps.project_dlt_data_dir(a.root)}")]
+    assert len(fallback) == 1
+    assert "Set DLT_DATA_DIR to a writable directory" in fallback[0]
+
+
+def test_a_motherduck_raw_skips_the_local_state_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    a = _project(tmp_path, "project_a", monkeypatch)
+
+    def no_check(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("plan_carry_over must not read an md: raw target")
+
+    monkeypatch.setattr(ps, "plan_carry_over", no_check)
+    with runner._project_dlt_state("github", "raw_github", "md:raw"):
+        assert os.environ["DLT_DATA_DIR"] == str(ps.project_dlt_data_dir(a.root))
+    assert "DLT_DATA_DIR" not in os.environ
 
 
 class TestDoctor:

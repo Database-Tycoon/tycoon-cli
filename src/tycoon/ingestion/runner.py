@@ -11,6 +11,7 @@ from __future__ import annotations
 import glob
 import re
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
@@ -590,29 +591,55 @@ def _report_carry_over(plan: pipeline_state.StatePlan) -> None:
 
 
 @contextmanager
-def _project_dlt_state(name: str, schema_name: str, raw_db_path: Path) -> Iterator[None]:
+def _project_dlt_state(name: str, schema_name: str, raw_target: str) -> Iterator[None]:
     """Run inside this project's own dlt working directory (gh-394).
 
     The first run of a pipeline there decides whether to carry over state
     from dlt's shared directory, see ``pipeline_state.plan_carry_over``.
+    When the project directory can't be written (a read-only checkout),
+    the run keeps dlt's shared directory, as it did before gh-394.
     """
     from tycoon.config import config
+    from tycoon.utils.console import warn
 
+    if pipeline_state.user_dlt_data_dir() is not None:
+        yield
+        return
     root = config.root
     plan: pipeline_state.StatePlan | None = None
-    if pipeline_state.user_dlt_data_dir() is None:
+    # A MotherDuck raw has no local file to check the shared state against;
+    # dlt restores the pipeline's state from MotherDuck itself.
+    if not is_motherduck(raw_target):
         pipeline_name, dataset_name = pipeline_state.pipeline_identity(name, schema_name)
         try:
             plan = pipeline_state.plan_carry_over(
                 pipeline_name,
                 dataset_name,
-                raw_db_path,
+                Path(raw_target),
                 pipeline_state.project_pipelines_dir(root),
                 pipeline_state.shared_pipelines_dir(),
             )
         except pipeline_state.StateCarryOverError as exc:
             raise IngestionError(str(exc)) from exc
-    with pipeline_state.project_pipelines_env(root):
+    env = ExitStack()
+    try:
+        pipelines = env.enter_context(pipeline_state.project_pipelines_env(root))
+        with tempfile.TemporaryFile(dir=pipelines):
+            pass
+    except OSError as exc:
+        env.close()
+        warn(
+            f"Couldn't write {pipeline_state.project_dlt_data_dir(root)} ({exc.strerror or exc}), so '{name}' "
+            f"keeps its dlt state in {pipeline_state.shared_pipelines_dir()} as before. "
+            "Set DLT_DATA_DIR to a writable directory to keep it per project."
+        )
+        writable = False
+    else:
+        writable = True
+    if not writable:
+        yield
+        return
+    with env:
         if plan is not None:
             pipeline_state.carry_over(plan)
             _report_carry_over(plan)
@@ -720,7 +747,7 @@ def run_source(
 
     dlt_state = ExitStack()
     try:
-        dlt_state.enter_context(_project_dlt_state(name, source_config.schema_name, raw_db_path))
+        dlt_state.enter_context(_project_dlt_state(name, source_config.schema_name, raw_target))
 
         # 1. Legacy pipeline delegation (keyed by source name)
         if name in _LEGACY_PIPELINES:
