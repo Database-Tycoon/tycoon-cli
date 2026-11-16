@@ -184,6 +184,31 @@ class TestProjectVenvCheck:
         assert "running from" in combined
         assert "activate" in combined.lower()
 
+    def test_windows_venv_with_tycoon_exe_is_not_called_tycoon_free(self, monkeypatch, tmp_path, capsys):
+        """gh-392 review: a Windows .venv keeps tycoon at `Scripts/tycoon.exe`,
+        not `bin/tycoon`. Only checking `bin/` told such a .venv it had no
+        tycoon in it; it should get the activate/run advice instead."""
+        import sys
+
+        from tycoon.commands import doctor
+
+        self._patch_config(monkeypatch, tmp_path)
+        venv = tmp_path / ".venv"
+        (venv / "Scripts").mkdir(parents=True)
+        (venv / "Scripts" / "tycoon.exe").touch()
+        (venv / "Scripts" / "python.exe").touch()
+        (venv / "pyvenv.cfg").write_text("home = C:\\Python313\n")
+        monkeypatch.setattr(sys, "prefix", str((tmp_path / "somewhere-else").resolve()))
+        monkeypatch.setenv("COLUMNS", "500")
+
+        doctor._check_project_venv()
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "no tycoon in it" not in combined
+        assert "no tycoon installed in it" not in combined
+        assert str(venv / "Scripts" / "tycoon.exe") in combined
+        assert str(venv / "Scripts" / "activate") in combined
+
     def test_warns_when_venv_exists_but_empty_or_broken(self, monkeypatch, tmp_path, capsys):
         """gh-265 re-review: an empty `.venv` (a failed/partial setup, or
         `tycoon setup` leaving one beside an existing pyproject.toml,
@@ -222,8 +247,11 @@ class TestProjectVenvCheck:
         """gh-392: a working .venv that just doesn't contain tycoon (tycoon
         installed as a uv tool, the pre-0.2.2 model) was reported "empty or
         broken" with `tycoon setup --force` as the fix, which re-resolves
-        every dependency in the project. It's the shared/tool model, which
-        still works, and the targeted step is adding tycoon to the project."""
+        every dependency in the project. Built-in sources and dbt keep
+        working from the tool install, but catalog sources don't: their
+        requirements get `uv add`-ed into the .venv while tycoon imports them
+        in-process from the tool env (gh-263), so the message must not say
+        the setup "still works"."""
         import sys
 
         from tycoon.commands import doctor
@@ -238,8 +266,9 @@ class TestProjectVenvCheck:
         combined = " ".join((captured.out + captured.err).split())
         assert "empty or broken" not in combined
         assert "setup --force" not in combined
-        assert "shared/tool model" in combined
-        assert "still works" in combined
+        assert "still works" not in combined
+        assert "Built-in sources and dbt keep working" in combined
+        assert "catalog sources need tycoon in this .venv" in combined
         assert "uv add database-tycoon" in combined
         assert "pins" in combined
 

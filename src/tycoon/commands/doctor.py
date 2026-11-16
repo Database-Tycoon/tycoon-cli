@@ -92,11 +92,15 @@ def _check_project_venv() -> None:
     running_prefix = Path(sys.prefix).resolve()
     if running_prefix == target.resolve():
         success(f"Project environment: using its own .venv at {target}.")
-    elif (target / "bin" / "tycoon").exists():
+    elif (venv_tycoon := _venv_tycoon(target)) is not None:
+        if venv_tycoon.suffix == ".exe":
+            activate = str(target / "Scripts" / "activate")
+        else:
+            activate = f"source {target}/bin/activate"
         warn(
             f"Project environment: {target} exists, but tycoon is running from "
-            f"{running_prefix} instead. Activate it with `source {target}/bin/activate`, "
-            f"or run it directly with `{target}/bin/tycoon`."
+            f"{running_prefix} instead. Activate it with `{activate}`, "
+            f"or run it directly with `{venv_tycoon}`."
         )
     elif _venv_runs_python(target):
         if (config.root / "pyproject.toml").is_file():
@@ -105,8 +109,9 @@ def _check_project_venv() -> None:
             next_step = f"run `uv pip install --python {target} database-tycoon`"
         warn(
             f"Project environment: {target} works but has no tycoon in it, so tycoon runs "
-            f"from {running_prefix}. That's the shared/tool model, which still works. "
-            f"To run tycoon from this project's .venv instead, {next_step}. "
+            f"from {running_prefix}. Built-in sources and dbt keep working this way, but "
+            "catalog sources need tycoon in this .venv: their dependencies install into it "
+            f"while tycoon imports them from its own environment. To fix that, {next_step}. "
             "tycoon's exact dbt, dlt and duckdb pins then apply to this project's packages."
         )
     else:
@@ -115,6 +120,18 @@ def _check_project_venv() -> None:
             f"{running_prefix} instead, and {target} has no tycoon installed in it "
             "(empty or broken). Run `tycoon setup --force` to rebuild it."
         )
+
+
+def _venv_tycoon(target: Path) -> Path | None:
+    """The tycoon entry point installed in ``target``, if any.
+
+    Checks the Windows layout (``Scripts/tycoon.exe``) as well as the POSIX
+    one, the same way ``_venv_runs_python`` looks for the interpreter.
+    """
+    for candidate in (target / "bin" / "tycoon", target / "Scripts" / "tycoon.exe"):
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _venv_runs_python(target: Path) -> bool:
