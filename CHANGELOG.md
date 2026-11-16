@@ -2,10 +2,15 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Added
+
+- **`tycoon data sources run`, `data sources run-all` and `data run-all` can load into a MotherDuck raw database** ([#447][], part of [#430][]). With `database.raw: md:<name>` (or `motherduck:<name>`) the commands used to exit before running anything; they now hand the raw target to the runner, which builds `dlt.destinations.motherduck(...)` through one helper, `raw_destination()`, and every source shim uses the same helper. A raw database that is a local file takes the same path as before. Editing `database.raw` and `database.warehouse` in `tycoon.yml` is not enough to move a whole project: dbt reads `dbt_project/profiles.yml`, which neither that edit nor `tycoon register warehouse --type motherduck` touches (the command writes only `tycoon.yml`), so `transform` would keep building local files. Point the profile's `path` and its `raw` attach at the `md:` names too, or start a new project with `tycoon init` choosing MotherDuck, which writes both. Things to know before switching a project from a file to `md:`: the MotherDuck database must exist first (dlt does not create it; the error says so), `MOTHERDUCK_TOKEN` must be exported in the shell that runs tycoon (tycoon does not read `.env` files), dlt's MotherDuck loader needs `pyarrow` (tycoon does not install it yet; the error says what to install), and dlt's incremental cursors start over because dlt keeps them in the destination, so the first `md:` run reloads from each source's initial value and rows already in the local file are not copied. The legacy-table warning and the run capture into `.tycoon/metadata.duckdb` do not run for an `md:` raw, so run history is not recorded for those loads. The three built-in demo pipelines (`nyc-dot`, `mta-gtfs`, `mta-bus-speeds`) stay local-only. A catalog source whose `_run.py` was installed before this release has to be re-installed to load into MotherDuck; the error names the file to delete.
+
 ### Changed
 
 - **Working on tycoon needs uv 0.12.22 or later** ([#493][]). `uv.lock` depended on which uv last locked it: older releases wrote it in an older format, so a one-line dependency change could come out as a much larger diff. The minimum now lives in `required-version` in `pyproject.toml`, CI installs the newest uv that satisfies it, and `uv.lock` is relocked once at the current format (no package versions change). For contributors; installing tycoon from PyPI is unaffected.
 - **The publish workflow refuses a tag that isn't on `main`** ([#473][]). The release process tags `main` after the release branch merges into it, but nothing checked that. v0.2.4 was tagged on its release branch and published to PyPI while `main` still pointed at v0.2.3, and `main` caught up three days later. Preflight now fails when the tagged commit is not on `main`, before anything builds. A tag pushed too early can stay where it is if the promotion PR merges as a merge commit: merge it, then re-run the job. A squash or rebase merge never puts the tagged commit on `main`, so the tag has to be re-created there.
+- **Steps that run after a load skip a MotherDuck raw database** ([#448][], part of [#430][]). The legacy-table warning, the dlt run capture into `.tycoon/metadata.duckdb`, the dbt staging auto-scaffold after `data sources run`, and `tycoon data analyze` all assume the raw database is a local file. On `database.raw: md:<name>` the first two skip silently and the auto-scaffold skips with one line. `tycoon data analyze` is an explicit command, so it exits 1 with one line saying it reads a local raw file, as it already did in v0.2.3 and v0.2.4. Run history for an `md:` raw is therefore not captured yet. A project on a local raw file is unchanged. `src/tycoon/ingestion/ducklake_config.py`, which had no callers, is deleted.
 
 ### Removed
 
@@ -21,6 +26,9 @@ All notable changes to this project will be documented in this file. The format 
 [#493]: https://github.com/Database-Tycoon/tycoon-cli/issues/493
 [#473]: https://github.com/Database-Tycoon/tycoon-cli/issues/473
 [#460]: https://github.com/Database-Tycoon/tycoon-cli/issues/460
+[#447]: https://github.com/Database-Tycoon/tycoon-cli/issues/447
+[#448]: https://github.com/Database-Tycoon/tycoon-cli/issues/448
+[#430]: https://github.com/Database-Tycoon/tycoon-cli/issues/430
 [#394]: https://github.com/Database-Tycoon/tycoon-cli/issues/394
 [#351]: https://github.com/Database-Tycoon/tycoon-cli/issues/351
 [#339]: https://github.com/Database-Tycoon/tycoon-cli/issues/339
