@@ -20,6 +20,7 @@ Arguments:
 
 Options:
   --db PATH         Override which DuckDB to query. Default: warehouse
+  --allow-writes    On MotherDuck, run statements other than read-only queries
   --source NAME     Query a source's raw schema (resolves to data/raw_<name>.duckdb
                     or main raw.duckdb's raw_<name> schema)
   -f, --format      table (default), csv, json or markdown
@@ -77,7 +78,10 @@ When a [Quack](../start.md#quack-the-live-multi-client-warehouse-v019) server is
 ### Limitations
 
 - **DuckDB / MotherDuck only.** Snowflake / BigQuery / Redshift warehouses can be registered, but `query` doesn't dispatch to them yet. Carried forward as a known limitation.
-- **Read-only by default.** The command opens the file with `read_only=True`. Use `tycoon run duckdb ...` for ad-hoc writes.
+- **Read-only by default.** A local file is opened with `read_only=True`. Use `tycoon run duckdb ...` for ad-hoc writes.
+- **MotherDuck needs `--allow-writes` to write.** DuckDB cannot open an `md:` database read-only, so tycoon checks each statement first and runs only SELECT, WITH, `FROM tbl`-first queries, `TABLE tbl`, VALUES, set operations, DESCRIBE, SHOW, SUMMARIZE, PIVOT, UNPIVOT and EXPLAIN of those. Anything else, a statement tycoon cannot parse (including a query nested too deeply, or a schema-qualified `TABLE s.t`; write `SELECT * FROM s.t`), or any statement in a multi-statement input exits 1 before connecting, with `Refusing to run DROP against MotherDuck (md:x)` and the flag to pass.
+- **The MotherDuck check is not a permission boundary.** It reads statement types only and does not inspect function calls inside a SELECT, so `SELECT nextval('s')` advances a sequence, `read_csv` reads a path or URL, and `FROM checkpoint()` runs, all without `--allow-writes`. It guards against accidental statements. Scope your token if you need more than that.
+- **A SQL comment cannot start the argument.** `tycoon data query "-- note\nSELECT 1"` is read as an option; put `--` before it: `tycoon data query -- "-- note\nSELECT 1"`.
 
 ## `schema` — dump tables, row counts, sizes
 
@@ -87,9 +91,14 @@ tycoon data schema --warehouse              # the warehouse only
 tycoon data schema --schema main_marts      # one schema
 tycoon data schema --raw --schema 'raw_*'   # schemas matching a glob, in the raw database
 tycoon data schema --include-dlt            # also list dlt's _dlt_* tables
+tycoon data schema --exact                  # exact counts on a MotherDuck database
 ```
 
 Lists the tables in the raw database and the warehouse, with row counts and each DuckDB file's size. Any other `.duckdb` file in `data/` is listed too. Useful for "what's in this DB?" and "which tables have rows?" without writing SQL.
+
+On a MotherDuck database (`database.warehouse: md:<name>`), row counts are estimates read from the catalog, printed as `~1,000 rows (estimate)`, because an exact `count(*)` per table is slow and spends compute. A view has no estimate and prints `view (use --exact to count)`; a table whose catalog reports no estimate prints `no estimate (use --exact to count)`. Pass `--exact` to count every table and view. Local DuckDB files always show exact counts.
+
+**The estimate does not drop after deletes.** It comes from DuckDB's table statistics: a table that held 100,000 rows and lost half of them still shows `~100,000 rows (estimate)`, where `--exact` shows `50,000 rows`. Use `--exact` when the figure matters.
 
 ### Synopsis
 
@@ -101,6 +110,7 @@ Options:
   --raw            Only show the raw database
   --warehouse      Only show the warehouse
   --include-dlt    Also show dlt's _dlt_* bookkeeping tables
+  --exact          Count rows exactly on a MotherDuck database instead of estimating
   -h, --help       Show this message and exit
 ```
 
@@ -110,7 +120,7 @@ Options:
 - `--schema` takes a schema name or a shell-style glob (`*`, `?`, `[...]`). Matching ignores case. Quote a glob so your shell doesn't expand it. If nothing matches, the command says so.
 - dlt keeps bookkeeping tables such as `_dlt_loads` and `_dlt_version` in every dataset it loads. They're left out by default, and the `Tables` line says how many were hidden. `--include-dlt` lists them.
 
-On a MotherDuck database, each listed table costs one `count(*)` query, and tables left out by these options aren't counted, so a narrow `--schema` is also cheaper.
+On a MotherDuck database, `--exact` runs one `count(*)` query per listed table, and tables left out by these options aren't counted, so a narrow `--schema` keeps `--exact` cheap. With `--raw` or `--warehouse`, only the database shown needs a MotherDuck token.
 
 ## `clean` — remove warehouse files
 

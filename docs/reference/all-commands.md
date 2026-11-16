@@ -231,6 +231,7 @@ Options:
   --db PATH                Override which DuckDB to query (default: warehouse)
   --source NAME            Query a source's raw schema
   -f, --format FORMAT      table (default), csv, json or markdown
+  --allow-writes           On MotherDuck, run statements other than read-only queries
 ```
 
 ### [`tycoon data schema`](../commands/data/query.md#schema-dump-tables-row-counts-sizes)
@@ -243,6 +244,7 @@ Options:
   --raw                    Only show the raw database
   --warehouse              Only show the warehouse
   --include-dlt            Also show dlt's _dlt_* bookkeeping tables
+  --exact                  Count rows exactly on MotherDuck instead of estimating
 ```
 
 ### [`tycoon data clean`](../commands/data/query.md#clean-remove-warehouse-files)

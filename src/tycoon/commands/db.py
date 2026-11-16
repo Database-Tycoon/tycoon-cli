@@ -11,9 +11,11 @@ import duckdb
 import typer
 
 from tycoon.config import config, display_target, redact_secrets
+from tycoon.motherduck import require_motherduck_token
 from tycoon.utils.console import console, error, header, info, status_table, success, warn
 from tycoon.utils.duckdb_utils import db_file_size_mb, get_row_count, get_tables, quote_identifier
 from tycoon.utils.query_output import OutputFormat, emit_rows, print_table
+from tycoon.utils.sql_guard import refused_statement
 
 
 def _resolve_source_db(source_name: str) -> Path | None:
@@ -73,33 +75,40 @@ def _has_schema(db_path: Path, schema_name: str) -> bool:
 
 SchemaRow = tuple[str, str, str]
 
+# A listed table: (schema, table, ...) where any further columns are extra
+# detail the caller's describe callback reads, e.g. MotherDuck's table type
+# and catalog estimate.
+ListedTable = tuple
+
 DLT_TABLE_PREFIX = "_dlt_"
 
 
 def _select_tables(
-    tables: list[tuple[str, str]], schema_pattern: str | None, include_dlt: bool
-) -> tuple[list[tuple[str, str]], int]:
+    tables: list[ListedTable], schema_pattern: str | None, include_dlt: bool
+) -> tuple[list[ListedTable], int]:
     """Tables in the schemas matching ``schema_pattern``, and how many dlt tables were left out."""
     if schema_pattern is not None:
         pattern = schema_pattern.lower()
-        tables = [(s, t) for s, t in tables if fnmatchcase(s.lower(), pattern)]
+        tables = [row for row in tables if fnmatchcase(row[0].lower(), pattern)]
     if include_dlt:
         return tables, 0
-    kept = [(s, t) for s, t in tables if not t.startswith(DLT_TABLE_PREFIX)]
+    kept = [row for row in tables if not row[1].startswith(DLT_TABLE_PREFIX)]
     return kept, len(tables) - len(kept)
 
 
-def _table_rows(
-    tables: list[tuple[str, str]], hidden_dlt: int, count_rows: Callable[[str, str], int | None]
-) -> list[SchemaRow]:
+def _table_rows(tables: list[ListedTable], hidden_dlt: int, describe: Callable[[ListedTable], str]) -> list[SchemaRow]:
+    """The Tables summary row, then one row per table with the detail ``describe`` returns."""
     detail = f"{len(tables)}"
     if hidden_dlt:
         detail += f" ({hidden_dlt} {DLT_TABLE_PREFIX}* hidden, --include-dlt shows them)"
     rows: list[SchemaRow] = [("  Tables", "", detail)]
-    for s, table in tables:
-        count = count_rows(s, table)
-        rows.append((f"  {s}.{table}", "", f"{count:,} rows" if count is not None else "empty"))
+    for table in tables:
+        rows.append((f"  {table[0]}.{table[1]}", "", describe(table)))
     return rows
+
+
+def _count_detail(count: int | None) -> str:
+    return f"{count:,} rows" if count is not None else "empty"
 
 
 def _local_schema_rows(
@@ -110,7 +119,7 @@ def _local_schema_rows(
         return [(label, "WARN", "not found")], 0
     tables, hidden_dlt = _select_tables(get_tables(db_path), schema_pattern, include_dlt)
     rows = [(label, "OK", f"{size:.1f} MB")]
-    rows.extend(_table_rows(tables, hidden_dlt, lambda s, t: get_row_count(db_path, s, t)))
+    rows.extend(_table_rows(tables, hidden_dlt, lambda t: _count_detail(get_row_count(db_path, t[0], t[1]))))
     return rows, len(tables)
 
 
@@ -134,16 +143,24 @@ def schema(
         bool,
         typer.Option("--include-dlt", help="Also show dlt's _dlt_* bookkeeping tables."),
     ] = False,
+    exact: Annotated[
+        bool,
+        typer.Option(
+            "--exact",
+            help=(
+                "Count rows exactly on a MotherDuck database instead of reading the catalog's estimate, "
+                "which does not drop after deletes."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Show database tables, row counts, and file sizes.
 
     With neither --raw nor --warehouse, shows both plus any other
-    data/*.duckdb file.
+    data/*.duckdb file. On a MotherDuck database, row counts are estimates
+    read from the catalog unless --exact is passed; the estimate does not
+    drop after deletes. Local DuckDB files always show exact counts.
     """
-    header("Database Schema")
-
-    rows: list[SchemaRow] = []
-    shown = 0
     raw_db = None if config.raw_is_motherduck else config.raw_db
     local_db = config.local_db
     every_database = not (raw or warehouse)
@@ -154,9 +171,16 @@ def schema(
     if warehouse or every_database:
         databases.append((local_db, "Warehouse", config.warehouse_target))
 
+    for _db_path, _label, target in databases:
+        require_motherduck_token(target)
+
+    header("Database Schema")
+
+    rows: list[SchemaRow] = []
+    shown = 0
     for db_path, label, target in databases:
         if db_path is None:
-            md_rows, count = _motherduck_schema_rows(target, label, schema_pattern, include_dlt)
+            md_rows, count = _motherduck_schema_rows(target, label, schema_pattern, include_dlt, exact)
         else:
             md_rows, count = _local_schema_rows(db_path, f"{label} database", schema_pattern, include_dlt)
         rows.extend(md_rows)
@@ -180,33 +204,54 @@ def schema(
         warn(f"No tables in a schema matching '{schema_pattern}'.")
 
 
+def _estimate_detail(table_type: str, estimate: int | None) -> str:
+    if table_type == "VIEW":
+        return "view (use --exact to count)"
+    if estimate is None:
+        return "no estimate (use --exact to count)"
+    return f"~{estimate:,} {'row' if estimate == 1 else 'rows'} (estimate)"
+
+
 def _motherduck_schema_rows(
-    target: str, label: str, schema_pattern: str | None = None, include_dlt: bool = False
+    target: str,
+    label: str,
+    schema_pattern: str | None = None,
+    include_dlt: bool = False,
+    exact: bool = False,
 ) -> tuple[list[SchemaRow], int]:
     """Schema rows for a MotherDuck database, read over one connection.
 
-    Filtering happens before the per-table count(*), so a narrow
-    --schema also saves those queries.
+    Row counts come from the catalog's estimate unless ``exact`` is set.
+    Filtering happens first, so --exact runs count(*) only on the tables
+    that are shown.
     """
     try:
         con = duckdb.connect(target)
         try:
             # An md: connection attaches every database on the account, so
-            # scope the listing to the one the target names.
+            # scope the listing to the one the target names. duckdb_tables()
+            # has no row for a view, and an attached catalog may report no
+            # estimate for a table, so the estimate can be NULL for either.
             listed = con.execute(
-                "SELECT table_schema, table_name FROM information_schema.tables "
-                "WHERE table_catalog = current_database() "
-                "AND table_schema NOT IN ('information_schema', 'pg_catalog') "
-                "ORDER BY table_schema, table_name"
+                "SELECT t.table_schema, t.table_name, t.table_type, d.estimated_size "
+                "FROM information_schema.tables t "
+                "LEFT JOIN duckdb_tables() d ON d.database_name = t.table_catalog "
+                "AND d.schema_name = t.table_schema AND d.table_name = t.table_name "
+                "WHERE t.table_catalog = current_database() "
+                "AND t.table_schema NOT IN ('information_schema', 'pg_catalog') "
+                "ORDER BY t.table_schema, t.table_name"
             ).fetchall()
             tables, hidden_dlt = _select_tables(listed, schema_pattern, include_dlt)
 
-            def count_rows(s: str, table: str) -> int | None:
-                result = con.execute(f"SELECT count(*) FROM {quote_identifier(s)}.{quote_identifier(table)}").fetchone()
-                return result[0] if result else None
+            def describe(table: ListedTable) -> str:
+                s, name, table_type, estimate = table
+                if not exact:
+                    return _estimate_detail(table_type, estimate)
+                result = con.execute(f"SELECT count(*) FROM {quote_identifier(s)}.{quote_identifier(name)}").fetchone()
+                return _count_detail(result[0] if result else None)
 
             rows: list[SchemaRow] = [(f"{label} database", "OK", f"MotherDuck {display_target(target)}")]
-            rows.extend(_table_rows(tables, hidden_dlt, count_rows))
+            rows.extend(_table_rows(tables, hidden_dlt, describe))
         finally:
             con.close()
     except duckdb.Error as exc:
@@ -242,12 +287,29 @@ def query(
             help="Output format. csv, json and markdown print only the rows, for scripts and notebooks.",
         ),
     ] = OutputFormat.table,
+    allow_writes: Annotated[
+        bool,
+        typer.Option(
+            "--allow-writes",
+            help=(
+                "On MotherDuck, run statements other than read-only queries (SELECT, WITH, FROM, TABLE, VALUES, "
+                "DESCRIBE, SHOW, SUMMARIZE, PIVOT, UNPIVOT, EXPLAIN). Only statement types are checked, so a "
+                "function call inside a SELECT is not inspected: this guards against accidents and is not a "
+                "permission boundary."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Run a SQL query against the warehouse, raw, or a source database.
 
-    Local DuckDB files open read-only. A MotherDuck database runs with the
-    permissions of your MotherDuck token. In table format, a result too wide
-    for the terminal prints one block per record instead of squashing columns.
+    Local DuckDB files open read-only. A MotherDuck database cannot open
+    read-only, so tycoon refuses any statement that is not a read-only query
+    unless --allow-writes is passed; with it, the statement runs with the
+    permissions of your MotherDuck token. The check reads statement types
+    only: function calls inside a SELECT are not inspected, so it is a guard
+    against accidents and not a permission boundary. In table format, a
+    result too wide for the terminal prints one block per record instead of
+    squashing columns.
     """
     is_warehouse = False
     db_path: Path | None
@@ -292,13 +354,26 @@ def query(
     elif db_path is None:
         label = f"{label} (MotherDuck)"
 
+    if db_path is None and not via_quack and not allow_writes:
+        refused = refused_statement(sql)
+        if refused is not None:
+            error(
+                f"Refusing to run {refused} against MotherDuck ({display_target(target)}). "
+                "On MotherDuck, 'data query' only runs SELECT, WITH, FROM, TABLE, VALUES, DESCRIBE, SHOW, "
+                "SUMMARIZE, PIVOT, UNPIVOT and EXPLAIN. Pass --allow-writes to run other statements."
+            )
+            raise typer.Exit(1)
+
+    if db_path is None and not via_quack:
+        require_motherduck_token(target)
+
     try:
         if via_quack:
             con = quack.connect(quack_token)
         elif db_path is None:
             # read_only=True is a local-file flag: an md: URL opens an
             # in-memory local database, which DuckDB refuses to start
-            # read-only. Write protection comes from the token's scope.
+            # read-only, so the guard above stands in for it.
             con = duckdb.connect(target)
         else:
             con = duckdb.connect(target, read_only=True)
