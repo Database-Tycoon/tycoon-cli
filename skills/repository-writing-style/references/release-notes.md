@@ -13,7 +13,7 @@ Help users and contributors answer:
 
 Prefer:
 
-> Added support for Jira ticket references in pull request titles.
+> Added a check that flags pull request titles without an issue reference.
 
 Avoid:
 
