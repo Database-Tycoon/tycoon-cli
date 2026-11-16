@@ -147,7 +147,11 @@ class TestRunSource:
 class TestRenderedErrors:
     """The CLI prints errors through Rich, which eats `[...]` as markup."""
 
-    def test_missing_pyarrow_command_survives_rendering(self, tmp_path, monkeypatch, cli_runner, md_token):
+    @pytest.mark.parametrize(
+        "args",
+        [["data", "sources", "run", "s"], ["data", "sources", "run-all"], ["data", "run-all", "--skip-transform"]],
+    )
+    def test_missing_pyarrow_command_survives_rendering(self, args, tmp_path, monkeypatch, cli_runner, md_token):
         from tycoon.cli import app
 
         (tmp_path / "tycoon.yml").write_text(
@@ -157,7 +161,7 @@ class TestRenderedErrors:
         monkeypatch.setattr("tycoon.ingestion.destination._has_pyarrow", lambda: False)
         monkeypatch.setattr(runner, "_emit_event_safe", lambda *a, **k: None)
 
-        result = cli_runner.invoke(app, ["data", "sources", "run", "s"])
+        result = cli_runner.invoke(app, args)
 
         assert result.exit_code == 1
         assert "pip install 'database-tycoon[motherduck]'" in " ".join(result.output.split())
