@@ -2,6 +2,10 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Added
+
+- **`tycoon semantics scaffold` and the post-transform OSI scaffold read a MotherDuck warehouse** (#298). With `database.warehouse: md:<db>` both open the database through `config.warehouse_target` and read only that catalog's tables, so the other databases on the account are never listed. Dataset sources come out as `<db>.<schema>.<table>`. If the database cannot be opened, for example because there is no token, `semantics scaffold` prints the error with the token redacted and exits 1 without touching `osi.yaml`; the automatic scaffold is skipped with a one-line note when neither `MOTHERDUCK_TOKEN` nor a `motherduck_token` in the connection string is available, because DuckDB would otherwise open a browser sign-in, and stays silent on other failures. Local DuckDB warehouses produce the same output as before.
+
 ### Changed
 
 - **Working on tycoon needs uv 0.12.22 or later** ([#493][]). `uv.lock` depended on which uv last locked it: older releases wrote it in an older format, so a one-line dependency change could come out as a much larger diff. The minimum now lives in `required-version` in `pyproject.toml`, CI installs the newest uv that satisfies it, and `uv.lock` is relocked once at the current format (no package versions change). For contributors; installing tycoon from PyPI is unaffected.

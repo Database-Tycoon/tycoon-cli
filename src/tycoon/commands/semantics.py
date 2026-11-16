@@ -19,7 +19,7 @@ from pathlib import Path
 
 import typer
 
-from tycoon.config import config, display_target
+from tycoon.config import config
 from tycoon.project import TransformationTool
 from tycoon.scaffolding.osi_generator import (
     scaffold_osi,
@@ -73,8 +73,9 @@ def scaffold(
     """Generate an OSI v0.1.1 YAML from the warehouse's marts.
 
     Looks for tables prefixed `mart_`, `fct_`, `dim_`, `obt_` in any
-    non-system schema of the warehouse DuckDB. Writes one project-level
-    file with all datasets + dimensional fields. Metrics + relationships
+    non-system schema of the warehouse, a local DuckDB file or a
+    MotherDuck database (`md:<db>`, authenticated by `MOTHERDUCK_TOKEN`).
+    Writes one project-level file with all datasets + dimensional fields. Metrics + relationships
     are left empty by design (Conservative dial — issue #28 Q3) so the
     user can fill them in by hand without fighting bad guesses.
     """
@@ -86,19 +87,17 @@ def scaffold(
     project = config.project
     project_name = project.name if project else config.root.name
 
-    warehouse_db = config.local_db
-    if warehouse_db is None:
-        target = display_target(config.warehouse_target)
-        error(f"OSI scaffolding reads a local DuckDB warehouse; MotherDuck ({target}) isn't supported yet.")
-        raise typer.Exit(1)
-
     result = scaffold_osi(
-        warehouse_db=warehouse_db,
+        warehouse_db=config.local_db or config.warehouse_target,
         out_path=out_path,
         project_name=project_name,
         force=force,
         dbt_project_dir=config.dbt_project_dir if _has_dbt_transformation(project) else None,
     )
+
+    if result.error:
+        error(result.error)
+        raise typer.Exit(1)
 
     if result.skipped_due_to_sentinel:
         warn(
