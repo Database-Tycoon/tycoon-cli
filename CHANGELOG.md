@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file. The format 
 
 - **Working on tycoon needs uv 0.12.22 or later** ([#493][]). `uv.lock` depended on which uv last locked it: older releases wrote it in an older format, so a one-line dependency change could come out as a much larger diff. The minimum now lives in `required-version` in `pyproject.toml`, CI installs the newest uv that satisfies it, and `uv.lock` is relocked once at the current format (no package versions change). For contributors; installing tycoon from PyPI is unaffected.
 - **The publish workflow refuses a tag that isn't on `main`** ([#473][]). The release process tags `main` after the release branch merges into it, but nothing checked that. v0.2.4 was tagged on its release branch and published to PyPI while `main` still pointed at v0.2.3, and `main` caught up three days later. Preflight now fails when the tagged commit is not on `main`, before anything builds. A tag pushed too early can stay where it is if the promotion PR merges as a merge commit: merge it, then re-run the job. A squash or rebase merge never puts the tagged commit on `main`, so the tag has to be re-created there.
+- **Steps that run after a load skip a MotherDuck raw database** ([#448][], part of [#430][]). The legacy-table warning, the dlt run capture into `.tycoon/metadata.duckdb`, the dbt staging auto-scaffold after `data sources run`, and `tycoon data analyze` all assume the raw database is a local file. On `database.raw: md:<name>` the first two skip silently and the auto-scaffold skips with one line. `tycoon data analyze` is an explicit command, so it exits 1 with one line saying it reads a local raw file, as it already did in v0.2.3 and v0.2.4. Run history for an `md:` raw is therefore not captured yet. A project on a local raw file is unchanged. `src/tycoon/ingestion/ducklake_config.py`, which had no callers, is deleted.
 
 ### Fixed
 
@@ -21,6 +22,7 @@ All notable changes to this project will be documented in this file. The format 
 [#460]: https://github.com/Database-Tycoon/tycoon-cli/issues/460
 [#430]: https://github.com/Database-Tycoon/tycoon-cli/issues/430
 [#447]: https://github.com/Database-Tycoon/tycoon-cli/issues/447
+[#448]: https://github.com/Database-Tycoon/tycoon-cli/issues/448
 
 ## [0.2.4] - 2026-11-07
 

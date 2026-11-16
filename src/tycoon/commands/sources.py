@@ -909,6 +909,13 @@ def _maybe_auto_scaffold(source_name: str, source_config: SourceConfig, *, cfg: 
     if _source_already_referenced(dbt_dir, source_name):
         return  # User already has staging models referencing this source.
 
+    if cfg.raw_is_motherduck:
+        info(
+            f"No staging models exist for {source_name}; skipping the auto-scaffold, which reads a local raw "
+            "file and database.raw is MotherDuck."
+        )
+        return
+
     staging_dir = dbt_dir / "models" / "staging" / source_name
     info(f"No staging models exist for {source_name} — auto-scaffolding...")
     try:
