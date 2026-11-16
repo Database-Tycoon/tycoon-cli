@@ -6,7 +6,14 @@ we care about.
 
 ## Dev setup
 
-Requires Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/).
+Requires Python ≥ 3.12 and a recent [uv](https://docs.astral.sh/uv/). The
+minimum uv version is `required-version` under `[tool.uv]` in `pyproject.toml`.
+An older uv writes `uv.lock` in an older format, so locking with it rewrites
+lines that have nothing to do with your change. uv releases that understand
+`required-version` refuse to run in this repository when they are too old;
+very old releases ignore the setting, so check `uv --version` if `uv.lock`
+changes more than you expected. To upgrade, run `brew upgrade uv` (Homebrew)
+or `uv self update` (standalone installer).
 
 ```bash
 git clone git@github.com:Database-Tycoon/tycoon-cli.git
@@ -24,7 +31,10 @@ uv run pytest -q
 ## What CI gates on
 
 Every pull request (whatever branch it targets) and every push to `main` runs
-`.github/workflows/ci.yml`:
+`.github/workflows/ci.yml`. CI installs with `uv sync --locked`, so a job
+fails if `uv.lock` no longer matches `pyproject.toml`: when you change
+dependencies in `pyproject.toml`, run `uv lock` and commit `uv.lock` with it.
+The gates are:
 
 - **`uv run pytest -q`** — full default test suite (256 tests as of v0.1.2).
   Runs against Python 3.12 **and** 3.13 in parallel. Network-gated tests
@@ -206,15 +216,26 @@ Release promotion PRs are exempt from the title format because they collect mult
 
 #### Closing GitHub issues
 
-A reference such as `gh-128` in the title does not automatically close the issue when the PR is merged.
+A reference such as `gh-128` in the title does not close the issue when the PR is merged.
 
-To close an issue automatically, include GitHub's closing syntax in the PR description:
+Closing keywords such as `Closes #128` in the PR description don't close it either. GitHub only acts on them when a PR merges into the default branch (`main`), and feature and fix PRs here merge into a version branch. Whoever merges the PR closes the issue by hand afterwards:
 
-```text
-Closes #128
+```shell
+gh issue close <N> --reason completed --comment "Shipped in <release> via #<PR>."
 ```
 
-This is optional and is not enforced by the title check.
+Close a parent issue once all its sub-issues are closed.
+
+Before calling an open issue unshipped, check the release branch's history (`git log origin/<release-branch> --grep "gh-128"`) and `CHANGELOG.md`: the issue may have shipped without being closed.
+
+### Files that need a code-owner review
+
+Changes to workflows, dependency manifests and lockfiles, build config, the
+shipped web bundle, version metadata and shared test setup are assigned to the
+maintainers listed in `.github/CODEOWNERS`. A PR that touches those paths gets
+a review request from them. For now this only requests the review; it becomes
+a merge requirement once code-owner review is turned on for the release
+branches.
 
 ### Break up large issues
 
@@ -228,6 +249,7 @@ The parent issue remains the record of the overall goal, while each sub-issue pr
 |---|---|
 | Work is tied to a GitHub issue | `type(gh-<N>): description` |
 | Work is tied to a Jira ticket only (transition period) | `type(PTC-<N>): description` |
+| Filing or picking up an issue | Set its milestone to the active release |
 | Routine maintenance or CI work has no issue yet | File a lightweight issue first, then `chore(gh-<N>): description` or `ci(gh-<N>): description` |
 | A change needs more than 8 counted files | Split it into a sequence of smaller PRs |
 | An issue requires multiple PRs | Create smaller sub-issues or tickets, with one PR for each |
@@ -287,7 +309,8 @@ enforces the last rule in full: every `nav` entry must resolve to a page that
 was actually built. The build itself now enforces the first. The script
 reads `draft_docs` and `exclude_docs` from `mkdocs.yml`, so it verifies that
 what the config withholds really is absent from the build, and it pins
-`docs/city/` and `docs/proposals/` so they cannot quietly stop being withheld.
+`docs/city/`, `docs/proposals/` and `docs/process/` so they cannot quietly stop
+being withheld.
 It cannot know that some new directory was meant to be internal. That judgment
 is yours, and the rule above is how you record it.
 
@@ -317,7 +340,8 @@ always reflects the latest published version.
 4. The release branch merges into `main` via PR, then the version tag is
    pushed (branch and tag share a name, so use fully-qualified refs — see
    `docs/publishing-to-pypi.md`). The tag triggers PyPI publish via
-   `.github/workflows/publish.yml`. The maintainer then creates the GitHub
+   `.github/workflows/publish.yml`, which refuses to publish a tag whose
+   commit is not on `main`. The maintainer then creates the GitHub
    release by hand.
 
 Contributors don't cut releases — maintainers do. If you want to propose one,
@@ -346,6 +370,9 @@ hard way.
 
   This call also merges every open PR **below** the one you name, so merge
   a stack from the bottom up, one layer at a time.
+- **Close the issue after the merge.** Closing keywords don't fire on a
+  release-branch merge, so close it with `gh issue close` ("Closing GitHub
+  issues" above).
 - **Check the next layer's base before merging it.** After a layer merges,
   GitHub sometimes retargets the PR above it to the release branch and
   sometimes doesn't. If `gh pr view <N> --json baseRefName` still names the
