@@ -14,22 +14,22 @@ name: PR Compliance
 # repository variables override it without a commit.
 #
 # Both jobs run their check script and config from the PR's base ref, not
-# the PR's own checkout, fetched via `git show` into a `trusted/` subdir
-# below. Otherwise a PR could raise its own limits by editing
+# the PR's own checkout, fetched via `git show` into a fresh directory under
+# $RUNNER_TEMP below. Otherwise a PR could raise its own limits by editing
 # .github/pr-size.yml or the scripts themselves -- harmless while mode is
-# warn, but load-bearing once a check flips to fail. `trusted/` lives
-# inside the same checkout (not a separate `actions/checkout`) so the
-# script's internal `git merge-base`/`git diff`/`git show` calls still
-# resolve against the one clone that actually has both the base and head
-# commits (fetch-depth: 0 below).
+# warn, but load-bearing once a check flips to fail. The directory sits
+# outside the checkout and the scripts run with `python -I`, so nothing the
+# PR commits is importable. GIT_DIR points the size script's
+# `git merge-base`/`git diff`/`git show` calls back at the one clone that
+# has both the base and head commits (fetch-depth: 0 below).
 
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
+# Read-only floor; each job adds pull-requests: write for its comment step.
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: pr-compliance-${{ github.event.pull_request.number }}
@@ -39,6 +39,9 @@ jobs:
   size:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,27 +53,32 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          mkdir -p trusted/.github trusted/scripts
-          # Falls back to the PR's own script only when the base ref predates
-          # this workflow (e.g. this very PR, before it first merges to main).
-          if ! git show "$BASE_SHA:scripts/pr_size_check.py" > trusted/scripts/pr_size_check.py 2>/dev/null; then
-            cp scripts/pr_size_check.py trusted/scripts/pr_size_check.py
+          trusted="$RUNNER_TEMP/trusted"
+          rm -rf "$trusted"
+          mkdir -p "$trusted/.github" "$trusted/scripts"
+          # Falls back to the PR's own script only when the base ref genuinely
+          # predates it; a failed extraction of a file that is there fails.
+          if git cat-file -e "$BASE_SHA:scripts/pr_size_check.py" 2>/dev/null; then
+            git show "$BASE_SHA:scripts/pr_size_check.py" > "$trusted/scripts/pr_size_check.py"
+          else
+            cp scripts/pr_size_check.py "$trusted/scripts/pr_size_check.py"
           fi
-          if ! git show "$BASE_SHA:.github/pr-size.yml" > trusted/.github/pr-size.yml 2>/dev/null; then
-            rm -f trusted/.github/pr-size.yml
+          if git cat-file -e "$BASE_SHA:.github/pr-size.yml" 2>/dev/null; then
+            git show "$BASE_SHA:.github/pr-size.yml" > "$trusted/.github/pr-size.yml"
           fi
 
       - name: Run PR size check
         id: check
-        working-directory: trusted
+        working-directory: ${{ runner.temp }}/trusted
         env:
+          GIT_DIR: ${{ github.workspace }}/.git
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           PR_SIZE_MODE: ${{ vars.PR_SIZE_MODE }}
           PR_SIZE_REPORT_FILE: ${{ github.workspace }}/pr-size-report.md
-        run: python scripts/pr_size_check.py
+        run: python -I scripts/pr_size_check.py
 
       - name: Upsert PR comment
         # Fork PRs and Dependabot get a read-only GITHUB_TOKEN regardless of
@@ -107,6 +115,9 @@ jobs:
   title:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -118,17 +129,21 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          mkdir -p trusted/.github trusted/scripts
-          if ! git show "$BASE_SHA:scripts/pr_title_check.py" > trusted/scripts/pr_title_check.py 2>/dev/null; then
-            cp scripts/pr_title_check.py trusted/scripts/pr_title_check.py
+          trusted="$RUNNER_TEMP/trusted"
+          rm -rf "$trusted"
+          mkdir -p "$trusted/.github" "$trusted/scripts"
+          if git cat-file -e "$BASE_SHA:scripts/pr_title_check.py" 2>/dev/null; then
+            git show "$BASE_SHA:scripts/pr_title_check.py" > "$trusted/scripts/pr_title_check.py"
+          else
+            cp scripts/pr_title_check.py "$trusted/scripts/pr_title_check.py"
           fi
-          if ! git show "$BASE_SHA:.github/pr-title.yml" > trusted/.github/pr-title.yml 2>/dev/null; then
-            rm -f trusted/.github/pr-title.yml
+          if git cat-file -e "$BASE_SHA:.github/pr-title.yml" 2>/dev/null; then
+            git show "$BASE_SHA:.github/pr-title.yml" > "$trusted/.github/pr-title.yml"
           fi
 
       - name: Run PR title check
         id: check
-        working-directory: trusted
+        working-directory: ${{ runner.temp }}/trusted
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
@@ -136,7 +151,7 @@ jobs:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           PR_TITLE_MODE: ${{ vars.PR_TITLE_MODE }}
           PR_TITLE_REPORT_FILE: ${{ github.workspace }}/pr-title-report.md
-        run: python scripts/pr_title_check.py
+        run: python -I scripts/pr_title_check.py
 
       - name: Upsert PR comment
         # See the size job's identical guard above: fork/Dependabot PRs get
