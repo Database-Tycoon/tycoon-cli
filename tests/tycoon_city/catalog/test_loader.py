@@ -4,7 +4,7 @@ import pytest
 from tycoon_city.catalog.errors import CatalogError
 from tycoon_city.catalog.loader import (
     _database_name_for,
-    _is_motherduck,
+    is_motherduck,
     _scan_catalog,
     load_catalog,
 )
@@ -81,33 +81,68 @@ def test_scan_catalog_ignores_attached_databases(tmp_path):
         con.close()
 
 
-def test_motherduck_source_is_not_treated_as_a_file_path(monkeypatch):
-    """`md:` catalogs are not filesystem paths.
+@pytest.mark.parametrize("prefix", ["md:", "motherduck:", "MD:", "MotherDuck:"])
+def test_motherduck_source_is_not_treated_as_a_file_path(prefix, monkeypatch):
+    """`md:` and `motherduck:` catalogs are not filesystem paths.
 
     The existence check must be skipped for them, and the displayed name must be
-    the catalog rather than a path stem. The connect is stubbed: a real `md:`
-    connect without a token starts MotherDuck's browser login on a laptop.
+    the catalog rather than a path stem. The connection is mocked: with no token
+    a real `md:` connect opens a browser sign-in.
     """
-    connected = []
+    assert is_motherduck(f"{prefix}my_db")
+    assert not is_motherduck("/tmp/my_db.duckdb")
+    assert not is_motherduck("/tmp/backup-md:/my_db.duckdb")
+    assert not is_motherduck("./MD:my_db")
+    assert not is_motherduck("data/MD:backup/w.duckdb")
 
-    def refuse_connect(database, *args, **kwargs):
-        connected.append(database)
-        raise duckdb.IOException("stubbed: no MotherDuck in unit tests")
-
-    monkeypatch.setattr(duckdb, "connect", refuse_connect)
-
-    assert _is_motherduck("md:my_db")
-    assert not _is_motherduck("/tmp/my_db.duckdb")
-
-    assert _database_name_for("md:my_db") == "my_db"
+    assert _database_name_for(f"{prefix}my_db") == "my_db"
     # Share URLs: neither "_share" nor a UUID names the database usefully.
-    assert _database_name_for("md:_share/dogfood_dbt_prod/b0614b23-ed92") == "dogfood_dbt_prod"
+    assert _database_name_for(f"{prefix}_share/dogfood_dbt_prod/b0614b23-ed92") == "dogfood_dbt_prod"
     assert _database_name_for("/tmp/demo.duckdb") == "demo"
 
-    # A missing md: catalog must not raise "Database file not found" -- that
+    # A missing catalog must not raise "Database file not found" -- that
     # message would send the user looking for a file that was never meant to
-    # exist. Reaching connect at all proves the existence check was skipped.
+    # exist. It fails at connect instead.
+    attempted = []
+
+    def refuse(database, *args, **kwargs):
+        attempted.append(database)
+        raise duckdb.IOException("mocked: no connection")
+
+    monkeypatch.setattr("tycoon_city.catalog.loader.duckdb.connect", refuse)
     with pytest.raises(CatalogError) as exc:
-        load_catalog("md:definitely_not_a_real_catalog_xyz")
+        load_catalog(f"{prefix}definitely_not_a_real_catalog_xyz")
+    assert attempted == [f"{prefix}definitely_not_a_real_catalog_xyz"]
     assert "not found" not in str(exc.value).lower()
-    assert connected == ["md:definitely_not_a_real_catalog_xyz"]
+
+
+_TOKEN = "s3cr3t-token-value"
+
+
+@pytest.mark.parametrize(
+    ("source", "name"),
+    [
+        (f"md:my_db?motherduck_token={_TOKEN}", "my_db"),
+        (f"motherduck:my_db?motherduck_token={_TOKEN}&saas_mode=true", "my_db"),
+        (f"md:_share/sales/abc-123?motherduck_token={_TOKEN}", "sales"),
+        # No database before the query: the same fallback as a bare `md:`.
+        (f"md:?motherduck_token={_TOKEN}", _database_name_for("md:")),
+    ],
+)
+def test_database_name_drops_the_connection_query(source, name):
+    """The name lands in city.json and runs.json, so the token must never be part of it."""
+    derived = _database_name_for(source)
+    assert derived == name
+    assert _TOKEN not in derived
+    assert "motherduck_token" not in derived
+
+
+def test_a_motherduck_prefix_is_not_a_directory_or_file_to_look_for(tmp_path):
+    from tycoon_city.pricing import DEFAULT_PRICE_BOOK, resolve_price_book
+    from tycoon_city.webserve import _fingerprint
+
+    assert resolve_price_book("motherduck:some_db") == DEFAULT_PRICE_BOOK
+    assert resolve_price_book("MD:some_db") == DEFAULT_PRICE_BOOK
+    assert _fingerprint("motherduck:some_catalog") is None
+    assert _fingerprint("MotherDuck:some_catalog") is None
+    assert _fingerprint(str(tmp_path / "not_a_project_dir")) is not None
