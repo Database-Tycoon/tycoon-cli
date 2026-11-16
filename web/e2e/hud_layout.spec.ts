@@ -90,3 +90,33 @@ test("long model and test names wrap at underscores, never mid-word or off the e
     for (const line of name.slice(0, -1)) expect(line).toMatch(/_$/);
   }
 });
+
+test("a name with no break point still wraps inside the panel, clear of the close button (gh-383)", async ({
+  page,
+}) => {
+  // No underscore or dot means no <wbr>, so only the panel's
+  // overflow-wrap fallback keeps these inside it.
+  const doc = JSON.parse(await readFile(RICH, "utf8"));
+  const revenue = doc.objects.find((o: { key: string }) => o.key === "mart.mart__revenue");
+  revenue.name = "x".repeat(120);
+  revenue.dbt.tests = [{ name: "y".repeat(120), column: "station_id", status: "pass" }];
+  await page.route("**/city.json*", (route) => route.fulfill({ body: JSON.stringify(doc) }));
+  await open(page, "?seed=7&lens=none");
+  await page.evaluate(() => window.__tycoonCity!.select("mart.mart__revenue"));
+
+  const panel = page.locator("#inspector");
+  await expect(panel).toBeVisible();
+  expect(await panel.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+  expect((await wrappedLines(page, "#inspector h2")).length).toBeGreaterThan(1);
+  expect((await wrappedLines(page, "#inspector ul.tests li >> nth=0 >> .ident")).length).toBeGreaterThan(1);
+
+  // The title's first line must end before the close button starts.
+  const titleRight = await page.locator("#inspector h2").evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const first = range.getClientRects()[0]!;
+    return first.right;
+  });
+  const close = (await page.locator("#inspector .close").boundingBox())!;
+  expect(titleRight).toBeLessThanOrEqual(close.x);
+});
