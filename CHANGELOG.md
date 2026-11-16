@@ -7,6 +7,10 @@ All notable changes to this project will be documented in this file. The format 
 - **Working on tycoon needs uv 0.12.22 or later** ([#493][]). `uv.lock` depended on which uv last locked it: older releases wrote it in an older format, so a one-line dependency change could come out as a much larger diff. The minimum now lives in `required-version` in `pyproject.toml`, CI installs the newest uv that satisfies it, and `uv.lock` is relocked once at the current format (no package versions change). For contributors; installing tycoon from PyPI is unaffected.
 - **The publish workflow refuses a tag that isn't on `main`** ([#473][]). The release process tags `main` after the release branch merges into it, but nothing checked that. v0.2.4 was tagged on its release branch and published to PyPI while `main` still pointed at v0.2.3, and `main` caught up three days later. Preflight now fails when the tagged commit is not on `main`, before anything builds. A tag pushed too early can stay where it is if the promotion PR merges as a merge commit: merge it, then re-run the job. A squash or rebase merge never puts the tagged commit on `main`, so the tag has to be re-created there.
 
+### Removed
+
+- **Jira PTC keys are no longer accepted in PR titles, and the Jira sync workflow is gone** ([#351][]). The project moved its tracking from the Jira PTC board to GitHub issues and the Tycoon CLI project on 2026-10-09, so the PR title check now accepts `gh-<N>` scopes only, and `CONTRIBUTING.md` and the contributor skills no longer describe `PTC-<N>` as an option. `.github/workflows/jira-sync.yml` is deleted: its `JIRA_EMAIL` and `JIRA_API_TOKEN` secrets were never set, so every run exited without syncing anything. Existing commits, changelog entries and release notes that cite `PTC-<N>` keys are unchanged. For contributors.
+
 ### Fixed
 
 - **An `md:` target with no MotherDuck token fails at once instead of opening a browser sign-in** ([#460][]). With no token, DuckDB's MotherDuck extension starts a browser sign-in and waits, so `tycoon data query` on an `md:` warehouse sat on the sign-in page for about a minute, and in a script or CI job it hung. `data query`, `data schema` and `data sync` now check before they connect and exit 1 with `No MotherDuck token for md:<db>: export MOTHERDUCK_TOKEN and run again.` A token counts when `MOTHERDUCK_TOKEN` or `motherduck_token` is set or when the connection string carries `motherduck_token=<value>`. The file `~/.duckdb/motherduck_token` does not count: on DuckDB 1.5.4 a valid token in that file, with both variables unset, still started the browser sign-in. Projects on local DuckDB files never reach the check.
@@ -17,6 +21,7 @@ All notable changes to this project will be documented in this file. The format 
 [#473]: https://github.com/Database-Tycoon/tycoon-cli/issues/473
 [#460]: https://github.com/Database-Tycoon/tycoon-cli/issues/460
 [#394]: https://github.com/Database-Tycoon/tycoon-cli/issues/394
+[#351]: https://github.com/Database-Tycoon/tycoon-cli/issues/351
 
 ## [0.2.4] - 2026-11-07
 
