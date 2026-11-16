@@ -384,11 +384,12 @@ def test_scaffold_command_motherduck_open_failure_exits_cleanly(tmp_path: Path, 
 
     (tmp_path / "tycoon.yml").write_text("name: test\nsources: {}\ndatabase:\n  warehouse: 'md:x'\n")
     monkeypatch.setattr("tycoon.commands.semantics.config", TycoonConfig(project_root=tmp_path))
+    monkeypatch.setenv("MOTHERDUCK_TOKEN", "invalid-token-for-test")
 
-    def no_token(*_a, **_k):
-        raise duckdb.Error("motherduck_token not set")
+    def rejected(*_a, **_k):
+        raise duckdb.Error("token rejected")
 
-    monkeypatch.setattr(duckdb, "connect", no_token)
+    monkeypatch.setattr(duckdb, "connect", rejected)
 
     result = cli_runner.invoke(app, ["semantics", "scaffold", "--out", str(tmp_path / "osi.yaml")])
     assert result.exit_code == 1
@@ -396,7 +397,55 @@ def test_scaffold_command_motherduck_open_failure_exits_cleanly(tmp_path: Path, 
     assert not (tmp_path / "osi.yaml").exists()
 
 
+def test_scaffold_command_md_without_token_exits_before_connecting(tmp_path: Path, monkeypatch, cli_runner) -> None:
+    """With no token, DuckDB would open a browser sign-in, so the command must stop before connecting."""
+    from tycoon.cli import app
+    from tycoon.config import TycoonConfig
+
+    monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
+    monkeypatch.delenv("motherduck_token", raising=False)
+    (tmp_path / "tycoon.yml").write_text("name: test\nsources: {}\ndatabase:\n  warehouse: 'md:analytics'\n")
+    monkeypatch.setattr("tycoon.commands.semantics.config", TycoonConfig(project_root=tmp_path))
+    calls: list[object] = []
+    monkeypatch.setattr(duckdb, "connect", lambda *a, **k: calls.append(a))
+
+    result = cli_runner.invoke(app, ["semantics", "scaffold", "--out", str(tmp_path / "osi.yaml")])
+    assert result.exit_code == 1
+    assert "No MotherDuck token for md:analytics: export MOTHERDUCK_TOKEN and run again." in " ".join(
+        result.output.split()
+    )
+    assert calls == []
+    assert not (tmp_path / "osi.yaml").exists()
+
+
+class _FailingConnection:
+    """Opens fine, then fails every query, as a MotherDuck connection can mid-introspection."""
+
+    def execute(self, *_a, **_k):
+        raise duckdb.IOException(
+            "IO Error: lost md:db?motherduck_token=fake-secret-123 motherduck_token=fake-secret-123"
+        )
+
+    def close(self) -> None:
+        pass
+
+
 class TestMotherDuckTarget:
+    def test_introspection_failure_sets_redacted_error(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(duckdb, "connect", lambda *_a, **_k: _FailingConnection())
+        out = tmp_path / "osi.yaml"
+        result = scaffold_osi(warehouse_db="md:db", out_path=out, project_name="demo")
+        assert result.error and "Could not read warehouse" in result.error
+        assert "fake-secret-123" not in result.error
+        assert not out.exists()
+
+    def test_introspection_failure_on_local_file_is_a_redacted_warning(self, warehouse, tmp_path, monkeypatch):
+        monkeypatch.setattr(duckdb, "connect", lambda *_a, **_k: _FailingConnection())
+        result = scaffold_osi(warehouse_db=warehouse, out_path=tmp_path / "osi.yaml", project_name="demo")
+        assert result.error is None
+        assert any("Could not read warehouse" in w for w in result.warnings)
+        assert "fake-secret-123" not in "\n".join(result.warnings)
+
     def test_open_failure_sets_error_and_writes_nothing(self, tmp_path, monkeypatch):
         def boom(*_a, **_k):
             raise duckdb.Error("bad md:db?motherduck_token=sekrit")
@@ -514,7 +563,8 @@ class TestAutoScaffoldMotherDuck:
         assert "Export MOTHERDUCK_TOKEN" in out
 
     def test_stored_token_file_is_not_enough(self, tmp_path, monkeypatch, capsys):
-        from tycoon.commands.transform import _auto_osi_scaffold_safe, _has_motherduck_token
+        from tycoon.commands.transform import _auto_osi_scaffold_safe
+        from tycoon.motherduck import has_motherduck_token
 
         monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
         monkeypatch.delenv("motherduck_token", raising=False)
@@ -522,8 +572,20 @@ class TestAutoScaffoldMotherDuck:
         (home / ".duckdb").mkdir(parents=True)
         (home / ".duckdb" / "motherduck_token").write_text("stored-token")
         monkeypatch.setenv("HOME", str(home))
-        assert not _has_motherduck_token("md:x")
+        assert not has_motherduck_token("md:x")
         self._project(tmp_path, monkeypatch, "md:x")
+        calls: list[object] = []
+        monkeypatch.setattr(duckdb, "connect", lambda *a, **k: calls.append(a))
+        _auto_osi_scaffold_safe()
+        assert calls == []
+        assert "Export MOTHERDUCK_TOKEN" in " ".join(capsys.readouterr().out.split())
+
+    def test_empty_token_in_connection_string_is_not_enough(self, tmp_path, monkeypatch, capsys):
+        from tycoon.commands.transform import _auto_osi_scaffold_safe
+
+        monkeypatch.delenv("MOTHERDUCK_TOKEN", raising=False)
+        monkeypatch.delenv("motherduck_token", raising=False)
+        self._project(tmp_path, monkeypatch, "md:x?motherduck_token=")
         calls: list[object] = []
         monkeypatch.setattr(duckdb, "connect", lambda *a, **k: calls.append(a))
         _auto_osi_scaffold_safe()

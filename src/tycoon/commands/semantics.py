@@ -20,6 +20,7 @@ from pathlib import Path
 import typer
 
 from tycoon.config import config
+from tycoon.motherduck import require_motherduck_token
 from tycoon.project import TransformationTool
 from tycoon.scaffolding.osi_generator import (
     scaffold_osi,
@@ -87,8 +88,12 @@ def scaffold(
     project = config.project
     project_name = project.name if project else config.root.name
 
+    warehouse = config.local_db or config.warehouse_target
+    # Without a token DuckDB opens a browser sign-in, so stop before connecting.
+    require_motherduck_token(str(warehouse))
+
     result = scaffold_osi(
-        warehouse_db=config.local_db or config.warehouse_target,
+        warehouse_db=warehouse,
         out_path=out_path,
         project_name=project_name,
         force=force,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import subprocess
@@ -16,6 +15,7 @@ import typer
 
 from tycoon.config import config
 from tycoon.dbt_profiles import ProfileOverrides, resolve_profile
+from tycoon.motherduck import has_motherduck_token
 from tycoon.utils.console import console, error, header, info, next_steps, success
 
 app = typer.Typer(
@@ -191,16 +191,6 @@ def _capture_dbt_and_refresh_safe(
         pass
 
 
-def _has_motherduck_token(target: str) -> bool:
-    if any(os.environ.get(k, "").strip() for k in ("MOTHERDUCK_TOKEN", "motherduck_token")):
-        return True
-    if "motherduck_token=" in target.lower():
-        return True
-    # ~/.duckdb/motherduck_token is deliberately not a source: DuckDB 1.5.4 still
-    # starts the browser sign-in when only that file holds the token.
-    return False
-
-
 def _auto_osi_scaffold_safe() -> None:
     """Re-emit dbt_project/semantic/osi.yaml after a successful dbt run.
 
@@ -212,7 +202,7 @@ def _auto_osi_scaffold_safe() -> None:
     if project is None or not project.transform.auto_osi_scaffold:
         return
     target = config.local_db or config.warehouse_target
-    if isinstance(target, str) and not _has_motherduck_token(target):
+    if isinstance(target, str) and not has_motherduck_token(target):
         # Without a token DuckDB starts a browser sign-in and blocks the command.
         info(
             "Skipped the OSI auto-scaffold: no MotherDuck token found. "

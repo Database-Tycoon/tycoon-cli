@@ -90,7 +90,7 @@ class ScaffoldResult:
 
 
 class WarehouseOpenError(Exception):
-    """A MotherDuck warehouse could not be opened; the message is safe to print."""
+    """A MotherDuck warehouse could not be opened or read; the message is redacted and safe to print."""
 
 
 def _is_motherduck(target: Path | str) -> bool:
@@ -239,10 +239,7 @@ def _build_datasets(
     try:
         con = duckdb.connect(str(warehouse_db)) if is_md else duckdb.connect(str(warehouse_db), read_only=True)
     except duckdb.Error as exc:
-        message = f"Could not open warehouse: {redact_secrets(str(exc))}"
-        if is_md:
-            raise WarehouseOpenError(message) from None
-        return [], [message]
+        return _warehouse_failure("Could not open warehouse", exc, is_md=is_md)
 
     try:
         db_name = _resolve_db_name(con)
@@ -272,10 +269,20 @@ def _build_datasets(
                 warnings.append(f"{schema}.{table}: no columns found, skipping.")
                 continue
             out.append(_build_dataset_entry(db_name, schema, table, cols))
+    except duckdb.Error as exc:
+        return _warehouse_failure("Could not read warehouse", exc, is_md=is_md)
     finally:
         con.close()
 
     return out, warnings
+
+
+def _warehouse_failure(prefix: str, exc: duckdb.Error, *, is_md: bool) -> tuple[list[dict[str, Any]], list[str]]:
+    """Turn a DuckDB error into a redacted message: raised for MotherDuck, a warning for a local file."""
+    message = f"{prefix}: {redact_secrets(str(exc))}"
+    if is_md:
+        raise WarehouseOpenError(message) from None
+    return [], [message]
 
 
 def _resolve_db_name(con: duckdb.DuckDBPyConnection) -> str:
