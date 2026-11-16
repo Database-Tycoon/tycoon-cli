@@ -294,7 +294,8 @@ class TestPathContainment:
         assert cfg.dbt_project_dir == (tmp_path / "proj" / "dbt_project").resolve()
 
     def test_sibling_dbt_dir_accepted(self, tmp_path):
-        # The init wizard's default layout: dbt lives NEXT TO the project root.
+        # An existing project registered from beside the tycoon project root,
+        # not the wizard's create-new default (which is inline, gh-259).
         cfg = self._make_project(tmp_path / "proj", dbt_project_dir="../proj-dbt")
         assert cfg.dbt_project_dir == (tmp_path / "proj-dbt").resolve()
 

@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import os
+import secrets
+
 import pytest
 
-from tycoon.config import TycoonConfig, display_target, load_config, redact_secrets
+from tycoon.config import (
+    TycoonConfig,
+    display_target,
+    is_motherduck,
+    load_config,
+    redact_secrets,
+    resolve_contained_path,
+)
 from tycoon.project import SCHEMA_VERSION
 
 
@@ -39,6 +49,36 @@ class TestTycoonConfig:
         assert tmp_config.data_dir == tmp_config.root / "data"
         assert tmp_config.dbt_project_dir == tmp_config.root / "dbt_project"
         assert tmp_config.rill_dir == tmp_config.root / "rill"
+
+    def test_resolve_contained_path_appends_runtime_remediation(self, tmp_path: Path):
+        """A tycoon.yml already exists at runtime, so "point tycoon.yml at a
+        path within it" is a real, actionable fix here, unlike at wizard
+        prompt time, before one is written (gh-259 review)."""
+        cfg = TycoonConfig(project_root=tmp_path / "codespace" / "proj")
+        cfg.root.mkdir(parents=True)
+
+        with pytest.raises(ValueError) as exc_info:
+            cfg._resolve_contained_path(str(tmp_path / "unrelated"), "dbt_project_dir")
+
+        message = str(exc_info.value)
+        assert "security boundary" in message
+        assert "point tycoon.yml at a path within it" in message
+
+    def test_runtime_remediation_at_top_level_root_does_not_mention_a_parent(self, tmp_path: Path, monkeypatch):
+        """For an `/app`-style root the boundary is the project directory
+        itself, so the appended runtime sentence must not say paths may sit
+        in the project's parent. Simulated the same way as the shared-level
+        test: point the boundary at the root."""
+        monkeypatch.setattr("tycoon.config.containment_boundary", lambda root: root.resolve())
+        cfg = TycoonConfig(project_root=tmp_path / "app")
+        cfg.root.mkdir(parents=True)
+
+        with pytest.raises(ValueError) as exc_info:
+            cfg._resolve_contained_path(str(tmp_path / "elsewhere"), "dbt_project_dir")
+
+        message = str(exc_info.value)
+        assert f"outside the project directory {cfg.root.resolve()}" in message
+        assert "parent directory" not in message
 
 
 class TestLoadConfigSchemaWarning:
@@ -95,8 +135,6 @@ class TestLoadConfigSchemaWarning:
         The gate lives here (not in load_project) so the import-time singleton
         never raises and --help / init --upgrade remain reachable.
         """
-        import pytest
-
         (tmp_path / "tycoon.yml").write_text(f"name: future\nschema_version: {SCHEMA_VERSION + 1}\n")
         monkeypatch.chdir(tmp_path)
 
@@ -109,6 +147,67 @@ class TestLoadConfigSchemaWarning:
         assert exc_info.value.code == 1
         assert len(errors) == 1
         assert "newer than this tycoon supports" in errors[0]
+
+
+class TestResolveContainedPath:
+    """gh-259: `resolve_contained_path` is now a standalone function, shared
+    by `TycoonConfig` (runtime) and the `tycoon init` wizard (prompt time),
+    not just a private `TycoonConfig` method.
+
+    The inline/sibling/traversal acceptance-and-rejection cases are covered
+    by `TestPathContainment` in test_project_validation.py, which reaches
+    this same function through `TycoonConfig`'s one-line passthrough. Kept
+    here are only the cases unique to this level: the message's own wording
+    (gh-259 review, to avoid two files needing an update if the boundary
+    rule's cases change)."""
+
+    def test_error_message_includes_the_given_field_name(self, tmp_path: Path):
+        root = tmp_path / "proj"
+        root.mkdir()
+        with pytest.raises(ValueError, match="dbt project path"):
+            resolve_contained_path("/etc/cron.d", root, "dbt project path")
+
+    def test_error_message_explains_the_boundary(self, tmp_path: Path):
+        """An out-of-bounds path (e.g. an existing project that lives in a
+        completely unrelated part of the filesystem, not a sibling or a
+        traversal attempt) should get an error that explains *why* it's
+        rejected, stating the fact without prescribing a fix: `field` is a
+        label for which caller raised this, not a remediation seam, and
+        "point tycoon.yml at ..." only makes sense once one exists to point
+        (gh-259 review). Callers append their own remediation; see
+        TycoonConfig._resolve_contained_path's test for the runtime one."""
+        root = tmp_path / "codespace" / "experiments"
+        root.mkdir(parents=True)
+        unrelated = tmp_path / "projects" / "dbt"
+        unrelated.mkdir(parents=True)
+
+        with pytest.raises(ValueError) as exc_info:
+            resolve_contained_path(str(unrelated), root, "dbt project path")
+
+        message = str(exc_info.value)
+        assert f"outside the project's parent directory {root.parent}" in message
+        # None of the runtime story belongs at this level: the wizard reaches
+        # this message before any tycoon.yml exists, for a path the user just
+        # typed (gh-259 review).
+        for runtime_only in ("tycoon.yml", "shared", "security boundary", "Move the project"):
+            assert runtime_only not in message
+
+    def test_top_level_root_names_the_project_directory_not_its_parent(self, tmp_path: Path, monkeypatch):
+        """For a root like `/app`, containment_boundary falls back to the
+        root itself, so the label must not call it "parent directory": that
+        directory is the project, not its parent (gh-259 review). Simulated
+        by pointing the boundary at the root, which is exactly what the
+        helper returns for a real top-level root."""
+        root = tmp_path / "app"
+        root.mkdir()
+        monkeypatch.setattr("tycoon.config.containment_boundary", lambda r: r.resolve())
+
+        with pytest.raises(ValueError) as exc_info:
+            resolve_contained_path(str(tmp_path / "elsewhere"), root, "dbt project path")
+
+        message = str(exc_info.value)
+        assert f"outside the project directory {root.resolve()}" in message
+        assert "parent directory" not in message
 
 
 class TestWarehouseTarget:
@@ -152,6 +251,9 @@ class TestRedaction:
             ("md:", "md:"),
             ("md:db", "md:db"),
             ("md:db?motherduck_token=x&saas_mode=true", "md:db"),
+            ("motherduck:db?motherduck_token=x", "motherduck:db"),
+            ("MD:db?motherduck_token=x", "MD:db"),
+            ("MotherDuck:db?motherduck_token=x", "MotherDuck:db"),
             ("/tmp/proj/data/warehouse.duckdb", "/tmp/proj/data/warehouse.duckdb"),
         ],
     )
@@ -173,6 +275,9 @@ class TestRedaction:
             ("SET motherduck_token = 'abc123'", "SET motherduck_token = '***'"),
             ("MotherDuck_Token='abc123'", "MotherDuck_Token='***'"),
             ("md:db?motherduck_token=abc123&saas_mode=true", "md:db"),
+            ("motherduck:db?motherduck_token=abc123&saas_mode=true", "motherduck:db"),
+            ("MD:db?motherduck_token=abc123&saas_mode=true", "MD:db"),
+            ("MotherDuck:db?motherduck_token=abc123", "MotherDuck:db"),
             (
                 "Error: SET motherduck_token = 'abc123' failed (token expired)",
                 "Error: SET motherduck_token = '***' failed (token expired)",
@@ -183,3 +288,113 @@ class TestRedaction:
     )
     def test_redact_secrets_token_forms(self, text, redacted):
         assert redact_secrets(text) == redacted
+
+
+class TestIsMotherduck:
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "md:x",
+            "md:",
+            "motherduck:x",
+            "md:_share/name/uuid",
+            "motherduck:x?motherduck_token=t",
+            "MD:db",
+            "Md:",
+            "MotherDuck:db",
+            "MOTHERDUCK:db",
+        ],
+    )
+    def test_accepts_both_prefixes(self, target):
+        assert is_motherduck(target)
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "data/raw.duckdb",
+            "/abs/backup-md:/raw.duckdb",
+            "data/motherduck:x.duckdb",
+            "C:\\data\\md:raw.duckdb",
+            "./md",
+            "./MD:db",
+            "data/MD:backup/w.duckdb",
+            "data/MotherDuck:x.duckdb",
+            "mdx:x",
+            "",
+        ],
+    )
+    def test_everything_else_is_a_file(self, target):
+        assert not is_motherduck(target)
+
+    def test_long_prefix_warehouse_resolves_like_short(self, tmp_path):
+        def target(value: str) -> tuple[str, bool, object]:
+            (tmp_path / "tycoon.yml").write_text(f"name: t\nsources: {{}}\ndatabase:\n  warehouse: '{value}'\n")
+            cfg = TycoonConfig(project_root=tmp_path)
+            return cfg.warehouse_target, cfg.warehouse_is_motherduck, cfg.local_db
+
+        assert target("md:x") == ("md:x", True, None)
+        assert target("motherduck:x") == ("motherduck:x", True, None)
+        assert target("MD:x") == ("MD:x", True, None)
+        assert target("MotherDuck:x") == ("MotherDuck:x", True, None)
+
+    def test_mixed_case_local_looking_path_is_still_a_file(self, tmp_path):
+        (tmp_path / "tycoon.yml").write_text("name: t\nsources: {}\ndatabase:\n  warehouse: './MD:db'\n")
+        cfg = TycoonConfig(project_root=tmp_path)
+        assert not cfg.warehouse_is_motherduck
+        assert cfg.local_db == tmp_path / "MD:db"
+
+    def test_raw_with_md_later_in_path_is_a_file(self, tmp_path):
+        (tmp_path / "tycoon.yml").write_text("name: t\nsources: {}\ndatabase:\n  raw: 'data/md:backup/raw.duckdb'\n")
+        cfg = TycoonConfig(project_root=tmp_path)
+        assert not cfg.raw_is_motherduck
+        assert cfg.raw_db == tmp_path / "data" / "md:backup" / "raw.duckdb"
+
+    def test_long_prefix_raw_exits_like_short(self, tmp_path):
+        (tmp_path / "tycoon.yml").write_text("name: t\nsources: {}\ndatabase:\n  raw: 'motherduck:x_raw'\n")
+        cfg = TycoonConfig(project_root=tmp_path)
+        assert cfg.raw_is_motherduck
+        with pytest.raises(SystemExit):
+            _ = cfg.raw_db
+
+
+_E2E_PREFIX = "tycoon_e2e_scratch_"
+needs_token = pytest.mark.skipif(not os.environ.get("MOTHERDUCK_TOKEN"), reason="MOTHERDUCK_TOKEN not set")
+
+
+@pytest.fixture
+def scratch_db():
+    import duckdb
+
+    name = f"{_E2E_PREFIX}a{secrets.token_hex(3)}"
+    assert name.startswith(_E2E_PREFIX)
+    admin = duckdb.connect("md:")
+    admin.execute(f'CREATE DATABASE "{name}"')
+    try:
+        yield name
+    finally:
+        assert name.startswith(_E2E_PREFIX)
+        admin.execute(f'DROP DATABASE IF EXISTS "{name}"')
+        admin.close()
+
+
+@pytest.mark.e2e
+@needs_token
+def test_both_prefixes_open_the_same_real_catalog(scratch_db):
+    import duckdb
+
+    short = duckdb.connect(f"md:{scratch_db}")
+    short.execute("CREATE TABLE t AS SELECT 42 AS answer")
+    short.close()
+
+    long = duckdb.connect(f"motherduck:{scratch_db}")
+    assert long.execute("SELECT current_database()").fetchone() == (scratch_db,)
+    assert long.execute("SELECT answer FROM t").fetchone() == (42,)
+    long.close()
+
+
+@pytest.mark.e2e
+@needs_token
+def test_dbt_duckdb_recognises_the_long_prefix(scratch_db):
+    from dbt.adapters.duckdb.credentials import DuckDBCredentials
+
+    assert DuckDBCredentials(path=f"motherduck:{scratch_db}").is_motherduck

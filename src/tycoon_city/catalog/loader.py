@@ -5,7 +5,7 @@ from pathlib import Path
 import duckdb
 
 from .column_lineage import ColumnEdge, derive_column_lineage
-from .dbt_manifest import join_manifest, read_manifest, read_source_freshness
+from .dbt_manifest import ExternalSource, join_manifest, read_manifest, read_source_freshness
 from .errors import CatalogError
 from .models import CatalogObject, Edge, PipelineContext, canonical_keys
 from .osi import discover_osi_path, join_semantics, read_osi
@@ -19,27 +19,34 @@ logger = logging.getLogger(__name__)
 # `MAX_OBJECTS` is deliberately NOT re-exported here. `catalog.retention` reads
 # it and decides the cap; a second binding in this module would be a second
 # name for one rule, and two names for one rule stop agreeing.
-__all__ = ["load_catalog", "load_context"]
+__all__ = ["is_motherduck", "load_catalog", "load_context"]
 
 # A MotherDuck catalog, e.g. "md:my_db" or a share URL "md:_share/name/uuid".
-_MD_PREFIX = "md:"
+# DuckDB reads "motherduck:" as the same scheme and matches both case-insensitively.
+# This package does not import `tycoon`, so the rule is restated here rather than
+# shared with `tycoon.project.is_motherduck`.
+_MD_PREFIXES = ("md:", "motherduck:")
 
 
-def _is_motherduck(source: str) -> bool:
-    return source.startswith(_MD_PREFIX)
+def is_motherduck(source: str) -> bool:
+    return source.lower().startswith(_MD_PREFIXES)
 
 
 def _database_name_for(source: str) -> str:
     """The name to show in the status strip.
 
     For a file that is its stem. For MotherDuck it is the catalog name: the
-    segment after `md:`, or the middle segment of a share URL
+    segment after `md:` or `motherduck:`, or the middle segment of a share URL
     (`md:_share/<name>/<uuid>`), since neither `_share` nor a UUID tells anyone
     which database they are looking at.
+
+    A `?...` query (`md:db?motherduck_token=...`) is connection options, not
+    part of the name, and can carry the token, so it is dropped first. A bare
+    `md:?...` then names no database and falls back the way a bare `md:` does.
     """
-    if not _is_motherduck(source):
+    if not is_motherduck(source):
         return Path(source).stem
-    rest = source[len(_MD_PREFIX) :]
+    rest = source.split(":", 1)[1].split("?", 1)[0]
     parts = [p for p in rest.split("/") if p]
     if parts and parts[0] == "_share" and len(parts) >= 2:
         return parts[1]
@@ -100,7 +107,7 @@ def _load_base(path: Path | str) -> tuple[PipelineContext, frozenset[tuple[str, 
     stops being a guess.
     """
     source = str(path)
-    if not _is_motherduck(source):
+    if not is_motherduck(source):
         # MotherDuck catalogs are not filesystem paths, so the existence check
         # only applies to files.
         if not Path(source).exists():
@@ -288,7 +295,7 @@ def load_context(source: Path | str) -> PipelineContext:
     `tycoon.yml` or it is an error, not a guess.
     """
     text = str(source)
-    if not _is_motherduck(text) and Path(text).is_dir():
+    if not is_motherduck(text) and Path(text).is_dir():
         try:
             info = read_project_info(text)
         except ValueError as exc:
@@ -301,7 +308,7 @@ def load_context(source: Path | str) -> PipelineContext:
         return _load_tycoon_project(info)
 
     ctx = load_catalog(source)
-    if not _is_motherduck(text):
+    if not is_motherduck(text):
         root = _find_tycoon_root(Path(text))
         if root is not None:
             logger.info(
@@ -332,7 +339,9 @@ def _load_tycoon_project(info: TycoonProjectInfo) -> PipelineContext:
         notes.append("no dbt manifest -- lineage from SQL scan only")
 
     # Phase A: manifest lineage + column lineage
-    (edges, column_edges, nodes_by_key, tests_by_key, context_by_key, phase_a_notes) = _enrich_manifest(ctx, index)
+    (edges, column_edges, nodes_by_key, tests_by_key, context_by_key, external, phase_a_notes) = _enrich_manifest(
+        ctx, index
+    )
     notes.extend(phase_a_notes)
 
     # Phase B: source freshness (always runs; skips silently when no artifacts)
@@ -358,6 +367,7 @@ def _load_tycoon_project(info: TycoonProjectInfo) -> PipelineContext:
         tests_by_key=tests_by_key,
         dbt_context_by_key=context_by_key,
         source_freshness_by_key=freshness_by_key,
+        external_upstream_by_key=_external_with_freshness(external, info.sources_json_path),
         semantic_relationships=semantic_relationships,
         ai_context_by_key=ai_context_by_key,
     )
@@ -366,10 +376,11 @@ def _load_tycoon_project(info: TycoonProjectInfo) -> PipelineContext:
 def _enrich_manifest(
     ctx: PipelineContext,
     index: dict | None,
-) -> tuple[tuple[Edge, ...], tuple[ColumnEdge, ...], dict, dict, dict, list[str]]:
+) -> tuple[tuple[Edge, ...], tuple[ColumnEdge, ...], dict, dict, dict, dict, list[str]]:
     """Manifest lineage + column lineage.
 
-    Returns (edges, column_edges, nodes_by_key, tests_by_key, context_by_key, notes).
+    Returns (edges, column_edges, nodes_by_key, tests_by_key, context_by_key,
+    external_upstream_by_key, notes).
     """
     notes: list[str] = []
     edges = ctx.edges
@@ -379,7 +390,7 @@ def _enrich_manifest(
     context_by_key: dict = {}
 
     if index is None:
-        return edges, column_edges, nodes_by_key, tests_by_key, context_by_key, notes
+        return edges, column_edges, nodes_by_key, tests_by_key, context_by_key, {}, notes
 
     join = join_manifest(index, {obj.key for obj in ctx.objects})
     model_lineage = derive_column_lineage(join.sql_by_key, ctx.columns_by_key)
@@ -399,7 +410,7 @@ def _enrich_manifest(
     tests_by_key = join.tests_by_key
     context_by_key = join.context_by_key
 
-    return edges, column_edges, nodes_by_key, tests_by_key, context_by_key, notes
+    return edges, column_edges, nodes_by_key, tests_by_key, context_by_key, join.external_upstream_by_key, notes
 
 
 def _enrich_freshness(
@@ -422,6 +433,27 @@ def _enrich_freshness(
         notes.append("no source freshness snapshot (run `dbt source freshness`)")
 
     return freshness_by_key, notes
+
+
+def _external_with_freshness(
+    external: dict[str, tuple[ExternalSource, ...]],
+    sources_json_path: Path | None,
+) -> dict[str, tuple[ExternalSource, ...]]:
+    """External sources with dbt's freshness verdict folded on.
+
+    They have no catalog key, so `_enrich_freshness` cannot place their
+    verdicts on a building; they ride on each model's upstream list instead.
+    """
+    verdicts = (read_source_freshness(sources_json_path) if external and sources_json_path else None) or {}
+    return {
+        key: tuple(
+            dataclasses.replace(source, freshness_status=verdicts[source.unique_id].status)
+            if source.unique_id in verdicts
+            else source
+            for source in sources
+        )
+        for key, sources in external.items()
+    }
 
 
 def _enrich_semantics(
