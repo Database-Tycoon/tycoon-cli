@@ -116,6 +116,27 @@ def test_motherduck_source_is_not_treated_as_a_file_path(prefix, monkeypatch):
     assert "not found" not in str(exc.value).lower()
 
 
+_TOKEN = "s3cr3t-token-value"
+
+
+@pytest.mark.parametrize(
+    ("source", "name"),
+    [
+        (f"md:my_db?motherduck_token={_TOKEN}", "my_db"),
+        (f"motherduck:my_db?motherduck_token={_TOKEN}&saas_mode=true", "my_db"),
+        (f"md:_share/sales/abc-123?motherduck_token={_TOKEN}", "sales"),
+        # No database before the query: the same fallback as a bare `md:`.
+        (f"md:?motherduck_token={_TOKEN}", _database_name_for("md:")),
+    ],
+)
+def test_database_name_drops_the_connection_query(source, name):
+    """The name lands in city.json and runs.json, so the token must never be part of it."""
+    derived = _database_name_for(source)
+    assert derived == name
+    assert _TOKEN not in derived
+    assert "motherduck_token" not in derived
+
+
 def test_a_motherduck_prefix_is_not_a_directory_or_file_to_look_for(tmp_path):
     from tycoon_city.pricing import DEFAULT_PRICE_BOOK, resolve_price_book
     from tycoon_city.webserve import _fingerprint

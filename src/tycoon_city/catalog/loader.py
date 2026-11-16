@@ -39,10 +39,14 @@ def _database_name_for(source: str) -> str:
     segment after `md:` or `motherduck:`, or the middle segment of a share URL
     (`md:_share/<name>/<uuid>`), since neither `_share` nor a UUID tells anyone
     which database they are looking at.
+
+    A `?...` query (`md:db?motherduck_token=...`) is connection options, not
+    part of the name, and can carry the token, so it is dropped first. A bare
+    `md:?...` then names no database and falls back the way a bare `md:` does.
     """
     if not is_motherduck(source):
         return Path(source).stem
-    rest = source.split(":", 1)[1]
+    rest = source.split(":", 1)[1].split("?", 1)[0]
     parts = [p for p in rest.split("/") if p]
     if parts and parts[0] == "_share" and len(parts) >= 2:
         return parts[1]

@@ -248,3 +248,21 @@ class TestSyncMotherduckPrefix:
         from tycoon.sync import _attach_sql
 
         assert _attach_sql("motherduck:x", "x") == "ATTACH 'motherduck:x' AS x (READ_ONLY)"
+
+    @pytest.mark.parametrize(
+        ("url", "alias"),
+        [
+            ("md:db?motherduck_token=s3cr3t-token-value", "db"),
+            ("motherduck:db?saas_mode=true&motherduck_token=s3cr3t-token-value", "db"),
+            # No database before the query: the same fallback as a bare `md:`.
+            ("md:?motherduck_token=s3cr3t-token-value", "src"),
+        ],
+    )
+    def test_alias_drops_the_connection_query(self, url, alias):
+        from tycoon.sync import _alias_for
+
+        derived = _alias_for(url)
+        assert derived == alias
+        assert _alias_for("md:") == "src"
+        assert "s3cr3t" not in derived
+        assert "motherduck_token" not in derived
