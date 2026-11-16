@@ -30,6 +30,8 @@ from typing import Any
 
 import yaml
 
+from tycoon.project import is_motherduck
+
 # --------------------------------------------------------------------------
 # Data containers
 # --------------------------------------------------------------------------
@@ -73,7 +75,7 @@ class DbtWarehouseTarget:
     def tycoon_warehouse_type(self) -> str | None:
         """Map adapter_type → tycoon's WarehouseType string, or None if unknown."""
         if self.adapter_type == "duckdb":
-            return "motherduck" if self.identifier.startswith("md:") else "duckdb"
+            return "motherduck" if is_motherduck(self.identifier) else "duckdb"
         if self.adapter_type in {"snowflake", "bigquery", "redshift"}:
             return self.adapter_type
         return None
@@ -188,7 +190,7 @@ def _adapter_view(target: dict[str, Any], dbt_project_dir: Path) -> DbtWarehouse
         path = target.get("path")
         if not path:
             return DbtWarehouseTarget("duckdb", "", "duckdb", {})
-        if str(path).startswith("md:"):
+        if is_motherduck(str(path)):
             return DbtWarehouseTarget("duckdb", str(path), str(path), {})
         abs_path = Path(path)
         if not abs_path.is_absolute():
