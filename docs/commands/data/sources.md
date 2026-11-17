@@ -128,6 +128,9 @@ tycoon data sources add google_sheets \
 - **`spreadsheet_url_or_id`** — the full share URL or just the ID. Required.
 - **`range_names`** — comma-separated tab names and/or A1 ranges. Leave blank to load **every** sheet in the spreadsheet.
 - **`credentials_path`** — defaults to `${GOOGLE_APPLICATION_CREDENTIALS}`. Leave it blank to fall back to dlt's own credential resolution (env / `secrets.toml`), which is where the **OAuth / Application Default Credentials** path lives if you'd rather not use a service account.
+  The file must be a service-account key. A run stops with an error if the path
+  isn't a file or holds an OAuth client file, because dlt would open a browser
+  sign-in and a headless run would hang.
 
 **4. Ingest:** `tycoon data sources run marketing-sheet`. The first run downloads the dlt `google_sheets` verified source (to the project's own `.tycoon/sources/` if it has a `.venv`, otherwise the shared `~/.tycoon/sources/`), then loads into `raw_<name>` and auto-scaffolds a staging dbt model.
 
