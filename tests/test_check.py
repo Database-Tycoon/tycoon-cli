@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC
 
+import pytest
+
 from tycoon.cli import app
 
 
@@ -182,6 +184,31 @@ class TestProjectVenvCheck:
         assert "running from" in combined
         assert "activate" in combined.lower()
 
+    def test_windows_venv_with_tycoon_exe_is_not_called_tycoon_free(self, monkeypatch, tmp_path, capsys):
+        """gh-392 review: a Windows .venv keeps tycoon at `Scripts/tycoon.exe`,
+        not `bin/tycoon`. Only checking `bin/` told such a .venv it had no
+        tycoon in it; it should get the activate/run advice instead."""
+        import sys
+
+        from tycoon.commands import doctor
+
+        self._patch_config(monkeypatch, tmp_path)
+        venv = tmp_path / ".venv"
+        (venv / "Scripts").mkdir(parents=True)
+        (venv / "Scripts" / "tycoon.exe").touch()
+        (venv / "Scripts" / "python.exe").touch()
+        (venv / "pyvenv.cfg").write_text("home = C:\\Python313\n")
+        monkeypatch.setattr(sys, "prefix", str((tmp_path / "somewhere-else").resolve()))
+        monkeypatch.setenv("COLUMNS", "500")
+
+        doctor._check_project_venv()
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "no tycoon in it" not in combined
+        assert "no tycoon installed in it" not in combined
+        assert str(venv / "Scripts" / "tycoon.exe") in combined
+        assert str(venv / "Scripts" / "activate") in combined
+
     def test_warns_when_venv_exists_but_empty_or_broken(self, monkeypatch, tmp_path, capsys):
         """gh-265 re-review: an empty `.venv` (a failed/partial setup, or
         `tycoon setup` leaving one beside an existing pyproject.toml,
@@ -202,6 +229,96 @@ class TestProjectVenvCheck:
         assert "no tycoon installed in it" in combined
         assert "tycoon setup --force" in combined
         assert "activate" not in combined.lower()
+
+    def _real_venv_without_tycoon(self, tmp_path):
+        """A working venv built by the stdlib, the same shape uv leaves behind."""
+        import subprocess
+        import sys
+
+        venv = tmp_path / ".venv"
+        result = subprocess.run(
+            [sys.executable, "-m", "venv", "--without-pip", str(venv)], capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            pytest.skip(f"could not build a venv here: {result.stderr.strip()}")
+        return venv
+
+    def test_healthy_venv_without_tycoon_is_the_shared_model(self, monkeypatch, tmp_path, capsys):
+        """gh-392: a working .venv that just doesn't contain tycoon (tycoon
+        installed as a uv tool, the pre-0.2.2 model) was reported "empty or
+        broken" with `tycoon setup --force` as the fix, which re-resolves
+        every dependency in the project. Built-in sources and dbt keep
+        working from the tool install, but catalog sources don't: their
+        requirements get `uv add`-ed into the .venv while tycoon imports them
+        in-process from the tool env (gh-263), so the message must not say
+        the setup "still works"."""
+        import sys
+
+        from tycoon.commands import doctor
+
+        self._patch_config(monkeypatch, tmp_path)
+        self._real_venv_without_tycoon(tmp_path)
+        monkeypatch.setattr(sys, "prefix", str((tmp_path / "uv-tool-env").resolve()))
+        monkeypatch.setenv("COLUMNS", "500")
+
+        doctor._check_project_venv()
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "empty or broken" not in combined
+        assert "setup --force" not in combined
+        assert "still works" not in combined
+        assert "Built-in sources and dbt keep working" in combined
+        assert "catalog sources need tycoon in this .venv" in combined
+        assert "uv add database-tycoon" in combined
+        assert "pins" in combined
+
+    def test_healthy_venv_without_pyproject_suggests_installing_into_it(self, monkeypatch, tmp_path, capsys):
+        """A hand-made .venv with no pyproject.toml can't take `uv add`, and
+        `uv sync` would remove whatever was installed into it by hand."""
+        import sys
+
+        from tycoon.commands import doctor
+        from tycoon.config import TycoonConfig
+
+        monkeypatch.setattr(doctor, "config", TycoonConfig(project_root=tmp_path))
+        venv = self._real_venv_without_tycoon(tmp_path)
+        monkeypatch.setattr(sys, "prefix", str((tmp_path / "uv-tool-env").resolve()))
+        monkeypatch.setenv("COLUMNS", "500")
+
+        doctor._check_project_venv()
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "empty or broken" not in combined
+        assert f"uv pip install --python {venv} database-tycoon" in combined
+
+    @pytest.mark.parametrize("shape", ["plain_file", "dangling_symlink", "no_interpreter"])
+    def test_unusable_venv_is_still_broken(self, monkeypatch, tmp_path, capsys, shape):
+        """Only a .venv that can't run Python keeps the rebuild advice."""
+        import sys
+
+        from tycoon.commands import doctor
+
+        self._patch_config(monkeypatch, tmp_path)
+        venv = tmp_path / ".venv"
+        if shape == "plain_file":
+            venv.write_text("")
+        elif shape == "dangling_symlink":
+            venv = self._real_venv_without_tycoon(tmp_path)
+            scripts_python = venv / "Scripts" / "python.exe"
+            python = scripts_python if scripts_python.exists() else venv / "bin" / "python"
+            python.unlink()
+            python.symlink_to(tmp_path / "deleted-interpreter")
+        else:
+            venv.mkdir()
+            (venv / "pyvenv.cfg").write_text("home = /nowhere\n")
+        monkeypatch.setattr(sys, "prefix", str((tmp_path / "uv-tool-env").resolve()))
+        monkeypatch.setenv("COLUMNS", "500")
+
+        doctor._check_project_venv()
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "empty or broken" in combined
+        assert "tycoon setup --force" in combined
 
     def test_warns_when_venv_missing(self, monkeypatch, tmp_path, capsys):
         from tycoon.commands import doctor
