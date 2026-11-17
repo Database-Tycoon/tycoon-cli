@@ -9,6 +9,7 @@ fail, a damaged install reports one diagnosable line rather than a traceback.
 from __future__ import annotations
 
 import builtins
+import subprocess
 import sys
 from pathlib import Path
 
@@ -36,8 +37,15 @@ class TestCityRegistration:
         assert "[city]" not in result.stdout
 
     def test_cli_imports_without_the_addon(self):
-        """The CLI's startup must not depend on tycoon_city being importable."""
-        assert "tycoon_city" not in sys.modules
+        """The CLI's startup must not depend on tycoon_city being importable.
+
+        Checked in a subprocess: in-process, pytest itself imports tycoon_city
+        while collecting the renderer's own suite, so `sys.modules` here says
+        nothing about what `import tycoon.cli` pulls in.
+        """
+        probe = "import sys, tycoon.cli; sys.exit(1 if 'tycoon_city' in sys.modules else 0)"
+        result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+        assert result.returncode == 0, "importing tycoon.cli pulled in tycoon_city"
 
     def test_city_module_does_not_import_tycoon_city_at_module_scope(self):
         source = Path(city.__file__).read_text()
@@ -182,6 +190,21 @@ class TestServeInvocation:
         assert result.exit_code == 0
         assert fake_serve[0][0] == "md:my_db"
 
+    def test_motherduck_long_prefix_is_passed_through_unresolved(self, cli_runner, fake_serve, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cli_runner.invoke(app, ["city", "--path", "motherduck:my_db"])
+        assert fake_serve[0][0] == "motherduck:my_db"
+
+    def test_mixed_case_prefix_is_passed_through_unresolved(self, cli_runner, fake_serve, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cli_runner.invoke(app, ["city", "--path", "MD:my_db"])
+        assert fake_serve[0][0] == "MD:my_db"
+
+    def test_path_containing_md_later_is_still_resolved(self, cli_runner, fake_serve, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        cli_runner.invoke(app, ["city", "--path", "sub/md:backup"])
+        assert fake_serve[0][0] == str((tmp_path / "sub" / "md:backup").resolve())
+
     def test_md_share_url_is_passed_through_unresolved(self, cli_runner, fake_serve, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         cli_runner.invoke(app, ["city", "--path", "md:_share/sales/abc-123"])
@@ -204,3 +227,42 @@ class TestServeInvocation:
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(app, ["city"])
         assert result.exit_code == 1
+
+
+class TestSyncMotherduckPrefix:
+    @pytest.mark.parametrize(
+        ("url", "alias"),
+        [
+            ("md:dogfood_dbt_prod", "dogfood_dbt_prod"),
+            ("motherduck:dogfood_dbt_prod", "dogfood_dbt_prod"),
+            ("/abs/backup-md:/foo.duckdb", "foo"),
+            ("./other.duckdb", "other"),
+        ],
+    )
+    def test_alias_for_both_prefixes_and_paths(self, url, alias):
+        from tycoon.sync import _alias_for
+
+        assert _alias_for(url) == alias
+
+    def test_attach_keeps_the_url_as_written(self):
+        from tycoon.sync import _attach_sql
+
+        assert _attach_sql("motherduck:x", "x") == "ATTACH 'motherduck:x' AS x (READ_ONLY)"
+
+    @pytest.mark.parametrize(
+        ("url", "alias"),
+        [
+            ("md:db?motherduck_token=s3cr3t-token-value", "db"),
+            ("motherduck:db?saas_mode=true&motherduck_token=s3cr3t-token-value", "db"),
+            # No database before the query: the same fallback as a bare `md:`.
+            ("md:?motherduck_token=s3cr3t-token-value", "src"),
+        ],
+    )
+    def test_alias_drops_the_connection_query(self, url, alias):
+        from tycoon.sync import _alias_for
+
+        derived = _alias_for(url)
+        assert derived == alias
+        assert _alias_for("md:") == "src"
+        assert "s3cr3t" not in derived
+        assert "motherduck_token" not in derived

@@ -4,8 +4,8 @@ Build and serve these docs locally. Two subcommands wrap MkDocs — same tooling
 
 | Command | What it does |
 |---|---|
-| `tycoon docs serve` | Serve with hot reload on `:8000` |
-| `tycoon docs build` | One-shot build into `./site/` |
+| `tycoon docs serve` | Serve with hot reload on `:8000`, contributor notes included |
+| `tycoon docs build` | One-shot build into `./site/`, matching what gets published |
 
 !!! info "Optional extra"
     `tycoon docs` requires the `[docs]` extra:
@@ -41,6 +41,11 @@ Press Ctrl-C to stop. Tycoon catches the interrupt and exits cleanly.
 
 One-shot build. Writes the static site into `./site/`.
 
+This is the published set of pages, which is smaller than what `serve` shows.
+`mkdocs.yml` withholds the contributor notes under `docs/city/` and
+`docs/proposals/` from the build, so `serve` renders them behind a DRAFT banner
+and `build` leaves them out. Use `serve` to read them.
+
 ### Synopsis
 
 ```
@@ -58,7 +63,7 @@ tycoon docs build              # builds into ./site/
 tycoon docs build --strict     # fails fast on broken links — for CI
 ```
 
-The build is fast (~1s on a warm cache) — useful as a pre-commit check that your edits didn't break navigation. CI workflows that publish docs should use `--strict` so a typo'd link blocks the deploy.
+The build is fast (~1s on a warm cache), so it is worth running before you push. It is not a complete check on its own: a nav entry pointing at a withheld page, and a page in none of the nav or withholding lists, are both reported by MkDocs at INFO. `scripts/check_docs_publishable.py` covers the first and `validation.nav.omitted_files` the second, and CI runs both. CI workflows that publish docs should use `--strict` so a typo'd link blocks the deploy.
 
 ## Where these commands run
 

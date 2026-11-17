@@ -13,6 +13,7 @@ Options:
   --list-templates         List available templates and exit
   -p, --param TEXT         Template parameter in 'name=value' form (repeatable)
   --upgrade                Migrate tycoon.yml to the current schema version and exit
+  --no-venv                Scaffold without building the project's own .venv
   -h, --help               Show this message and exit
 ```
 
@@ -41,7 +42,21 @@ my-project/
 ├── data/                   # DuckDB files + parquet exports
 ├── dbt_project/            # dbt models (if scaffolded)
 ├── rill/                   # Rill dashboards (if scaffolded)
+├── pyproject.toml          # declares tycoon + its dbt/dlt/duckdb stack
+├── uv.lock                 # pins the exact resolved versions
+├── .python-version         # pins the interpreter
+├── .venv/                  # the project's own isolated environment
 └── .gitignore
+```
+
+Right after scaffolding, `init` builds the project's own `.venv` via [`tycoon setup`](setup.md)'s underlying flow: a `pyproject.toml` declaring `database-tycoon`, synced with `uv sync`. This is what makes a freshly added source actually runnable on the first try, its dependencies install into this environment, not wherever tycoon happens to be running.
+
+If the directory already has its own `pyproject.toml`, `.python-version`, or `.venv`, this step is skipped entirely, with a message naming which one, so `init` never rewrites an existing Python project's environment. Run [`tycoon setup`](setup.md) yourself if you want tycoon to manage it anyway.
+
+Pass `--no-venv` to skip this step unconditionally and scaffold without an environment:
+
+```bash
+tycoon init --template csv-import --no-venv
 ```
 
 The exact tree depends on the template. See [Reference: Templates](../reference/templates.md) for what each template ships.

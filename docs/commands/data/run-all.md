@@ -8,10 +8,13 @@ Ingest all registered sources, then run `dbt build`. The "rebuild everything" co
 tycoon data run-all [OPTIONS]
 
 Options:
-  --max-records INTEGER    Cap rows per source (passed to every source's run)
-  --skip-dbt               Don't run dbt build after ingest
-  --skip-on-error          Continue past failed sources instead of aborting
-  -h, --help               Show this message and exit
+  -n, --max-records INTEGER  Cap records fetched per resource (useful for testing)
+  --skip-ingest              Skip ingestion and only run dbt build
+  --skip-transform           Skip dbt build and only run ingestion
+  -t, --target TEXT          dbt target profile  [default: dev]
+  --notify                   Send a webhook notification on completion (success/failure)
+  --fail-on-empty            Fail when a local glob matches no files or a replace load brings in zero rows
+  -h, --help                 Show this message and exit
 ```
 
 ## When to use it
@@ -28,14 +31,14 @@ For a single source, prefer `tycoon data sources run <name>` + `tycoon data tran
 
 For each source in `tycoon.yml`'s `sources:` map:
 
-1. Calls `tycoon data sources run <name>` (with `--max-records` if set).
-2. If a source fails:
-    - **Default**: aborts immediately.
-    - **`--skip-on-error`**: prints the failure and continues to the next source.
+1. Runs the same ingest as `tycoon data sources run <name>` (with `--max-records` if set).
+2. If a source fails, the command stops there and exits 1. Sources after it don't run, and neither does `dbt build`.
 
-After all sources run (or all that survived `--skip-on-error`):
+After every source has run:
 
-3. Calls `tycoon data transform build` (skipped with `--skip-dbt`).
+3. Runs `dbt build` against `--target` (skipped with `--skip-transform`). `--skip-ingest` skips step 1 and only builds.
+
+With `--fail-on-empty`, a source whose local glob matches no files, or that loads zero rows with `replace`, counts as a failed source, so the command exits 1 before `dbt build` runs. See [`tycoon data sources run`](sources.md#run-ingest) for the details.
 
 If `dbt build` fails, the command exits non-zero. Any test failures from `dbt build` show up in `tycoon data history show <invocation_id>`.
 
@@ -48,18 +51,18 @@ tycoon data run-all
 # Cheap cron-friendly refresh
 tycoon data run-all --max-records 1000
 
-# Resilient daily refresh — survive a single flaky source
-tycoon data run-all --skip-on-error
-
 # Just the ingest layer (skip dbt)
-tycoon data run-all --skip-dbt
+tycoon data run-all --skip-transform
+
+# Just dbt build
+tycoon data run-all --skip-ingest
 ```
 
 ## What it doesn't do
 
 - **No Rill dashboard refresh as a separate step.** That happens automatically as part of each ingest + dbt run via the observability hooks. After `run-all`, dashboards are current.
 - **No source ordering.** Sources run in the order they appear in `tycoon.yml`. There's no inter-source dependency model — that lives in dbt.
-- **No retries.** If a source fails and you don't pass `--skip-on-error`, you re-run after fixing.
+- **No retries, and no skipping a failed source.** If a source fails, fix it and re-run.
 - **No partial-source selection.** `run-all` runs every source. Use `tycoon data sources run <name>` for targeted runs.
 
 ## Observability

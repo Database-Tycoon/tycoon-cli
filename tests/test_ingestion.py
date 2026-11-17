@@ -154,16 +154,19 @@ class TestBuildRestApiSource:
 class TestBuildFilesystemSource:
     """Unit tests for _build_filesystem_source glob-based dispatch."""
 
-    def _make_source_config(self, file_glob: str) -> SourceConfig:
+    def _make_source_config(self, tmp_path, file_glob: str) -> SourceConfig:
+        """Seed one file the glob matches, since a local glob that matches
+        nothing builds no resource at all (gh-240)."""
         from tycoon.project import SourceConfig
 
+        (tmp_path / file_glob.replace("**/", "").replace("*", "sample")).write_text("")
         return SourceConfig(
             type="filesystem",
             schema="raw_files",
-            config={"path": "data/input", "file_glob": file_glob},
+            config={"path": str(tmp_path), "file_glob": file_glob},
         )
 
-    def test_csv_glob_returns_dlt_source(self):
+    def test_csv_glob_returns_dlt_source(self, tmp_path):
         """CSV glob should pipe through read_csv, producing a transformer resource.
 
         gh-223: the flat shape now goes through _build_filesystem_resource
@@ -174,30 +177,30 @@ class TestBuildFilesystemSource:
         """
         from tycoon.ingestion.runner import _build_filesystem_source
 
-        source_config = self._make_source_config("*.csv")
+        source_config = self._make_source_config(tmp_path, "*.csv")
         result = _build_filesystem_source(source_config)
         assert result is not None
         assert result.is_transformer is True
 
-    def test_parquet_glob_returns_dlt_source(self):
+    def test_parquet_glob_returns_dlt_source(self, tmp_path):
         """Parquet glob should pipe through read_parquet, producing a transformer resource."""
         from tycoon.ingestion.runner import _build_filesystem_source
 
-        source_config = self._make_source_config("*.parquet")
+        source_config = self._make_source_config(tmp_path, "*.parquet")
         result = _build_filesystem_source(source_config)
         assert result is not None
         assert result.is_transformer is True
 
-    def test_jsonl_glob_returns_dlt_source(self):
+    def test_jsonl_glob_returns_dlt_source(self, tmp_path):
         """JSONL glob should pipe through read_jsonl, producing a transformer resource."""
         from tycoon.ingestion.runner import _build_filesystem_source
 
-        source_config = self._make_source_config("*.jsonl")
+        source_config = self._make_source_config(tmp_path, "*.jsonl")
         result = _build_filesystem_source(source_config)
         assert result is not None
         assert result.is_transformer is True
 
-    def test_unknown_glob_returns_raw_filesystem_source(self, capsys):
+    def test_unknown_glob_returns_raw_filesystem_source(self, tmp_path, capsys):
         """An unrecognised glob should fall back to the raw filesystem
         resource, with a warning that it isn't parsed into rows (gh-228).
         Plain `.json` (not `.jsonl`) is deliberately still unrecognized:
@@ -206,25 +209,32 @@ class TestBuildFilesystemSource:
         """
         from tycoon.ingestion.runner import _build_filesystem_source
 
-        source_config = self._make_source_config("**/*.json")
+        source_config = self._make_source_config(tmp_path, "**/*.json")
         result = _build_filesystem_source(source_config)
         assert result is not None
         assert "isn't a recognized format" in capsys.readouterr().out.lower()
         # Raw filesystem source is not a transformer
         assert result.is_transformer is False
 
-    def test_resources_list_returns_one_named_resource_per_entry(self):
+    def test_resources_list_returns_one_named_resource_per_entry(self, tmp_path):
         """gh-224/gh-225: a multi-resource source builds one resource per
         entry, each renamed to its own table_name, not the shared source name."""
         from tycoon.ingestion.runner import _build_filesystem_source
         from tycoon.project import ResourceConfig, SourceConfig
 
+        games_dir = tmp_path / "input"
+        sensors_dir = tmp_path / "sensors" / "day1"
+        games_dir.mkdir()
+        sensors_dir.mkdir(parents=True)
+        (games_dir / "games.csv").write_text("id\n1\n")
+        (sensors_dir / "readings.parquet").write_text("")
+
         source_config = SourceConfig(
             type="filesystem",
             schema="raw_arcade",
             resources=[
-                ResourceConfig(table_name="arcade_games", path="data/input", file_glob="games.csv"),
-                ResourceConfig(table_name="sensor_readings", path="/tmp/data", file_glob="**/*.parquet"),
+                ResourceConfig(table_name="arcade_games", path=str(games_dir), file_glob="games.csv"),
+                ResourceConfig(table_name="sensor_readings", path=str(tmp_path / "sensors"), file_glob="**/*.parquet"),
             ],
         )
         result = _build_filesystem_source(source_config)
@@ -261,8 +271,10 @@ class TestFilesystemConfigValidation:
         with pytest.raises(IngestionError, match="games"):
             _build_filesystem_source(source_config)
 
-    def test_local_glob_with_no_matches_warns_not_fails(self, tmp_path, capsys):
-        """A typo'd glob shouldn't look identical to a genuinely empty source."""
+    def test_local_glob_with_no_matches_warns_and_skips(self, tmp_path, capsys):
+        """A typo'd glob shouldn't look identical to a genuinely empty source,
+        and must not build a resource whose empty "replace" load would
+        truncate an existing table (gh-240)."""
         from tycoon.ingestion.runner import _build_filesystem_source
         from tycoon.project import SourceConfig
 
@@ -275,7 +287,7 @@ class TestFilesystemConfigValidation:
             config={"path": str(empty_dir), "file_glob": "*.csv"},
         )
         result = _build_filesystem_source(source_config)  # must not raise
-        assert result is not None
+        assert result is None
         assert "no files matched" in capsys.readouterr().out.lower()
 
     def test_local_glob_with_matches_does_not_warn(self, tmp_path, capsys):
@@ -305,7 +317,8 @@ class TestFilesystemConfigValidation:
             schema="raw_files",
             config={"path": "s3://some-bucket/data", "file_glob": "*.csv"},
         )
-        _build_filesystem_source(source_config)  # must not raise or warn
+        result = _build_filesystem_source(source_config)  # must not raise or warn
+        assert result is not None
         assert "no files matched" not in capsys.readouterr().out.lower()
 
 
@@ -345,6 +358,206 @@ class TestRunSourceDispatch:
 
         for native in ("rest_api", "filesystem"):
             assert native in CATALOG, f"{native} should still appear in the catalog for browsing"
+
+
+class TestRunCatalogProjectLocalSourcesDir:
+    """`_run_catalog` resolves a project-local sources dir once the project
+    has its own `.venv` (gh-263), instead of always reading/writing
+    `~/.tycoon/sources/`."""
+
+    def test_uses_project_local_dir_when_venv_exists(self, tmp_path, monkeypatch, sys_path_copy):
+        import sys
+        import types
+
+        import tycoon.config as cfg_mod
+        from tycoon.config import TycoonConfig
+        from tycoon.ingestion import runner
+        from tycoon.project import SourceConfig
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr(cfg_mod, "config", TycoonConfig(project_root=tmp_path))
+
+        expected_dir = tmp_path / ".tycoon" / "sources"
+        monkeypatch.setattr(
+            runner,
+            "is_source_installed",
+            lambda source_type, sources_dir: sources_dir == expected_dir,
+        )
+        monkeypatch.setattr(runner, "get_run_module_path", lambda source_type: "fake_gh263_pkg._run")
+
+        fake_pipeline = object()
+        fake_load_info = types.SimpleNamespace(raise_on_failed_jobs=lambda: None)
+        fake_mod = types.ModuleType("fake_gh263_pkg._run")
+        fake_mod.run_pipeline = lambda *a, **k: (fake_pipeline, fake_load_info)
+        monkeypatch.setitem(sys.modules, "fake_gh263_pkg._run", fake_mod)
+
+        source_config = SourceConfig(type="github", schema="raw_github", config={})
+        pipeline, load_info = runner._run_catalog("github", "gh", source_config, tmp_path / "raw.duckdb")
+
+        assert pipeline is fake_pipeline
+        assert load_info is fake_load_info
+        assert str(expected_dir) in sys.path
+
+    def test_falls_back_to_global_dir_without_venv(self, tmp_path, monkeypatch, sys_path_copy):
+        import sys
+        import types
+
+        import tycoon.config as cfg_mod
+        from tycoon.config import TycoonConfig
+        from tycoon.ingestion import runner
+        from tycoon.ingestion.source_manager import SOURCES_DIR
+        from tycoon.project import SourceConfig
+
+        monkeypatch.setattr(cfg_mod, "config", TycoonConfig(project_root=tmp_path))
+
+        monkeypatch.setattr(
+            runner,
+            "is_source_installed",
+            lambda source_type, sources_dir: sources_dir == SOURCES_DIR,
+        )
+        monkeypatch.setattr(runner, "get_run_module_path", lambda source_type: "fake_gh263_global_pkg._run")
+
+        fake_pipeline = object()
+        fake_load_info = types.SimpleNamespace(raise_on_failed_jobs=lambda: None)
+        fake_mod = types.ModuleType("fake_gh263_global_pkg._run")
+        fake_mod.run_pipeline = lambda *a, **k: (fake_pipeline, fake_load_info)
+        monkeypatch.setitem(sys.modules, "fake_gh263_global_pkg._run", fake_mod)
+
+        source_config = SourceConfig(type="github", schema="raw_github", config={})
+        pipeline, load_info = runner._run_catalog("github", "gh", source_config, tmp_path / "raw.duckdb")
+
+        assert pipeline is fake_pipeline
+        assert str(SOURCES_DIR) in sys.path
+
+    def test_real_import_from_project_local_dir(self, tmp_path, monkeypatch, sys_path_copy):
+        """Unmocked: installs a real shim on disk via `install_source` and
+        lets `_run_catalog`'s own `sys.path.insert` + `importlib.import_module`
+        find and run it, rather than stubbing `sys.modules` directly. Every
+        other test in this class patches `is_source_installed` and
+        `get_run_module_path` and injects a fake module, so the actual
+        resolved-directory import path was never exercised for real
+        (gh-263 review)."""
+        import sys
+
+        import tycoon.config as cfg_mod
+        from tycoon.config import TycoonConfig
+        from tycoon.ingestion import runner
+        from tycoon.ingestion.source_manager import install_source
+        from tycoon.project import SourceConfig
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr(cfg_mod, "config", TycoonConfig(project_root=tmp_path))
+
+        sources_dir = tmp_path / ".tycoon" / "sources"
+        assert install_source("rest_api", sources_dir) is True
+        # install_source writes the real production shim, which would hit
+        # the network when run_pipeline() builds a live rest_api_source.
+        # Overwrite it with a stub so this test stays fast and offline while
+        # still exercising the real sys.path insert + importlib resolution
+        # against the file install_source actually wrote to disk.
+        (sources_dir / "rest_api" / "_run.py").write_text(
+            "def run_pipeline(name, source_config, raw_db_path, max_records=None):\n"
+            "    class _FakeLoadInfo:\n"
+            "        def raise_on_failed_jobs(self):\n"
+            "            pass\n"
+            "    return ('real-pipeline', _FakeLoadInfo())\n"
+        )
+
+        source_config = SourceConfig(type="rest_api", schema="raw_api", config={})
+        try:
+            pipeline, _load_info = runner._run_catalog("rest_api", "api", source_config, tmp_path / "raw.duckdb")
+            assert pipeline == "real-pipeline"
+            assert str(sources_dir) in sys.path
+        finally:
+            # "rest_api._run" is the real module name the production code
+            # resolves to, not a test-local fake name. Drop it from the
+            # import cache so later tests re-resolve from their own sources
+            # dir instead of reusing this test's stub.
+            sys.modules.pop("rest_api._run", None)
+            sys.modules.pop("rest_api", None)
+
+    def test_warns_when_no_project_venv(self, tmp_path, monkeypatch, sys_path_copy, capsys):
+        """gh-265: nudge toward gh-262's project-local model right before
+        falling back to the shared source-code location."""
+        import sys
+        import types
+
+        import tycoon.config as cfg_mod
+        from tycoon.config import TycoonConfig
+        from tycoon.ingestion import runner
+        from tycoon.project import SourceConfig
+
+        monkeypatch.setattr(cfg_mod, "config", TycoonConfig(project_root=tmp_path))
+        monkeypatch.setattr(runner, "is_source_installed", lambda *a, **k: True)
+        monkeypatch.setattr(runner, "get_run_module_path", lambda source_type: "fake_gh265_pkg._run")
+
+        fake_load_info = types.SimpleNamespace(raise_on_failed_jobs=lambda: None)
+        fake_mod = types.ModuleType("fake_gh265_pkg._run")
+        fake_mod.run_pipeline = lambda *a, **k: (object(), fake_load_info)
+        monkeypatch.setitem(sys.modules, "fake_gh265_pkg._run", fake_mod)
+
+        source_config = SourceConfig(type="github", schema="raw_github", config={})
+        runner._run_catalog("github", "gh", source_config, tmp_path / "raw.duckdb")
+
+        captured = capsys.readouterr()
+        combined = " ".join((captured.out + captured.err).split())
+        assert "doesn't have its own .venv yet" in combined
+        assert "tycoon setup" in combined
+
+    def test_no_warning_when_project_venv_exists(self, tmp_path, monkeypatch, sys_path_copy, capsys):
+        import sys
+        import types
+
+        import tycoon.config as cfg_mod
+        from tycoon.config import TycoonConfig
+        from tycoon.ingestion import runner
+        from tycoon.project import SourceConfig
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr(cfg_mod, "config", TycoonConfig(project_root=tmp_path))
+        monkeypatch.setattr(runner, "is_source_installed", lambda *a, **k: True)
+        monkeypatch.setattr(runner, "get_run_module_path", lambda source_type: "fake_gh265b_pkg._run")
+
+        fake_load_info = types.SimpleNamespace(raise_on_failed_jobs=lambda: None)
+        fake_mod = types.ModuleType("fake_gh265b_pkg._run")
+        fake_mod.run_pipeline = lambda *a, **k: (object(), fake_load_info)
+        monkeypatch.setitem(sys.modules, "fake_gh265b_pkg._run", fake_mod)
+
+        source_config = SourceConfig(type="github", schema="raw_github", config={})
+        runner._run_catalog("github", "gh", source_config, tmp_path / "raw.duckdb")
+
+        captured = capsys.readouterr()
+        assert "doesn't have its own .venv yet" not in (captured.out + captured.err)
+
+    def test_installed_globally_but_not_project_local_points_at_migrate(self, tmp_path, monkeypatch, sys_path_copy):
+        """The must-fix: a source installed before the project had its own
+        `.venv` stops resolving once `resolve_sources_dir` switches to the
+        project-local directory. The error must say where it actually is and
+        give a real command to recover, not just "not installed" (gh-263
+        review)."""
+        import tycoon.config as cfg_mod
+        from tycoon.config import TycoonConfig
+        from tycoon.ingestion import runner
+        from tycoon.ingestion.runner import IngestionError
+        from tycoon.ingestion.source_manager import install_source
+        from tycoon.project import SourceConfig
+
+        (tmp_path / ".venv").mkdir()
+        monkeypatch.setattr(cfg_mod, "config", TycoonConfig(project_root=tmp_path))
+
+        global_dir = tmp_path / "global-sources"
+        monkeypatch.setattr(runner, "SOURCES_DIR", global_dir)
+        assert install_source("rest_api", global_dir) is True
+
+        source_config = SourceConfig(type="rest_api", schema="raw_api", config={})
+
+        with pytest.raises(IngestionError) as exc_info:
+            runner._run_catalog("rest_api", "api", source_config, tmp_path / "raw.duckdb")
+
+        message = str(exc_info.value)
+        assert "installed globally" in message
+        assert str(global_dir) in message
+        assert "tycoon data sources migrate rest_api" in message
 
 
 class TestUnexpandedEnvVarCheck:

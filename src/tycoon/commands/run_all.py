@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import shutil
 import time
 from typing import Annotated
 
 import typer
+from rich.markup import escape
 
-from tycoon.config import load_config
+from tycoon.config import load_config, redact_secrets
 from tycoon.utils.console import console, error, header, info, next_steps, success, warn
 
 
@@ -18,6 +18,7 @@ def run_all_cmd(
         typer.Option(
             "--max-records",
             "-n",
+            min=0,
             help="Cap records fetched per resource (useful for testing).",
             show_default=False,
         ),
@@ -41,6 +42,16 @@ def run_all_cmd(
             help=(
                 "Send a webhook notification on completion (success/failure). "
                 "Requires $TYCOON_NOTIFY_WEBHOOK_URL; see `tycoon notify`."
+            ),
+        ),
+    ] = False,
+    fail_on_empty: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-empty",
+            help=(
+                "Exit non-zero, and record the run as failed, when a local glob "
+                "matches no files or a replace load brings in zero rows."
             ),
         ),
     ] = False,
@@ -93,24 +104,31 @@ def run_all_cmd(
                 _pipeline, load_info = _run_source(
                     name=name,
                     source_config=source_config,
-                    raw_db_path=cfg.raw_db,
+                    raw_db_path=cfg.raw_target,
                     max_records=max_records,
+                    fail_on_empty=fail_on_empty,
                 )
-                success(f"{name}: {load_info}")
+                if load_info is None:
+                    info(f"{name}: nothing to load. No tables were changed.")
+                else:
+                    success(f"{name}: {load_info}")
             except Exception as exc:
-                error(f"{name} failed: {exc}")
-                _emit("error", f"run-all failed during ingest of '{name}'", stage="ingest", error=str(exc)[:300])
+                message = redact_secrets(str(exc))
+                error(f"{name} failed: {escape(message)}")
+                _emit("error", f"run-all failed during ingest of '{name}'", stage="ingest", error=message[:300])
                 raise typer.Exit(1) from exc
     else:
         info("Skipping ingestion (--skip-ingest)")
 
     # 2. Transform
     if not skip_transform:
-        dbt = shutil.which("dbt")
-        if not dbt:
-            error("`dbt` not found on PATH. Is your virtual environment active?")
-            _emit("error", "run-all failed: dbt not found on PATH", stage="transform")
-            raise typer.Exit(1)
+        from tycoon.commands.transform import _capture_dbt_and_refresh_safe, _dbt_executable
+
+        try:
+            dbt = _dbt_executable()
+        except typer.Exit:
+            _emit("error", "run-all failed: dbt not found", stage="transform")
+            raise
 
         project_dir = cfg.dbt_project_dir
         if not project_dir.exists():
@@ -121,7 +139,9 @@ def run_all_cmd(
             console.rule("[bold cyan]dbt build")
             cmd = [dbt, "build", "--target", target, "--profiles-dir", str(project_dir)]
             console.print(f"[dim]Running: {' '.join(cmd)}[/dim]")
+            started_at = time.time()
             result = subprocess.run(cmd, cwd=project_dir)
+            _capture_dbt_and_refresh_safe("build", started_at=started_at)
             if result.returncode != 0:
                 error(f"dbt build failed (exit {result.returncode}).")
                 _emit("error", "run-all failed during dbt build", stage="transform", exit_code=str(result.returncode))

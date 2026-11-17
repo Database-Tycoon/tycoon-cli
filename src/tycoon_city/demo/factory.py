@@ -309,7 +309,8 @@ def _write_warehouse(path: Path, models: tuple[ModelSpec, ...], sources: tuple[S
         con.execute(f'create table "{schema}"."{table}" as select {select} from range({rows}) t(id)')
 
     for m in models:
-        _create(m.schema, m.table_name, m.columns, m.rows)
+        if m.materialized != "ephemeral":  # dbt builds no relation for an ephemeral model
+            _create(m.schema, m.table_name, m.columns, m.rows)
     for s in sources:
         if s.database == "fx":  # external sources exist only in the manifest
             _create(s.schema, s.name, (("id", "BIGINT"), ("payload", "JSON")), s.rows)

@@ -71,7 +71,7 @@ database:
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `raw` | string | `data/raw.duckdb` | Always a local DuckDB file. Don't point at MotherDuck — dlt manages this. |
+| `raw` | string | `data/raw.duckdb` | Where dlt loads source data: a local DuckDB file, or `md:<name>` (or `motherduck:<name>`) for a MotherDuck database. The MotherDuck database must exist first, and `MOTHERDUCK_TOKEN` must be exported. |
 | `warehouse` | string | `data/warehouse.duckdb` | Local file or `md:<catalog>` for MotherDuck. |
 
 For Snowflake / BigQuery / Redshift warehouses, the `warehouse` field
@@ -109,9 +109,17 @@ sources:
 | `tables` | list[string] | unset | Optional table-name list (for `sql_database` and similar) |
 | `dbt_package` | string | unset | Optional dbt package to install when this source is registered |
 
+A `filesystem` source's `path` (or `bucket_url`) can be a directory or a
+single local file, given as a plain path or a `file://` URL. For a directory, `file_glob` picks the files under it
+(the flat shape defaults to `**/*`). For a single file, leave `file_glob`
+unset: tycoon reads the file's directory and matches just that file name.
+Setting both a file `path` and a `file_glob` is an error.
+
 Source types not in `tycoon data sources catalog` need to be installed
 via `tycoon data sources add <type>` first (it runs `dlt init`
-under the hood and stages the source files in `~/.tycoon/sources/`).
+under the hood and stages the source files under the resolved sources
+dir, project-local once the project has its own `.venv`, otherwise the
+shared `~/.tycoon/sources/`).
 
 ## `sync`
 

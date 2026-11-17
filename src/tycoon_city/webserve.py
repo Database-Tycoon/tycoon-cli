@@ -47,9 +47,10 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from .catalog.errors import CatalogError
+from .catalog.loader import is_motherduck
 from .catalog.models import PipelineContext
 from .catalog.tycoon_project import TYCOON_FILE, read_project_info
-from .export.build import build_city
+from .export.build import build_city, require_motherduck_token
 from .export.city_json import city_document, dumps
 
 # The meta document has ONE producer, and it is the exporter's. A server that
@@ -106,13 +107,13 @@ def _default_dist() -> Path | None:
 
 def _source_files(db_path: str) -> list[Path] | None:
     """Every file a load of `db_path` reads, or None when there are no files
-    behind it (an `md:` catalog, or a directory that is not a tycoon project).
+    behind it (an `md:` or `motherduck:` catalog, or a directory that is not a tycoon project).
 
     The list, not just the mtimes, is part of the key: a manifest that did not
     exist last request and does now is a change, and it shows up here as a new
     path rather than as a moved one.
     """
-    if db_path.startswith("md:"):
+    if is_motherduck(db_path):
         return None
     path = Path(db_path)
     if not path.is_dir():
@@ -319,7 +320,7 @@ class _Handler(BaseHTTPRequestHandler):
         # This is inefficient: it checks the file system on every request.
         # But this is only done if ?crlf=1 is passed, and requests are not
         # huge, so it's probably fine for now.
-        if self.db_path.startswith("md:"):
+        if is_motherduck(self.db_path):
             self._respond(404, b"not found", "text/plain")
             return
 
@@ -414,13 +415,17 @@ def serve(
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    """The argparse surface: `python -m tycoon_city.webserve [demo] ...`.
 
-    # `tycoon-city demo` is dispatched BEFORE argparse rather than as a
-    # subparser: adding subparsers to this parser would turn `tycoon-city
-    # path/to/db.duckdb` -- the primary invocation and the one every doc shows
-    # -- into an unknown-command error. The import is local so the demo
-    # generator (which writes DuckDB files) never loads for an ordinary serve.
+    The `tycoon-city` console script is the Typer surface (`tycoon_city.cli`);
+    both land in `run_server` / `demo.cli.run`. Env-var defaults live in the
+    parsers, not in `run_server`, so the Docker image keeps working unflagged.
+    """
+    # `demo` is dispatched BEFORE argparse rather than as a subparser: adding
+    # subparsers to this parser would turn `python -m tycoon_city.webserve
+    # path/to/db.duckdb` -- the positional-path invocation -- into an
+    # unknown-command error. The import is local so the demo generator (which
+    # writes DuckDB files) never loads for an ordinary serve.
     args_in = sys.argv[1:] if argv is None else argv
     if args_in and args_in[0] == DEMO_COMMAND:
         from .demo.cli import main as demo_main
@@ -428,9 +433,9 @@ def main(argv: list[str] | None = None) -> int:
         return demo_main(args_in[1:])
 
     parser = argparse.ArgumentParser(
-        prog="tycoon-city",
+        prog="python -m tycoon_city.webserve",
         description="Serve the interactive Database Tycoon city for a DuckDB catalog.",
-        epilog="`tycoon-city demo` serves a generated demo catalog with nothing to set up.",
+        epilog="`tycoon-city demo` (or `python -m tycoon_city.webserve demo`) serves a generated demo catalog with nothing to set up.",
     )
     parser.add_argument(
         "db_path",
@@ -462,13 +467,35 @@ def main(argv: list[str] | None = None) -> int:
             "only when you mean to publish them."
         ),
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args(args_in)
+    return run_server(
+        db_path=args.db_path,
+        dist=Path(args.dist) if args.dist else None,
+        theme=args.theme,
+        pricing=args.pricing,
+        port=args.port,
+        host=args.host,
+    )
 
-    if not args.db_path:
+
+def run_server(
+    *,
+    db_path: str | None,
+    dist: Path | None,
+    theme: str,
+    pricing: str | None,
+    port: int,
+    host: str,
+) -> int:
+    """Validate the inputs and serve. Returns the process exit code; every
+    refusal is one line on stderr naming what was missing."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    if not db_path:
         print(f"no database: pass a path or set ${DB_ENV}", file=sys.stderr)
         return 1
-    dist = Path(args.dist) if args.dist else _default_dist()
-    if dist is None or not dist.is_dir():
+    bundle = dist if dist else _default_dist()
+    if bundle is None or not bundle.is_dir():
         print(
             f"no web bundle: run `npm run build` in web/, pass --dist, or set ${DIST_ENV}",
             file=sys.stderr,
@@ -476,12 +503,18 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        pricing = resolve_price_book(args.db_path, args.pricing)
+        require_motherduck_token(db_path)
+    except CatalogError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    try:
+        price_book = resolve_price_book(db_path, pricing)
     except PricingError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
-    serve(args.db_path, dist, args.theme, args.port, args.host, pricing)
+    serve(db_path, bundle, theme, port, host, price_book)
     return 0
 
 

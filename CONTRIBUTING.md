@@ -6,7 +6,14 @@ we care about.
 
 ## Dev setup
 
-Requires Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/).
+Requires Python ≥ 3.12 and a recent [uv](https://docs.astral.sh/uv/). The
+minimum uv version is `required-version` under `[tool.uv]` in `pyproject.toml`.
+An older uv writes `uv.lock` in an older format, so locking with it rewrites
+lines that have nothing to do with your change. uv releases that understand
+`required-version` refuse to run in this repository when they are too old;
+very old releases ignore the setting, so check `uv --version` if `uv.lock`
+changes more than you expected. To upgrade, run `brew upgrade uv` (Homebrew)
+or `uv self update` (standalone installer).
 
 ```bash
 git clone git@github.com:Database-Tycoon/tycoon-cli.git
@@ -24,7 +31,10 @@ uv run pytest -q
 ## What CI gates on
 
 Every pull request (whatever branch it targets) and every push to `main` runs
-`.github/workflows/ci.yml`:
+`.github/workflows/ci.yml`. CI installs with `uv sync --locked`, so a job
+fails if `uv.lock` no longer matches `pyproject.toml`: when you change
+dependencies in `pyproject.toml`, run `uv lock` and commit `uv.lock` with it.
+The gates are:
 
 - **`uv run pytest -q`** — full default test suite (256 tests as of v0.1.2).
   Runs against Python 3.12 **and** 3.13 in parallel. Network-gated tests
@@ -61,6 +71,62 @@ Three tiers, defined in `pyproject.toml` under `[tool.pytest.ini_options]`:
 The `e2e` tests run only via the manual `.github/workflows/e2e.yml` workflow
 (click "Run workflow" in the Actions UI). They hit flaky upstream APIs and
 aren't suitable for per-PR gating.
+
+## Testing for upgrade safety
+
+Most of tycoon's users on any given day are not running `tycoon init` for
+the first time. They're running a newer tycoon against a project a previous
+version already created. Write and test every change from that person's
+seat, not a brand-new user's. A fresh `rm -rf demo && tycoon init` test
+proves the happy path works; it proves nothing about whether the change
+is safe to land on a directory, environment, or `tycoon.yml` that already
+has something in it, and that's exactly where regressions ship from.
+
+This was written up after a batch of PR review findings (the gh-262/#270
+venv stack and gh-259/#260) were almost entirely this shape: an existing
+`pyproject.toml`, an existing `.venv` (empty, wrong, a symlink, a plain
+file), a source already installed under the old location before a project
+picks up the new one, `uv`'s own environment-selection env vars
+(`UV_PROJECT_ENVIRONMENT`, `UV_PYTHON`) silently overriding what the code
+assumed it controlled. None of that is exotic, it's just not the state a
+freshly-created scratch directory is ever in.
+
+### Before calling an environment/install/scaffolding change done
+
+Run it against, at minimum:
+
+- A directory that already has its own unrelated `pyproject.toml` /
+  `.python-version` / `.venv` (with and without the dependency this change
+  expects to find there).
+- An existing `.venv` that's empty, a symlink, or a plain file instead of a
+  directory, not just a populated one.
+- The relevant tool's own override env vars set (for uv: `UV_PYTHON`,
+  `UV_PROJECT_ENVIRONMENT`, a `[tool.uv.workspace]` root above the project).
+- Partial prior state: something installed under the old behavior, then
+  upgraded into the new one mid-project, not just a project that started
+  on the new behavior from scratch.
+- The external tool missing, offline, or failing, and not just "does the
+  function return `ok=False`": is the error message the tool's own
+  explanation (don't swallow `stderr`), and does a failure leave
+  `tycoon.yml` / the filesystem in a state that's safe to leave, or does it
+  register something that never actually got installed?
+
+### Tests that prove it
+
+A test that mocks `subprocess.run` and asserts on the argv list proves you
+built the right command. It proves nothing about what the real tool does
+with it. For anything that shells out (uv, git, dbt), write at least one
+real, unmocked test per entry point, skipped when the tool is unavailable
+or offline, that asserts the actual on-disk result, alongside the mocked
+unit tests for the command-construction logic itself.
+
+### An extra pass before a large or risky stack goes out
+
+`/code-review ultra` runs an independent multi-agent review against a
+branch or PR and is a good extra layer before a stack this shaped goes out
+for human review, it won't replace a human reviewer but it catches some of
+this class of thing earlier. It's user-triggered and billed, ask for it
+when you want it run.
 
 ## pre-commit (optional)
 
@@ -118,6 +184,10 @@ The following are excluded from the file-count limit:
 
 New Python source files under `src/**/*.py` must also be no more than **500 lines** long. This applies only to newly added files; modifying an existing file that already exceeds the limit will not trigger the check.
 
+### Explain the mental model
+
+Fill in the template's *Mental model* section: what goes in, what the change does with it, and what comes out (or what renders). A reviewer reading a large diff, especially generated code, should be able to check each hunk against that picture. One-line fixes can skip it.
+
 ### Title your PR consistently
 
 Use the following format:
@@ -127,34 +197,45 @@ type(scope): description
 ```
 
 - `type` must be one of `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, or `ci`.
-- `scope` references the tracked issue or ticket behind the change (see below).
+- `scope` references the GitHub issue behind the change (see below).
 - `description` is a short summary without a trailing period.
 - The complete title must not exceed **100 characters**.
 
 #### Link every PR to a tracked issue
 
-Every PR's scope must reference tracked work, including `chore` and `ci` PRs:
+Every PR's scope must reference a GitHub issue, including `chore` and `ci` PRs:
 
 ```text
 feat(gh-128): add layer materialization command
 chore(gh-140): bump dlt from 1.26.0 to 1.29.1
 ```
 
-`gh-<N>` (a GitHub issue in this repository) is the preferred form and the direction of travel. `PTC-<N>` (a Jira ticket) is also accepted for now, since both the GitHub tracker and the Jira board are still live during the migration; support for it will be removed once that migration completes. If a chore or CI change doesn't already have an issue or ticket, file a lightweight one first.
+`gh-<N>` (a GitHub issue in this repository) is the only accepted form. Older commits and PR titles carry `PTC-<N>` Jira keys; the Jira board was retired on 2026-10-09, and work is now tracked in GitHub issues and the [Tycoon CLI project](https://github.com/orgs/Database-Tycoon/projects/4). If a chore or CI change doesn't already have an issue, file a lightweight one first.
 
 Release promotion PRs are exempt from the title format because they collect multiple previously reviewed changes and do not map to a single issue.
 
 #### Closing GitHub issues
 
-A reference such as `gh-128` in the title does not automatically close the issue when the PR is merged.
+A reference such as `gh-128` in the title does not close the issue when the PR is merged.
 
-To close an issue automatically, include GitHub's closing syntax in the PR description:
+Closing keywords such as `Closes #128` in the PR description don't close it either. GitHub only acts on them when a PR merges into the default branch (`main`), and feature and fix PRs here merge into a version branch. Whoever merges the PR closes the issue by hand afterwards:
 
-```text
-Closes #128
+```shell
+gh issue close <N> --reason completed --comment "Shipped in <release> via #<PR>."
 ```
 
-This is optional and is not enforced by the title check.
+Close a parent issue once all its sub-issues are closed.
+
+Before calling an open issue unshipped, check the release branch's history (`git log origin/<release-branch> --grep "gh-128"`) and `CHANGELOG.md`: the issue may have shipped without being closed.
+
+### Files that need a code-owner review
+
+Changes to workflows, dependency manifests and lockfiles, build config, the
+shipped web bundle, version metadata and shared test setup are assigned to the
+maintainers listed in `.github/CODEOWNERS`. A PR that touches those paths gets
+a review request from them. For now this only requests the review; it becomes
+a merge requirement once code-owner review is turned on for the release
+branches.
 
 ### Break up large issues
 
@@ -167,10 +248,10 @@ The parent issue remains the record of the overall goal, while each sub-issue pr
 | Situation | What to do |
 |---|---|
 | Work is tied to a GitHub issue | `type(gh-<N>): description` |
-| Work is tied to a Jira ticket only (transition period) | `type(PTC-<N>): description` |
+| Filing or picking up an issue | Set its milestone to the active release |
 | Routine maintenance or CI work has no issue yet | File a lightweight issue first, then `chore(gh-<N>): description` or `ci(gh-<N>): description` |
 | A change needs more than 8 counted files | Split it into a sequence of smaller PRs |
-| An issue requires multiple PRs | Create smaller sub-issues or tickets, with one PR for each |
+| An issue requires multiple PRs | Create smaller sub-issues, with one PR for each |
 | A version branch is being promoted into `main` | The PR is exempt from the size and title checks |
 
 ### Enforcement status
@@ -190,6 +271,48 @@ The size and title checks currently appear as **visible, non-blocking CI warning
 - **Commits**: one logical change per commit, imperative mood, body explaining
   *why* the change was made. Squash noisy fixup commits before merging.
 
+## Documentation
+
+`.github/workflows/docs.yml` builds `docs/` and publishes it to
+[database-tycoon.github.io/tycoon-cli](https://database-tycoon.github.io/tycoon-cli/)
+on every push to `main`. Since `main` only advances when a release branch
+merges, the published site tracks the released version rather than the active
+branch.
+
+`docs/` holds more than the public site. Four settings in `mkdocs.yml` decide
+what ships, and a page must be covered by one of them:
+
+| Setting | Effect | Use it for |
+|---|---|---|
+| `nav` | Published and listed in the sidebar | User-facing pages |
+| `not_in_nav` | Published but deliberately absent from the sidebar | A page linked from elsewhere rather than browsed to |
+| `draft_docs` | Rendered by `tycoon docs serve`, absent from the published build | Contributor notes you still want to read locally |
+| `exclude_docs` | Not processed in either mode | Anything that should not be read from the docs tree at all |
+
+Two rules follow:
+
+- **Every new page must appear in one of the four.** A page in none of them
+  fails the build: `validation.nav.omitted_files` is set to `warn`, which
+  `--strict` turns into an error. Before that setting, such a page published
+  silently, which is the failure this rule exists to prevent.
+- **Contributor-facing pages belong in `draft_docs` or `exclude_docs`, not
+  `not_in_nav`.** `not_in_nav` only suppresses the omitted-file report: MkDocs
+  still builds the page, serves it at a guessable URL and indexes it for
+  search.
+- **A `nav` entry must not point at a drafted or excluded page.** MkDocs
+  reports that at INFO, so `mkdocs build --strict` still passes, and the page
+  ships a sidebar link that 404s on every page of the site.
+
+`scripts/check_docs_publishable.py` runs in the docs job of both workflows and
+enforces the last rule in full: every `nav` entry must resolve to a page that
+was actually built. The build itself now enforces the first. The script
+reads `draft_docs` and `exclude_docs` from `mkdocs.yml`, so it verifies that
+what the config withholds really is absent from the build, and it pins
+`docs/city/`, `docs/proposals/` and `docs/process/` so they cannot quietly stop
+being withheld.
+It cannot know that some new directory was meant to be internal. That judgment
+is yours, and the rule above is how you record it.
+
 ## Release process
 
 Each release cycle lives on its own version branch. Nothing PRs into `main`
@@ -201,18 +324,73 @@ always reflects the latest published version.
    PRs for the cycle target it. If none is open yet, ask in an issue.
 2. Early in the cycle, the maintainer runs `uv tree --outdated` and opens a
    single dependency-review PR against the release branch, bumping the pins
-   and SHA-pinned actions that are worth taking. Runtime pins are exact and
-   propagate to downstream consumers, so each bump is a deliberate call —
-   check what a version change drags into the lockfile, not just its number.
+   and SHA-pinned actions that are worth taking. Include the build backend
+   pin in `[build-system] requires`, which `uv tree --outdated` doesn't list.
+   Runtime pins are exact and propagate to downstream consumers, so each
+   bump is a deliberate call — check what a version change drags into the
+   lockfile, not just its number.
 3. When the cycle is done, the maintainer finalizes `CHANGELOG.md` and the
-   `docs/releases/v<ver>.md` long-form narrative on the branch.
+   `docs/releases/v<ver>.md` long-form narrative on the branch, adds that page
+   to the Releases nav in `mkdocs.yml`, and points the "current release" line
+   in `docs/releases/index.md` at it, adding it to the series list on that page.
+   A page missing from `nav` fails the build, since
+   `validation.nav.omitted_files` is `warn`, but nothing catches a stale
+   "current release" line, so that one is on you.
 4. The release branch merges into `main` via PR, then the version tag is
    pushed (branch and tag share a name, so use fully-qualified refs — see
    `docs/publishing-to-pypi.md`). The tag triggers PyPI publish via
-   `.github/workflows/publish.yml` and the GitHub release.
+   `.github/workflows/publish.yml`, which refuses to publish a tag whose
+   commit is not on `main`. The maintainer then creates the GitHub
+   release by hand.
 
 Contributors don't cut releases — maintainers do. If you want to propose one,
 open an issue first.
+
+## Merging into the release branch
+
+These are notes for maintainers merging reviewed PRs into the active release
+branch. They come from the v0.2.2 cycle, where most of them were learned the
+hard way.
+
+- **Use merge commits, not squash.** A squash rewrites the merged commits, so
+  any PR stacked on top suddenly conflicts with its own base. A merge commit
+  leaves the stack above intact.
+- **Pin the merge to the commit that was reviewed.** Pass
+  `--match-head-commit <sha>` to `gh pr merge` (or `sha=<sha>` to the API
+  call below), so a push that lands between review and merge can't sneak in.
+- **Stacked PRs need the asynchronous merge API.** `gh pr merge` refuses a PR
+  that belongs to a stack. Use:
+
+  ```shell
+  gh api -X PUT repos/Database-Tycoon/tycoon-cli/pulls/<N>/merge-async \
+    -f merge_method=merge -f merge_action=direct_merge -f sha=<head-sha>
+  gh api repos/Database-Tycoon/tycoon-cli/pulls/<N>/merge-async/<uuid>   # poll until "merged"
+  ```
+
+  This call also merges every open PR **below** the one you name, so merge
+  a stack from the bottom up, one layer at a time.
+- **Close the issue after the merge.** Closing keywords don't fire on a
+  release-branch merge, so close it with `gh issue close` ("Closing GitHub
+  issues" above).
+- **Check the next layer's base before merging it.** After a layer merges,
+  GitHub sometimes retargets the PR above it to the release branch and
+  sometimes doesn't. If `gh pr view <N> --json baseRefName` still names the
+  merged branch, run `gh pr edit <N> --base <release-branch>`, wait for CI to
+  rerun, then merge. Merging without retargeting lands the PR in the dead
+  branch instead of the release.
+- **Expect a `CHANGELOG.md` conflict after every merge.** Each PR adds lines
+  under `[Unreleased]`, so every merge conflicts the next PR in that section.
+  Rebase the PR onto the release branch keeping both sides, then check two
+  things before pushing:
+  - Outside `CHANGELOG.md`, the PR's diff is byte-identical to what was
+    reviewed (compare `git diff <old-base> <old-head> -- . ':(exclude)CHANGELOG.md'`
+    with the same diff for the rebased branch).
+  - The PR adds exactly its own CHANGELOG lines. If a later commit in the PR
+    reworded its own entry, a keep-both rebase leaves the old and new wording
+    side by side; delete the stale one.
+
+  Push with `git push --force-with-lease=<branch>:<sha-you-rebased-from>` so
+  the push fails if someone else pushed in the meantime.
 
 ## Questions?
 

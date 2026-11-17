@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.motherduck_scratch import motherduck_scratch_db  # noqa: F401  (fixture re-export)
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
@@ -32,8 +34,41 @@ def tmp_config(tmp_path: Path):
 
 
 @pytest.fixture
+def sys_path_copy(monkeypatch):
+    """Let a test mutate `sys.path` (e.g. `_run_catalog`'s sys.path.insert)
+    without leaking the mutation into later tests."""
+    import sys
+
+    monkeypatch.setattr(sys, "path", list(sys.path))
+
+
+@pytest.fixture
 def cli_runner():
     """Typer CLI test runner."""
     from typer.testing import CliRunner
 
     return CliRunner()
+
+
+@pytest.fixture
+def fake_venv(monkeypatch):
+    """Fake a successful `.venv` build instead of shelling out to real uv.
+
+    `tycoon init` builds the project's own environment as part of scaffolding
+    (gh-262), so every test that invokes `init` end to end would otherwise
+    try to run a real `uv sync` (seeding a `pyproject.toml` and installing
+    `database-tycoon` from it) against PyPI. Opt a module in with
+    `pytestmark = pytest.mark.usefixtures("fake_venv")` rather than making
+    this autouse repo-wide; tests that specifically exercise venv-building
+    (find_uv missing, create_venv failing, ...) override this locally with
+    their own patch.
+    """
+    from tycoon import venv as venv_mod
+
+    monkeypatch.setattr("tycoon.commands.init.find_uv", lambda: "/usr/bin/uv")
+    monkeypatch.setattr(
+        "tycoon.commands.init.create_venv",
+        lambda target, *a, **k: venv_mod.VenvResult(
+            ok=True, message="Created .venv (faked)", venv_path=target / ".venv"
+        ),
+    )

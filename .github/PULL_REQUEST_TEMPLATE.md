@@ -4,9 +4,19 @@
 
 <!-- One or two sentences. What changes, and why. -->
 
+## Mental model
+
+<!-- How a reviewer should picture the change. Skip for one-line fixes. -->
+
+- Input: what the code receives (config, data, events, a user action).
+- Change: what this PR does differently with it.
+- Outcome: what the user or the next stage sees now, and what they saw before.
+
 ## Linked issue
 
-Closes #
+<!-- gh-N, as in the title. Closing keywords don't fire on merges into a release branch, so the issue is closed by hand after the merge. -->
+
+#
 
 ## Type of change
 

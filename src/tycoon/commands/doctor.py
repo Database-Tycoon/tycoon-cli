@@ -8,6 +8,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 
 from tycoon.config import config
@@ -63,6 +64,49 @@ def _check_python_version(version_info: tuple[int, int] | None = None) -> bool:
     return True
 
 
+def _check_project_venv() -> None:
+    """Report plainly whether this project has its own `.venv` (gh-262+) and
+    whether tycoon is actually running from it.
+
+    #265's detection is meant to be "the running tycoon is executing from
+    this project's `.venv`", not just that a `.venv` directory happens to
+    exist beside `tycoon.yml`. A failed/partial `uv venv`, or `tycoon
+    setup` run against a project that already had its own `pyproject.toml`
+    (gh-262 review), can leave an empty or foreign `.venv` there. An
+    exists-only check reports OK in both cases while tycoon keeps running
+    from the ambient interpreter, and the next catalog-source run then
+    fails with "not installed" (gh-263) with no warning ever having fired.
+    Purely informational either way: doesn't affect doctor's overall
+    pass/fail.
+    """
+    from tycoon.venv import venv_path
+
+    target = venv_path(config.root)
+    if not target.exists():
+        warn(
+            "Project environment: this project doesn't have its own .venv yet, "
+            "it's on tycoon's older shared/ambient environment model. "
+            "Run `tycoon setup` to build one."
+        )
+        return
+
+    running_prefix = Path(sys.prefix).resolve()
+    if running_prefix == target.resolve():
+        success(f"Project environment: using its own .venv at {target}.")
+    elif (target / "bin" / "tycoon").exists():
+        warn(
+            f"Project environment: {target} exists, but tycoon is running from "
+            f"{running_prefix} instead. Activate it with `source {target}/bin/activate`, "
+            f"or run it directly with `{target}/bin/tycoon`."
+        )
+    else:
+        warn(
+            f"Project environment: {target} exists, but tycoon is running from "
+            f"{running_prefix} instead, and {target} has no tycoon installed in it "
+            "(empty or broken). Run `tycoon setup --force` to rebuild it."
+        )
+
+
 def _fix_python_env() -> None:
     """Build a project-local ``.venv`` on a supported interpreter (``--fix``).
 
@@ -73,6 +117,9 @@ def _fix_python_env() -> None:
     from tycoon.constants import DEFAULT_SETUP_PYTHON
     from tycoon.venv import create_venv, find_uv
 
+    if config.load_error is not None:
+        warn("Can't auto-fix: tycoon.yml is invalid. Correct the validation error above and retry.")
+        return
     if not config.has_project_file:
         warn("Can't auto-fix: no tycoon.yml found here. Run `tycoon init` first.")
         return
@@ -85,7 +132,8 @@ def _fix_python_env() -> None:
         return
 
     info(f"--fix: building a project-local .venv on Python {DEFAULT_SETUP_PYTHON} via uv...")
-    result = create_venv(config.root, DEFAULT_SETUP_PYTHON)
+    with console.status("Building the project's own environment via uv..."):
+        result = create_venv(config.root, DEFAULT_SETUP_PYTHON)
     if result.ok:
         success(result.message)
         info("Activate it with `source .venv/bin/activate`, then re-run `tycoon doctor`.")
@@ -95,7 +143,9 @@ def _fix_python_env() -> None:
 
 def _check_tycoon_yml():
     """Check if tycoon.yml exists."""
-    if config.has_project_file:
+    if config.load_error:
+        error(f"`tycoon.yml` failed validation:\n{escape(config.format_load_error())}")
+    elif config.has_project_file:
         success("`tycoon.yml` found.")
     else:
         error("`tycoon.yml` not found. Run `tycoon init` to create a new project.")
@@ -449,17 +499,24 @@ def doctor_cmd(
         console.print(Panel("Checking Python interpreter...", expand=False))
         python_ok = _check_python_version()
 
+        if config.has_project_file:
+            console.print(Panel("Checking project environment...", expand=False))
+            _check_project_venv()
+
         console.print(Panel("Checking scheduled runs...", expand=False))
         _check_schedules()
 
         console.print(Panel("Checking for tycoon.yml...", expand=False))
         _check_tycoon_yml()
 
-        console.print(Panel("Checking for dbt project...", expand=False))
-        _check_dbt_project()
+        if config.load_error is None:
+            console.print(Panel("Checking for dbt project...", expand=False))
+            _check_dbt_project()
 
-        console.print(Panel("Checking for Rill project...", expand=False))
-        _check_rill_project()
+            console.print(Panel("Checking for Rill project...", expand=False))
+            _check_rill_project()
+        else:
+            info("dbt and Rill project checks skipped until tycoon.yml is valid.")
 
         if config.has_project_file:
             console.print(Panel("Checking stack configuration...", expand=False))
@@ -479,5 +536,5 @@ def doctor_cmd(
 
     info("All checks complete.")
 
-    if fix and not python_ok:
+    if fix and (not python_ok or config.load_error is not None):
         _fix_python_env()

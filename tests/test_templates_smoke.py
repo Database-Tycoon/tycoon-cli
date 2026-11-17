@@ -13,6 +13,10 @@ import yaml
 
 from tycoon.cli import app
 
+# `init` builds the project's own .venv as part of scaffolding (gh-262);
+# fake that out here so these tests don't shell out to real uv.
+pytestmark = pytest.mark.usefixtures("fake_venv")
+
 TEMPLATES = ["csv-import", "nyc-transit"]
 
 

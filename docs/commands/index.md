@@ -25,6 +25,7 @@ every flag listed, see [Reference: All commands](../reference/all-commands.md).
 | [`tycoon data sources list / show`](data/sources.md#list-list-registered-sources) | List registered sources / inspect one. |
 | [`tycoon data sources run [name]`](data/sources.md#run-ingest) | Ingest one source. Auto-scaffolds dbt staging models when no models reference the source yet (opt out with `--no-scaffold` or project-wide `transform.auto_scaffold: false`). |
 | [`tycoon data sources run-all`](data/sources.md#run-ingest) | Ingest every registered source sequentially. |
+| [`tycoon data sources migrate <type>`](data/sources.md#add-register-a-new-source) | Copy a catalog source from the shared `~/.tycoon/sources/` into the project's own sources dir. |
 | [`tycoon data sources remove <name>`](data/sources.md#remove-unregister-a-source) | Remove a registered source. |
 | [`tycoon data transform run / test / build`](data/transform.md) | `dbt run` / `test` / `build` against the project's persisted profile + target. |
 | `tycoon data transform docs` | `dbt docs generate` then serve. |

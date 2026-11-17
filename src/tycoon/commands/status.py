@@ -23,6 +23,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import typer
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -47,9 +48,13 @@ from tycoon.utils.console import console, error, header, info, warn
 def _sources_from_backend(metadata_db: Path) -> dict[str, dict]:
     """Read per-source last-sync and row counts from the events backend.
 
-    Returns ``{source_id: {"last_sync": datetime, "rows": {table: count}}}``.
-    Falls back to an empty dict on any failure (missing file, missing table,
-    legacy schema without an events table).
+    Returns ``{source_id: {"last_sync": datetime, "rows": {table: count},
+    "runs": int, "zero_row_warnings": list[str] | None}}``. A run flagged
+    ``zero_rows`` counts toward ``runs`` but never becomes ``last_sync``, so
+    a run that loaded nothing can't turn freshness green (gh-240).
+    ``zero_row_warnings`` is set when the newest run loaded nothing, and
+    holds that run's warnings. Falls back to an empty dict on any failure
+    (missing file, missing table, legacy schema without an events table).
     """
     if not metadata_db.exists():
         return {}
@@ -62,14 +67,25 @@ def _sources_from_backend(metadata_db: Path) -> dict[str, dict]:
             events = b.query_events(EventFilter(event_type="run_completed"))
 
         result: dict[str, dict] = {}
+        last_run: dict[str, RunCompleted] = {}
         for e in events:
             if not isinstance(e, RunCompleted):
                 continue
-            entry = result.setdefault(e.source_id, {"last_sync": None, "rows": {}, "runs": 0})
+            entry = result.setdefault(
+                e.source_id, {"last_sync": None, "rows": {}, "runs": 0, "zero_row_warnings": None}
+            )
             entry["runs"] += 1
+            if e.source_id not in last_run or e.timestamp > last_run[e.source_id].timestamp:
+                last_run[e.source_id] = e
+            if e.zero_rows:
+                continue
             if entry["last_sync"] is None or e.timestamp > entry["last_sync"]:
                 entry["last_sync"] = e.timestamp
                 entry["rows"] = dict(e.rows_loaded or {})
+        for source_id, newest in last_run.items():
+            if newest.zero_rows:
+                result[source_id]["zero_row_warnings"] = list(newest.warnings)
+                result[source_id]["zero_row_partial"] = any((newest.rows_loaded or {}).values())
         return result
     except Exception:
         return {}
@@ -114,24 +130,34 @@ def _freshness_label(last_sync: datetime.datetime | None) -> tuple[str, str]:
 # -- Layer-build freshness ------------------------------------------------------
 
 
-def _query_layer_last_build(metadata_db: Path, model_names: list[str]) -> datetime.datetime | None:
-    """Latest successful build start time across ``model_names``."""
+def _query_layer_last_build(metadata_db: Path, unique_ids: list[str]) -> datetime.datetime | None:
+    """Latest successful build start time across the dbt nodes in ``unique_ids``.
+
+    ``dbt_nodes.node_name`` holds the dbt ``unique_id``
+    (``model.<project>.<name>``), not the bare model name.
+
+    ``capture_dbt`` writes a UTC-aware datetime into the naive
+    ``started_at`` TIMESTAMP column, which DuckDB stores as wall-clock time
+    in its session time zone. Casting back to TIMESTAMPTZ in the same
+    session time zone recovers the real instant; reading the naive value
+    as UTC would skew the age by the local UTC offset.
+    """
     import duckdb
 
-    if not model_names or not metadata_db.exists():
+    if not unique_ids or not metadata_db.exists():
         return None
     try:
         with duckdb.connect(str(metadata_db), read_only=True) as con:
             row = con.execute(
-                "SELECT MAX(r.started_at) "
+                "SELECT MAX(r.started_at)::TIMESTAMPTZ "
                 "FROM dbt_runs r "
                 "JOIN dbt_nodes n ON n.invocation_id = r.invocation_id "
                 "WHERE n.status = 'success' AND list_contains(?, n.node_name)",
-                [model_names],
+                [unique_ids],
             ).fetchone()
-        return row[0] if row and row[0] else None
     except Exception:
         return None
+    return row[0] if row else None
 
 
 # -- Panel renderers -----------------------------------------------------------
@@ -165,6 +191,7 @@ def _render_sources_panel(
     table.add_column("Tables", justify="right")
     table.add_column("Last Sync Rows", justify="right")
 
+    zero_row_notes: list[str] = []
     for src in sources:
         schema = src.schema or "—"
 
@@ -178,6 +205,16 @@ def _render_sources_panel(
             runs_str = f"{runs:,}" if runs else "—"
             tables_str = str(len(row_counts)) if row_counts else "—"
             total_rows = f"{sum(row_counts.values()):,}" if row_counts else "—"
+            zero_row_warnings = data.get("zero_row_warnings")
+            if zero_row_warnings is not None:
+                # A run where one replace table got 0 rows while others loaded
+                # isn't "nothing loaded", so say which kind it was.
+                what = (
+                    "a table in the last run got 0 rows" if data.get("zero_row_partial") else "last run loaded 0 rows"
+                )
+                fresh_label = f"{fresh_label}\n[yellow]{what}[/yellow]"
+                detail = "; ".join(zero_row_warnings) or "the run completed but loaded nothing."
+                zero_row_notes.append(f"{src.name}: {what}. {detail}")
         else:
             # Fivetran rows + un-materialised dlt rows: detail comes from the
             # Fivetran snapshot view below (or the source hasn't run yet).
@@ -199,6 +236,8 @@ def _render_sources_panel(
         )
 
     console.print(table)
+    for note in zero_row_notes:
+        warn(escape(note))
 
 
 def _live_refresh_fivetran(client, metadata_db: Path) -> tuple[bool, str | None]:
@@ -302,7 +341,7 @@ def _render_layer_panel(
         info(empty_hint)
         return
 
-    last_build = _query_layer_last_build(metadata_db, [m.name for m in listed])
+    last_build = _query_layer_last_build(metadata_db, [m.identifier.removeprefix("dbt:") for m in listed])
     fresh_label, fresh_style = _freshness_label(last_build)
 
     table = Table(show_header=True, header_style="bold cyan")

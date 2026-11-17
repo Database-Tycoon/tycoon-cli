@@ -19,6 +19,7 @@ from tycoon.project import (
     BITool,
     TransformationTool,
     WarehouseType,
+    is_motherduck,
 )
 from tycoon.utils.console import console, error, header, info, success, warn
 
@@ -133,7 +134,31 @@ def _load_raw_tycoon_yml(path: Path) -> dict:
 
 
 def _write_raw_tycoon_yml(path: Path, data: dict) -> None:
-    path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+    """Write ``data`` back to tycoon.yml, keeping the user's comments and layout.
+
+    ``data`` came from ``_load_raw_tycoon_yml``, so its values are the
+    on-disk text (``${ENV}`` references unexpanded). Merging it onto the
+    round-trip document only touches what changed, as ``save_project``
+    does (gh-177); a plain dump would drop every comment (gh-297).
+    """
+    from tycoon.yaml_merge import merge_into, roundtrip_yaml
+
+    text = path.read_text() if path.exists() else ""
+    ryaml = roundtrip_yaml(text)
+    existing = ryaml.load(text) if text else None
+    if not isinstance(existing, dict):
+        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        return
+
+    _, changed = merge_into(existing, data, _same_scalar)
+    if changed:
+        with path.open("w") as f:
+            ryaml.dump(existing, f)
+
+
+def _same_scalar(old: object, new: object) -> bool:
+    # bool is an int subclass, so `1 == True` would hide a real type change.
+    return isinstance(old, bool) == isinstance(new, bool) and old == new
 
 
 @app.command(name="dbt")
@@ -336,7 +361,7 @@ def register_dbt(
 def _align_duckdb_warehouse(raw: dict, stack: dict, dbt_warehouse: str) -> None:
     """DuckDB / MotherDuck alignment (v0.1.1 + v0.1.2 behavior, unchanged)."""
     current_warehouse = raw.get("database", {}).get("warehouse", "")
-    if current_warehouse.startswith("md:"):
+    if is_motherduck(current_warehouse):
         current_norm = current_warehouse
     else:
         abs_path = Path(current_warehouse).expanduser() if current_warehouse else Path()
@@ -356,7 +381,7 @@ def _align_duckdb_warehouse(raw: dict, stack: dict, dbt_warehouse: str) -> None:
         if raw["database"].get("raw", "") == current_warehouse:
             raw["database"]["raw"] = dbt_warehouse
         stack["warehouse"] = (
-            WarehouseType.motherduck.value if dbt_warehouse.startswith("md:") else WarehouseType.duckdb.value
+            WarehouseType.motherduck.value if is_motherduck(dbt_warehouse) else WarehouseType.duckdb.value
         )
 
 

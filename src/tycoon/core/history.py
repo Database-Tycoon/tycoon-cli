@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from tycoon.core.events import DbtRunCompleted, RunCompleted, RunFailed
@@ -17,6 +17,7 @@ class RunSummary:
     duration_seconds: float
     rows_total: int
     command: str | None = None
+    zero_rows: bool = False
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,43 @@ class RunDetail:
     rows_by_table: dict[str, int]
     tables_created: list[str]
     error: str | None
+    warnings: list[str] = field(default_factory=list)
+
+
+def _summarize_completed(e: RunCompleted) -> RunSummary:
+    return RunSummary(
+        run_id=e.load_id or e.event_id,
+        source_id=e.source_id,
+        runtime_id=e.runtime_id,
+        status="success",
+        started_at=e.timestamp,
+        duration_seconds=e.duration_seconds,
+        rows_total=sum((e.rows_loaded or {}).values()),
+        zero_rows=e.zero_rows,
+    )
+
+
+def _summarize_dbt(e: DbtRunCompleted) -> RunSummary:
+    return RunSummary(
+        run_id=e.event_id,
+        source_id=e.source_id,
+        runtime_id=e.runtime_id,
+        status="failed" if e.failed else "success",
+        started_at=e.timestamp,
+        duration_seconds=e.duration_seconds,
+        rows_total=e.models_run,
+        command=e.command,
+        # For dbt, "zero rows" means zero nodes: a selector that matched
+        # nothing exits 0, which shouldn't read as a healthy run (gh-377).
+        zero_rows=not e.failed and e.models_run == 0,
+    )
+
+
+def _dbt_error(e: DbtRunCompleted) -> str | None:
+    if e.exit_code in (None, 0):
+        return e.error
+    exited = f"dbt exited with code {e.exit_code}"
+    return f"{exited}: {e.error}" if e.error else exited
 
 
 class HistoryRepository:
@@ -36,17 +74,7 @@ class HistoryRepository:
         summaries: list[RunSummary] = []
         for e in events:
             if isinstance(e, RunCompleted):
-                summaries.append(
-                    RunSummary(
-                        run_id=e.load_id or e.event_id,
-                        source_id=e.source_id,
-                        runtime_id=e.runtime_id,
-                        status="success",
-                        started_at=e.timestamp,
-                        duration_seconds=e.duration_seconds,
-                        rows_total=sum((e.rows_loaded or {}).values()),
-                    )
-                )
+                summaries.append(_summarize_completed(e))
             elif isinstance(e, RunFailed):
                 summaries.append(
                     RunSummary(
@@ -60,18 +88,7 @@ class HistoryRepository:
                     )
                 )
             elif isinstance(e, DbtRunCompleted):
-                summaries.append(
-                    RunSummary(
-                        run_id=e.event_id,
-                        source_id=e.source_id,
-                        runtime_id=e.runtime_id,
-                        status="success" if e.models_errored == 0 else "failed",
-                        started_at=e.timestamp,
-                        duration_seconds=e.duration_seconds,
-                        rows_total=e.models_run,
-                        command=e.command,
-                    )
-                )
+                summaries.append(_summarize_dbt(e))
         summaries.sort(key=lambda s: s.started_at, reverse=True)
         if limit is not None:
             return summaries[:limit]
@@ -85,22 +102,9 @@ class HistoryRepository:
 
         for e in events:
             if isinstance(e, RunCompleted):
-                eid = e.load_id or e.event_id
-                if eid.startswith(run_id_prefix):
-                    matches.append(
-                        (
-                            RunSummary(
-                                run_id=eid,
-                                source_id=e.source_id,
-                                runtime_id=e.runtime_id,
-                                status="success",
-                                started_at=e.timestamp,
-                                duration_seconds=e.duration_seconds,
-                                rows_total=sum((e.rows_loaded or {}).values()),
-                            ),
-                            e,
-                        )
-                    )
+                summary = _summarize_completed(e)
+                if summary.run_id.startswith(run_id_prefix):
+                    matches.append((summary, e))
             elif isinstance(e, RunFailed):
                 if e.event_id.startswith(run_id_prefix):
                     matches.append(
@@ -119,21 +123,7 @@ class HistoryRepository:
                     )
             elif isinstance(e, DbtRunCompleted):
                 if e.event_id.startswith(run_id_prefix):
-                    matches.append(
-                        (
-                            RunSummary(
-                                run_id=e.event_id,
-                                source_id=e.source_id,
-                                runtime_id=e.runtime_id,
-                                status="success" if e.models_errored == 0 else "failed",
-                                started_at=e.timestamp,
-                                duration_seconds=e.duration_seconds,
-                                rows_total=e.models_run,
-                                command=e.command,
-                            ),
-                            e,
-                        )
-                    )
+                    matches.append((_summarize_dbt(e), e))
 
         if len(matches) == 0:
             return None
@@ -149,6 +139,7 @@ class HistoryRepository:
                 rows_by_table=event.rows_loaded or {},
                 tables_created=event.tables_created or [],
                 error=None,
+                warnings=list(event.warnings),
             )
         if isinstance(event, RunFailed):
             return RunDetail(
@@ -162,6 +153,6 @@ class HistoryRepository:
                 summary=summary,
                 rows_by_table={},
                 tables_created=[],
-                error=None,
+                error=_dbt_error(event),
             )
         return None
