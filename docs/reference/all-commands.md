@@ -134,6 +134,28 @@ Arguments:
   NAME                     Source name to drill into
 ```
 
+### [`tycoon data sources explore`](../commands/data/sources.md#explore-inspect-a-source)
+
+```
+tycoon data sources explore [OPTIONS] [source_name]
+
+Options:
+  -n, --sample <int range>  Number of sample rows to show.  [default: 10;
+                            x>=1]
+```
+
+List all sources with metadata, or inspect one source's schema, sample rows,
+and run history.
+
+### [`tycoon data layers`](../commands/data/layers.md)
+
+```
+tycoon data layers
+```
+
+The layered architecture with the vendor of every object, and each dbt
+model's latest status and last successful build.
+
 ### [`tycoon data sources run`](../commands/data/sources.md#run-ingest)
 
 ```
@@ -374,9 +396,8 @@ The renderer ships with tycoon; there is nothing extra to install.
 tycoon fire [OPTIONS]
 
 Options:
-  -r, --run TEXT           Show failing tests in one run. Takes a run id (or
-                           prefix) from tycoon data history or from this
-                           command.
+  -r, --run <str>  Show failing tests in one run. Takes a run id (or prefix)
+                   from tycoon data history or from this command.
 ```
 
 Failing tests, each counted by its newest result across captured runs: the
@@ -394,28 +415,6 @@ Fire trucks on duty, one per failing test, counted the same way as
 `tycoon fire`.
 
 ---
-
-### [`tycoon data layers`](../commands/data/layers.md)
-
-```
-tycoon data layers
-```
-
-The layered architecture with the vendor of every object, and each dbt
-model's latest status and last successful build.
-
-### [`tycoon data sources explore`](../commands/data/sources.md#explore-inspect-a-source)
-
-```
-tycoon data sources explore [NAME] [OPTIONS]
-
-Options:
-  -n, --sample INTEGER     Number of sample rows to show (1 or more,
-                           default 10).
-```
-
-List all sources with metadata, or inspect one source's schema, sample rows,
-and run history.
 
 ## Tools
 

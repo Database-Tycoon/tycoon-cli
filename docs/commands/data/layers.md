@@ -22,6 +22,9 @@ the vendor each object comes from:
 
 Objects tycoon doesn't govern (hand-rolled SQL, notebook outputs) classify
 as *unclassified*; tycoon has opinions only about the surfaces it manages.
+`tycoon data layers` prints only the staging, intermediate and marts panels,
+so a dbt model outside those folders, with no `meta.tycoon_layer` override,
+does not appear in its output.
 
 ```
 tycoon data layers

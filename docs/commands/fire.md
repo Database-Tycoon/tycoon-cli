@@ -36,7 +36,9 @@ tycoon fire --run 480db459  # failing tests in one run
 Without `--run`, each test counts by its newest result across all captured
 runs, the way the city folds run history. A later `dbt run` that runs no
 tests leaves the last test results in place, so a failure stays listed
-until a run that includes the test passes it.
+until a run that includes the test passes it. A test or model that is
+renamed or removed from the project drops out of the list, as it has no
+building in the city.
 
 `--run` shows a single run. It takes the run id `tycoon data history`
 prints for a dbt run, or a prefix of dbt's own invocation id, and the
@@ -63,5 +65,4 @@ fronts the one connected street network, and the renderer independently
 re-checks by routing each vehicle over roads.
 
 The contractor vans (one amber van per source past its freshness SLA) are
-not listed yet. They arrive with the `tycoon repair` call sheet once tycoon
-captures source freshness into the metadata DB.
+not listed yet.
