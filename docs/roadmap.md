@@ -45,8 +45,8 @@ moved into this cycle, and most of what has merged so far comes from them.
 - Rewrite foundation. No pull requests yet for the remaining config singleton
   uses ([#175], [#176], [#189]) or the source catalog's JSON manifest and
   loader ([#98], [#100], design in [#197]).
-- Layer-aware data CLI ([#306]). PRs [#288] and [#289] are open; four of the
-  commands don't yet do what their docs say ([#302]).
+- Layer-aware data CLI ([#306]). PRs [#288] and [#289] are open, awaiting
+  re-review.
 - MotherDuck ([#429]). Merged: raw ingestion builds a MotherDuck dlt
   destination and skips the post-load steps that need a local raw file
   ([#447], [#448], PRs [#477], [#478], part of [#430]), with a `motherduck`
@@ -271,7 +271,6 @@ The last three releases, with their release notes.
 [#289]: https://github.com/Database-Tycoon/tycoon-cli/pull/289
 [#291]: https://github.com/Database-Tycoon/tycoon-cli/issues/291
 [#298]: https://github.com/Database-Tycoon/tycoon-cli/issues/298
-[#302]: https://github.com/Database-Tycoon/tycoon-cli/issues/302
 [#306]: https://github.com/Database-Tycoon/tycoon-cli/issues/306
 [#307]: https://github.com/Database-Tycoon/tycoon-cli/issues/307
 [#308]: https://github.com/Database-Tycoon/tycoon-cli/issues/308
