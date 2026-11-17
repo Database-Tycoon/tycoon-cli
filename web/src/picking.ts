@@ -30,16 +30,28 @@ export class Picking {
     this.targets = [buildings.mesh, plant];
 
     // Distinguish a click from an orbit drag, or every camera move ends by
-    // selecting whatever the pointer happens to be over.
+    // selecting whatever the pointer happens to be over. A click counts only
+    // when both the press and the release land on the scene canvas: the
+    // panels inside `dom` (inspector, stats, problems) are not the scene, so
+    // clicking or selecting text in one, or dragging from one onto the map,
+    // must not select what lies behind it.
     let downAt: { x: number; y: number } | null = null;
-    dom.addEventListener("pointerdown", (e) => (downAt = { x: e.clientX, y: e.clientY }));
-    dom.addEventListener("pointerup", (e) => {
-      const wasDrag =
-        downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 5;
-      downAt = null;
-      if (!wasDrag) onClick(this.resolve(e));
+    dom.addEventListener("pointerdown", (e) => {
+      downAt = this.onScene(e) ? { x: e.clientX, y: e.clientY } : null;
     });
-    dom.addEventListener("pointermove", (e) => onHover(this.resolve(e)));
+    dom.addEventListener("pointerup", (e) => {
+      const start = downAt;
+      downAt = null;
+      if (!start || !this.onScene(e)) return;
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 5) return;
+      onClick(this.resolve(e));
+    });
+    dom.addEventListener("pointermove", (e) => onHover(this.onScene(e) ? this.resolve(e) : null));
+  }
+
+  /** True when the event's target is the WebGL canvas itself, not an overlay. */
+  private onScene(e: Event): boolean {
+    return e.target instanceof HTMLCanvasElement && e.target.parentElement === this.dom;
   }
 
   /** The object key under a pointer event, or null over sky/terrain. */

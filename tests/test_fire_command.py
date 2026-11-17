@@ -49,6 +49,13 @@ def _capture(root: Path, invocation_id: str, results: list[dict]) -> None:
     assert capture_dbt(metadata_db_path(root), dbt_dir) == invocation_id
 
 
+def _write_manifest(root: Path, unique_ids: list[str]) -> None:
+    """A compiled manifest holding just these nodes, as `dbt compile` leaves it."""
+    target = root / "dbt_project" / "target"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "manifest.json").write_text(json.dumps({"nodes": {uid: {"unique_id": uid} for uid in unique_ids}}))
+
+
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch) -> Path:
     (tmp_path / "tycoon.yml").write_text(_TYCOON_YML)
@@ -216,6 +223,30 @@ class TestFire:
         assert "No failing tests" in out
         assert "1 model(s) failed to build" in out
         assert "tycoon data history" in out
+
+    def test_a_renamed_test_drops_out_of_the_standing_state(self, project, cli_runner):
+        # Review of #288: old_name failed, the next build only had new_name, and
+        # fire listed old_name forever. Nodes missing from the manifest drop out.
+        _capture(project, "aaaa-1", [_result("test.p.old_name", "fail", "2026-09-01T10:00:00Z")])
+        _capture(project, "bbbb-2", [_result("test.p.new_name", "pass", "2026-09-02T10:00:00Z")])
+        _write_manifest(project, ["test.p.new_name"])
+        result = cli_runner.invoke(app, ["fire"])
+        assert "old_name" not in result.output
+        house = cli_runner.invoke(app, ["firehouse"])
+        assert _count_for(house.output, "Fire trucks on duty") == 0
+
+    def test_a_removed_model_no_longer_counts_as_failed(self, project, cli_runner):
+        _capture(project, "aaaa-1", [_result("model.p.stg_gone", "error", "2026-09-01T10:00:00Z")])
+        _write_manifest(project, ["model.p.orders"])
+        result = cli_runner.invoke(app, ["fire"])
+        assert "failed to build" not in _flat(result.output)
+
+    def test_a_failure_still_in_the_manifest_stays_standing(self, project, cli_runner):
+        _capture(project, "aaaa-1", [_result("test.p.nn_id", "fail", "2026-09-01T10:00:00Z")])
+        _capture(project, "bbbb-2", [_result("model.p.orders", "success", "2026-09-02T10:00:00Z")])
+        _write_manifest(project, ["test.p.nn_id", "model.p.orders"])
+        result = cli_runner.invoke(app, ["fire"])
+        assert "nn_id" in result.output
 
     def test_a_model_fixed_by_a_later_run_is_not_reported(self, project, cli_runner):
         _capture(project, "aaaa-1", [_result("model.p.stg_widgets", "error", "2026-09-01T10:00:00Z")])
