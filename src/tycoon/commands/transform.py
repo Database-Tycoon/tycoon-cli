@@ -15,7 +15,8 @@ import typer
 
 from tycoon.config import config
 from tycoon.dbt_profiles import ProfileOverrides, resolve_profile
-from tycoon.utils.console import console, error, header, next_steps, success
+from tycoon.motherduck import has_motherduck_token
+from tycoon.utils.console import console, error, header, info, next_steps, success
 
 app = typer.Typer(
     help="Run dbt transformations against the local DuckDB warehouse.",
@@ -198,19 +199,28 @@ def _auto_osi_scaffold_safe() -> None:
     informational only.
     """
     project = config.project
-    warehouse_db = config.local_db
-    if project is None or not project.transform.auto_osi_scaffold or warehouse_db is None:
+    if project is None or not project.transform.auto_osi_scaffold:
+        return
+    target = config.local_db or config.warehouse_target
+    if isinstance(target, str) and not has_motherduck_token(target):
+        # Without a token DuckDB starts a browser sign-in and blocks the command.
+        info(
+            "Skipped the OSI auto-scaffold: no MotherDuck token found. "
+            "Export MOTHERDUCK_TOKEN, then run `tycoon semantics scaffold`."
+        )
         return
     try:
         from tycoon.scaffolding.osi_generator import scaffold_osi
 
         out_path = config.dbt_project_dir / "semantic" / "osi.yaml"
-        scaffold_osi(
-            warehouse_db=warehouse_db,
+        result = scaffold_osi(
+            warehouse_db=target,
             out_path=out_path,
             project_name=project.name,
             dbt_project_dir=config.dbt_project_dir,
         )
+        if result.error:
+            info(f"OSI auto-scaffold failed: {result.error}")
     except Exception:
         pass
 

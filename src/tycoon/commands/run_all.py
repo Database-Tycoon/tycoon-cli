@@ -6,8 +6,9 @@ import time
 from typing import Annotated
 
 import typer
+from rich.markup import escape
 
-from tycoon.config import load_config
+from tycoon.config import load_config, redact_secrets
 from tycoon.utils.console import console, error, header, info, next_steps, success, warn
 
 
@@ -103,7 +104,7 @@ def run_all_cmd(
                 _pipeline, load_info = _run_source(
                     name=name,
                     source_config=source_config,
-                    raw_db_path=cfg.raw_db,
+                    raw_db_path=cfg.raw_target,
                     max_records=max_records,
                     fail_on_empty=fail_on_empty,
                 )
@@ -112,8 +113,9 @@ def run_all_cmd(
                 else:
                     success(f"{name}: {load_info}")
             except Exception as exc:
-                error(f"{name} failed: {exc}")
-                _emit("error", f"run-all failed during ingest of '{name}'", stage="ingest", error=str(exc)[:300])
+                message = redact_secrets(str(exc))
+                error(f"{name} failed: {escape(message)}")
+                _emit("error", f"run-all failed during ingest of '{name}'", stage="ingest", error=message[:300])
                 raise typer.Exit(1) from exc
     else:
         info("Skipping ingestion (--skip-ingest)")

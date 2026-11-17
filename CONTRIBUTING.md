@@ -31,7 +31,10 @@ uv run pytest -q
 ## What CI gates on
 
 Every pull request (whatever branch it targets) and every push to `main` runs
-`.github/workflows/ci.yml`:
+`.github/workflows/ci.yml`. CI installs with `uv sync --locked`, so a job
+fails if `uv.lock` no longer matches `pyproject.toml`: when you change
+dependencies in `pyproject.toml`, run `uv lock` and commit `uv.lock` with it.
+The gates are:
 
 - **`uv run pytest -q`** — full default test suite (256 tests as of v0.1.2).
   Runs against Python 3.12 **and** 3.13 in parallel. Network-gated tests
@@ -194,20 +197,20 @@ type(scope): description
 ```
 
 - `type` must be one of `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, or `ci`.
-- `scope` references the tracked issue or ticket behind the change (see below).
+- `scope` references the GitHub issue behind the change (see below).
 - `description` is a short summary without a trailing period.
 - The complete title must not exceed **100 characters**.
 
 #### Link every PR to a tracked issue
 
-Every PR's scope must reference tracked work, including `chore` and `ci` PRs:
+Every PR's scope must reference a GitHub issue, including `chore` and `ci` PRs:
 
 ```text
 feat(gh-128): add layer materialization command
 chore(gh-140): bump dlt from 1.26.0 to 1.29.1
 ```
 
-`gh-<N>` (a GitHub issue in this repository) is the preferred form and the direction of travel. `PTC-<N>` (a Jira ticket) is also accepted for now, since both the GitHub tracker and the Jira board are still live during the migration; support for it will be removed once that migration completes. If a chore or CI change doesn't already have an issue or ticket, file a lightweight one first.
+`gh-<N>` (a GitHub issue in this repository) is the only accepted form. Older commits and PR titles carry `PTC-<N>` Jira keys; the Jira board was retired on 2026-10-09, and work is now tracked in GitHub issues and the [Tycoon CLI project](https://github.com/orgs/Database-Tycoon/projects/4). If a chore or CI change doesn't already have an issue, file a lightweight one first.
 
 Release promotion PRs are exempt from the title format because they collect multiple previously reviewed changes and do not map to a single issue.
 
@@ -245,11 +248,10 @@ The parent issue remains the record of the overall goal, while each sub-issue pr
 | Situation | What to do |
 |---|---|
 | Work is tied to a GitHub issue | `type(gh-<N>): description` |
-| Work is tied to a Jira ticket only (transition period) | `type(PTC-<N>): description` |
 | Filing or picking up an issue | Set its milestone to the active release |
 | Routine maintenance or CI work has no issue yet | File a lightweight issue first, then `chore(gh-<N>): description` or `ci(gh-<N>): description` |
 | A change needs more than 8 counted files | Split it into a sequence of smaller PRs |
-| An issue requires multiple PRs | Create smaller sub-issues or tickets, with one PR for each |
+| An issue requires multiple PRs | Create smaller sub-issues, with one PR for each |
 | A version branch is being promoted into `main` | The PR is exempt from the size and title checks |
 
 ### Enforcement status
@@ -337,7 +339,8 @@ always reflects the latest published version.
 4. The release branch merges into `main` via PR, then the version tag is
    pushed (branch and tag share a name, so use fully-qualified refs — see
    `docs/publishing-to-pypi.md`). The tag triggers PyPI publish via
-   `.github/workflows/publish.yml`. The maintainer then creates the GitHub
+   `.github/workflows/publish.yml`, which refuses to publish a tag whose
+   commit is not on `main`. The maintainer then creates the GitHub
    release by hand.
 
 Contributors don't cut releases — maintainers do. If you want to propose one,

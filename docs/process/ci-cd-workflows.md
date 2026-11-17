@@ -54,7 +54,7 @@ The repo (`Database-Tycoon/tycoon-cli`) carries seven workflows. **Workflow YAML
 
 **Jobs (sequential):**
 
-1. `preflight`: the tag, the `pyproject.toml` version, `src/tycoon/__init__.py` `__version__`, a **dated** `CHANGELOG.md` entry, and `docs/releases/v<ver>.md` (no `_Released: TBD_`) must all agree. This encodes the release checklist mechanically.
+1. `preflight`: the tagged commit must be on `main` (`git merge-base --is-ancestor` against a fresh fetch of `main`), so a tag pushed from the release branch before its promotion PR merges publishes nothing ([#473](https://github.com/Database-Tycoon/tycoon-cli/issues/473), added after v0.2.4 shipped that way). Then the tag, the `pyproject.toml` version, `src/tycoon/__init__.py` `__version__`, a **dated** `CHANGELOG.md` entry, and `docs/releases/v<ver>.md` (no `_Released: TBD_`) must all agree. This encodes the release checklist mechanically.
 2. `build`: `uv build`, artifacts uploaded. The build backend is pinned (`hatchling==1.32.4`) so the wheel metadata version cannot float between releases.
 3. `publish-testpypi`: publishes to TestPyPI first (environment `testpypi`).
 4. `publish-pypi`: only after TestPyPI succeeds, publishes to PyPI (environment `pypi`).

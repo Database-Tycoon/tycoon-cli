@@ -42,7 +42,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Sync project (including dagster + ask extras)
-        run: uv sync --all-extras --python ${{ matrix.python-version }}
+        run: uv sync --all-extras --python ${{ matrix.python-version }} --locked
 
       - name: Run pytest
         # Default addopts already excludes the `e2e` marker. The
@@ -67,6 +67,12 @@ jobs:
     name: ruff
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # UV_LOCKED makes every uv command in the job, including the implicit sync
+    # behind `uv run`, fail on a stale uv.lock instead of re-resolving it. It is
+    # set per job, not per workflow: in the test and template-smoke jobs tycoon
+    # itself runs `uv add` in scaffolded projects, which UV_LOCKED would break.
+    env:
+      UV_LOCKED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -79,7 +85,7 @@ jobs:
 
       - name: Sync dev deps
         # ruff is in [dependency-groups].dev, not an optional extra.
-        run: uv sync --group dev
+        run: uv sync --group dev --locked
 
       - name: Ruff lint
         # ruff is pinned in dev group so CI and local dev use the same version.
@@ -113,6 +119,97 @@ jobs:
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           /tmp/gitleaks git --no-banner --redact --verbose .
 
+  workflow-security:
+    # Reviews the workflows themselves and what a PR adds to the supply
+    # chain: zizmor (workflow security audit), actionlint (workflow syntax
+    # and shell), dependency-review (new dependencies with known
+    # vulnerabilities, PRs only) and scripts/check_ci_risks.py (PRs only).
+    # zizmor and actionlint are checksum-verified release binaries, like
+    # gitleaks above, not marketplace actions.
+    name: workflow security
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Report-only rollout (#500): findings show on the job, but a failure
+    # does not fail the run. Remove this once the first week's findings are
+    # fixed, then make the job a required check in the branch rulesets.
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history on pull requests so check_ci_risks.py can diff
+          # against the PR's base; a push only needs the tip. The values are
+          # strings because a bare 0 is falsy and `&& 0 ||` would always give 1.
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          persist-credentials: false
+
+      - name: Install zizmor and actionlint
+        env:
+          ZIZMOR_VERSION: 1.32.0
+          ZIZMOR_SHA256: bb110cc765eca9cd7efb2e284a956be5974c60027b0970f16397d86208a9957b
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          curl -sSfL -o /tmp/zizmor.tar.gz \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${ZIZMOR_SHA256}  /tmp/zizmor.tar.gz" | sha256sum --check
+          tar -xzf /tmp/zizmor.tar.gz -C /tmp zizmor
+          curl -sSfL -o /tmp/actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum --check
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+
+      # Each check below runs even when an earlier one failed, so one run
+      # reports every finding.
+      - name: zizmor
+        if: ${{ !cancelled() }}
+        env:
+          # Read-only token for zizmor's online audits (impostor commits,
+          # known-vulnerable actions, ref confusion).
+          GH_TOKEN: ${{ github.token }}
+        run: /tmp/zizmor --format=github .
+
+      - name: actionlint
+        if: ${{ !cancelled() }}
+        run: /tmp/actionlint
+
+      - name: Dependency review
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Writing a PR comment would need pull-requests: write; the job
+          # summary and the step result carry the findings instead.
+          comment-summary-in-pr: never
+
+      - name: Fetch trusted check code from the base ref
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # Same pattern as pr-compliance.yml: run the checker from the base
+          # ref so a PR cannot edit the rules that judge it. It goes to a
+          # fresh directory outside the checkout and runs with `python3 -I`,
+          # so nothing the PR commits (a json.py, say) is importable.
+          trusted="$RUNNER_TEMP/trusted-ci-risks"
+          rm -rf "$trusted"
+          mkdir -p "$trusted"
+          if git cat-file -e "$BASE_SHA:scripts/check_ci_risks.py" 2>/dev/null; then
+            git show "$BASE_SHA:scripts/check_ci_risks.py" > "$trusted/check_ci_risks.py"
+          else
+            # Only when the base genuinely predates the script.
+            echo "::warning::scripts/check_ci_risks.py is not on the base ref; running the PR's own copy"
+            cp scripts/check_ci_risks.py "$trusted/check_ci_risks.py"
+          fi
+
+      - name: CI risk check
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 -I "$RUNNER_TEMP/trusted-ci-risks/check_ci_risks.py"
+
   build:
     # Verifies the wheel + sdist build cleanly with current pins, and
     # that the built wheel installs into a fresh venv with a working
@@ -122,6 +219,8 @@ jobs:
     name: build + install smoke
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      UV_LOCKED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -145,11 +244,14 @@ jobs:
       - name: Install built wheel into a fresh venv
         # Use a separate venv so we exercise the published wheel rather
         # than the editable install. Picks the wheel by glob so the
-        # version doesn't have to be hard-coded.
+        # version doesn't have to be hard-coded. The constraints file pins the
+        # wheel's runtime dependencies to uv.lock, so the smoke test installs
+        # what was reviewed rather than whatever PyPI serves today.
         run: |
+          uv export --frozen --no-hashes --no-dev --no-emit-project -o /tmp/constraints.txt
           uv venv /tmp/wheel-smoke --python 3.12
           /tmp/wheel-smoke/bin/python -m ensurepip
-          /tmp/wheel-smoke/bin/python -m pip install dist/database_tycoon-*.whl
+          /tmp/wheel-smoke/bin/python -m pip install -c /tmp/constraints.txt dist/database_tycoon-*.whl
 
       - name: Smoke-check tycoon entry point
         run: |
@@ -169,6 +271,8 @@ jobs:
     name: web (tsc + build + e2e)
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      UV_LOCKED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -182,11 +286,13 @@ jobs:
       - name: Sync project
         # tycoon-city-export generates the e2e suite's demo data, and
         # sync_web_bundle.py runs under the project venv.
-        run: uv sync
+        run: uv sync --locked
 
       - name: Install web dependencies
+        # No dependency needs its install hook: esbuild's binary arrives as an
+        # optional @esbuild/<platform> package, not from its postinstall.
         working-directory: web
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Typecheck
         working-directory: web
@@ -228,6 +334,8 @@ jobs:
     name: docs (mkdocs --strict)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      UV_LOCKED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -239,7 +347,7 @@ jobs:
           enable-cache: true
 
       - name: Sync docs extra
-        run: uv sync --extra docs
+        run: uv sync --extra docs --locked
 
       - name: Build docs (strict)
         run: uv run mkdocs build --strict
@@ -271,7 +379,7 @@ jobs:
           enable-cache: true
 
       - name: Sync project (default extras)
-        run: uv sync
+        run: uv sync --locked
 
       - name: Init project from template
         run: |

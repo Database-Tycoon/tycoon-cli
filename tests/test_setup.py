@@ -194,6 +194,14 @@ class TestCreateVenv:
         assert "--editable" not in add_cmd
         assert add_cmd[-1] == "./dist/x.whl"
 
+    def test_extras_spec_reaches_uv_add_unchanged(self, tmp_path):
+        with (
+            patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.venv.subprocess.run", side_effect=_subprocess_side_effect(tmp_path, _ok(), _ok())) as run,
+        ):
+            venv_mod.create_venv(tmp_path, "3.13", install_spec="database-tycoon[motherduck]")
+        assert run.call_args_list[1].args[0][-1] == "database-tycoon[motherduck]"
+
     def test_pinned_version_spec_uses_plain_uv_add(self, tmp_path):
         with (
             patch("tycoon.venv.find_uv", return_value="/usr/bin/uv"),
@@ -388,6 +396,16 @@ class TestSetupCommand:
         ):
             cli_runner.invoke(app, ["setup", "--no-prompt", "--no-install"])
         assert cv.call_args.kwargs["install_spec"] is None
+
+    def test_from_option_passes_the_spec_verbatim(self, cli_runner, tmp_path, monkeypatch):
+        self._bind(tmp_path, monkeypatch)
+        fake = venv_mod.VenvResult(ok=True, message="ok", venv_path=tmp_path / ".venv")
+        with (
+            patch("tycoon.commands.setup.find_uv", return_value="/usr/bin/uv"),
+            patch("tycoon.commands.setup.create_venv", return_value=fake) as cv,
+        ):
+            cli_runner.invoke(app, ["setup", "--no-prompt", "--from", "database-tycoon[motherduck]"])
+        assert cv.call_args.kwargs["install_spec"] == "database-tycoon[motherduck]"
 
     def test_failure_exits_nonzero(self, cli_runner, tmp_path, monkeypatch):
         self._bind(tmp_path, monkeypatch)
