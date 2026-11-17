@@ -24,6 +24,7 @@ All notable changes to this project will be documented in this file. The format 
 ### Security
 
 - **Releases publish with `pypa/gh-action-pypi-publish` v1.14.3** ([#500][]). The TestPyPI and PyPI jobs in `publish.yml` pinned v1.14.2, which advisory GHSA-5xjx-3w67-w9x9 lists as affected. Both now pin v1.14.3 by commit SHA. For contributors; installing tycoon from PyPI is unaffected.
+- **Local secret files can no longer be committed by accident** ([#410][]). The repository's `.gitignore` now covers `.env`, `.env.*` and any `.dlt/secrets.toml`, so credentials a contributor keeps for local runs stay out of commits in this public repo. `.env.example` stays committable, and a test fails if these rules are ever dropped. This changes nothing in the published package.
 
 ### Fixed
 
@@ -44,6 +45,7 @@ All notable changes to this project will be documented in this file. The format 
 - **`--help` no longer shows literal RST double backticks** ([#443][]). Help text comes from command docstrings, and several of them used RST double-backtick markup, which `--help` prints as-is. `tycoon setup`, `tycoon data sources add`, `tycoon data clean`, `tycoon docs`, `tycoon doctor`, `tycoon notify`, `tycoon observability`, `tycoon register` and `tycoon schedule` now use single backticks. A test walks every registered command and fails if a help text, short help, epilog or option help contains a double backtick.
 
 [#443]: https://github.com/Database-Tycoon/tycoon-cli/issues/443
+[#410]: https://github.com/Database-Tycoon/tycoon-cli/issues/410
 [#378]: https://github.com/Database-Tycoon/tycoon-cli/issues/378
 [#500]: https://github.com/Database-Tycoon/tycoon-cli/issues/500
 [#493]: https://github.com/Database-Tycoon/tycoon-cli/issues/493
