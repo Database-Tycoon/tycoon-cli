@@ -15,7 +15,8 @@ instead of reporting the build as healthy.
 The standing state folds every captured run down to each test's newest
 result, as the city's run history does (``node_results`` in
 ``tycoon_city/catalog/run_history.py``): a ``dbt run`` that ran no tests
-leaves the last test results standing.
+leaves the last test results standing. Nodes missing from the compiled
+manifest (renamed or removed) drop out, as they have no building in the city.
 
 Three views:
 
@@ -37,6 +38,7 @@ from rich.markup import escape
 from rich.table import Table
 
 from tycoon.config import TycoonConfig, load_config
+from tycoon.layers import load_manifest
 from tycoon.observability import metadata_db_path
 from tycoon.utils.console import console, error, header, info, warn
 
@@ -94,8 +96,25 @@ def _findings_from_run_results(dbt_dir: Path) -> _Findings | None:
     return _Findings(sorted(fires), models_errored)
 
 
-def _standing_findings_from_metadata(metadata_db: Path) -> _Findings | None:
-    """Each node's newest captured result, or None when no run is captured."""
+def _current_node_ids(dbt_dir: Path) -> set[str] | None:
+    """Unique ids of the nodes in the compiled project, or None without a manifest.
+
+    A test or model that was renamed or removed after it failed never gets a
+    newer result, so the fold would keep it failing for good. The city drops
+    such orphans because they have no building; this set lets fire do the same.
+    """
+    manifest = load_manifest(dbt_dir)
+    if manifest is None:
+        return None
+    return set(manifest.get("nodes", {}))
+
+
+def _standing_findings_from_metadata(metadata_db: Path, current: set[str] | None = None) -> _Findings | None:
+    """Each node's newest captured result, or None when no run is captured.
+
+    With ``current`` (the manifest's node ids), nodes no longer in the project
+    are left out.
+    """
     newest = (
         "SELECT n.node_name, arg_max(n.status, r.started_at) AS status "
         "FROM dbt_nodes n JOIN dbt_runs r ON r.invocation_id = n.invocation_id "
@@ -109,17 +128,22 @@ def _standing_findings_from_metadata(metadata_db: Path) -> _Findings | None:
                 f"SELECT node_name, status FROM ({newest}) WHERE status IN ('fail', 'error') ORDER BY node_name",
                 ["test"],
             ).fetchall()
-            models = con.execute(f"SELECT COUNT(*) FROM ({newest}) WHERE status = 'error'", ["model"]).fetchone()
+            models = con.execute(f"SELECT node_name FROM ({newest}) WHERE status = 'error'", ["model"]).fetchall()
     except Exception:
         return None
-    return _Findings([(_short_name(name), status) for name, status in tests], models[0] if models else 0)
+
+    def kept(node_id: str) -> bool:
+        return current is None or node_id in current
+
+    fires = [(_short_name(name), status) for name, status in tests if kept(name)]
+    return _Findings(fires, sum(1 for (name,) in models if kept(name)))
 
 
 def _standing_findings(cfg: TycoonConfig) -> _Findings | None:
     """What is failing now, or None when nothing has run yet."""
     metadata_db = metadata_db_path(cfg.root)
     if metadata_db.exists():
-        findings = _standing_findings_from_metadata(metadata_db)
+        findings = _standing_findings_from_metadata(metadata_db, _current_node_ids(cfg.dbt_project_dir))
         if findings is not None:
             return findings
     return _findings_from_run_results(cfg.dbt_project_dir)
