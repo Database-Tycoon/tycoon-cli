@@ -1,6 +1,6 @@
 # Roadmap
 
-_Last updated 2026-11-02, during the v0.2.4 cycle. This page is the north
+_Last updated 2026-11-16, during the v0.2.5 cycle. This page is the north
 star for tycoon: the direction we are building toward, reviewed at each sprint
 retro. The [wish list](#wish-list) at the end collects ideas we like but have
 not committed to. Items move from the wish list onto the roadmap, never
@@ -35,65 +35,69 @@ Two supported ways in:
 - A hosted product. tycoon is local-first. The one cloud target we are
   building is MotherDuck, because it is DuckDB.
 
-## Now: v0.2.4
+## Now: v0.2.5
 
-Sprint 2026-10-24 to 2026-11-06. The theme on the milestone is "trust what
-tycoon tells you": run history, status and the city should report what
-actually happened. Nothing has merged to the release branch yet; the open pull
-requests are listed with their issues.
+Sprint 2026-11-07 to 2026-11-20. The milestone's scope is the rewrite
+foundation (config singleton, catalog manifest) and the layer-aware data CLI,
+with MotherDuck Phase 1 alongside. The fixes still open at the end of v0.2.4
+moved into this cycle, and most of what has merged so far comes from them.
 
-- Data integrity and unblockers. The `duckdb==1.5.2` pin breaks
-  QUALIFY-over-cast models ([#339]). `data run-all` runs whichever dbt is
-  first on `PATH` rather than tycoon's own ([#439], PR [#461]). Projects
-  share `~/.dlt/pipelines`, so same-named sources share incremental state
-  and load duplicates ([#394], PRs [#398], [#399], [#400]). An invalid
-  `tycoon.yml` crashes `--help` and `--version` ([#378]).
-- MotherDuck Phase 0 ([#429]). One helper accepts both `md:` and
-  `motherduck:` ([#308], PR [#454]), `data query` refuses DDL and DML on
-  MotherDuck unless asked ([#309], PR [#452]), and `data schema` estimates
-  row counts instead of counting every table ([#310], PR [#451]). The rest
-  of Phase 0 moved to v0.2.5, below.
-- Run history. Successful dbt builds are marked failed ([#341], PR [#462]),
-  failed runs are never recorded ([#377]), `data status` says "last build
-  never" when history has the builds ([#390], PR [#397]), and `data run-all`
-  records no dbt rows at all ([#326]).
-- The city. Eight fixes from the 0.2.3 review: the legend and detail panel
-  overlap ([#382]), long names clip ([#383]), HUD panels run off narrow
-  windows ([#384]), labels overlap ([#385]), the opening camera misses the
-  city ([#386]), dbt sources are missing so staging models show no upstream
-  ([#387]), views show zero rows ([#388]), and two object counts disagree
-  ([#389]). PRs [#401] through [#409]. A mental model of the map joins the
-  docs ([#323], PR [#331]).
-- CLI. Output formats and no squashed columns for `data query`, plus filters
-  for `data schema` ([#391], [#393], PR [#395]); `doctor` stops calling a
-  working `.venv` broken ([#392], PR [#396]); `tycoon init` creates a new dbt
-  project inline rather than as a sibling repo ([#259], PR [#260]); local
-  secret files stay out of commits ([#410], PR [#411]); the Jira sync
-  workflow and `PTC-` title scopes go away ([#351], PR [#463]).
-- Docs. This page ([#219], PR [#218]) and maintainer process pages for CI/CD,
-  QA and metrics ([#220], PR [#217]).
+- Rewrite foundation. No pull requests yet for the remaining config singleton
+  uses ([#175], [#176], [#189]) or the source catalog's JSON manifest and
+  loader ([#98], [#100], design in [#197]).
+- Layer-aware data CLI ([#306]). PRs [#288] and [#289] are open; four of the
+  commands don't yet do what their docs say ([#302]).
+- MotherDuck ([#429]). Merged: raw ingestion builds a MotherDuck dlt
+  destination and skips the post-load steps that need a local raw file
+  ([#447], [#448], PRs [#477], [#478], part of [#430]), with a `motherduck`
+  extra for pyarrow ([#459], PR [#485]). The city renderer and `data sync`
+  accept `motherduck:` ([#446], PR [#479]), OSI scaffolding reads a MotherDuck
+  warehouse ([#298], PR [#450]), and an `md:` target with no token fails
+  instead of opening a browser ([#460], PRs [#481], [#482]). Still open:
+  [#430] itself, the token-gated e2e job ([#437], whose workflow merged in
+  the v0.2.4 cycle in PR [#449]), `data sync` and `tycoon city` printing a
+  token that is in the connection string ([#510]), and Phase 1, the
+  Destination protocol and a MotherDuck destination ([#110], [#118]), which
+  has no pull request yet.
+- Data integrity. Merged: `duckdb` is pinned to 1.5.4, which fixes
+  QUALIFY-over-cast models ([#339], PR [#484]); dlt trace capture follows the
+  pipeline's working directory and projects get their own pipeline
+  directories ([#394], PRs [#398], [#399]); an invalid `tycoon.yml` no longer
+  crashes the CLI ([#378], PR [#467]). Still open: running each project's
+  pipelines in its own working directory (PR [#400]), and a Google Sheets
+  source that forces a browser sign-in, so headless runs fail ([#349]).
+- dbt and time. Open, with no pull requests yet: `data transform freshness`
+  ([#340]), a looser `dbt-core` pin ([#347]), and consistent local time in
+  status, history and the city ([#322], [#327]).
+- The city. Merged: the legend hides while the detail panel is open ([#382],
+  PR [#401]), long names wrap ([#383], PR [#402]), HUD panels stay inside the
+  window ([#384], PR [#403]), views say their rows are not counted ([#388],
+  PR [#404]), and the two object counts are labelled ([#389], PR [#405]).
+  Still open: the opening camera ([#386]), off-map dbt sources in the
+  inspector's upstream list (PR [#409], a follow-up to [#387]), and a mental
+  model of the map in the docs ([#323], PR [#331]).
+- CLI. Merged: `tycoon init` creates a new dbt project inline ([#259], PR
+  [#260]), and the Jira sync workflow and `PTC-` title scopes are gone
+  ([#351], PR [#463]). Still open: output formats for `data query` and
+  filters for `data schema` ([#391], [#393], PR [#395]), `doctor` telling a
+  working `.venv` apart from a broken one ([#392], PR [#396]), local secret
+  files kept out of commits ([#410], PR [#466]), and literal RST backticks in
+  help text ([#443], PR [#512]).
+- CI and release safety. Merged: the publish workflow refuses a tag that
+  isn't on `main` ([#473], PR [#474]), CODEOWNERS covers CI, dependency and
+  release files ([#497], PR [#501]), workflows stop persisting checkout
+  credentials ([#498], PR [#502]), CI installs from lockfiles only ([#499],
+  PR [#506]) and runs workflow and dependency security checks ([#500], PR
+  [#503]), and uv's required version is pinned ([#493], PR [#505]).
+- Docs and dependencies. Merged: the contributing guide says closing keywords
+  don't fire on release-branch merges ([#487], PR [#488]). Still open: this
+  page ([#219], PR [#218]), a section structure for release pages ([#469]),
+  and a migration assessment for DuckDB 2.0 LTS ([#465]).
 
-Also open against the v0.2.4 branch, but not part of this cycle: the
-layer-aware data CLI ([#306], PRs [#288], [#289]), scheduled for v0.2.5
-below, and the DuckLake storage proposal (PR [#74]), which has no milestone.
-
-## Next: v0.2.5 to v0.3.1
+## Next: v0.3.0 and v0.3.1
 
 Two-week cycles, each with a GitHub milestone.
 
-- v0.2.5, to 2026-11-20: the rewrite foundation. The remaining config
-  singleton uses move to the project model ([#175], [#176], [#189]); the
-  source catalog gets its JSON manifest and loader ([#98], [#100], design in
-  [#197]); the layer-aware data CLI lands ([#306], PRs [#288], [#289]).
-  MotherDuck Phase 0 finishes: raw ingestion lands in a MotherDuck raw
-  database ([#430], [#447], [#448], PRs [#455], [#456]) with a `motherduck`
-  extra for pyarrow ([#459]), the city accepts `motherduck:` ([#446], PR
-  [#457]), OSI scaffolding reads a MotherDuck warehouse ([#298], PR [#450]),
-  and a token-gated e2e job runs on demand ([#437], PR [#449]). Phase 1 adds
-  the Destination protocol and a MotherDuck destination ([#110], [#118]). Alongside: `data transform freshness`
-  ([#340]), a looser `dbt-core` pin ([#347]), consistent local time in
-  status and history ([#322], [#327]), and an `md:` target with no token
-  failing instead of opening a browser ([#460]).
 - v0.3.0, to 2026-12-04: one run path for dlt users. The Runtime protocol
   and `DltManagedRuntime` replace `runner.py` ([#85]: [#109], [#111],
   [#112], [#113], [#115], [#116]). MotherDuck Phase 2 puts run history in
@@ -136,7 +140,8 @@ Tracked, not scheduled to a milestone.
 - DuckLake. A DuckLake destination ([#122]), native layered storage with a
   SQLite catalog ([#73], proposal in PR [#74]), DuckLake health checks in
   `doctor` ([#144]), and dlt load history for DuckLake targets ([#344]).
-  `ducklake_config.py` still only writes Parquet ([#72]).
+  `ducklake_config.py`, which only wrote Parquet and had no callers, is
+  deleted in v0.2.5 ([#72]).
 - Object storage as a destination ([#124]) and a local-to-cloud push, since
   `data sync` is one-way today ([#77]).
 - Alternative ingestion modes ([#88]): a Fivetran runtime and sources panel,
@@ -174,6 +179,14 @@ Reviewed at retros; not scheduled, not promised.
 
 The last three releases, with their release notes.
 
+- [v0.2.4](releases/v0.2.4.md), 2026-11-07: safer MotherDuck queries and
+  reliable dbt run history. `data query` refuses writes on MotherDuck unless
+  you pass `--allow-writes` ([#309]), `data schema` estimates MotherDuck row
+  counts ([#310]), and tycoon recognises both `md:` and `motherduck:` ([#308]).
+  Run history stops marking no-op builds failed, records failed runs and
+  `run-all` builds, and `data status` finds each layer's last build ([#341],
+  [#377], [#326], [#390]). City labels stop overlapping ([#385]), and staging
+  models name the dbt sources that live outside the warehouse ([#387]).
 - [v0.2.3](releases/v0.2.3.md), 2026-10-24: the documentation site publishes
   to GitHub Pages, with internal pages withheld by a check that fails the
   build ([#348], PR [#415]). The city renderer is tested and gated in CI
@@ -187,12 +200,6 @@ The last three releases, with their release notes.
   `--fail-on-empty` stops a zero-row run ([#240]). `data query`, `data
   schema` and `data clean` work against an `md:` warehouse ([#70]). Saving
   `tycoon.yml` keeps your comments ([#177]).
-- [v0.2.1](releases/v0.2.1.md), 2026-09-16: a filesystem source can declare
-  several named resources and load them in one run ([#224], [#225]), JSONL
-  joins CSV and Parquet ([#228]), and config that used to be quietly
-  defaulted is validated instead, the one breaking change ([#223]). `tycoon
-  city` lays the city out by pipeline depth (PR [#247]). Pull requests get
-  size and title checks ([#211], [#213]) and a writing-style skill ([#215]).
 
 [#14]: https://github.com/Database-Tycoon/tycoon-cli/issues/14
 [#43]: https://github.com/Database-Tycoon/tycoon-cli/issues/43
@@ -245,20 +252,10 @@ The last three releases, with their release notes.
 [#197]: https://github.com/Database-Tycoon/tycoon-cli/issues/197
 [#202]: https://github.com/Database-Tycoon/tycoon-cli/issues/202
 [#203]: https://github.com/Database-Tycoon/tycoon-cli/issues/203
-[#211]: https://github.com/Database-Tycoon/tycoon-cli/issues/211
-[#213]: https://github.com/Database-Tycoon/tycoon-cli/issues/213
-[#215]: https://github.com/Database-Tycoon/tycoon-cli/issues/215
-[#217]: https://github.com/Database-Tycoon/tycoon-cli/pull/217
 [#218]: https://github.com/Database-Tycoon/tycoon-cli/pull/218
 [#219]: https://github.com/Database-Tycoon/tycoon-cli/issues/219
-[#220]: https://github.com/Database-Tycoon/tycoon-cli/issues/220
 [#221]: https://github.com/Database-Tycoon/tycoon-cli/issues/221
-[#223]: https://github.com/Database-Tycoon/tycoon-cli/issues/223
-[#224]: https://github.com/Database-Tycoon/tycoon-cli/issues/224
-[#225]: https://github.com/Database-Tycoon/tycoon-cli/issues/225
-[#228]: https://github.com/Database-Tycoon/tycoon-cli/issues/228
 [#240]: https://github.com/Database-Tycoon/tycoon-cli/issues/240
-[#247]: https://github.com/Database-Tycoon/tycoon-cli/pull/247
 [#248]: https://github.com/Database-Tycoon/tycoon-cli/pull/248
 [#249]: https://github.com/Database-Tycoon/tycoon-cli/pull/249
 [#250]: https://github.com/Database-Tycoon/tycoon-cli/pull/250
@@ -274,6 +271,7 @@ The last three releases, with their release notes.
 [#289]: https://github.com/Database-Tycoon/tycoon-cli/pull/289
 [#291]: https://github.com/Database-Tycoon/tycoon-cli/issues/291
 [#298]: https://github.com/Database-Tycoon/tycoon-cli/issues/298
+[#302]: https://github.com/Database-Tycoon/tycoon-cli/issues/302
 [#306]: https://github.com/Database-Tycoon/tycoon-cli/issues/306
 [#307]: https://github.com/Database-Tycoon/tycoon-cli/issues/307
 [#308]: https://github.com/Database-Tycoon/tycoon-cli/issues/308
@@ -292,6 +290,7 @@ The last three releases, with their release notes.
 [#344]: https://github.com/Database-Tycoon/tycoon-cli/issues/344
 [#347]: https://github.com/Database-Tycoon/tycoon-cli/issues/347
 [#348]: https://github.com/Database-Tycoon/tycoon-cli/issues/348
+[#349]: https://github.com/Database-Tycoon/tycoon-cli/issues/349
 [#350]: https://github.com/Database-Tycoon/tycoon-cli/issues/350
 [#351]: https://github.com/Database-Tycoon/tycoon-cli/issues/351
 [#377]: https://github.com/Database-Tycoon/tycoon-cli/issues/377
@@ -311,14 +310,16 @@ The last three releases, with their release notes.
 [#394]: https://github.com/Database-Tycoon/tycoon-cli/issues/394
 [#395]: https://github.com/Database-Tycoon/tycoon-cli/pull/395
 [#396]: https://github.com/Database-Tycoon/tycoon-cli/pull/396
-[#397]: https://github.com/Database-Tycoon/tycoon-cli/pull/397
 [#398]: https://github.com/Database-Tycoon/tycoon-cli/pull/398
 [#399]: https://github.com/Database-Tycoon/tycoon-cli/pull/399
 [#400]: https://github.com/Database-Tycoon/tycoon-cli/pull/400
 [#401]: https://github.com/Database-Tycoon/tycoon-cli/pull/401
+[#402]: https://github.com/Database-Tycoon/tycoon-cli/pull/402
+[#403]: https://github.com/Database-Tycoon/tycoon-cli/pull/403
+[#404]: https://github.com/Database-Tycoon/tycoon-cli/pull/404
+[#405]: https://github.com/Database-Tycoon/tycoon-cli/pull/405
 [#409]: https://github.com/Database-Tycoon/tycoon-cli/pull/409
 [#410]: https://github.com/Database-Tycoon/tycoon-cli/issues/410
-[#411]: https://github.com/Database-Tycoon/tycoon-cli/pull/411
 [#412]: https://github.com/Database-Tycoon/tycoon-cli/issues/412
 [#413]: https://github.com/Database-Tycoon/tycoon-cli/issues/413
 [#414]: https://github.com/Database-Tycoon/tycoon-cli/issues/414
@@ -332,20 +333,39 @@ The last three releases, with their release notes.
 [#431]: https://github.com/Database-Tycoon/tycoon-cli/issues/431
 [#434]: https://github.com/Database-Tycoon/tycoon-cli/issues/434
 [#437]: https://github.com/Database-Tycoon/tycoon-cli/issues/437
-[#439]: https://github.com/Database-Tycoon/tycoon-cli/issues/439
+[#443]: https://github.com/Database-Tycoon/tycoon-cli/issues/443
 [#446]: https://github.com/Database-Tycoon/tycoon-cli/issues/446
 [#447]: https://github.com/Database-Tycoon/tycoon-cli/issues/447
 [#448]: https://github.com/Database-Tycoon/tycoon-cli/issues/448
 [#449]: https://github.com/Database-Tycoon/tycoon-cli/pull/449
 [#450]: https://github.com/Database-Tycoon/tycoon-cli/pull/450
-[#451]: https://github.com/Database-Tycoon/tycoon-cli/pull/451
-[#452]: https://github.com/Database-Tycoon/tycoon-cli/pull/452
-[#454]: https://github.com/Database-Tycoon/tycoon-cli/pull/454
-[#455]: https://github.com/Database-Tycoon/tycoon-cli/pull/455
-[#456]: https://github.com/Database-Tycoon/tycoon-cli/pull/456
-[#457]: https://github.com/Database-Tycoon/tycoon-cli/pull/457
 [#459]: https://github.com/Database-Tycoon/tycoon-cli/issues/459
 [#460]: https://github.com/Database-Tycoon/tycoon-cli/issues/460
-[#461]: https://github.com/Database-Tycoon/tycoon-cli/pull/461
-[#462]: https://github.com/Database-Tycoon/tycoon-cli/pull/462
 [#463]: https://github.com/Database-Tycoon/tycoon-cli/pull/463
+[#465]: https://github.com/Database-Tycoon/tycoon-cli/issues/465
+[#466]: https://github.com/Database-Tycoon/tycoon-cli/pull/466
+[#467]: https://github.com/Database-Tycoon/tycoon-cli/pull/467
+[#469]: https://github.com/Database-Tycoon/tycoon-cli/issues/469
+[#473]: https://github.com/Database-Tycoon/tycoon-cli/issues/473
+[#474]: https://github.com/Database-Tycoon/tycoon-cli/pull/474
+[#477]: https://github.com/Database-Tycoon/tycoon-cli/pull/477
+[#478]: https://github.com/Database-Tycoon/tycoon-cli/pull/478
+[#479]: https://github.com/Database-Tycoon/tycoon-cli/pull/479
+[#481]: https://github.com/Database-Tycoon/tycoon-cli/pull/481
+[#482]: https://github.com/Database-Tycoon/tycoon-cli/pull/482
+[#484]: https://github.com/Database-Tycoon/tycoon-cli/pull/484
+[#485]: https://github.com/Database-Tycoon/tycoon-cli/pull/485
+[#487]: https://github.com/Database-Tycoon/tycoon-cli/issues/487
+[#488]: https://github.com/Database-Tycoon/tycoon-cli/pull/488
+[#493]: https://github.com/Database-Tycoon/tycoon-cli/issues/493
+[#497]: https://github.com/Database-Tycoon/tycoon-cli/issues/497
+[#498]: https://github.com/Database-Tycoon/tycoon-cli/issues/498
+[#499]: https://github.com/Database-Tycoon/tycoon-cli/issues/499
+[#500]: https://github.com/Database-Tycoon/tycoon-cli/issues/500
+[#501]: https://github.com/Database-Tycoon/tycoon-cli/pull/501
+[#502]: https://github.com/Database-Tycoon/tycoon-cli/pull/502
+[#503]: https://github.com/Database-Tycoon/tycoon-cli/pull/503
+[#505]: https://github.com/Database-Tycoon/tycoon-cli/pull/505
+[#506]: https://github.com/Database-Tycoon/tycoon-cli/pull/506
+[#510]: https://github.com/Database-Tycoon/tycoon-cli/issues/510
+[#512]: https://github.com/Database-Tycoon/tycoon-cli/pull/512
