@@ -4,7 +4,13 @@
  * so lineage can be walked without leaving the panel.
  */
 
-import type { CityDocument, JoinRecord, LineageEntry, SemanticRecord } from "../contract";
+import type {
+  CityDocument,
+  ExternalSourceRecord,
+  JoinRecord,
+  LineageEntry,
+  SemanticRecord,
+} from "../contract";
 import { hasSemanticModel, joinsOf, lineageOf, milestoneOf, PROVENANCE_LABEL } from "../contract";
 import { graphSvg } from "./graph";
 import { PLANT_KEY } from "../scene/plant";
@@ -147,11 +153,11 @@ export class Inspector {
     ].join("");
     return `
       <button class="close" title="close">×</button>
-      <h2>${escapeHtml(obj.name)}</h2>
+      <h2>${breakable(obj.name)}</h2>
       <dl>
         <dt>${escapeHtml(labels.schema ?? "schema")}</dt><dd>${escapeHtml(obj.schema)}</dd>
         <dt>kind</dt><dd>${obj.kind}</dd>
-        <dt>${escapeHtml(labels.rows ?? "rows")}</dt><dd>${obj.row_count.toLocaleString()}</dd>
+        <dt>${escapeHtml(labels.rows ?? "rows")}</dt><dd>${obj.kind === "view" ? "not counted (view)" : obj.row_count.toLocaleString()}</dd>
         <dt>density</dt><dd>${lot.target_density} / 8</dd>
         <dt>powered</dt><dd>${lot.powered ? "yes" : "no — takes no part in lineage"}</dd>
         ${dbt?.materialized ? `<dt>materialized</dt><dd>${escapeHtml(dbt.materialized)}</dd>` : ""}
@@ -165,7 +171,7 @@ export class Inspector {
       ${graphSvg(this.doc, key)}
       ${this.columnsHtml(obj.columns)}
       ${this.testsHtml(dbt?.tests ?? [])}
-      ${this.lineageHtml("upstream", upstream)}
+      ${this.lineageHtml("upstream", upstream, dbt?.external_upstream ?? [])}
       ${this.lineageHtml("downstream", downstream)}
       ${this.joinsHtml(key)}
     `;
@@ -306,7 +312,7 @@ export class Inspector {
         const doc = c.description
           ? `<div class="col-doc">${escapeHtml(c.description)}</div>`
           : "";
-        return `<li>${verdict}<b>${escapeHtml(c.name)}</b> <span class="prov">${escapeHtml(c.type.toLowerCase())}</span>${doc}</li>`;
+        return `<li>${verdict}<b>${breakable(c.name)}</b> <span class="prov">${escapeHtml(c.type.toLowerCase())}</span>${doc}</li>`;
       })
       .join("");
     return `<h3>columns (${columns.length})</h3><ul class="cols">${rows}</ul>`;
@@ -327,7 +333,7 @@ export class Inspector {
     const items = tests
       .map(
         (t) =>
-          `<li>${dot(t.status)} ${escapeHtml(t.name)}` +
+          `<li>${dot(t.status)} <span class="ident">${breakable(t.name)}</span>` +
           `${t.column ? `<span class="prov">on ${escapeHtml(t.column)}</span>` : ""}` +
           `${t.status === null ? `<span class="prov">never run</span>` : ""}</li>`,
       )
@@ -335,17 +341,29 @@ export class Inspector {
     return `<h3>dbt tests</h3><ul class="tests">${items}</ul>`;
   }
 
-  private lineageHtml(title: string, entries: LineageEntry[]): string {
-    const items = entries.length
-      ? entries
-          .map(
-            (e) =>
-              `<li data-key="${escapeHtml(e.key)}">${escapeHtml(e.key)}` +
-              `<span class="prov">${PROVENANCE_LABEL[e.provenance]}</span></li>`,
-          )
-          .join("")
-      : "<li class='none'>none</li>";
-    return `<h3>${title}</h3><ul>${items}</ul>`;
+  /**
+   * Edges first, then the dbt sources this model reads that are not on the
+   * map. Those have no building to fly to, so they carry no `data-key`, and
+   * they say they are unmeasured: "none" must only ever mean no inputs.
+   */
+  private lineageHtml(
+    title: string,
+    entries: LineageEntry[],
+    external: readonly ExternalSourceRecord[] = [],
+  ): string {
+    const onMap = entries.map(
+      (e) =>
+        `<li data-key="${escapeHtml(e.key)}">${breakable(e.key)}` +
+        `<span class="prov">${PROVENANCE_LABEL[e.provenance]}</span></li>`,
+    );
+    const offMap = external.map(
+      (s) =>
+        `<li class="external" title="${escapeHtml(s.relation)}">${breakable(s.name)}` +
+        `<span class="prov">dbt source · outside this warehouse, not measured` +
+        `${s.freshness_status !== null ? ` · freshness ${escapeHtml(s.freshness_status)}` : ""}</span></li>`,
+    );
+    const items = [...onMap, ...offMap];
+    return `<h3>${title}</h3><ul>${items.length ? items.join("") : "<li class='none'>none</li>"}</ul>`;
   }
 
   private plantHtml(): string {
@@ -368,6 +386,13 @@ export class Inspector {
 
 function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/** dbt identifiers are one long word to the browser, which either clips them
+ * or splits them mid-word. A break opportunity after each run of underscores
+ * or dot lets `stg_x__station_information` wrap between its parts instead. */
+function breakable(text: string): string {
+  return escapeHtml(text).replace(/(_+|\.)/g, "$1<wbr>");
 }
 
 /** 5400 -> "1h", 259200 -> "3d". Coarse on purpose; exact ages are noise. */

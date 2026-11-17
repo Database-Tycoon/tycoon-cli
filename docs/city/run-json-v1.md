@@ -78,7 +78,7 @@ from either without a second fetch.
 | `models_error` / `tests_failed` | integer | dbt's own counts, for the whole run |
 | `elapsed_s` | number | Wall-clock seconds for the run |
 | `step_count` | integer | Nodes that land on a building in THIS city |
-| `unmapped_count` | integer | Nodes that ran without one (tests, seeds, models this catalog has not got) |
+| `unmapped_count` | integer | Nodes not matched to a building. Only models are matched, so tests, seeds and snapshots always count here, as do models this catalog has not got |
 | `failed_count` | integer | Failing steps **with a building** — what the replay can set on fire. It differs from `models_error` whenever the run touched models that are not on this map, and that difference is information, not a bug |
 
 ### The window

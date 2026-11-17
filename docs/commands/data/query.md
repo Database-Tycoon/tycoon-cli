@@ -8,7 +8,7 @@ Three lightweight commands for inspecting and tearing down the warehouse without
 tycoon data query "SELECT * FROM stg_widgets LIMIT 10"
 ```
 
-Runs a SQL query against the warehouse and prints the result as a Rich table.
+Runs a SQL query against the warehouse and prints the result as a Rich table, or as CSV, JSON or Markdown with `--format`.
 
 ### Synopsis
 
@@ -23,6 +23,7 @@ Options:
   --allow-writes    On MotherDuck, run statements other than read-only queries
   --source NAME     Query a source's raw schema (resolves to data/raw_<name>.duckdb
                     or main raw.duckdb's raw_<name> schema)
+  -f, --format      table (default), csv, json or markdown
   -h, --help        Show this message and exit
 ```
 
@@ -41,7 +42,28 @@ tycoon data query --db .tycoon/metadata.duckdb \
 
 # Query a synced snapshot
 tycoon data query --db ./snap.duckdb "SHOW ALL TABLES"
+
+# Rows only, for a script or notebook
+tycoon data query --format csv "SELECT * FROM mart.fct_orders" > orders.csv
+tycoon data query --format json "SELECT * FROM mart.fct_orders LIMIT 5" | jq '.[0]'
 ```
+
+### Output formats
+
+`--format` (or `-f`) picks how the rows come back:
+
+| Format | Output |
+|---|---|
+| `table` | The default. A Rich table with a title and a `N row(s) returned` line. |
+| `csv` | A header line, then one line per row. NULL is an empty field. `LIST`, `STRUCT` and `MAP` values use Python's text form, such as `[1, 2]` and `{'a': 1}`. |
+| `json` | A JSON array with one object per row, keyed by column name. When two columns share a name, as in `SELECT a.id, b.id`, the second key becomes `id_1`. NULL is `null`, `DECIMAL` values are numbers, `LIST`, `STRUCT` and `MAP` come out as nested JSON, and dates, timestamps and other types are strings. A `DOUBLE` that is NaN or infinite is `null`, since strict JSON parsers such as `JSON.parse` reject the bare `NaN` Python would otherwise write. |
+| `markdown` | A GitHub-flavored Markdown table, ready to paste into an issue or a doc. Nested values use the same text form as `csv`. |
+
+In all three, a `BLOB` is its hex digits (`dead` for the bytes `DE AD`) and an `INTERVAL` is an ISO 8601 duration such as `P1DT2H30M`.
+
+`csv`, `json` and `markdown` print the rows and nothing else, so the output can go straight into a file or another tool. Errors still go to stderr. The format name is not case-sensitive.
+
+In `table` format, a result too wide for the terminal (one where some column couldn't show its full name) prints one block per row instead, with each column name beside its value, like `psql`'s expanded display. A result that fits keeps the usual column layout. An empty result that is too wide lists the column names one per line, so you can still see what the query would have returned.
 
 ### Live warehouse via Quack (v0.1.9)
 
@@ -64,10 +86,15 @@ When a [Quack](../start.md#quack-the-live-multi-client-warehouse-v019) server is
 ## `schema` — dump tables, row counts, sizes
 
 ```bash
-tycoon data schema
+tycoon data schema                          # raw database, warehouse, other data/*.duckdb files
+tycoon data schema --warehouse              # the warehouse only
+tycoon data schema --schema main_marts      # one schema
+tycoon data schema --raw --schema 'raw_*'   # schemas matching a glob, in the raw database
+tycoon data schema --include-dlt            # also list dlt's _dlt_* tables
+tycoon data schema --exact                  # exact counts on a MotherDuck database
 ```
 
-Lists every table in the raw and warehouse databases, plus any other `.duckdb` file in the data directory, with row counts and DuckDB file size. Useful for "what's in this DB?" / "which tables have rows?" without writing SQL.
+Lists the tables in the raw database and the warehouse, with row counts and each DuckDB file's size. Any other `.duckdb` file in `data/` is listed too. Useful for "what's in this DB?" and "which tables have rows?" without writing SQL.
 
 On a MotherDuck database (`database.warehouse: md:<name>`), row counts are estimates read from the catalog, printed as `~1,000 rows (estimate)`, because an exact `count(*)` per table is slow and spends compute. A view has no estimate and prints `view (use --exact to count)`; a table whose catalog reports no estimate prints `no estimate (use --exact to count)`. Pass `--exact` to count every table and view. Local DuckDB files always show exact counts.
 
@@ -79,9 +106,21 @@ On a MotherDuck database (`database.warehouse: md:<name>`), row counts are estim
 tycoon data schema [OPTIONS]
 
 Options:
-  --exact     Count rows exactly on a MotherDuck database instead of estimating
-  -h, --help  Show this message and exit
+  --schema TEXT    Only show schemas matching this name or glob
+  --raw            Only show the raw database
+  --warehouse      Only show the warehouse
+  --include-dlt    Also show dlt's _dlt_* bookkeeping tables
+  --exact          Count rows exactly on a MotherDuck database instead of estimating
+  -h, --help       Show this message and exit
 ```
+
+### Narrowing the output
+
+- `--raw` and `--warehouse` each pick one database, the same split as `data query --raw`. Passing either one leaves out the other `data/*.duckdb` files. Pass both to see the raw database and the warehouse without those extra files.
+- `--schema` takes a schema name or a shell-style glob (`*`, `?`, `[...]`). Matching ignores case. Quote a glob so your shell doesn't expand it. If nothing matches, the command says so.
+- dlt keeps bookkeeping tables such as `_dlt_loads` and `_dlt_version` in every dataset it loads. They're left out by default, and the `Tables` line says how many were hidden. `--include-dlt` lists them.
+
+On a MotherDuck database, `--exact` runs one `count(*)` query per listed table, and tables left out by these options aren't counted, so a narrow `--schema` keeps `--exact` cheap. With `--raw` or `--warehouse`, only the database shown needs a MotherDuck token.
 
 ## `clean` — remove warehouse files
 

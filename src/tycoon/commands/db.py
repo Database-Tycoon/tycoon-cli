@@ -7,12 +7,13 @@ from typing import Annotated
 
 import duckdb
 import typer
-from rich.table import Table
 
+from tycoon.commands.schema_listing import SchemaRow, _local_schema_rows, _motherduck_schema_rows
 from tycoon.config import config, display_target, redact_secrets
 from tycoon.motherduck import require_motherduck_token
 from tycoon.utils.console import console, error, header, info, status_table, success, warn
-from tycoon.utils.duckdb_utils import db_file_size_mb, get_row_count, get_tables, quote_identifier
+from tycoon.utils.duckdb_utils import db_file_size_mb
+from tycoon.utils.query_output import OutputFormat, emit_rows, print_table
 from tycoon.utils.sql_guard import refused_statement
 
 
@@ -72,6 +73,25 @@ def _has_schema(db_path: Path, schema_name: str) -> bool:
 
 
 def schema(
+    schema_pattern: Annotated[
+        str | None,
+        typer.Option(
+            "--schema",
+            help="Only show schemas matching this name or glob (e.g. main_marts or 'raw_*').",
+        ),
+    ] = None,
+    raw: Annotated[
+        bool,
+        typer.Option("--raw", help="Only show the raw database."),
+    ] = False,
+    warehouse: Annotated[
+        bool,
+        typer.Option("--warehouse", help="Only show the warehouse."),
+    ] = False,
+    include_dlt: Annotated[
+        bool,
+        typer.Option("--include-dlt", help="Also show dlt's _dlt_* bookkeeping tables."),
+    ] = False,
     exact: Annotated[
         bool,
         typer.Option(
@@ -85,109 +105,52 @@ def schema(
 ) -> None:
     """Show database tables, row counts, and file sizes.
 
-    On a MotherDuck database, row counts are estimates read from the catalog
-    unless --exact is passed; the estimate does not drop after deletes. Local
-    DuckDB files always show exact counts.
+    With neither --raw nor --warehouse, shows both plus any other
+    data/*.duckdb file. On a MotherDuck database, row counts are estimates
+    read from the catalog unless --exact is passed; the estimate does not
+    drop after deletes. Local DuckDB files always show exact counts.
     """
-    for target in (config.raw_target, config.warehouse_target):
+    raw_db = None if config.raw_is_motherduck else config.raw_db
+    local_db = config.local_db
+    every_database = not (raw or warehouse)
+
+    databases = []
+    if raw or every_database:
+        databases.append((raw_db, "Raw", config.raw_target))
+    if warehouse or every_database:
+        databases.append((local_db, "Warehouse", config.warehouse_target))
+
+    for _db_path, _label, target in databases:
         require_motherduck_token(target)
 
     header("Database Schema")
 
-    rows: list[tuple[str, str, str]] = []
-    raw_db = None if config.raw_is_motherduck else config.raw_db
-    local_db = config.local_db
-
-    for db_path, label, target in [
-        (raw_db, "Raw", config.raw_target),
-        (local_db, "Warehouse", config.warehouse_target),
-    ]:
+    rows: list[SchemaRow] = []
+    shown = 0
+    for db_path, label, target in databases:
         if db_path is None:
-            rows.extend(_motherduck_schema_rows(target, label, exact))
-            continue
-        size = db_file_size_mb(db_path)
-        if size is not None:
-            rows.append((f"{label} database", "OK", f"{size:.1f} MB"))
-            tables = get_tables(db_path)
-            rows.append(("  Tables", "", f"{len(tables)}"))
-            for s, table in tables:
-                count = get_row_count(db_path, s, table)
-                rows.append(
-                    (
-                        f"  {s}.{table}",
-                        "",
-                        f"{count:,} rows" if count is not None else "empty",
-                    )
-                )
+            md_rows, count = _motherduck_schema_rows(target, label, schema_pattern, include_dlt, exact)
         else:
-            rows.append((f"{label} database", "WARN", "not found"))
+            md_rows, count = _local_schema_rows(db_path, f"{label} database", schema_pattern, include_dlt)
+        rows.extend(md_rows)
+        shown += count
 
-    # Also scan for any other .duckdb files in the data directory
     data_dir = config.data_dir
     seen = {p.resolve() for p in (raw_db, local_db) if p is not None}
-    if data_dir.exists():
+    if every_database and data_dir.exists():
         for db_file in sorted(data_dir.glob("*.duckdb")):
             if db_file.resolve() in seen:
                 continue
             seen.add(db_file.resolve())
-            size = db_file_size_mb(db_file)
-            if size is not None:
-                rows.append((db_file.name, "OK", f"{size:.1f} MB"))
-                tables = get_tables(db_file)
-                rows.append(("  Tables", "", f"{len(tables)}"))
-                for s, table in tables:
-                    count = get_row_count(db_file, s, table)
-                    rows.append(
-                        (
-                            f"  {s}.{table}",
-                            "",
-                            f"{count:,} rows" if count is not None else "empty",
-                        )
-                    )
+            if db_file_size_mb(db_file) is None:
+                continue
+            file_rows, count = _local_schema_rows(db_file, db_file.name, schema_pattern, include_dlt)
+            rows.extend(file_rows)
+            shown += count
 
     console.print(status_table(rows, title="Database Schema"))
-
-
-def _motherduck_schema_rows(target: str, label: str, exact: bool = False) -> list[tuple[str, str, str]]:
-    """Schema rows for a MotherDuck database, read over one connection."""
-    try:
-        con = duckdb.connect(target)
-        try:
-            # An md: connection attaches every database on the account, so
-            # scope the listing to the one the target names. duckdb_tables()
-            # has no row for a view, and an attached catalog may report no
-            # estimate for a table, so the estimate can be NULL for either.
-            tables = con.execute(
-                "SELECT t.table_schema, t.table_name, t.table_type, d.estimated_size "
-                "FROM information_schema.tables t "
-                "LEFT JOIN duckdb_tables() d ON d.database_name = t.table_catalog "
-                "AND d.schema_name = t.table_schema AND d.table_name = t.table_name "
-                "WHERE t.table_catalog = current_database() "
-                "AND t.table_schema NOT IN ('information_schema', 'pg_catalog') "
-                "ORDER BY t.table_schema, t.table_name"
-            ).fetchall()
-            rows = [
-                (f"{label} database", "OK", f"MotherDuck {display_target(target)}"),
-                ("  Tables", "", f"{len(tables)}"),
-            ]
-            for s, table, table_type, estimate in tables:
-                if exact:
-                    count = con.execute(
-                        f"SELECT count(*) FROM {quote_identifier(s)}.{quote_identifier(table)}"
-                    ).fetchone()
-                    detail = f"{count[0]:,} rows" if count else "empty"
-                elif table_type == "VIEW":
-                    detail = "view (use --exact to count)"
-                elif estimate is None:
-                    detail = "no estimate (use --exact to count)"
-                else:
-                    detail = f"~{estimate:,} {'row' if estimate == 1 else 'rows'} (estimate)"
-                rows.append((f"  {s}.{table}", "", detail))
-        finally:
-            con.close()
-    except duckdb.Error as exc:
-        return [(f"{label} database", "WARN", f"MotherDuck {display_target(target)}: {redact_secrets(str(exc))}")]
-    return rows
+    if schema_pattern is not None and shown == 0:
+        warn(f"No tables in a schema matching '{schema_pattern}'.")
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +172,15 @@ def query(
         Path | None,
         typer.Option("--db", help="Path to a DuckDB file to query directly."),
     ] = None,
+    output_format: Annotated[
+        OutputFormat,
+        typer.Option(
+            "--format",
+            "-f",
+            case_sensitive=False,
+            help="Output format. csv, json and markdown print only the rows, for scripts and notebooks.",
+        ),
+    ] = OutputFormat.table,
     allow_writes: Annotated[
         bool,
         typer.Option(
@@ -229,7 +201,9 @@ def query(
     unless --allow-writes is passed; with it, the statement runs with the
     permissions of your MotherDuck token. The check reads statement types
     only: function calls inside a SELECT are not inspected, so it is a guard
-    against accidents and not a permission boundary.
+    against accidents and not a permission boundary. In table format, a
+    result too wide for the terminal prints one block per record instead of
+    squashing columns.
     """
     is_warehouse = False
     db_path: Path | None
@@ -305,15 +279,18 @@ def query(
         error(f"Query failed: {redact_secrets(str(exc))}")
         raise typer.Exit(1) from exc
 
-    # Build Rich table
-    table = Table(title=f"Query Results ({label} db)", show_lines=True)
-    for col in columns:
-        table.add_column(col, style="cyan")
-    for row in rows:
-        table.add_row(*(str(v) for v in row))
+    if output_format is not OutputFormat.table:
+        emit_rows(output_format, columns, rows)
+        return
 
-    console.print(table)
+    by_record = print_table(console, f"Query Results ({label} db)", columns, rows)
     info(f"{len(rows)} row(s) returned")
+    if by_record and rows:
+        info(
+            "[dim]Too wide for the terminal, so each row is its own block. --format csv or json gives flat rows.[/dim]"
+        )
+    elif by_record:
+        info("[dim]Too wide for the terminal, so the columns are listed one per line.[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -351,9 +328,9 @@ def clean(
 ) -> None:
     """Remove database files (with confirmation).
 
-    Run history in ``.tycoon/metadata.duckdb`` is preserved by default (even
-    with ``--all``) so `tycoon data history` and the Rill observability
-    dashboards survive routine data resets. Use ``--metadata`` to explicitly
+    Run history in `.tycoon/metadata.duckdb` is preserved by default (even
+    with `--all`) so `tycoon data history` and the Rill observability
+    dashboards survive routine data resets. Use `--metadata` to explicitly
     wipe it.
     """
     from tycoon.observability import metadata_db_path
