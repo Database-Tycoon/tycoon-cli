@@ -36,7 +36,9 @@ All notable changes to this project will be documented in this file. The format 
 - **`tycoon city`: views no longer show `rows 0`** ([#388][]). A view stores no rows, so the catalog reports 0 for it as a placeholder, and the detail panel, the hover tooltip and the Stats table printed that 0 as if the view were empty. They now say the rows are not counted.
 - **`tycoon city`: the HUD labels its two object counts** ([#389][]). The footer said `90 objects` and the run replay header said `109 nodes off this map`, with nothing to say they count different things. The footer now reads `90 tables and views`, and the run header reads `109 dbt nodes not matched to a building (tests, seeds, snapshots, models outside this catalog)`. Only models are matched to buildings, so a seed or snapshot counts here even when its table has one.
 - **An invalid `tycoon.yml` no longer crashes the CLI at startup** ([#378][]). Help is available at every command level. `--version`, `init`, `city`, `docs` and `run` remain available. `doctor` reports the error and skips dbt and Rill path checks until the file is fixed. Commands such as `setup` and `data query` exit with a validation message.
+- **`--help` no longer shows literal RST double backticks** ([#443][]). Help text comes from command docstrings, and several of them used RST double-backtick markup, which `--help` prints as-is. `tycoon setup`, `tycoon data sources add`, `tycoon data clean`, `tycoon docs`, `tycoon doctor`, `tycoon notify`, `tycoon observability`, `tycoon register` and `tycoon schedule` now use single backticks. A test walks every registered command and fails if a help text, short help, epilog or option help contains a double backtick.
 
+[#443]: https://github.com/Database-Tycoon/tycoon-cli/issues/443
 [#378]: https://github.com/Database-Tycoon/tycoon-cli/issues/378
 [#500]: https://github.com/Database-Tycoon/tycoon-cli/issues/500
 [#493]: https://github.com/Database-Tycoon/tycoon-cli/issues/493
