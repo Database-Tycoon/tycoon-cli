@@ -44,14 +44,14 @@ def setup_cmd(
         help="Skip confirmation prompts. For CI / scripted bootstrap.",
     ),
 ) -> None:
-    """Create a project-local ``.venv`` with a supported Python via uv.
+    """Create a project-local `.venv` with a supported Python via uv.
 
     tycoon runs dbt out of the same interpreter it lives in, so a mismatched
-    Python is the most common first-mile failure. ``setup`` owns the
-    environment: it seeds a ``pyproject.toml`` beside ``tycoon.yml`` (if one
-    doesn't already exist), builds one ``.venv`` on a supported interpreter
-    via ``uv sync``, pins it with ``.python-version``, and installs tycoon +
-    its dbt/dlt/duckdb stack into it, writing ``uv.lock`` for reproducibility.
+    Python is the most common first-mile failure. `setup` owns the
+    environment: it seeds a `pyproject.toml` beside `tycoon.yml` (if one
+    doesn't already exist), builds one `.venv` on a supported interpreter
+    via `uv sync`, pins it with `.python-version`, and installs tycoon +
+    its dbt/dlt/duckdb stack into it, writing `uv.lock` for reproducibility.
     """
     if not config.has_project_file:
         error("No tycoon.yml found. Run [bold]tycoon init[/bold] first.")
