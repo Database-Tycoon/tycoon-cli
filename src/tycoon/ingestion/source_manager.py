@@ -210,6 +210,28 @@ import dlt
 from tycoon.ingestion.destination import raw_destination
 from google_sheets import google_spreadsheet
 
+_KEY_HELP = (
+    "Create a service-account key at "
+    "https://console.cloud.google.com/iam-admin/serviceaccounts (Keys > Add key > JSON), "
+    "then share the spreadsheet with the service account's email."
+)
+
+# The parsed key, or a ValueError naming what is wrong with the file.
+def _service_account_key(key_file: Path) -> dict[str, Any]:
+    if not key_file.is_file():
+        raise ValueError(f"Google Sheets credentials_path {key_file} is not a file. {_KEY_HELP}")
+    try:
+        key = json.loads(key_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Google Sheets credentials_path {key_file} is not a readable JSON key ({exc}).") from exc
+    if not isinstance(key, dict) or key.get("type") != "service_account":
+        kind = "an OAuth client file" if isinstance(key, dict) and ("installed" in key or "web" in key) else "not a service-account key"
+        raise ValueError(
+            f"Google Sheets credentials_path {key_file} is {kind}. "
+            f"tycoon needs a service-account key so runs work without a browser. {_KEY_HELP}"
+        )
+    return key
+
 def run_pipeline(name, source_config, raw_db_path, max_records=None):
     cfg = source_config.config
     spreadsheet = cfg.get("spreadsheet_url_or_id", "")
@@ -217,16 +239,16 @@ def run_pipeline(name, source_config, raw_db_path, max_records=None):
     range_names = [r.strip() for r in raw_ranges.split(",") if r.strip()] or None
 
     # Service-account key: read the JSON and hand dlt the parsed dict, which it
-    # coerces into GcpServiceAccountCredentials. If the path is empty/missing we
-    # pass nothing, letting dlt fall back to its own resolution (env / secrets).
+    # coerces into GcpServiceAccountCredentials. A blank path passes nothing,
+    # letting dlt fall back to its own resolution (env / secrets). A path that
+    # isn't a service-account key stops here: dlt reads an OAuth client file as
+    # GcpOAuthCredentials and opens a browser sign-in, which hangs headless runs.
     kwargs: dict[str, Any] = {"spreadsheet_url_or_id": spreadsheet}
     if range_names:
         kwargs["range_names"] = range_names
     creds_path = cfg.get("credentials_path", "")
     if creds_path:
-        key_file = Path(creds_path).expanduser()
-        if key_file.is_file():
-            kwargs["credentials"] = json.loads(key_file.read_text(encoding="utf-8"))
+        kwargs["credentials"] = _service_account_key(Path(creds_path).expanduser())
 
     source = google_spreadsheet(**kwargs)
     if max_records:
