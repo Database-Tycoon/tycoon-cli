@@ -134,6 +134,28 @@ Arguments:
   NAME                     Source name to drill into
 ```
 
+### [`tycoon data sources explore`](../commands/data/sources.md#explore-inspect-a-source)
+
+```
+tycoon data sources explore [OPTIONS] [source_name]
+
+Options:
+  -n, --sample <int range>  Number of sample rows to show.  [default: 10;
+                            x>=1]
+```
+
+List all sources with metadata, or inspect one source's schema, sample rows,
+and run history.
+
+### [`tycoon data layers`](../commands/data/layers.md)
+
+```
+tycoon data layers
+```
+
+The layered architecture with the vendor of every object, and each dbt
+model's latest status and last successful build.
+
 ### [`tycoon data sources run`](../commands/data/sources.md#run-ingest)
 
 ```
@@ -230,18 +252,21 @@ Arguments:
 Options:
   --db PATH                Override which DuckDB to query (default: warehouse)
   --source NAME            Query a source's raw schema
+  -f, --format FORMAT      table (default), csv, json or markdown
+  --allow-writes           On MotherDuck, run statements other than read-only queries
 ```
 
 ### [`tycoon data schema`](../commands/data/query.md#schema-dump-tables-row-counts-sizes)
 
 ```
-tycoon data schema [SCHEMA] [OPTIONS]
-
-Arguments:
-  [SCHEMA]                 Optional schema filter
+tycoon data schema [OPTIONS]
 
 Options:
-  --db PATH                Override which DuckDB to inspect
+  --schema TEXT            Only show schemas matching this name or glob
+  --raw                    Only show the raw database
+  --warehouse              Only show the warehouse
+  --include-dlt            Also show dlt's _dlt_* bookkeeping tables
+  --exact                  Count rows exactly on MotherDuck instead of estimating
 ```
 
 ### [`tycoon data clean`](../commands/data/query.md#clean-remove-warehouse-files)
@@ -363,6 +388,34 @@ Options:
 ```
 
 The renderer ships with tycoon; there is nothing extra to install.
+
+---
+
+## Fire & Response
+
+### [`tycoon fire`](../commands/fire.md)
+
+```
+tycoon fire [OPTIONS]
+
+Options:
+  -r, --run <str>  Show failing tests in one run. Takes a run id (or prefix)
+                   from tycoon data history or from this command.
+```
+
+Failing tests, each counted by its newest result across captured runs: the
+buildings on fire in the 3D city. Models that failed to build are not fires;
+when there are any, the output says how many and points at `tycoon data
+history`.
+
+### [`tycoon firehouse`](../commands/fire.md#tycoon-firehouse)
+
+```
+tycoon firehouse
+```
+
+Fire trucks on duty, one per failing test, counted the same way as
+`tycoon fire`.
 
 ---
 

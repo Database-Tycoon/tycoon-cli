@@ -940,6 +940,10 @@ class TestGoogleSheetsShim:
         fake_dlt.pipeline = lambda **kw: _FakePipeline()
         fake_dlt.destinations = types.SimpleNamespace(duckdb=lambda path: ("duckdb", path))
 
+        # The shim imports tycoon.ingestion.destination, which needs the real
+        # dlt. Load it before dlt is faked so the class passes run on its own.
+        import tycoon.ingestion.destination  # noqa: F401
+
         monkeypatch.setitem(sys.modules, "google_sheets", fake_gs)
         monkeypatch.setitem(sys.modules, "dlt", fake_dlt)
 
@@ -993,6 +997,43 @@ class TestGoogleSheetsShim:
             config={"spreadsheet_url_or_id": "ABC", "credentials_path": ""},
         )
         assert "credentials" not in captured["kwargs"]
+
+    def test_creds_path_that_is_not_a_file_is_an_error(self, monkeypatch, tmp_path):
+        # gh-349: a wrong path used to pass no credentials, so dlt fell back to
+        # its own lookup and could open a browser sign-in.
+        missing = tmp_path / "nope.json"
+        with pytest.raises(ValueError, match="is not a file"):
+            self._exec_shim(monkeypatch, config={"spreadsheet_url_or_id": "ABC", "credentials_path": str(missing)})
+
+    def test_oauth_client_file_is_refused(self, monkeypatch, tmp_path):
+        # gh-349: dlt reads an OAuth client file as GcpOAuthCredentials and runs
+        # InstalledAppFlow.run_local_server, so a headless run hangs on a browser.
+        key_file = tmp_path / "client_secret.json"
+        key_file.write_text('{"installed": {"client_id": "x", "client_secret": "y"}}')
+        with pytest.raises(ValueError, match="OAuth client file") as info:
+            self._exec_shim(monkeypatch, config={"spreadsheet_url_or_id": "ABC", "credentials_path": str(key_file)})
+        assert "service-account key" in str(info.value)
+
+    @pytest.mark.parametrize("body", ['{"type": "authorized_user"}', "[1, 2]"])
+    def test_json_that_is_not_a_service_account_key_is_refused(self, monkeypatch, tmp_path, body):
+        key_file = tmp_path / "key.json"
+        key_file.write_text(body)
+        with pytest.raises(ValueError, match="not a service-account key"):
+            self._exec_shim(monkeypatch, config={"spreadsheet_url_or_id": "ABC", "credentials_path": str(key_file)})
+
+    def test_unreadable_json_is_refused(self, monkeypatch, tmp_path):
+        key_file = tmp_path / "key.json"
+        key_file.write_text("not json")
+        with pytest.raises(ValueError, match="not a readable JSON key"):
+            self._exec_shim(monkeypatch, config={"spreadsheet_url_or_id": "ABC", "credentials_path": str(key_file)})
+
+    def test_key_errors_reach_the_user_unchanged(self, tmp_path):
+        # The runner reclassifies shim errors by keyword; these messages must
+        # come through as written, not as a generic auth or network error.
+        from tycoon.ingestion.runner import _classify_error
+
+        msg = f"Google Sheets credentials_path {tmp_path}/client_secret.json is an OAuth client file."
+        assert str(_classify_error(ValueError(msg), "google_sheets")) == msg
 
     def test_max_records_applies_limit(self, monkeypatch):
         _captured, source, _ = self._exec_shim(

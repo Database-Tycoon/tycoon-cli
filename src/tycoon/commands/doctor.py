@@ -93,11 +93,27 @@ def _check_project_venv() -> None:
     running_prefix = Path(sys.prefix).resolve()
     if running_prefix == target.resolve():
         success(f"Project environment: using its own .venv at {target}.")
-    elif (target / "bin" / "tycoon").exists():
+    elif (venv_tycoon := _venv_tycoon(target)) is not None:
+        if venv_tycoon.suffix == ".exe":
+            activate = str(target / "Scripts" / "activate")
+        else:
+            activate = f"source {target}/bin/activate"
         warn(
             f"Project environment: {target} exists, but tycoon is running from "
-            f"{running_prefix} instead. Activate it with `source {target}/bin/activate`, "
-            f"or run it directly with `{target}/bin/tycoon`."
+            f"{running_prefix} instead. Activate it with `{activate}`, "
+            f"or run it directly with `{venv_tycoon}`."
+        )
+    elif _venv_runs_python(target):
+        if (config.root / "pyproject.toml").is_file():
+            next_step = "run `uv add database-tycoon` here"
+        else:
+            next_step = f"run `uv pip install --python {target} database-tycoon`"
+        warn(
+            f"Project environment: {target} works but has no tycoon in it, so tycoon runs "
+            f"from {running_prefix}. Built-in sources and dbt keep working this way, but "
+            "catalog sources need tycoon in this .venv: their dependencies install into it "
+            f"while tycoon imports them from its own environment. To fix that, {next_step}. "
+            "tycoon's exact dbt, dlt and duckdb pins then apply to this project's packages."
         )
     else:
         warn(
@@ -107,12 +123,36 @@ def _check_project_venv() -> None:
         )
 
 
+def _venv_tycoon(target: Path) -> Path | None:
+    """The tycoon entry point installed in ``target``, if any.
+
+    Checks the Windows layout (``Scripts/tycoon.exe``) as well as the POSIX
+    one, the same way ``_venv_runs_python`` looks for the interpreter.
+    """
+    for candidate in (target / "bin" / "tycoon", target / "Scripts" / "tycoon.exe"):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _venv_runs_python(target: Path) -> bool:
+    """True if ``target`` is a venv whose interpreter is still there.
+
+    ``exists()`` follows the interpreter symlink, so a venv whose base
+    Python was removed (a uv-managed interpreter that got cleaned up, say)
+    counts as broken.
+    """
+    if not (target / "pyvenv.cfg").is_file():
+        return False
+    return (target / "bin" / "python").exists() or (target / "Scripts" / "python.exe").exists()
+
+
 def _fix_python_env() -> None:
-    """Build a project-local ``.venv`` on a supported interpreter (``--fix``).
+    """Build a project-local `.venv` on a supported interpreter (`--fix`).
 
     The running interpreter can't be swapped under our own feet, so the repair
-    is to create the correct environment beside ``tycoon.yml`` and tell the user
-    to activate it. Delegates to the same core as ``tycoon setup``.
+    is to create the correct environment beside `tycoon.yml` and tell the user
+    to activate it. Delegates to the same core as `tycoon setup`.
     """
     from tycoon.constants import DEFAULT_SETUP_PYTHON
     from tycoon.venv import create_venv, find_uv
@@ -284,6 +324,56 @@ def _check_stack_config() -> None:
             success(f"External dbt project found at {project.dbt_project_dir}.")
         else:
             error(f"External dbt project not found at {project.dbt_project_dir}.")
+
+
+def _check_dlt_state() -> None:
+    """Report where dlt keeps each source's state, and what its next run carries over (gh-394)."""
+    from tycoon.ingestion import pipeline_state as ps
+
+    project = config.project
+    if project is None or project.stack.ingestion != IngestionTool.dlt or not project.stack.ingestion_managed:
+        return
+    if not config.sources:
+        info("dlt state: no sources registered yet.")
+        return
+    project_dir = ps.project_pipelines_dir(config.root)
+    user_dir = ps.user_dlt_data_dir()
+    if user_dir is not None:
+        warn(
+            f"dlt state: DLT_DATA_DIR is set to {user_dir}, so pipelines keep their state there instead of in "
+            f"{project_dir}. Projects that share that directory share incremental state for same-named sources."
+        )
+        return
+    if config.raw_is_motherduck:
+        info("dlt state: skipped, the raw database is on MotherDuck.")
+        return
+
+    CarryOver = ps.CarryOver
+    next_run = {
+        CarryOver.COPY: "copy its state from",
+        CarryOver.COPY_UNVERIFIED: "copy its state, unverified, from",
+        CarryOver.RESTORE_FROM_DESTINATION: "restore its state from the raw database instead of copying",
+        CarryOver.FRESH: "start fresh instead of copying",
+    }
+    shared = ps.shared_pipelines_dir()
+    pending = False
+    for name, source_config in config.sources.items():
+        pipeline_name, dataset_name = ps.pipeline_identity(name, source_config.schema_name)
+        try:
+            plan = ps.plan_carry_over(pipeline_name, dataset_name, config.raw_db, project_dir, shared)
+        except ps.StateCarryOverError as exc:
+            pending = True
+            warn(f"dlt state for '{name}': {exc}")
+            continue
+        if plan.action is CarryOver.NOT_NEEDED:
+            continue
+        pending = True
+        report = warn if plan.action is CarryOver.COPY_UNVERIFIED else info
+        report(
+            f"dlt state for '{name}': the next run will {next_run[plan.action]} {plan.shared_dir}, because {plan.reason}."
+        )
+    if not pending:
+        success(f"dlt state: kept per project in {project_dir}.")
 
 
 def _check_fivetran_credentials(stack) -> None:
@@ -521,6 +611,9 @@ def doctor_cmd(
         if config.has_project_file:
             console.print(Panel("Checking stack configuration...", expand=False))
             _check_stack_config()
+
+            console.print(Panel("Checking dlt state...", expand=False))
+            _check_dlt_state()
 
             console.print(Panel("Checking dbt profile...", expand=False))
             _check_dbt_profile()

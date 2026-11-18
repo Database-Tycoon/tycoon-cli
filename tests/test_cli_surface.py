@@ -147,6 +147,27 @@ class TestHelpSurface:
                 f"substring {needle!r} ({reason}):\n{result.stdout}"
             )
 
+    def test_registered_command_helps_have_no_rst_double_backticks(self):
+        """`--help` prints docstrings as-is, so RST double-backtick markup shows
+        up literally (#443). Check every text `--help` can show."""
+        import typer
+
+        def check(where, field, text):
+            assert not (text and "``" in text), f"{where} {field} contains literal RST double backticks: {text}"
+
+        def walk(cmd, prefix):
+            for field in ("help", "short_help", "epilog"):
+                check(prefix, field, getattr(cmd, field, None))
+            for p in cmd.params:
+                check(f"{prefix} param {p.name}", "help", getattr(p, "help", None))
+            # `commands` is the public attribute of a click group. Reading it
+            # directly avoids building a Context, whose class lives in
+            # typer's private vendored click.
+            for sub_name, sub_cmd in getattr(cmd, "commands", {}).items():
+                walk(sub_cmd, f"{prefix} {sub_name}")
+
+        walk(typer.main.get_command(app), "tycoon")
+
 
 # -- 3. Rich-markup pitfall: extras names must render literally ----------
 #

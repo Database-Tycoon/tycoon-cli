@@ -189,6 +189,8 @@ tycoon data query --db .tycoon/metadata.duckdb \
    FROM dbt_runs ORDER BY started_at DESC LIMIT 10"
 ```
 
+Add `--format csv` or `--format json` to get the rows alone, for a script or a notebook.
+
 The metadata DB is disposable — delete `.tycoon/metadata.duckdb` to reset history.
 
 ## Contributing

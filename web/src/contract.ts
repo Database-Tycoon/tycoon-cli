@@ -91,6 +91,17 @@ const semantic = z.object({
   example_queries: z.array(z.string()).optional().default([]),
 });
 
+/**
+ * A dbt source outside the rendered warehouse (gh-387), named on the model
+ * that reads it. Declared, never measured: there is no building, no row count
+ * and no build history, so the inspector says so rather than inventing one.
+ */
+const externalSource = z.object({
+  name: z.string(), // dbt's source_name.table
+  relation: z.string(), // database.schema.identifier, as the manifest records it
+  freshness_status: z.string().nullable(), // dbt's sources.json verdict
+});
+
 const objectRecord = z.object({
   key: z.string(),
   schema: z.string(),
@@ -121,6 +132,9 @@ const objectRecord = z.object({
           status: z.string().nullable(), // null = declared but never run
         }),
       ),
+      // Declared dbt sources this model reads that are not on the map, so no
+      // edge reaches them. Optional with a [] default: older documents omit it.
+      external_upstream: z.array(externalSource).optional().default([]),
     })
     .nullable(),
   // Measured run appearances (2026-08-06). Optional with a null default for
@@ -387,6 +401,7 @@ export type AchievementsRecord = z.infer<typeof achievements>;
 export type JoinRecord = z.infer<typeof join>;
 export type SemanticRecord = z.infer<typeof semantic>;
 export type ColumnRecord = ObjectRecord["columns"][number];
+export type ExternalSourceRecord = z.infer<typeof externalSource>;
 
 export const requestSchema = z.object({
   request_id: z.string().uuid(),
