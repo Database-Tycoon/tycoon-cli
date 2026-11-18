@@ -57,22 +57,35 @@ is the current list of issues.
 
 ## Next: v0.3.0 and v0.3.1
 
-Each has a GitHub milestone. Until v0.3.0, releases continue on the
-two-week v0.2.x cycle.
+Both are due in the first quarter of 2027; the GitHub milestones carry the
+exact dates. Until v0.3.0, releases continue on the two-week v0.2.x cycle,
+and each one carries one step of the MotherDuck work, in this order:
 
-- v0.3.0, due 2027-02-26: full support for running tycoon on MotherDuck.
-  This is where the MotherDuck work in the v0.2.x releases comes together:
-  raw loads and `motherduck:` targets in v0.2.4 and v0.2.5, the Destination
-  protocol in v0.2.6, and in v0.3.0 itself, run history in MotherDuck
-  ([#120], [#129]), scaffolding for new MotherDuck projects ([#128]) and a
-  recipe for the local-to-MotherDuck path ([#431]). The same release gives
-  dlt users one run path: the Runtime protocol and `DltManagedRuntime`
-  replace `runner.py` ([#85], with [#109], [#111], [#112], [#113], [#115],
-  [#116]), and the legacy run-history capture goes through the metadata
-  backend ([#434]).
-- v0.3.1, due 2027-03-12: bring your own dlt project ([#343], [#75], [#117],
-  [#121]) and the catalog factory that drives `sources add` from the
-  manifest ([#102] through [#108]).
+1. The Destination protocol and a MotherDuck destination ([#110], [#118]),
+   in v0.2.6.
+2. The legacy run-history capture goes through the metadata backend
+   ([#434]).
+3. Run history in MotherDuck, opt in ([#120], [#129]).
+4. Scaffolding for new MotherDuck projects ([#128]) and a recipe for the
+   local-to-MotherDuck path ([#431]).
+
+A step ships in its release even if bug fixes have to wait for the next
+one. Steps 2 to 4 sit on the v0.3.0 milestone until each release's
+milestone opens.
+
+- v0.3.0: full support for running tycoon on MotherDuck. This is where the
+  MotherDuck work in the v0.2.x releases comes together: raw loads and
+  `motherduck:` targets in v0.2.4 and v0.2.5, then the four steps above.
+  It is done when this path passes against a real MotherDuck database in
+  the token-gated e2e job ([#437]): `tycoon init` choosing MotherDuck,
+  `tycoon data sources add rest_api`, `tycoon data sources run`, the rows
+  landing in the `md:` catalog, and `tycoon data status` and
+  `tycoon data history` reading from that same catalog.
+- v0.3.1: one run path, and bring your own dlt project. The Runtime
+  protocol and `DltManagedRuntime` replace `runner.py` ([#85], with [#109],
+  [#111], [#112], [#113], [#115], [#116]), which is what lets tycoon run an
+  existing dlt project ([#343], [#75], [#117], [#121]). The catalog factory
+  drives `sources add` from the manifest ([#102] through [#108]).
 
 The MotherDuck phases are laid out in
 [`docs/proposals/motherduck-support.md`](https://github.com/Database-Tycoon/tycoon-cli/blob/main/docs/proposals/motherduck-support.md),
@@ -181,6 +194,7 @@ The last three releases, with their release notes.
 [#77]: https://github.com/Database-Tycoon/tycoon-cli/issues/77
 [#80]: https://github.com/Database-Tycoon/tycoon-cli/issues/80
 [#84]: https://github.com/Database-Tycoon/tycoon-cli/issues/84
+[#85]: https://github.com/Database-Tycoon/tycoon-cli/issues/85
 [#88]: https://github.com/Database-Tycoon/tycoon-cli/issues/88
 [#98]: https://github.com/Database-Tycoon/tycoon-cli/issues/98
 [#100]: https://github.com/Database-Tycoon/tycoon-cli/issues/100
@@ -257,6 +271,7 @@ The last three releases, with their release notes.
 [#429]: https://github.com/Database-Tycoon/tycoon-cli/issues/429
 [#431]: https://github.com/Database-Tycoon/tycoon-cli/issues/431
 [#434]: https://github.com/Database-Tycoon/tycoon-cli/issues/434
+[#437]: https://github.com/Database-Tycoon/tycoon-cli/issues/437
 [#447]: https://github.com/Database-Tycoon/tycoon-cli/issues/447
 [#459]: https://github.com/Database-Tycoon/tycoon-cli/issues/459
 [#460]: https://github.com/Database-Tycoon/tycoon-cli/issues/460
