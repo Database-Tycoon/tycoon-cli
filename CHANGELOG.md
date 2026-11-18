@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file. The format 
 - **`tycoon data sources explore`** ([#306][]). Inspect a source's schema, sample rows and run history without leaving the terminal. `--sample` takes 1 or more rows.
 - **`tycoon data query --format`** ([#391][]). `--format csv`, `json` or `markdown` prints the result rows and nothing else, so a script or notebook can read them without parsing a terminal table. In JSON, a NaN or infinite `DOUBLE` is `null` so that strict parsers can read the output; in every machine format a `BLOB` is hex and an `INTERVAL` is an ISO 8601 duration. The default `table` format no longer squashes a wide result until every header reads `ro…`: when the columns don't fit the terminal, each row prints as its own block of column names and values, like `psql`'s expanded display, and an empty result lists the column names instead.
 - **`tycoon data schema` can show one database or one schema** ([#393][]). `--raw` and `--warehouse` pick one database, and `--schema` takes a schema name or a glob such as `'raw_*'`. dlt's `_dlt_*` bookkeeping tables are now left out by default, with a count of how many were hidden; `--include-dlt` lists them. On a MotherDuck database, `--exact` counts only the tables left after these filters, and with `--raw` or `--warehouse` the MotherDuck token check covers only the database shown.
+- **A mental model of the city map, for contributors reviewing city PRs** ([#323][]). `docs/city/mental-model.md` maps each data-stack concept (source, table, dbt model, test, run, freshness SLA, docs coverage) to what it becomes on the `tycoon city` map and the `city.json` field it comes from, walks one worked example from the `csv-import` template to the rendered city, and gives reviewers a table of which layer a PR touches plus a short checklist. `docs/city/` is withheld from the published docs site, so the page renders only under `tycoon docs serve` and on GitHub.
 
 ### Changed
 
@@ -67,6 +68,7 @@ All notable changes to this project will be documented in this file. The format 
 [#351]: https://github.com/Database-Tycoon/tycoon-cli/issues/351
 [#339]: https://github.com/Database-Tycoon/tycoon-cli/issues/339
 [#298]: https://github.com/Database-Tycoon/tycoon-cli/issues/298
+[#323]: https://github.com/Database-Tycoon/tycoon-cli/issues/323
 [#260]: https://github.com/Database-Tycoon/tycoon-cli/pull/260
 [#259]: https://github.com/Database-Tycoon/tycoon-cli/issues/259
 [#382]: https://github.com/Database-Tycoon/tycoon-cli/issues/382
