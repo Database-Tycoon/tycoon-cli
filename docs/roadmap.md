@@ -60,15 +60,19 @@ is the current list of issues.
 Each has a GitHub milestone. Until v0.3.0, releases continue on the
 two-week v0.2.x cycle.
 
-- v0.3.0, due 2027-02-26: one run path for dlt users. The Runtime protocol
-  and `DltManagedRuntime` replace `runner.py` ([#85], with [#109], [#111],
-  [#112], [#113], [#115], [#116]). MotherDuck Phase 2 puts run history in
-  MotherDuck, opt in ([#120], [#129]), with the legacy capture path routed
-  through the metadata backend first ([#434]).
+- v0.3.0, due 2027-02-26: full support for running tycoon on MotherDuck.
+  This is where the MotherDuck work in the v0.2.x releases comes together:
+  raw loads and `motherduck:` targets in v0.2.4 and v0.2.5, the Destination
+  protocol in v0.2.6, and in v0.3.0 itself, run history in MotherDuck
+  ([#120], [#129]), scaffolding for new MotherDuck projects ([#128]) and a
+  recipe for the local-to-MotherDuck path ([#431]). The same release gives
+  dlt users one run path: the Runtime protocol and `DltManagedRuntime`
+  replace `runner.py` ([#85], with [#109], [#111], [#112], [#113], [#115],
+  [#116]), and the legacy run-history capture goes through the metadata
+  backend ([#434]).
 - v0.3.1, due 2027-03-12: bring your own dlt project ([#343], [#75], [#117],
   [#121]) and the catalog factory that drives `sources add` from the
-  manifest ([#102] through [#108]). MotherDuck Phase 3 finishes the
-  scaffolding and adds a recipe ([#128], [#431]).
+  manifest ([#102] through [#108]).
 
 The MotherDuck phases are laid out in
 [`docs/proposals/motherduck-support.md`](https://github.com/Database-Tycoon/tycoon-cli/blob/main/docs/proposals/motherduck-support.md),
