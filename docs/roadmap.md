@@ -64,14 +64,14 @@ and each one carries one step of the MotherDuck work, in this order:
 1. The Destination protocol and a MotherDuck destination ([#110], [#118]),
    in v0.2.6.
 2. The legacy run-history capture goes through the metadata backend
-   ([#434]).
-3. Run history in MotherDuck, opt in ([#120], [#129]).
+   ([#434]), in v0.2.7.
+3. Run history in MotherDuck, opt in ([#120], [#129]), in v0.2.8.
 4. Scaffolding for new MotherDuck projects ([#128]) and a recipe for the
-   local-to-MotherDuck path ([#431]).
+   local-to-MotherDuck path ([#431]), in v0.2.9.
 
 A step ships in its release even if bug fixes have to wait for the next
-one. Steps 2 to 4 sit on the v0.3.0 milestone until each release's
-milestone opens.
+one. v0.2.10 leaves room for a step that slips. There is no release over
+the last two weeks of 2026.
 
 - v0.3.0: full support for running tycoon on MotherDuck. This is where the
   MotherDuck work in the v0.2.x releases comes together: raw loads and
