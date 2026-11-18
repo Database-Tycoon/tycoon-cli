@@ -130,3 +130,56 @@ class TestRunServer:
 
     def test_local_file_needs_no_token(self, home, no_connect, monkeypatch, tmp_path):
         assert self._run(monkeypatch, tmp_path, str(tmp_path / "w.duckdb")) == ["0", str(tmp_path / "w.duckdb")]
+
+
+# ---------------------------------------------------------------------------
+# A token in the connection string never reaches what the city prints (gh-510)
+# ---------------------------------------------------------------------------
+
+_SECRET = "SEKRET-gh510"
+_SOURCE = f"md:analytics?motherduck_token={_SECRET}"
+
+
+class TestRedactedOutput:
+    @pytest.mark.parametrize(
+        "text",
+        [
+            _SOURCE,
+            f"Could not open {_SOURCE}&x=1: failed",
+            f"SET motherduck_token = '{_SECRET}'",
+            "./warehouse.duckdb",
+        ],
+    )
+    def test_redact_matches_tycoons_helper(self, text):
+        # tycoon_city doesn't import tycoon at runtime, so it keeps its own copy.
+        from tycoon.config import redact_secrets
+        from tycoon_city.catalog.loader import redact
+
+        assert redact(text) == redact_secrets(text)
+        assert _SECRET not in redact(text)
+
+    def test_open_error_names_the_catalog_without_the_token(self, monkeypatch):
+        from tycoon_city.catalog import loader
+
+        def failing_connect(database, *args, **kwargs):
+            raise duckdb.IOException(f"Failed to attach '{database}'")
+
+        monkeypatch.setattr(loader.duckdb, "connect", failing_connect)
+        with pytest.raises(CatalogError) as info:
+            loader.load_catalog(_SOURCE)
+        assert _SECRET not in str(info.value)
+        assert "md:analytics" in str(info.value)
+
+    def test_serving_log_line_drops_the_query_string(self, monkeypatch, tmp_path, caplog):
+        class _NoServer:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def serve_forever(self):
+                return None
+
+        monkeypatch.setattr(webserve, "ThreadingHTTPServer", _NoServer)
+        with caplog.at_level("INFO", logger=webserve.logger.name):
+            webserve.serve(_SOURCE, tmp_path, "default", 0, "127.0.0.1")
+        assert "serving md:analytics" in caplog.text
+        assert _SECRET not in caplog.text

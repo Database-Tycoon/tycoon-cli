@@ -47,7 +47,7 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from .catalog.errors import CatalogError
-from .catalog.loader import is_motherduck
+from .catalog.loader import is_motherduck, redact
 from .catalog.models import PipelineContext
 from .catalog.tycoon_project import TYCOON_FILE, read_project_info
 from .export.build import build_city, require_motherduck_token
@@ -410,7 +410,7 @@ def serve(
         },
     )
     server = ThreadingHTTPServer((host, port), handler)
-    logger.info("serving %s with %s on http://%s:%d", db_path, dist, host, port)
+    logger.info("serving %s with %s on http://%s:%d", redact(str(db_path)), dist, host, port)
     server.serve_forever()
 
 

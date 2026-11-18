@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file. The format 
 
 - **Releases publish with `pypa/gh-action-pypi-publish` v1.14.3** ([#500][]). The TestPyPI and PyPI jobs in `publish.yml` pinned v1.14.2, which advisory GHSA-5xjx-3w67-w9x9 lists as affected. Both now pin v1.14.3 by commit SHA. For contributors; installing tycoon from PyPI is unaffected.
 - **Local secret files can no longer be committed by accident** ([#410][]). The repository's `.gitignore` now covers `.env`, `.env.*` and any `.dlt/secrets.toml`, so credentials a contributor keeps for local runs stay out of commits in this public repo. `.env.example` stays committable, and a test fails if these rules are ever dropped. This changes nothing in the published package.
+- **A MotherDuck token in a connection string no longer shows up in output** ([#510][]). With a source such as `md:analytics?motherduck_token=${MOTHERDUCK_TOKEN}`, `tycoon data sync` printed the full string on every copied-table line, and the token could also appear in skip reasons and in `Sync failed`. `tycoon city` printed it in its `Serving` line, logged it, and could repeat it in a catalog error. All of these now show `md:analytics`, with the query string dropped or the token masked; the full string is still used to connect.
 
 ### Fixed
 
@@ -48,6 +49,7 @@ All notable changes to this project will be documented in this file. The format 
 - **An invalid `tycoon.yml` no longer crashes the CLI at startup** ([#378][]). Help is available at every command level. `--version`, `init`, `city`, `docs` and `run` remain available. `doctor` reports the error and skips dbt and Rill path checks until the file is fixed. Commands such as `setup` and `data query` exit with a validation message.
 - **`--help` no longer shows literal RST double backticks** ([#443][]). Help text comes from command docstrings, and several of them used RST double-backtick markup, which `--help` prints as-is. `tycoon setup`, `tycoon data sources add`, `tycoon data clean`, `tycoon docs`, `tycoon doctor`, `tycoon notify`, `tycoon observability`, `tycoon register` and `tycoon schedule` now use single backticks. A test walks every registered command and fails if a help text, short help, epilog or option help contains a double backtick.
 
+[#510]: https://github.com/Database-Tycoon/tycoon-cli/issues/510
 [#443]: https://github.com/Database-Tycoon/tycoon-cli/issues/443
 [#410]: https://github.com/Database-Tycoon/tycoon-cli/issues/410
 [#378]: https://github.com/Database-Tycoon/tycoon-cli/issues/378
