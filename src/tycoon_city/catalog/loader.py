@@ -123,7 +123,7 @@ def _load_base(path: Path | str) -> tuple[PipelineContext, frozenset[tuple[str, 
         # MotherDuck catalogs are not filesystem paths, so the existence check
         # only applies to files.
         if not Path(source).exists():
-            raise CatalogError(f"Database file not found: {source}")
+            raise CatalogError(f"Database file not found: {redact(source)}")
 
     try:
         con = duckdb.connect(source, read_only=True)

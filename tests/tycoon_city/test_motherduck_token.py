@@ -170,6 +170,20 @@ class TestRedactedOutput:
         assert _SECRET not in str(info.value)
         assert "md:analytics" in str(info.value)
 
+    def test_project_dir_with_a_tokened_warehouse_drops_the_token(self, monkeypatch, tmp_path):
+        # The project root is joined onto an md: warehouse, so the loader sees
+        # a file path that does not exist (#511) and names it in the error.
+        from tycoon_city.catalog import loader
+
+        monkeypatch.setenv("MOTHERDUCK_TOKEN", _SECRET)
+        (tmp_path / "tycoon.yml").write_text(
+            "database:\n  warehouse: md:analytics?motherduck_token=${MOTHERDUCK_TOKEN}\n"
+        )
+        with pytest.raises(CatalogError) as info:
+            loader.load_context(tmp_path)
+        assert _SECRET not in str(info.value)
+        assert "md:analytics" in str(info.value)
+
     def test_serving_log_line_drops_the_query_string(self, monkeypatch, tmp_path, caplog):
         class _NoServer:
             def __init__(self, *args, **kwargs):
