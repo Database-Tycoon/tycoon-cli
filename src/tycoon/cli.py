@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import typer
-from typer.core import TyperGroup
+from typer.core import TyperCommand, TyperGroup
 
 import tycoon
 
@@ -14,6 +16,8 @@ _COMMAND_ORDER = [
     "profiles",
     "semantics",
     "data",
+    "fire",
+    "firehouse",
     "start",
     "stop",
     "city",
@@ -31,6 +35,8 @@ _SECTIONS = {
     "profiles": "Project",
     "semantics": "Project",
     "data": "Data Pipeline",
+    "fire": "Fire & Response",
+    "firehouse": "Fire & Response",
     "start": "Services",
     "stop": "Services",
     "city": "Services",
@@ -42,7 +48,31 @@ _SECTIONS = {
 }
 
 
+class _ProjectContext(typer.Context):
+    def invoke[T](self, callback: Callable[..., T], /, *args: object, **kwargs: object) -> T:
+        # Typer handles eager help before invocation. A group that delegates to
+        # a subcommand must wait for that subcommand to parse its own options.
+        if callback is self.command.callback and self.invoked_subcommand is None:
+            from tycoon.config import config
+
+            config.ensure_valid()
+        return super().invoke(callback, *args, **kwargs)
+
+
+def _guard_project_commands(command: TyperCommand | TyperGroup) -> None:
+    command.context_class = _ProjectContext
+    if isinstance(command, TyperGroup):
+        for child in command.commands.values():
+            _guard_project_commands(child)
+
+
 class _OrderedGroup(TyperGroup):
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        for name, command in self.commands.items():
+            if name not in {"city", "docs", "doctor", "init", "run"}:
+                _guard_project_commands(command)
+
     def list_commands(self, ctx: object) -> list[str]:
         commands = super().list_commands(ctx)
         return sorted(commands, key=lambda c: _COMMAND_ORDER.index(c) if c in _COMMAND_ORDER else 99)
@@ -90,13 +120,15 @@ def _root(
         is_eager=True,
     ),
 ) -> None:
-    pass
+    """Run Database Tycoon commands."""
 
 
 from tycoon.commands import data, profiles, register, semantics
 from tycoon.commands import docs as docs_cmd_mod
 from tycoon.commands.city import city_cmd
 from tycoon.commands.doctor import doctor_cmd
+from tycoon.commands.fire import fire as fire_cmd
+from tycoon.commands.fire import firehouse as firehouse_cmd
 from tycoon.commands.init import init_cmd
 from tycoon.commands.notify import notify_cmd
 from tycoon.commands.run import run_cmd
@@ -110,8 +142,10 @@ app.command(name="setup")(setup_cmd)
 app.add_typer(register.app, name="register")
 app.add_typer(profiles.app, name="profiles")
 app.add_typer(semantics.app, name="semantics")
-app.add_typer(data.app, name="data")
+app.add_typer(data.app, name="data", no_args_is_help=True)
 app.add_typer(docs_cmd_mod.app, name="docs")
+app.command(name="fire")(fire_cmd)
+app.command(name="firehouse")(firehouse_cmd)
 app.command(name="start")(start_cmd)
 app.command(name="stop")(stop_cmd)
 app.command(name="city")(city_cmd)

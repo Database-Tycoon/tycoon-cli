@@ -82,7 +82,7 @@ export function setupHUD(
 
   const status = document.getElementById("status")!;
   const statusLineFor = (d: CityDocument): string =>
-    `database: ${d.database.name}   ·   ${d.database.object_count} objects   ·   ` +
+    `database: ${d.database.name}   ·   ${d.database.object_count} tables and views   ·   ` +
     `${d.database.total_rows.toLocaleString()} rows`;
   let statusLine = statusLineFor(doc);
   status.textContent = statusLine;
@@ -291,7 +291,7 @@ export function setupHUD(
         return;
       }
       tooltip.hidden = false;
-      tooltip.textContent = `${key} — ${(cityRef.current.rows.get(key) ?? 0).toLocaleString()} rows`;
+      tooltip.textContent = `${key} — ${cityRef.current.rows.get(key) ?? "0 rows"}`;
       app.style.cursor = "pointer";
     },
     select,

@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+import re
 from pathlib import Path
 
 import duckdb
@@ -19,27 +20,45 @@ logger = logging.getLogger(__name__)
 # `MAX_OBJECTS` is deliberately NOT re-exported here. `catalog.retention` reads
 # it and decides the cap; a second binding in this module would be a second
 # name for one rule, and two names for one rule stop agreeing.
-__all__ = ["load_catalog", "load_context"]
+__all__ = ["is_motherduck", "load_catalog", "load_context"]
 
 # A MotherDuck catalog, e.g. "md:my_db" or a share URL "md:_share/name/uuid".
-_MD_PREFIX = "md:"
+# DuckDB reads "motherduck:" as the same scheme and matches both case-insensitively.
+# This package does not import `tycoon`, so the rule is restated here rather than
+# shared with `tycoon.project.is_motherduck`.
+_MD_PREFIXES = ("md:", "motherduck:")
 
 
-def _is_motherduck(source: str) -> bool:
-    return source.startswith(_MD_PREFIX)
+def is_motherduck(source: str) -> bool:
+    return source.lower().startswith(_MD_PREFIXES)
+
+
+# The query part of an md:/motherduck: string can carry motherduck_token=<secret>.
+# tycoon_city doesn't import tycoon, so these mirror tycoon.config.redact_secrets.
+_MD_QUERY_RE = re.compile(r"((?:md|motherduck):[^\s'\"?]*)\?[^\s'\"]*", re.IGNORECASE)
+_MD_TOKEN_RE = re.compile(r"(motherduck_token\s*=\s*['\"]?)[^\s&'\"]+", re.IGNORECASE)
+
+
+def redact(text: str) -> str:
+    """Text safe to print or log: md: query strings dropped, motherduck_token values masked."""
+    return _MD_TOKEN_RE.sub(r"\1***", _MD_QUERY_RE.sub(r"\1", text))
 
 
 def _database_name_for(source: str) -> str:
     """The name to show in the status strip.
 
     For a file that is its stem. For MotherDuck it is the catalog name: the
-    segment after `md:`, or the middle segment of a share URL
+    segment after `md:` or `motherduck:`, or the middle segment of a share URL
     (`md:_share/<name>/<uuid>`), since neither `_share` nor a UUID tells anyone
     which database they are looking at.
+
+    A `?...` query (`md:db?motherduck_token=...`) is connection options, not
+    part of the name, and can carry the token, so it is dropped first. A bare
+    `md:?...` then names no database and falls back the way a bare `md:` does.
     """
-    if not _is_motherduck(source):
+    if not is_motherduck(source):
         return Path(source).stem
-    rest = source[len(_MD_PREFIX) :]
+    rest = source.split(":", 1)[1].split("?", 1)[0]
     parts = [p for p in rest.split("/") if p]
     if parts and parts[0] == "_share" and len(parts) >= 2:
         return parts[1]
@@ -100,24 +119,24 @@ def _load_base(path: Path | str) -> tuple[PipelineContext, frozenset[tuple[str, 
     stops being a guess.
     """
     source = str(path)
-    if not _is_motherduck(source):
+    if not is_motherduck(source):
         # MotherDuck catalogs are not filesystem paths, so the existence check
         # only applies to files.
         if not Path(source).exists():
-            raise CatalogError(f"Database file not found: {source}")
+            raise CatalogError(f"Database file not found: {redact(source)}")
 
     try:
         con = duckdb.connect(source, read_only=True)
     except duckdb.Error as exc:
         raise CatalogError(
-            f"Could not open database '{source}' (it may be invalid or locked by a writer): {exc}"
+            f"Could not open database '{redact(source)}' (it may be invalid or locked by a writer): {redact(str(exc))}"
         ) from exc
 
     try:
         try:
             tables, view_rows = _scan_catalog(con)
         except duckdb.Error as exc:
-            raise CatalogError(f"Could not read catalog from '{source}': {exc}") from exc
+            raise CatalogError(f"Could not read catalog from '{redact(source)}': {redact(str(exc))}") from exc
 
         oid_to_key: dict[int, str] = {}
         for s, n, _size, oid in tables:
@@ -288,7 +307,7 @@ def load_context(source: Path | str) -> PipelineContext:
     `tycoon.yml` or it is an error, not a guess.
     """
     text = str(source)
-    if not _is_motherduck(text) and Path(text).is_dir():
+    if not is_motherduck(text) and Path(text).is_dir():
         try:
             info = read_project_info(text)
         except ValueError as exc:
@@ -301,7 +320,7 @@ def load_context(source: Path | str) -> PipelineContext:
         return _load_tycoon_project(info)
 
     ctx = load_catalog(source)
-    if not _is_motherduck(text):
+    if not is_motherduck(text):
         root = _find_tycoon_root(Path(text))
         if root is not None:
             logger.info(

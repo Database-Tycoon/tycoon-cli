@@ -78,6 +78,7 @@ extra:
 
 nav:
   - Home: index.md
+  - Roadmap: roadmap.md
   - Getting started:
     - getting-started/installation.md
     - getting-started/first-project.md
@@ -101,6 +102,9 @@ nav:
       - "tycoon data analyze": commands/data/analyze.md
       - "tycoon data status": commands/data/status.md
       - "tycoon data run-all": commands/data/run-all.md
+      - "tycoon data layers": commands/data/layers.md
+    - Fire & Response:
+      - "tycoon fire / firehouse": commands/fire.md
     - Services:
       - "tycoon start / stop": commands/start.md
       - "tycoon city": commands/city.md
@@ -129,6 +133,7 @@ nav:
   - Releases:
     - releases/index.md
     - 0.2.x:
+      - "v0.2.5": releases/v0.2.5.md
       - "v0.2.4": releases/v0.2.4.md
       - "v0.2.3": releases/v0.2.3.md
       - "v0.2.2": releases/v0.2.2.md

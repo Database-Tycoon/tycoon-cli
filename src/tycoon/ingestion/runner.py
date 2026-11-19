@@ -11,15 +11,20 @@ from __future__ import annotations
 import glob
 import re
 import sys
+import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
 import dlt
 
+from tycoon.config import is_motherduck, redact_secrets
 from tycoon.core.events import RunCompleted, RunFailed, RunStarted
+from tycoon.ingestion import pipeline_state
 from tycoon.ingestion.catalog import CATALOG
+from tycoon.ingestion.destination import raw_destination
 from tycoon.ingestion.source_manager import (
     SOURCES_DIR,
     get_run_module_path,
@@ -93,6 +98,21 @@ def _classify_error(exc: Exception, source_type: str) -> IngestionError:
         return IngestionError(f"Rate limited by '{source_type}' API. Wait a moment and try again.")
 
     return IngestionError(str(exc))
+
+
+_MISSING_MD_DATABASE = re.compile(r'no database/share named "([^"]+)"')
+
+
+def _explain_missing_motherduck_database(exc: Exception) -> IngestionError | None:
+    """dlt does not create a MotherDuck database, and its attach error names no fix."""
+    match = _MISSING_MD_DATABASE.search(str(exc))
+    if match is None:
+        return None
+    name = match.group(1)
+    return IngestionError(
+        f'The MotherDuck database "{name}" in database.raw does not exist. dlt does not create it: run '
+        f'CREATE DATABASE "{name}" in a MotherDuck session, then run this again.'
+    )
 
 
 # Legacy pipeline modules keyed by source name (NYC transit demo)
@@ -542,12 +562,88 @@ def _capture_and_refresh_safe(
         from tycoon.scaffolding.rill_generator import refresh_usage_dashboards
 
         meta = metadata_db_path(config.root)
-        capture_dlt_safe(meta, raw_db_path)
+        if not is_motherduck(str(raw_db_path)):
+            capture_dlt_safe(meta, raw_db_path)
         pipeline_name = getattr(pipeline, "pipeline_name", None) if pipeline else None
-        capture_dlt_trace_safe(meta, pipeline_name)
+        pipelines_dir = getattr(pipeline, "pipelines_dir", None) if pipeline else None
+        capture_dlt_trace_safe(meta, pipeline_name, Path(pipelines_dir) if pipelines_dir else None)
         refresh_usage_dashboards(project_root=config.root, rill_dir=config.rill_dir)
     except Exception:
         pass
+
+
+def _report_carry_over(plan: pipeline_state.StatePlan) -> None:
+    from tycoon.utils.console import info, warn
+
+    CarryOver = pipeline_state.CarryOver
+    if plan.action is CarryOver.NOT_NEEDED:
+        return
+    moved = f"'{plan.pipeline_name}' now keeps its dlt state in {plan.project_dir}."
+    if plan.action is CarryOver.COPY:
+        info(f"{moved} Copied it from {plan.shared_dir} because {plan.reason}. The shared copy was left in place.")
+    elif plan.action is CarryOver.COPY_UNVERIFIED:
+        warn(
+            f"{moved} Copied it from {plan.shared_dir} because {plan.reason}. If another project uses the "
+            "same pipeline name, check this run's row counts. The shared copy was left in place."
+        )
+    else:
+        info(f"{moved} Not copying {plan.shared_dir}: {plan.reason}.")
+
+
+@contextmanager
+def _project_dlt_state(name: str, schema_name: str, raw_target: str) -> Iterator[None]:
+    """Run inside this project's own dlt working directory (gh-394).
+
+    The first run of a pipeline there decides whether to carry over state
+    from dlt's shared directory, see ``pipeline_state.plan_carry_over``.
+    When the project directory can't be written (a read-only checkout),
+    the run keeps dlt's shared directory, as it did before gh-394.
+    """
+    from tycoon.config import config
+    from tycoon.utils.console import warn
+
+    if pipeline_state.user_dlt_data_dir() is not None:
+        yield
+        return
+    root = config.root
+    plan: pipeline_state.StatePlan | None = None
+    # A MotherDuck raw has no local file to check the shared state against;
+    # dlt restores the pipeline's state from MotherDuck itself.
+    if not is_motherduck(raw_target):
+        pipeline_name, dataset_name = pipeline_state.pipeline_identity(name, schema_name)
+        try:
+            plan = pipeline_state.plan_carry_over(
+                pipeline_name,
+                dataset_name,
+                Path(raw_target),
+                pipeline_state.project_pipelines_dir(root),
+                pipeline_state.shared_pipelines_dir(),
+            )
+        except pipeline_state.StateCarryOverError as exc:
+            raise IngestionError(str(exc)) from exc
+    env = ExitStack()
+    try:
+        pipelines = env.enter_context(pipeline_state.project_pipelines_env(root))
+        with tempfile.TemporaryFile(dir=pipelines):
+            pass
+    except OSError as exc:
+        env.close()
+        warn(
+            f"Couldn't write {pipeline_state.project_dlt_data_dir(root)} ({exc.strerror or exc}), so '{name}' "
+            f"keeps its dlt state in {pipeline_state.shared_pipelines_dir()} as before. "
+            "Set DLT_DATA_DIR to a writable directory to keep it per project."
+        )
+        writable = False
+    else:
+        writable = True
+    if not writable:
+        yield
+        return
+    with env:
+        if plan is not None:
+            pipeline_state.carry_over(plan)
+            _report_carry_over(plan)
+        yield
 
 
 def _keep_first_rows(max_rows: int) -> Callable[[Any], bool]:
@@ -598,7 +694,7 @@ _NATIVE_BUILDERS = {
 def run_source(
     name: str,
     source_config: SourceConfig,
-    raw_db_path: Path,
+    raw_db_path: Path | str,
     max_records: int | None = None,
     *,
     fail_on_empty: bool = False,
@@ -635,6 +731,8 @@ def run_source(
     ``RunCompleted``. Orchestrated runs rely on the exit code (gh-240).
     """
     _started = time.monotonic()
+    raw_target = str(raw_db_path)
+    raw_db_path = Path(raw_db_path)
 
     _metadata_db: Path | None = None
     try:
@@ -647,9 +745,17 @@ def run_source(
 
     _emit_event_safe(_metadata_db, RunStarted(source_id=name, runtime_id="dlt-managed"))
 
+    dlt_state = ExitStack()
     try:
+        dlt_state.enter_context(_project_dlt_state(name, source_config.schema_name, raw_target))
+
         # 1. Legacy pipeline delegation (keyed by source name)
         if name in _LEGACY_PIPELINES:
+            if is_motherduck(raw_target):
+                raise IngestionError(
+                    f"'{name}' is a built-in demo pipeline that only writes a local raw DuckDB file, but "
+                    "database.raw is MotherDuck. Set database.raw to a local path to run it."
+                )
             pipeline, load_info = _run_legacy(name, raw_db_path=raw_db_path, max_records=max_records, **kwargs)
             load_info.raise_on_failed_jobs()
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
@@ -663,7 +769,9 @@ def run_source(
         source_type = source_config.type
         if source_type not in _NATIVE_BUILDERS and source_type in CATALOG:
             # 3. Catalog source dispatch — load from ~/.tycoon/sources/
-            pipeline, load_info = _run_catalog(source_type, name, source_config, raw_db_path, max_records)
+            # A shim may use the Path API on this, so a local project keeps the Path it always got.
+            catalog_target = raw_target if is_motherduck(raw_target) else raw_db_path
+            pipeline, load_info = _run_catalog(source_type, name, source_config, catalog_target, max_records)
             _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
             _complete_run(
                 _metadata_db, name, pipeline, load_info, time.monotonic() - _started, fail_on_empty=fail_on_empty
@@ -686,7 +794,7 @@ def run_source(
         # Generic pipeline
         pipeline = dlt.pipeline(
             pipeline_name=name,
-            destination=dlt.destinations.duckdb(str(raw_db_path)),
+            destination=raw_destination(raw_target),
             dataset_name=source_config.schema_name,
         )
 
@@ -747,7 +855,7 @@ def run_source(
 
         load_info = pipeline.run(dlt_source)
         load_info.raise_on_failed_jobs()
-        if legacy_rename:
+        if legacy_rename and not is_motherduck(raw_target):
             _warn_if_legacy_filesystem_table_exists(raw_db_path, source_config.schema_name, name)
         _capture_and_refresh_safe(raw_db_path, pipeline=pipeline)
         _complete_run(
@@ -762,8 +870,15 @@ def run_source(
         return pipeline, load_info
 
     except Exception as exc:
-        _emit_event_safe(_metadata_db, RunFailed(source_id=name, runtime_id="dlt-managed", error=str(exc)))
+        _emit_event_safe(
+            _metadata_db, RunFailed(source_id=name, runtime_id="dlt-managed", error=redact_secrets(str(exc)))
+        )
+        friendly = _explain_missing_motherduck_database(exc)
+        if friendly is not None:
+            raise friendly from exc
         raise
+    finally:
+        dlt_state.close()
 
 
 def _run_legacy(
@@ -784,7 +899,7 @@ def _run_catalog(
     source_type: str,
     name: str,
     source_config: SourceConfig,
-    raw_db_path: Path,
+    raw_db_path: Path | str,
     max_records: int | None = None,
 ) -> tuple[dlt.Pipeline, Any]:
     """Load a catalog source from its resolved sources dir and run its pipeline."""
@@ -832,6 +947,18 @@ def _run_catalog(
         sys.path.insert(0, sources_str)
 
     module_path = get_run_module_path(source_type)
+    shim = sources_dir / (module_path.replace(".", "/") + ".py")
+    if is_motherduck(str(raw_db_path)):
+        try:
+            shim_text = shim.read_text()
+        except OSError:
+            shim_text = ""
+        if "raw_destination" not in shim_text:
+            raise IngestionError(
+                f"The '{source_type}' source shim at {shim} is missing, unreadable, or was written before "
+                f"MotherDuck support, so it can only write a local file. Delete it and run: "
+                f"tycoon data sources add {source_type}"
+            )
     mod = importlib.import_module(module_path)
 
     try:

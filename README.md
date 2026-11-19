@@ -189,6 +189,8 @@ tycoon data query --db .tycoon/metadata.duckdb \
    FROM dbt_runs ORDER BY started_at DESC LIMIT 10"
 ```
 
+Add `--format csv` or `--format json` to get the rows alone, for a script or a notebook.
+
 The metadata DB is disposable — delete `.tycoon/metadata.duckdb` to reset history.
 
 ## Contributing
@@ -199,5 +201,6 @@ outsized effect on where it goes. However you want to jump in:
 - **Hit a bug or want a feature?** Open an [issue](https://github.com/Database-Tycoon/tycoon-cli/issues) — there's a short form for each.
 - **Got a question, or want to show what you're building?** Start a [discussion](https://github.com/Database-Tycoon/tycoon-cli/discussions). Nothing's too small.
 - **Want to work on the code?** [CONTRIBUTING.md](CONTRIBUTING.md) covers dev setup, what CI expects, and the repo conventions.
+- **Wondering where tycoon is headed?** The [roadmap](https://database-tycoon.github.io/tycoon-cli/roadmap/) lists the current cycle, what comes next, and the wish list.
 
 Everyone taking part is expected to follow our [Code of Conduct](CODE_OF_CONDUCT.md).

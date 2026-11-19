@@ -27,7 +27,8 @@ from pathlib import Path
 
 import duckdb
 
-from tycoon.project import SyncSourceSpec
+from tycoon.config import redact_secrets
+from tycoon.project import SyncSourceSpec, is_motherduck
 
 _SYSTEM_SCHEMAS = frozenset(
     {
@@ -80,8 +81,10 @@ def _alias_for(url: str) -> str:
     # md:dogfood_dbt_prod  → dogfood_dbt_prod
     # ./other.duckdb       → other
     # /abs/foo.duckdb      → foo
-    if url.startswith("md:"):
-        candidate = url[3:]
+    # The `?...` query is dropped before the name is taken: it can carry
+    # `motherduck_token`, and a bare `md:?...` then falls back to "src" like `md:`.
+    if is_motherduck(url):
+        candidate = url.split(":", 1)[1].split("?", 1)[0]
     else:
         candidate = Path(url).stem
     # Strip everything that isn't a SQL identifier char
@@ -95,7 +98,7 @@ def _attach_sql(url: str, alias: str) -> str:
     Sources are always attached READ_ONLY — `tycoon data sync` is a
     one-way pull and should never mutate the source.
     """
-    if url.startswith("md:"):
+    if is_motherduck(url):
         # MotherDuck — relies on MOTHERDUCK_TOKEN env var (or active OAuth).
         return f"ATTACH '{url}' AS {alias} (READ_ONLY)"
     # Local DuckDB file.
@@ -234,7 +237,8 @@ def sync_to_local(
                                 source=spec.from_,
                                 schema=schema,
                                 table=table,
-                                reason=str(exc).splitlines()[0][:200],
+                                # Redact before truncating, so a cut can't leave a token half-masked.
+                                reason=redact_secrets(str(exc)).splitlines()[0][:200],
                             )
                         )
                         continue
