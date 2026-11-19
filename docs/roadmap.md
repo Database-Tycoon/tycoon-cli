@@ -42,9 +42,8 @@ The cycle after v0.2.5. This section names the themes; the
 is the current list of issues.
 
 - Rewrite foundation. Move the remaining commands off the config singleton
-  ([#175], [#176], [#189]) and give the source catalog a JSON manifest and
-  loader ([#98], [#100], design in [#197]). These moved from v0.2.5, where no
-  work had started on them.
+  ([#175]) and enforce `schema_version` in every command module ([#189]).
+  These moved from v0.2.5, where no work had started on them.
 - MotherDuck Phase 1 ([#429]). A Destination protocol and a MotherDuck
   destination ([#110], [#118]), so the commands that read a warehouse stop
   assuming a local file. Also moved from v0.2.5.
@@ -84,8 +83,10 @@ the last two weeks of 2026.
 - v0.3.1: one run path, and bring your own dlt project. The Runtime
   protocol and `DltManagedRuntime` replace `runner.py` ([#85], with [#109],
   [#111], [#112], [#113], [#115], [#116]), which is what lets tycoon run an
-  existing dlt project ([#343], [#75], [#117], [#121]). The catalog factory
-  drives `sources add` from the manifest ([#102] through [#108]).
+  existing dlt project ([#343], [#75], [#117], [#121]), with a check that a
+  dlt-project runtime names its path ([#176]). The source catalog gets a
+  JSON manifest and loader ([#98], [#100]), and the catalog factory drives
+  `sources add` from it ([#102] through [#108]).
 
 The MotherDuck phases are laid out in
 [`docs/proposals/motherduck-support.md`](https://github.com/Database-Tycoon/tycoon-cli/blob/main/docs/proposals/motherduck-support.md),
@@ -229,7 +230,6 @@ The last three releases, with their release notes.
 [#175]: https://github.com/Database-Tycoon/tycoon-cli/issues/175
 [#176]: https://github.com/Database-Tycoon/tycoon-cli/issues/176
 [#189]: https://github.com/Database-Tycoon/tycoon-cli/issues/189
-[#197]: https://github.com/Database-Tycoon/tycoon-cli/issues/197
 [#202]: https://github.com/Database-Tycoon/tycoon-cli/issues/202
 [#203]: https://github.com/Database-Tycoon/tycoon-cli/issues/203
 [#221]: https://github.com/Database-Tycoon/tycoon-cli/issues/221
