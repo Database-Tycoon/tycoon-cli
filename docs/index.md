@@ -88,6 +88,8 @@ These docs track the current release of tycoon; the `releases/` section
 carries the canonical change history, one page per version. Anything
 described as deferred or planned links to a tracking issue on the
 [GitHub repo](https://github.com/Database-Tycoon/tycoon-cli/issues).
+The [roadmap](roadmap.md) says what is in the current cycle, what comes
+next, and what is on the wish list.
 
 The site is built with
 [MkDocs Material](https://squidfunk.github.io/mkdocs-material/);

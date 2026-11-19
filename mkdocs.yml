@@ -78,6 +78,7 @@ extra:
 
 nav:
   - Home: index.md
+  - Roadmap: roadmap.md
   - Getting started:
     - getting-started/installation.md
     - getting-started/first-project.md
