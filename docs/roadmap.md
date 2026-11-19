@@ -121,7 +121,7 @@ Tracked, not scheduled to a milestone.
   SQLite catalog ([#73], proposal in PR [#74]), DuckLake health checks in
   `doctor` ([#144]), and dlt load history for DuckLake targets ([#344]).
   `ducklake_config.py`, which only wrote Parquet and had no callers, is
-  deleted in v0.2.5 ([#72]).
+  deleted in v0.2.5 ([#448]).
 - Object storage as a destination ([#124]) and a local-to-cloud push, since
   `data sync` is one-way today ([#77]).
 - Alternative ingestion modes ([#88]): a Fivetran runtime and sources panel,
@@ -162,7 +162,8 @@ The last three releases, with their release notes.
 - [v0.2.5](releases/v0.2.5.md), 2026-11-20: MotherDuck as a load target and
   the layer-aware data CLI. `data sources run`, `run-all` and `data run-all`
   load into a MotherDuck raw database, with a `motherduck` extra ([#447],
-  [#459]), and an `md:` or `motherduck:` target with no token fails at once
+  [#459]), and `data query`, `data schema`, `data sync` and `tycoon city`
+  stop with an error on an `md:` or `motherduck:` target with no token,
   instead of opening a browser ([#460]). `tycoon fire`, `data layers` and
   `data sources explore` arrive ([#306]), `data query` gets output formats
   ([#391]) and `data schema` can show one schema ([#393]). Projects stop
@@ -188,7 +189,6 @@ The last three releases, with their release notes.
 [#43]: https://github.com/Database-Tycoon/tycoon-cli/issues/43
 [#54]: https://github.com/Database-Tycoon/tycoon-cli/issues/54
 [#58]: https://github.com/Database-Tycoon/tycoon-cli/issues/58
-[#72]: https://github.com/Database-Tycoon/tycoon-cli/issues/72
 [#73]: https://github.com/Database-Tycoon/tycoon-cli/issues/73
 [#74]: https://github.com/Database-Tycoon/tycoon-cli/pull/74
 [#75]: https://github.com/Database-Tycoon/tycoon-cli/issues/75
@@ -273,6 +273,7 @@ The last three releases, with their release notes.
 [#434]: https://github.com/Database-Tycoon/tycoon-cli/issues/434
 [#437]: https://github.com/Database-Tycoon/tycoon-cli/issues/437
 [#447]: https://github.com/Database-Tycoon/tycoon-cli/issues/447
+[#448]: https://github.com/Database-Tycoon/tycoon-cli/issues/448
 [#459]: https://github.com/Database-Tycoon/tycoon-cli/issues/459
 [#460]: https://github.com/Database-Tycoon/tycoon-cli/issues/460
 [#473]: https://github.com/Database-Tycoon/tycoon-cli/issues/473
