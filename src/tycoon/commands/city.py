@@ -105,7 +105,9 @@ def city_cmd(
     if pricing is not None:
         argv += ["--pricing", str(pricing)]
 
-    info(f"Serving {target} at http://{host}:{port} — Ctrl-C to stop.")
+    # The query part of an md: string can carry motherduck_token; show the name only (gh-510).
+    shown = target.split("?", 1)[0] if is_motherduck(target) else target
+    info(f"Serving {shown} at http://{host}:{port} — Ctrl-C to stop.")
     try:
         code = serve(argv)
     except KeyboardInterrupt:

@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file. The format 
 
 - **Releases publish with `pypa/gh-action-pypi-publish` v1.14.3** ([#500][]). The TestPyPI and PyPI jobs in `publish.yml` pinned v1.14.2, which advisory GHSA-5xjx-3w67-w9x9 lists as affected. Both now pin v1.14.3 by commit SHA. For contributors; installing tycoon from PyPI is unaffected.
 - **Local secret files can no longer be committed by accident** ([#410][]). The repository's `.gitignore` now covers `.env`, `.env.*` and any `.dlt/secrets.toml`, so credentials a contributor keeps for local runs stay out of commits in this public repo. `.env.example` stays committable, and a test fails if these rules are ever dropped. This changes nothing in the published package.
+- **A MotherDuck token in a connection string no longer shows up in output** ([#510][]). With a source such as `md:analytics?motherduck_token=${MOTHERDUCK_TOKEN}`, `tycoon data sync` printed the full string on every copied-table line, and the token could also appear in skip reasons and in `Sync failed`. `tycoon city` printed it in its `Serving` line, logged it, and could repeat it in a catalog error. All of these now show `md:analytics`, with the query string dropped or the token masked; the full string is still used to connect.
 - **Locked dependencies with open security advisories are refreshed** ([#526][]). `uv.lock` now resolves GitPython 3.2.1, certifi 2026.10.23, anyio 4.14.2, urllib3 2.8.0, msgpack 1.2.4, fsspec 2026.9.0, setuptools 84.2.1, idna 3.20 and Pygments 2.21.0. The `docs` extra pins mkdocs-material 9.8.1, which brings pymdown-extensions 13.1 and fixes an XSS in the docs site's search suggestions. The city's web tooling moves to vite 6.4.6. A plain `pip install database-tycoon` already picked up the patched transitive versions; this changes what developers and CI install. sqlparse stays below 0.6.0 until dbt-core allows it (#347).
 
 ### Fixed
@@ -52,6 +53,7 @@ All notable changes to this project will be documented in this file. The format 
 
 [#349]: https://github.com/Database-Tycoon/tycoon-cli/issues/349
 [#526]: https://github.com/Database-Tycoon/tycoon-cli/issues/526
+[#510]: https://github.com/Database-Tycoon/tycoon-cli/issues/510
 [#443]: https://github.com/Database-Tycoon/tycoon-cli/issues/443
 [#410]: https://github.com/Database-Tycoon/tycoon-cli/issues/410
 [#378]: https://github.com/Database-Tycoon/tycoon-cli/issues/378

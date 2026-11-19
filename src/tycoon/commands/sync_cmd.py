@@ -19,7 +19,7 @@ from pathlib import Path
 
 import typer
 
-from tycoon.config import load_config
+from tycoon.config import display_target, load_config, redact_secrets
 from tycoon.motherduck import require_motherduck_token
 from tycoon.project import SyncSourceSpec
 from tycoon.sync import sync_to_local
@@ -118,7 +118,7 @@ def sync_cmd(
     try:
         result = sync_to_local(sources, to, mode=mode)
     except Exception as exc:
-        error(f"Sync failed: {exc}")
+        error(f"Sync failed: {redact_secrets(str(exc))}")
         raise typer.Exit(1) from exc
 
     if not result.tables and not result.skipped:
@@ -127,7 +127,9 @@ def sync_cmd(
 
     # Summary table — keep it terse but show enough to spot misalignment.
     for t in result.tables:
-        console.print(f"  [cyan]{t.schema}.{t.table}[/cyan]  [dim]{t.rows:,} rows from {t.source}[/dim]")
+        console.print(
+            f"  [cyan]{t.schema}.{t.table}[/cyan]  [dim]{t.rows:,} rows from {display_target(t.source)}[/dim]"
+        )
 
     if result.skipped:
         warn(

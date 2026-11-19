@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+import re
 from pathlib import Path
 
 import duckdb
@@ -30,6 +31,17 @@ _MD_PREFIXES = ("md:", "motherduck:")
 
 def is_motherduck(source: str) -> bool:
     return source.lower().startswith(_MD_PREFIXES)
+
+
+# The query part of an md:/motherduck: string can carry motherduck_token=<secret>.
+# tycoon_city doesn't import tycoon, so these mirror tycoon.config.redact_secrets.
+_MD_QUERY_RE = re.compile(r"((?:md|motherduck):[^\s'\"?]*)\?[^\s'\"]*", re.IGNORECASE)
+_MD_TOKEN_RE = re.compile(r"(motherduck_token\s*=\s*['\"]?)[^\s&'\"]+", re.IGNORECASE)
+
+
+def redact(text: str) -> str:
+    """Text safe to print or log: md: query strings dropped, motherduck_token values masked."""
+    return _MD_TOKEN_RE.sub(r"\1***", _MD_QUERY_RE.sub(r"\1", text))
 
 
 def _database_name_for(source: str) -> str:
@@ -111,20 +123,20 @@ def _load_base(path: Path | str) -> tuple[PipelineContext, frozenset[tuple[str, 
         # MotherDuck catalogs are not filesystem paths, so the existence check
         # only applies to files.
         if not Path(source).exists():
-            raise CatalogError(f"Database file not found: {source}")
+            raise CatalogError(f"Database file not found: {redact(source)}")
 
     try:
         con = duckdb.connect(source, read_only=True)
     except duckdb.Error as exc:
         raise CatalogError(
-            f"Could not open database '{source}' (it may be invalid or locked by a writer): {exc}"
+            f"Could not open database '{redact(source)}' (it may be invalid or locked by a writer): {redact(str(exc))}"
         ) from exc
 
     try:
         try:
             tables, view_rows = _scan_catalog(con)
         except duckdb.Error as exc:
-            raise CatalogError(f"Could not read catalog from '{source}': {exc}") from exc
+            raise CatalogError(f"Could not read catalog from '{redact(source)}': {redact(str(exc))}") from exc
 
         oid_to_key: dict[int, str] = {}
         for s, n, _size, oid in tables:
